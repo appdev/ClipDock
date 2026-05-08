@@ -1,0 +1,5 @@
+module RustXcframework {
+    header "SwiftBridgeCore.h"
+    header "clipboard_core_ffi.h"
+    export *
+}

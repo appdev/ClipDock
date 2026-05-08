@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+rust/target/
+.DS_Store

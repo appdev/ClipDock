@@ -1,0 +1,209 @@
+# Operations Log
+
+- 2026-05-07 Codex：扫描 `/Users/evan/IdeaProjects/Paste`，确认目录为空且不是 git 仓库。
+- 2026-05-07 Codex：选择 SwiftPM executable + AppKit `NSPanel` 方案，实现 Paste 类悬浮面板 demo。
+- 2026-05-07 Codex：新增 `Package.swift`、`Sources/PasteFloatingDemo/main.swift`、`README.md`、`.gitignore` 与本地过程记录文件。
+- 2026-05-07 Codex：首次执行 `swift build` 时遇到沙箱无法写入用户级 Swift/Clang 缓存，随后获批在沙箱外执行构建。
+- 2026-05-07 Codex：修复 Swift 6 MainActor 隔离编译错误，将 AppKit 控制器显式约束到主线程。
+- 2026-05-07 Codex：执行 `swift build` 成功，无编译警告。
+- 2026-05-07 Codex：执行 `swift run PasteFloatingDemo`，应用完成构建并进入 AppKit 事件循环；随后通过 Ctrl-C 结束本地冒烟进程。
+- 2026-05-07 Codex：文档记录更新后再次执行 `swift build`，确认仍然构建通过。
+- 2026-05-07 Codex：根据反馈将面板定位从 `screen.visibleFrame` 改为 `screen.frame`，默认窗口层级改为 `CGWindowLevel(.dockWindow) + 1`，让面板覆盖 Dock 区域而不是停在 Dock 上沿。
+- 2026-05-07 Codex：根据多显示器需求，将展示目标屏幕改为优先匹配 `NSEvent.mouseLocation` 所在的 `NSScreen`，再回退到当前窗口屏幕和主屏幕。
+- 2026-05-07 Codex：根据尺寸需求，将面板宽度锁定为当前显示器完整宽度，并新增顶部高度拖拽手柄；拖拽时只修改 `frame.height`，`frame.x` 与 `frame.width` 始终按显示器宽度重算。
+- 2026-05-07 Codex：文档更新后再次执行 `swift build`，确认仍然构建通过。
+- 2026-05-07 Codex：新增剪贴板来源展示：使用 `NSPasteboard.general.changeCount` 轮询剪贴板变化，结合 `NSWorkspace.didActivateApplicationNotification` 记录最近的外部前台应用，并在面板中展示应用图标、名称和 Bundle ID。
+- 2026-05-07 Codex：剪贴板来源图标功能完成后执行最终 `swift build`，确认构建通过。
+- 2026-05-07 Codex：根据用户提出的多角色交付流程，建立 `docs/delivery-workflow.md`，明确 UI、QA、架构、开发阶段门；同时声明不做 Paste 像素级复刻，仅做 Paste 启发的原创 macOS 剪贴板管理器 UI。
+- 2026-05-07 Codex：UI 设计师产出 `docs/ui-design.md`；QA 首轮发现居中浮层与用户确认的底部全宽需求冲突，退回修订。
+- 2026-05-07 Codex：UI 设计文档修订后通过 QA，结论记录到 `docs/ui-qa-review.md`。
+- 2026-05-07 Codex：架构师产出 `docs/architecture.md`；QA/UI/开发三方首轮评审不通过，要求补 UI 硬契约、构建路径、FFI 分层、schema 约束、采集线程模型和按切片验收。
+- 2026-05-07 Codex：架构文档修订后通过联合评审，结论记录到 `docs/architecture-review.md`，并初始化 `docs/feature-qa-log.md`。
+- 2026-05-07 Codex：第一个功能切片“面板视觉与基础布局”完成，QA 复核代码与本地验证后通过，允许进入“用户设置窗口”切片。
+- 2026-05-07 Codex：当前会话未暴露 `sequential-thinking`、`shrimp-task-manager`、`code-index` MCP 端点，改用 `rg`、`sed`、`update_plan` 与本地日志完成上下文收集和计划留痕。
+- 2026-05-07 Codex：读取 `docs/ui-design.md`、`docs/architecture.md`、`Sources/PasteFloatingDemo/main.swift`、`README.md`、`verification.md` 与 `docs/feature-qa-log.md`，确认第二切片只需修改 Swift demo、README、verification、feature QA log 和 operations log。
+- 2026-05-07 Codex：新增独立 AppKit 偏好设置窗口，默认 720 x 520 pt，最小 640 x 460 pt，标题 `偏好设置`，左侧导航宽度 176 pt，包含通用、快捷键、历史记录、忽略列表、外观和一个早期数据操作页面壳；该页面壳已在 2026-05-08 冻结复审中撤下。
+- 2026-05-07 Codex：偏好设置页暂用控件内存状态，覆盖 `NSSwitch`、checkbox、stepper + 文本输入、segmented control 和底部危险操作区；未接入 Rust 持久化，未给主面板新增侧栏。
+- 2026-05-07 Codex：主菜单新增 `Command + ,` 偏好设置入口，菜单栏状态项菜单新增 `偏好设置…`。
+- 2026-05-07 Codex：收紧偏好设置页布局，为所有设置页加入弹性底部空白，让普通页面贴顶显示；早期数据操作危险区已在 2026-05-08 冻结复审中撤下。
+- 2026-05-07 Codex：最终执行 `swift build` 通过，输出 `Build complete! (4.17s)`。
+- 2026-05-07 Codex：最终执行 `swift test`，测试构建通过但 SwiftPM 返回 `error: no tests found; create a target in the 'Tests' directory`。
+- 2026-05-07 Codex：最终执行 `swift run PasteFloatingDemo`，输出 `Build of product 'PasteFloatingDemo' complete! (0.68s)` 并进入 AppKit 事件循环；随后使用 `Ctrl-C` 停止本地冒烟进程。
+- 2026-05-07 Codex：接续 Slice 2 QA，复核 `PreferencesWindowController`、主菜单入口、状态栏入口和主面板边界；当前会话再次执行 `swift build` 通过，输出 `Build complete! (0.41s)`。
+- 2026-05-07 Codex：再次执行 `swift test`，SwiftPM 构建完成后返回 `error: no tests found; create a target in the 'Tests' directory`，确认测试 target 仍是遗留缺口。
+- 2026-05-07 Codex：再次执行 `swift run PasteFloatingDemo`，输出 `Build of product 'PasteFloatingDemo' complete! (0.28s)` 并进入 AppKit 事件循环；随后使用 `Ctrl-C` 停止本地冒烟进程。
+- 2026-05-07 Codex：独立只读 QA Averroes 对 Slice 2 给出 Pass，未发现阻塞问题，允许进入“剪贴板历史数据模型与本地存储”切片。
+- 2026-05-07 Codex：创建 Rust workspace，新增 `clipboard_core` 与 `clipboard_core_ffi`；首次执行 `cargo test --manifest-path rust/Cargo.toml` 被沙箱 DNS 拦截，获批后从 crates.io 下载 `rusqlite` 等依赖。
+- 2026-05-07 Codex：实现 SQLite migration runner、剪贴板历史 schema、默认 preferences、FTS external content 表和 migration checksum 校验；根据 Slice 3 QA 反馈，暂不暴露捕获、去重、写入和软删除能力。
+- 2026-05-07 Codex：发现 FTS external content 索引 `source_app_name` 时要求 content table 具备对应列，补充 `clipboard_items.source_app_name` 快照字段并更新 `docs/architecture.md`。
+- 2026-05-07 Codex：执行 `cargo test --manifest-path rust/Cargo.toml` 通过，`clipboard_core` 5 个测试全部通过。
+- 2026-05-07 Codex：执行 `scripts/build-rust-core.sh` 通过，生成 `rust/target/debug/libclipboard_core_ffi.dylib` 并复制到 `.build/rust/debug/`。
+- 2026-05-07 Codex：新增 Swift `ClipboardPanelApp` library target、`RustCoreClient`、`ClipboardPanelAppTests`；主 App 启动时尝试通过运行时加载 Rust dylib 初始化本地数据库。
+- 2026-05-07 Codex：执行 `swift build` 通过，输出 `Build complete! (0.17s)`；执行 `swift test` 通过，`RustCoreClientTests` 3 个测试通过。
+- 2026-05-07 Codex：执行 `swift run PasteFloatingDemo`，输出 `Build of product 'PasteFloatingDemo' complete! (0.42s)` 并进入 AppKit 事件循环；随后使用 `Ctrl-C` 停止本地冒烟进程。
+- 2026-05-07 Codex：使用 `sqlite3` 复核本地数据库，确认 `schema_migrations` 为 `1|initial_clipboard_history_schema`，活动 `clipboard_items` 数量为 0，`preference_documents` 为 `current|1`。
+- 2026-05-07 Codex：独立 QA Hilbert 首轮退回 Slice 3，指出 UniFFI/构建集成不足、空态/错误态未接入、QA 记录缺失，以及 App 与 Rust core 越界进入 Slice 4 捕获范围。
+- 2026-05-07 Codex：按 QA 反馈收窄 Slice 3，移除 Rust core 对捕获写入、去重、FTS 写入、软删除的公开实现与测试，仅保留 open、migration、preferences、FTS 表和空历史读取。
+- 2026-05-07 Codex：停止 App 启动时的 `NSPasteboard` 轮询和 `NSWorkspace` 来源应用监听，来源筛选保留为 UI 占位，真实捕获留到 Slice 4。
+- 2026-05-07 Codex：新增 `Generated/UniFFI/ClipboardCore.swift` 作为 checked-in binding 层，`RustCoreClient` 改为通过该层调用 Rust dylib，不再直接持有 `dlopen/dlsym` 细节。
+- 2026-05-07 Codex：新增 `scripts/build-rust-core.sh`，统一构建 `clipboard_core_ffi` 并复制 dylib 到 `.build/rust/debug/`。
+- 2026-05-07 Codex：修复后执行 `cargo test --manifest-path rust/Cargo.toml` 通过，`clipboard_core` 5 个测试全部通过且无警告；执行 `swift build` 通过，输出 `Build complete! (1.84s)`；执行 `swift test` 通过，3 个 Swift 测试通过；执行 `swift run PasteFloatingDemo` 完成 GUI 冒烟并停止。
+- 2026-05-07 Codex：为 `clipboard_core_ffi` 补充真实 UniFFI scaffolding，新增 `build.rs` 并从 `clipboard_core.udl` 生成 Rust scaffolding；修正 UDL 语法后 `cargo test --manifest-path rust/Cargo.toml` 通过。
+- 2026-05-07 Codex：最终复验 `scripts/build-rust-core.sh`、`cargo test --manifest-path rust/Cargo.toml`、`swift build`、`swift test` 和 `swift run PasteFloatingDemo` 均通过；最终 `swift build` 输出 `Build complete! (0.28s)`，`swift test` 3 个测试通过，GUI 冒烟输出 `Build of product 'PasteFloatingDemo' complete! (0.41s)`。
+- 2026-05-07 Codex：接到用户要求，将 Slice 3 桥接层从 UniFFI 切换到 `swift-bridge` 并继续原阶段门流程；当前会话未暴露 `sequential-thinking`、`shrimp-task-manager`、`code-index` MCP，改用 `rg`、`sed`、`update_plan`、本地 Cargo/Swift 验证和本日志留痕。
+- 2026-05-07 Codex：读取 `swift-bridge` 0.1.59 本地 crate 文档与 build API，确认官方推荐 Rust 生成 bridge Swift/C 代码，再通过 Swift Package + XCFramework 接入 SwiftPM；本次选用本地 `Generated/ClipboardCoreBridge` package，避免继续依赖手动 `-Xlinker`。
+- 2026-05-07 Codex：移除当前代码路径中的 UniFFI 生成文件、UDL、systemLibrary target 和运行时 `dlopen` 逻辑；`clipboard_core_ffi` 改为 `#[swift_bridge::bridge]` 暴露 `open_core`。
+- 2026-05-07 Codex：更新 `scripts/build-rust-core.sh`，设置 `MACOSX_DEPLOYMENT_TARGET=13.0`，构建 Rust staticlib，生成 `Generated/ClipboardCoreBridge` 本地 Swift Package 与 `RustXcframework.xcframework`，并修正 Swift 6 retroactive conformance 警告。
+- 2026-05-07 Codex：复验 `scripts/build-rust-core.sh`、`cargo test --manifest-path rust/Cargo.toml`、`swift build`、`swift test` 和 `swift run PasteFloatingDemo`；Rust 5 个测试通过，Swift 4 个 `RustCoreClientTests` 通过，GUI 冒烟进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-07 Codex：根据独立 QA 退回意见，补充 `swift-bridge` 只读 `list_items` FFI，Swift `RustCoreClient.listItems` 不再硬编码空数组，而是解码 Rust 返回的 `items_json`；新增 `listsEmptyHistoryThroughSwiftBridgeBinding` contract test。
+- 2026-05-07 Codex：独立 QA Schrodinger 复核通过 Slice 3，确认原 `list_items` 阻塞项已解除，未发现 UniFFI/动态加载残留或 Slice 4 运行时代码越界；`docs/feature-qa-log.md` 已记录通过并允许进入“剪贴板捕获与来源应用信息”。
+- 2026-05-07 Codex：进入 Slice 4“剪贴板捕获与来源应用信息”，Rust core 新增 `capture_text`、文本/URL 分类、content hash 去重、`clipboard_captures` 记录、FTS 更新、来源应用 upsert 和图标路径记录；Rust 单测增至 7 个。
+- 2026-05-07 Codex：`swift-bridge` 新增 `capture_text`，Swift `RustCoreClient` 新增 `captureText`；AppKit shell 新增 `ClipboardMonitor`、`SourceApplicationTracker` 和 `SourceAppIconProvider`，捕获系统剪贴板文本后刷新面板。
+- 2026-05-07 Codex：Slice 4 验证通过：`scripts/build-rust-core.sh`、`cargo test --manifest-path rust/Cargo.toml`、`swift test` 均通过；GUI 冒烟中用 `pbcopy` 写入 `Codex Slice4 Capture Test` 后，SQLite 观察到 `text|Codex Slice4 Capture Test|1|终端` 且 `clipboard_captures` 数量为 1。
+- 2026-05-07 Codex：独立 QA Aristotle 复核通过 Slice 4，确认 capture/source/icon/dedupe/FTS 链路接通且未越界到搜索、粘贴写回或偏好持久化；随后根据 QA 非阻塞建议修正 `.codex/testing.md` GUI 冒烟摘要，并在 Rust 单测补充 `clipboard_captures` 与 FTS 断言。
+- 2026-05-07 Codex：接到用户返工反馈，确认 Slice 4 存在图片剪贴板未实现、文本卡片被压成单行、卡片高度未随面板高度填充等问题；将原通过结论降级为需返工。
+- 2026-05-07 Codex：Rust core 新增 `CaptureImageRequest` 与 `capture_image`，图片 payload/thumbnail 写入现有 `clipboard_assets`，列表返回 `preview_asset_path` 供 Swift UI 加载缩略图；Rust 单测增至 8 个。
+- 2026-05-07 Codex：`swift-bridge` 新增 `capture_image`，`RustCoreClient` 新增 `RustCaptureImageRequest` 与 `captureImage`；Swift contract tests 增至 6 个，覆盖图片 capture/list/preview path。
+- 2026-05-07 Codex：AppKit `ClipboardMonitor` 改为优先识别剪贴板 PNG/TIFF/NSImage，新增图片资产与缩略图落盘；主面板卡片新增图片预览区，文本 label 改为 word wrap，多行显示。
+- 2026-05-07 Codex：修复高度体验：默认面板高度改为 320 pt，范围改为 `260...min(560, screen.frame.height * 0.62)`；条目高度改为随内容区填充，图片缩略图高度随面板高度调整，宽度仍锁定为显示器宽度。
+- 2026-05-07 Codex：返工验证通过：`cargo test --manifest-path rust/Cargo.toml` 8 个测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 6 个测试通过；GUI 冒烟中系统剪贴板文本与临时 AppKit 图片均成功入库，SQLite 观察到最新 `image|图片 128 x 96|...|thumbnails/...png` 且 `clipboard_assets` 数量为 2。
+- 2026-05-08 Codex：根据用户继续反馈，确认缩略图文件本身可由 AppKit 加载，问题集中在 UI 图片 fallback 与加载策略；列表 DTO 增加 `payload_asset_path`，UI 同时尝试 thumbnail/payload 的绝对路径、相对 Application Support 路径和 Data 加载。
+- 2026-05-08 Codex：进一步打磨图片卡片：缩略图改为主视觉区域，增加尺寸信息浮层，来源 app 图标与类型信息分层展示；文本摘要保留多行，图片摘要显示 PNG、大小和复制次数。
+- 2026-05-08 Codex：新增 `HorizontalWheelScrollView`，将普通鼠标滚轮纵向 delta 映射为横向条目浏览，同时保留触控板横向滚动。
+- 2026-05-08 Codex：复验通过：`cargo test --manifest-path rust/Cargo.toml` 8 个测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 6 个测试通过；GUI 冒烟复制 AppKit 图片后数据库最新为 `image|图片 128 x 96|3|thumbnails/...png|964`。
+- 2026-05-08 Codex：继续进入“搜索、筛选与键盘操作”切片；Rust `ItemQuery` 增加 `search_text`，`list_items` 支持类型过滤和 FTS/LIKE 搜索；`swift-bridge` 与 `RustCoreClient.listItems` 同步暴露 `itemType` 和 `searchText`。
+- 2026-05-08 Codex：主面板搜索框和类型 segmented control 接入真实查询，空结果显示“没有匹配结果”；内容视图维护选中项，支持 `Command + F`、`Command + 1...5`、左右方向键和 `Escape`。
+- 2026-05-08 Codex：搜索筛选切片验证通过：`cargo test --manifest-path rust/Cargo.toml` 9 个测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 7 个测试通过；`swift run PasteFloatingDemo` 启动进入 AppKit 事件循环后停止。
+- 2026-05-08 Codex：进入“粘贴写回与自写入抑制”切片；当前会话未暴露 `sequential-thinking`、`shrimp-task-manager`、`code-index` MCP，继续使用 `rg`、`sed`、`update_plan`、本地 Cargo/Swift 验证和 `.codex` 日志留痕。
+- 2026-05-08 Codex：新增 `ClipboardPastePayloadPlanner`，将 `RustClipboardItemSummary` 规划为文本或图片文件粘贴载荷；新增 2 个 Swift contract tests 覆盖文本 payload 和图片 payload 资产选择。
+- 2026-05-08 Codex：主面板 `Return` / 小键盘 `Enter` 触发当前选中条目粘贴；`AppDelegate` 将文本/链接写入 `NSPasteboard.string`，将图片写入 PNG/TIFF，隐藏面板后通过 `CGEvent` 尝试发送 `Command + V`。
+- 2026-05-08 Codex：`ClipboardMonitor` 新增 self-write token pasteboard 类型、changeCount 忽略集合和 token 忽略集合；本应用写回命中 changeCount 或 token 时跳过捕获，避免重复入库。
+- 2026-05-08 Codex：自审发现首版失败路径会先清空系统剪贴板，已修正为确认支持且图片可读后才执行 `pasteboard.clearContents()`。
+- 2026-05-08 Codex：粘贴写回切片验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 9 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 9 个 Swift 测试通过；`swift run PasteFloatingDemo` 启动进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：根据用户反馈返工交互：移除 `Return` / 小键盘 `Enter` 写回和自动 `Command + V` 发送；新增条目卡片单击选中、双击复制到系统剪贴板并隐藏面板。
+- 2026-05-08 Codex：将 `Command + 1...5` 从类型筛选快捷键改为快速选中当前可见第 1 到第 5 个条目；顶部类型 segmented control 仍负责鼠标切换分类。
+- 2026-05-08 Codex：鼠标取用返工验证通过：`swift build` 通过，输出 `Build complete! (0.30s)`；`swift test` 通过，9 个 Swift 测试通过；`swift run PasteFloatingDemo` 启动进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：复核双击路径时发现单击立即重绘可能影响非选中条目的双击识别，已将单击选中延迟到 `NSEvent.doubleClickInterval` 之后，双击复制立即执行。
+- 2026-05-08 Codex：进入“偏好设置持久化”切片；确认 Rust 已有 `preference_documents` 默认 JSON，但尚无 `get_preferences` / `update_preferences` FFI，Swift 偏好窗口仍为硬编码控件状态。
+- 2026-05-08 Codex：Rust core 新增强类型 `PreferencesDocument`、默认值、归一化和 `ClipboardCore.get_preferences/update_preferences`；Rust 单测增至 10 个，覆盖默认偏好读取和越界更新归一化。
+- 2026-05-08 Codex：`swift-bridge` 新增 `CorePreferencesResult`、`get_preferences`、`update_preferences`；`RustCoreClient` 新增 `RustPreferencesDocument` 及读写方法；Swift contract tests 增至 11 个。
+- 2026-05-08 Codex：AppKit 偏好设置窗口接入 Rust 快照和保存回调；通用、历史记录、外观页控件变更后立即保存到 SQLite；默认高度应用到面板，菜单栏显示应用到 `NSStatusItem`，关闭记录图片后跳过图片捕获。
+- 2026-05-08 Codex：偏好设置持久化切片验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 10 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 11 个 Swift 测试通过；`swift run PasteFloatingDemo` 启动进入 AppKit 事件循环后停止；`sqlite3` 成功读取 `preference_documents.current`。
+- 2026-05-08 Codex：进入“来源应用筛选弹出菜单”切片；确认 `ItemQuery.source_app_id` 已存在但未跨 bridge 暴露，顶部来源应用按钮仍是静态占位。
+- 2026-05-08 Codex：Rust core 新增 `SourceAppSummary`、`SourceAppPage` 和 `list_source_apps`；`list_items` bridge 参数新增 `source_app_id`；Rust 测试增至 11 个。
+- 2026-05-08 Codex：Swift `RustCoreClient` 新增 `RustSourceAppSummary`、`listSourceApps` 和 `listItems(sourceAppId:)`；AppKit 顶部来源区改为最近来源应用图标和弹出菜单筛选；偏好窗口快捷键文案修正为“选取条目”。
+- 2026-05-08 Codex：来源应用筛选切片验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 11 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 12 个 Swift 测试通过；`swift run PasteFloatingDemo` 启动进入 AppKit 事件循环后停止；`sqlite3` 成功读取最近来源应用分组。
+- 2026-05-08 Codex：进入“临时预览浮层”切片；确认 UI/架构要求为选中条目上方临时浮层，不允许右侧常驻详情栏，偏好字段 `preview_popover_enabled` 已持久化但尚未驱动运行时。
+- 2026-05-08 Codex：新增 `ClipboardPreviewContentPlanner`，为文本/链接/图片生成可测试预览内容；新增 2 个 Swift contract tests，Swift 测试增至 14 个。
+- 2026-05-08 Codex：AppKit 新增 `ClipboardPreviewPopoverController` 与 `ClipboardPreviewViewController`，`Space` 切换当前选中条目预览，`Escape`、切换选中项、双击复制、列表刷新和面板隐藏会关闭预览；偏好关闭预览浮层后 Space 不展示。
+- 2026-05-08 Codex：临时预览浮层切片验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 11 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 14 个 Swift 测试通过；`swift run PasteFloatingDemo` 启动进入 AppKit 事件循环后停止。
+- 2026-05-08 Codex：进入“历史自动清理策略”切片；确认 schema 已有 `deleted_at_ms`，偏好已有 `max_items/retention_days`，但清理尚未驱动运行时。
+- 2026-05-08 Codex：Rust core 新增 `apply_history_preferences`，在 open、capture_text、capture_image、update_preferences 后按保存数量和保留天数软删除普通历史；新增 2 个 Rust 测试，Rust 测试增至 13 个。
+- 2026-05-08 Codex：AppKit 偏好保存成功后刷新主列表，让保存数量/保留天数变化后的清理结果立即体现在面板。
+- 2026-05-08 Codex：历史自动清理策略验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 13 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 通过；`swift test` 14 个 Swift 测试通过；`swift run PasteFloatingDemo` 启动进入 AppKit 事件循环后停止；`sqlite3` 观察当前本机库 active=52、deleted=0、max_items=500、retention_days=30。
+- 2026-05-08 Codex：接到用户指令，暂时不做同步与导出功能；本轮冻结同步、导入和导出，不选择其作为下一功能切片。
+- 2026-05-08 Codex：读取 `Sources/PasteFloatingDemo/main.swift`、README、UI 设计、架构、delivery workflow、verification、feature QA log 和 `.codex` 记录，确认可见入口集中在偏好设置同步/导出页与导入/导出按钮。
+- 2026-05-08 Codex：移除旧数据操作 `PreferenceSection` case、同步/导出页面、导出/导入按钮和未接线危险操作区；偏好设置侧边栏当前只保留通用、快捷键、历史记录、忽略列表和外观。
+- 2026-05-08 Codex：同步更新 README、`docs/ui-design.md`、`docs/architecture.md`、`docs/delivery-workflow.md`、`verification.md`、`docs/feature-qa-log.md`、`.codex/context-scan.json`、`.codex/testing.md` 和 `.codex/review-report.md`，明确同步、导入和导出冻结边界。
+- 2026-05-08 Codex：冻结复审验证通过：`cargo test --manifest-path rust/Cargo.toml` 13 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 输出 `Build complete! (1.54s)`；`swift test` 14 个 Swift 测试通过；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.30s)` 并进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：继续进入“文件剪贴板捕获”切片；确认 schema 已支持 `file` 和 `file_snapshot`，偏好已有 `record_files`，但 Rust/bridge/AppKit 尚未捕获文件 URL。
+- 2026-05-08 Codex：Rust core 新增 `CaptureFilesRequest` 与 `capture_files`，文件列表入库为 `file` 条目，写入 `file_snapshot` 资产、`public.file-url` format、capture 记录和 FTS；Rust 测试增至 14 个。
+- 2026-05-08 Codex：`swift-bridge` 新增 `capture_files`，`RustCoreClient` 新增 `RustCaptureFilesRequest` / `captureFiles`；Swift tests 新增文件捕获和文件 URL payload 规划，Swift 测试增至 16 个。
+- 2026-05-08 Codex：AppKit `ClipboardMonitor` 优先读取文件 URL 剪贴板；开启“记录文件”后 `ClipboardFileSnapshotProvider` 写入 `assets/file-snapshots/*.json`，双击文件条目会把仍存在的文件 URL 写回系统剪贴板并隐藏面板。
+- 2026-05-08 Codex：文件剪贴板捕获验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 14 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 输出 `Build complete! (4.84s)`；`swift test` 16 个 Swift 测试通过；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.39s)` 并进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：继续进入“忽略列表持久化与捕获跳过规则”切片；当前会话未暴露 `sequential-thinking`、`shrimp-task-manager`、`code-index` MCP，继续使用 `rg`、`sed`、`update_plan`、本地 Cargo/Swift 验证和 `.codex` 日志留痕。
+- 2026-05-08 Codex：Rust `PreferencesDocument` 新增 `ignore_list`，包含 `ignored_app_identifiers`、`window_title_keywords` 和 `skip_unknown_source`；新增归一化去重和旧 JSON 缺省兼容，`cargo test --manifest-path rust/Cargo.toml` 首轮通过，Rust 测试增至 15 个。
+- 2026-05-08 Codex：Swift `RustPreferencesDocument` 新增 `ignoreList` Codable 映射和旧 JSON 默认解码；新增 `ClipboardIgnoreRuleEvaluator`，覆盖 bundle id、应用名、`.app` 名称、未知来源和可选窗口标题关键词；Swift contract tests 增至 22 个。
+- 2026-05-08 Codex：AppKit 偏好设置“忽略列表”页由硬编码样例改为真实持久化控件；文本、图片和文件捕获会在图标、图片资产或文件快照写入前先检查忽略规则，命中后更新状态并停止入库。
+- 2026-05-08 Codex：首次 `swift test` 暴露旧 Rust 静态库未重建导致 `ignore_list` 被丢弃；运行 `scripts/build-rust-core.sh` 重新生成 `Generated/ClipboardCoreBridge` 后复测通过。
+- 2026-05-08 Codex：忽略列表切片验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 15 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 输出 `Build complete! (3.35s)`；`swift test` 22 个 Swift 测试通过；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.28s)` 并进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：同步更新 README、verification、docs/feature-qa-log.md、.codex/testing.md、.codex/review-report.md、.codex/context-scan.json 和 operations-log，记录窗口标题关键词当前已持久化但运行时尚无窗口标题采集器。
+- 2026-05-08 Codex：继续进入“窗口标题采集与标题关键词运行时规则”切片；当前会话未暴露 `sequential-thinking`、`shrimp-task-manager`、`code-index` MCP，继续使用 `rg`、`sed`、`update_plan`、本地 Cargo/Swift 验证和 `.codex` 日志留痕。
+- 2026-05-08 Codex：AppKit 新增 `SourceWindowTitleProvider`，优先通过 Accessibility focused window 读取标题，失败时回退 `CGWindowListCopyWindowInfo` 的 0 层可见窗口名；`CapturedSourceApplication` 新增 `processIdentifier` 和 `windowTitle`。
+- 2026-05-08 Codex：`SourceApplicationTracker` 在来源应用激活和捕获前刷新窗口标题；`shouldSkipCapture` 将 `source.windowTitle` 传给 `ClipboardIgnoreRuleEvaluator`，让文本、图片和文件捕获在命中标题关键词时先跳过再写资产。
+- 2026-05-08 Codex：首次 Swift 编译发现 `currentSource()` 缺少显式 `return`，补齐后 `swift build` 通过；Swift evaluator tests 新增“无标题时不按标题关键词跳过”用例，Swift 测试增至 23 个。
+- 2026-05-08 Codex：窗口标题采集切片验证通过：`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 15 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift build` 输出 `Build complete! (3.22s)`；`swift test` 23 个 Swift 测试通过；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.34s)` 并进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：同步更新 README、verification、docs/feature-qa-log.md、docs/delivery-workflow.md、docs/architecture.md、.codex/testing.md、.codex/review-report.md、.codex/context-scan.json 和 operations-log，记录标题采集 best-effort、当前不弹授权引导且不写入 Rust 数据库。
+- 2026-05-08 Codex：继续进入“本地数据维护”切片；当前会话未暴露 `sequential-thinking`、`shrimp-task-manager`、`code-index` MCP，继续使用 `rg`、`sed`、`update_plan`、本地 Cargo/Swift 验证和 `.codex` 日志留痕。
+- 2026-05-08 Codex：Rust domain 新增 `MaintenanceResult`；`ClipboardCore.run_maintenance()` 实现软删除条目资产物理清理、孤儿 `assets`/`thumbnails` 文件清理、`staging` 残留清理、资产行与软删除条目删除，并在事务内重建 `clipboard_items_fts`。
+- 2026-05-08 Codex：Rust 维护测试新增软删除条目清理和孤儿文件清理两类用例；`cargo fmt --manifest-path rust/Cargo.toml --all` 通过，`cargo test --manifest-path rust/Cargo.toml` 通过，Rust 测试增至 17 个。
+- 2026-05-08 Codex：首次 `scripts/build-rust-core.sh` 因 `MaintenanceResult` 未从 `clipboard_core::lib.rs` 导出而失败；已补导出后重建 swift-bridge 产物成功。
+- 2026-05-08 Codex：`clipboard_core_ffi` 暴露 `run_maintenance` 和 `CoreMaintenanceResult`；Swift `RustCoreClient` 新增 `RustMaintenanceResult` 与 `runMaintenance(appSupportDirectory:)`，Swift contract test 新增 orphan 文件经 bridge 清理验证，`swift test` 通过，Swift 测试增至 24 个。
+- 2026-05-08 Codex：AppKit `bootstrapLocalStorage()` 在打开本地库和加载偏好后自动运行维护；如释放空间或清理文件，会将状态文本更新为维护摘要。
+- 2026-05-08 Codex：本地数据维护切片验证通过：`scripts/build-rust-core.sh` 通过；`swift build` 输出 `Build complete! (2.95s)`；`swift test` 24 个 Swift 测试通过；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.30s)` 并进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：同步更新 README、verification、docs/feature-qa-log.md、docs/delivery-workflow.md、docs/architecture.md、.codex/testing.md、.codex/context-scan.json 和 .codex/review-report.md，记录本地维护范围、验证结果和残余风险。
+- 2026-05-08 Codex：收尾执行 `jq . .codex/context-scan.json` 通过；当前目录不是 git 仓库，`git status --short` 无法提供摘要；补充执行 `swift test` 通过，24 个 Swift 测试全部通过。
+- 2026-05-08 Codex：进入“GUI 回归测试地基”切片；使用 `practice-cognition` 方法，先确认目标为抽取可测试 UI 决策层，再用本地测试验证。
+- 2026-05-08 Codex：新增 `Sources/ClipboardPanelApp/PanelRegressionPlanner.swift`，包含 `BottomPanelGeometryPlanner`、`PanelInteractionPlanner` 和 `MaintenanceStatusPresenter`。
+- 2026-05-08 Codex：`FloatingPanelContentView` 改为通过 `PanelInteractionPlanner` 处理列表刷新选中项、左右选择、`Command + 1...5` 和 `Escape` 优先级；`FloatingPanelController` 改为通过 `BottomPanelGeometryPlanner` 计算贴底全宽 frame 和高度约束；AppDelegate 启动维护文案改为复用 `MaintenanceStatusPresenter`。
+- 2026-05-08 Codex：新增 `Tests/ClipboardPanelAppTests/PanelRegressionPlannerTests.swift`，覆盖底部面板几何、高度约束、只调高度、选中项回退、快捷数字选择、Escape 行为和维护状态文案。
+- 2026-05-08 Codex：验证阶段首次并行启动 `swift test` 与 `swift build`，SwiftPM 等待 `.build` 锁后顺序完成；后续记录该风险，验证命令应顺序执行。
+- 2026-05-08 Codex：GUI 回归测试地基验证通过：`swift test` 32 个 Swift 测试通过；`swift build` 输出 `Build complete! (0.27s)`；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.24s)` 并进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：同步更新 README、docs/delivery-workflow.md、docs/architecture.md、docs/feature-qa-log.md、verification.md、.codex/testing.md、.codex/context-scan.json、.codex/review-report.md 和 operations-log，记录 GUI 回归测试地基范围与残余风险。
+- 2026-05-08 Codex：最终执行 `jq . .codex/context-scan.json` 通过；最终执行 `swift test` 通过，32 个 Swift 测试全部通过。
+- 2026-05-08 Codex：继续进入“截图级 GUI 回归雏形”切片；确认当前真实主面板 AppKit 类仍在 executable 私有 `main.swift`，先采用 test target 内的 AppKit 离屏视觉夹具，避免屏幕录制权限和真实窗口焦点干扰。
+- 2026-05-08 Codex：新增 `Tests/ClipboardPanelAppTests/PanelVisualSnapshotTests.swift`，离屏绘制底部面板视觉快照并写入 `.codex/artifacts/panel-visual-regression.png`。
+- 2026-05-08 Codex：首轮 `swift test` 失败，8 个像素采样断言不通过；原因是 `NSBitmapImageRep.colorAt` 在当前路径下按顶部坐标采样，而两个点误用了底部换算，另一个点采到文字覆盖区域。
+- 2026-05-08 Codex：修正高度手柄、选中强调线和图片预览区域采样点后，`swift test` 通过，33 个 Swift 测试全部通过。
+- 2026-05-08 Codex：截图级 GUI 回归雏形验证通过：`swift build` 输出 `Build complete! (0.27s)`；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.23s)` 并进入 AppKit 事件循环后由 `pkill -f PasteFloatingDemo` 停止。
+- 2026-05-08 Codex：验证生成的 `.codex/artifacts/panel-visual-regression.png` 文件大小为 35885 bytes；`sips -g pixelWidth -g pixelHeight` 输出宽 960、高 320。
+- 2026-05-08 Codex：同步更新 README、docs/delivery-workflow.md、docs/architecture.md、docs/feature-qa-log.md、verification.md、.codex/testing.md、.codex/context-scan.json、.codex/review-report.md 和 operations-log，记录截图级 GUI 回归雏形范围与残余风险。
+- 2026-05-08 Codex：最终执行 `jq . .codex/context-scan.json` 通过；最终执行 `swift test` 通过，33 个 Swift 测试全部通过。
+- 2026-05-08 Codex：接到用户要求“再次修改 UI，参考图去掉无关元素”；复核当前主面板代码、视觉快照和文档，确认目标为轻量顶部工具条、去除旧来源筛选/关闭/更多占位控件，并保留鼠标优先取用路径。
+- 2026-05-08 Codex：`Sources/PasteFloatingDemo/main.swift` 已完成 UI 精简：顶部默认只显示搜索图标和类型 chip，搜索框按需展开，`emitQueryChanged` 不再传递 `sourceAppID`，`updateSourceApps` 保持兼容但主面板不渲染来源筛选入口。
+- 2026-05-08 Codex：条目卡片已改为顶部色条 + 白色主体，顶部展示类型、相对时间和来源应用图标，主体承载多行文本、图片预览、链接或文件摘要，旧 pin/type icon/footer 杂项已清理。
+- 2026-05-08 Codex：`Tests/ClipboardPanelAppTests/PanelVisualSnapshotTests.swift` 已同步轻量工具条和顶部色条卡片视觉夹具，重新生成 `.codex/artifacts/panel-visual-regression.png`，尺寸为 960 x 320。
+- 2026-05-08 Codex：主面板 UI 精简验证通过：`swift build` 输出 `Build complete! (0.32s)`；`swift test` 输出 `Test run with 33 tests passed after 0.077 seconds`；`swift run PasteFloatingDemo` 输出 `Build of product 'PasteFloatingDemo' complete! (0.27s)` 并进入 AppKit 事件循环后停止；`sips` 输出 `pixelWidth: 960`、`pixelHeight: 320`。
+- 2026-05-08 Codex：同步更新 README、docs/ui-design.md、docs/architecture.md、docs/delivery-workflow.md、docs/feature-qa-log.md、verification.md、.codex/testing.md、.codex/review-report.md、.codex/context-scan.json 和 operations-log，记录主面板 UI 精简范围、QA 结论和残余风险。
+- 2026-05-08 Codex：收尾复验通过：`jq . .codex/context-scan.json` 合法；`swift test` 输出 `Test run with 33 tests passed after 0.124 seconds`；`swift build` 输出 `Build complete! (0.39s)`；视觉快照仍为 960 x 320，文件大小 32698 bytes。
+- 2026-05-08 Codex：收到用户反馈 `swift run PasteFloatingDemo` 运行结果与我给出的图片完全不同；确认原因是 `.codex/artifacts/panel-visual-regression.png` 来自手写 `PanelSnapshotFixtureView`，不是生产 `FloatingPanelContentView` 的真实渲染。
+- 2026-05-08 Codex：新增 `swift run PasteFloatingDemo --render-panel-snapshot <path>` 入口，直接实例化并渲染生产 `FloatingPanelContentView`，样例条目使用真实卡片、搜索入口、chip 和图片预览路径。
+- 2026-05-08 Codex：真实视图快照验证通过：`swift build` 输出 `Build complete! (3.30s)`；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 输出 `Build of product 'PasteFloatingDemo' complete! (0.25s)`；`sips` 输出 960 x 320，文件大小 44701 bytes。
+- 2026-05-08 Codex：补充复验 `swift test` 通过，输出 `Test run with 33 tests passed after 0.069 seconds`；同步更新 README、verification、testing、feature QA、review report 和 context scan，明确 fixture 快照与真实视图快照的区别。
+- 2026-05-08 Codex：根据用户提供的真实运行截图继续调整生产 UI：顶部工具条改为居中，卡片宽度从 218 pt 调整为 248 pt，隐藏底部横向滚动条，非选中卡片顶部色条改为浅色，面板增加中性半透明底色降低桌面颜色染色。
+- 2026-05-08 Codex：真实截图修正验证通过：`swift build` 输出 `Build complete! (3.25s)`；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 输出 `Build of product 'PasteFloatingDemo' complete! (0.34s)`；新 runtime snapshot 为 960 x 320、40597 bytes；`swift test` 输出 `Test run with 33 tests passed after 0.098 seconds`。
+- 2026-05-08 Codex：继续处理用户反馈的 `NSForwarding` selector warning 和“点击外部自动隐藏”需求；复核 target/action 后将主面板搜索按钮和类型 chip 改为 Swift 闭包按钮，移除不必要 ObjC selector，退出菜单项 target 修正为 `NSApp`。
+- 2026-05-08 Codex：`FloatingPanelController` 新增本地和全局鼠标事件 monitor；面板显示时开始监听，隐藏时移除；点击事件窗口不是面板且鼠标坐标离开 panel frame 时自动调用 `hide()`。
+- 2026-05-08 Codex：新增 `PanelInteractionPlanner.shouldHideForOutsideMouseDown` 和 Swift 单元测试，覆盖面板内点击不隐藏、未知窗口但坐标在面板内不隐藏、坐标离开面板时隐藏。
+- 2026-05-08 Codex：外部点击和 selector 修正验证通过：`swift test` 输出 `Test run with 34 tests passed after 0.114 seconds`；`swift run PasteFloatingDemo` 真实启动 8 秒未复现 `NSForwarding` warning；runtime snapshot 复验 960 x 320、40597 bytes。
+- 2026-05-08 Codex：处理用户反馈“文字应该从左向右”：卡片标题、时间、主体摘要和 footer 统一设置 left alignment、leftToRight writing direction 和 LTR paragraph style；主体摘要前加入不可见 LTR mark 处理数字开头中英混排；卡片内容区从 NSStackView 直接排布改为显式 Auto Layout 容器并固定内容宽度。
+- 2026-05-08 Codex：文本方向修正验证通过：`swift build` 输出 `Build complete! (3.31s)`；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 生成快照后观察到文件/链接正文已左对齐；快照尺寸 960 x 320、文件大小 41283 bytes；`swift test` 输出 `Test run with 34 tests passed after 0.101 seconds`。
+- 2026-05-08 Codex：处理用户反馈“顶部分类还是需要保持居中”：顶部工具条从左右 spacer 填满改为内容组自身宽度，并用 `row.centerXAnchor == container.centerXAnchor` 居中；保留搜索框展开时整体居中的约束。
+- 2026-05-08 Codex：顶部居中修正验证通过：`swift build` 输出 `Build complete! (3.34s)`；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 生成快照后观察到顶部分类组居中；`swift test` 输出 `Test run with 34 tests passed after 0.076 seconds`。
+- 2026-05-08 Codex：进入“Login Item 启动时运行”切片；当前会话未暴露 sequential-thinking、shrimp-task-manager、code-index MCP，继续使用 arming-thought、rg、sed、update_plan、本地 Swift 验证和 .codex 日志留痕。
+- 2026-05-08 Codex：新增 `LaunchAtLoginPresenter`、`LaunchAtLoginSystemStatus` 和 `LaunchAtLoginPresentation`，将非 `.app` 调试态与 macOS Login Item 状态映射抽到 `ClipboardPanelApp` pure Swift 层。
+- 2026-05-08 Codex：`LaunchAtLoginController` 使用 `SMAppService.mainApp` 读取状态并调用 `register()` / `unregister()`；偏好设置“启动时运行”开关在 `swift run` 下禁用并显示“打包为 .app 后可用”。
+- 2026-05-08 Codex：`AppDelegate.persistPreferences` 仅在用户实际修改 `launch_at_login` 时应用系统登录项变更，并将 Rust/SQLite 偏好归一化为系统实际状态。
+- 2026-05-08 Codex：Login Item 切片验证通过：`swift build` 输出 `Build complete! (3.68s)`；`swift test` 输出 `Test run with 36 tests passed after 0.125 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 8 秒无新增 warning 后停止。
+- 2026-05-08 Codex：进入“条目管理”切片；确认 schema 已有 `is_pinned` 与 `deleted_at_ms`，无需新增迁移；继续冻结同步、导入和导出。
+- 2026-05-08 Codex：Rust core 新增 `ItemManagementResult`、`set_item_pinned`、`delete_item` 和 `clear_items`；`clear_items` 复用现有 ItemQuery 并跳过固定条目。
+- 2026-05-08 Codex：新增 Rust 单元测试覆盖固定排序、单条软删除、批量清理当前范围且保护固定条目；`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 19 个 Rust 测试通过。
+- 2026-05-08 Codex：重新执行 `scripts/build-rust-core.sh`，生成 `CoreItemManagementResult` 和 set/delete/clear 三条 swift-bridge 函数。
+- 2026-05-08 Codex：Swift `RustCoreClient` 新增 `RustItemManagementResult`、`setItemPinned`、`deleteItem` 和 `clearItems`；Swift contract tests 新增固定/删除/清空覆盖，Swift 测试增至 38 个。
+- 2026-05-08 Codex：主面板 `ClipboardItemCardBox` 新增右键菜单；真实条目菜单包含固定/取消固定、复制到剪贴板、删除条目和清空当前结果；固定条目标题显示“固定 · 类型”。
+- 2026-05-08 Codex：条目管理切片验证通过：`swift build` 输出 `Build complete! (6.35s)`；`swift test` 输出 `Test run with 38 tests passed after 0.155 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 8 秒无新增 warning 后停止。
+- 2026-05-08 Codex：进入“主面板性能优化”切片；用户反馈切换分类和右键都卡，复核发现右键菜单前全量重绘、列表刷新主线程同步查询、重复来源分组查询和图片/图标重复磁盘解码。
+- 2026-05-08 Codex：移除右键菜单前的 `renderCurrentItems()`；`refreshClipboardList()` 改为后台串行队列执行，并为搜索/类型切换增加 120 ms 防抖和 generation 过期结果丢弃。
+- 2026-05-08 Codex：主面板来源筛选入口已隐藏，`refreshSourceApps()` 改为 no-op，避免每次列表刷新额外查询来源分组；来源图标和图片预览新增 NSCache 内存缓存。
+- 2026-05-08 Codex：性能优化切片验证通过：`swift build` 输出 `Build complete! (5.31s)`；`swift test` 输出 `Test run with 38 tests passed after 0.112 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 warning 后停止。
+- 2026-05-08 Codex：收到用户反馈“删除直接卡死”，使用 investigation-first 复核删除链路；确认 `setItemPinned`、`deleteItem`、`clearItems` 仍在 AppKit 主线程同步调用 Rust/SQLite，而 FFI 每次会 `ClipboardCore::open`、设置 WAL、跑迁移检查、读取偏好后再执行 mutation。
+- 2026-05-08 Codex：新增 `performItemMutation`，将固定、删除和清空统一排入后台 `databaseQueue`；mutation 开始前取消 pending list refresh 并递增 generation，避免旧列表刷新结果覆盖新状态。
+- 2026-05-08 Codex：删除卡顿修正验证通过：`swift build` 输出 `Build complete! (3.59s)`；`swift test` 输出 `Test run with 38 tests passed after 0.179 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 warning 后停止。
+- 2026-05-08 Codex：用户反馈删除后崩溃，crash 栈为 `_dispatch_assert_queue_fail` / `_swift_task_checkIsolatedSwift`；确认原因是 `AppDelegate` 标注 `@MainActor`，上一版从其中创建的 GCD closure 被投递到后台 `databaseQueue` 后触发 Swift concurrency executor 校验。
+- 2026-05-08 Codex：移除 `databaseQueue` 与 `DispatchWorkItem` 列表刷新路径，新增 `ClipboardDatabaseWorker` actor；列表查询、固定、删除和清空统一 `await` 数据库 actor 串行执行，MainActor 只负责防抖、取消、generation 校验和 UI 更新。
+- 2026-05-08 Codex：executor trap 修正验证通过：`swift build` 输出 `Build complete! (3.05s)`；`swift test` 输出 `Test run with 38 tests passed after 0.120 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
+- 2026-05-08 Codex：用户反馈单击反应慢；调查确认 `ClipboardItemCardBox.mouseDown` 为区分双击等待 `NSEvent.doubleClickInterval` 后才触发 `onSelect`，且 `selectItem` 会调用 `renderCurrentItems()` 全量重建最多 30 张卡片。
+- 2026-05-08 Codex：移除单击双击等待，单击立即选中，双击仍在第二次 clickCount >= 2 时复制；新增 `ClipboardItemCardBox.applySelection` 与 `updateVisibleSelection()`，选中态只局部更新边框、顶部色块和标题颜色，不再全量重建卡片。
+- 2026-05-08 Codex：单击响应优化验证通过：`swift build` 输出 `Build complete! (3.52s)`；`swift test` 输出 `Test run with 38 tests passed after 0.086 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
+- 2026-05-08 Codex：用户反馈设置相关功能出现 `NSForwarding selector ... does not match selector known to Objective C runtime`；复核设置页发现开关、复选框、分段控件使用 `ControlActionTarget` target/action wrapper，偏好保存又可能同步触发设置页重绘并清理当前 target。
+- 2026-05-08 Codex：新增 `swift run PasteFloatingDemo --exercise-preferences` 设置页 smoke；首轮 smoke 稳定复现 NSForwarding crash，确认问题集中在设置页 target/action 触发路径。
+- 2026-05-08 Codex：设置页控件改为 `PreferenceSwitch`、`PreferenceCheckboxButton`、`PreferenceSegmentedControl`、`PreferenceStepper` 闭包子类；侧边栏导航改为 `PreferenceNavigationButton`；偏好保存期间设置页重绘延迟到当前控件事件返回后执行。
+- 2026-05-08 Codex：设置页 selector 崩溃修正验证通过：`swift build` 输出 `Build complete! (3.16s)`；`swift run PasteFloatingDemo --exercise-preferences` 无 NSForwarding warning 或 crash；`swift test` 输出 `Test run with 38 tests passed after 0.101 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
+- 2026-05-08 Codex：用户要求横向滚动像竖向滚动一样有惯性；先查找第三方开源库，发现 Mos、Scroll Reverser、LinearMouse、Mac Mouse Fix 等主要是全局 event tap 鼠标工具，不适合嵌入当前 AppKit 面板。
+- 2026-05-08 Codex：复核 `HorizontalWheelScrollView`，确认原实现手动 `clipView.scroll(to:)` 绕开了 `NSScrollView` 原生 responsive / momentum scrolling；改为精确横向滚动事件交回 `super.scrollWheel(with:)`，普通鼠标纵向滚轮转横向时使用 MainActor `Task` 做 60fps 衰减惯性。
+- 2026-05-08 Codex：横向滚动惯性优化验证通过：`swift build` 输出 `Build complete! (4.00s)`；`swift test` 输出 `Test run with 38 tests passed after 0.193 seconds`；`swift run PasteFloatingDemo --exercise-preferences` 通过；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。验证中曾并行启动两个 SwiftPM 命令，SwiftPM 等待 `.build` 锁后顺序完成，后续应顺序执行。
+- 2026-05-08 Codex：收到用户提醒“应用不存在上下滚动，只处理横向滚动”，暂停盲目调参并做架构复盘；判断上一版自定义惯性仍是在错误模型上补丁，应该以轴投射方式把所有 wheel 意图交给 AppKit 横向滚动模型。
+- 2026-05-08 Codex：`HorizontalWheelScrollView` 移除自定义惯性 Task 和手动 `clipView.scroll(to:)`；改为复制 `CGEvent`，将纵向 scroll axis1 投射到横向 axis2，清空纵向 axis 后调用 `super.scrollWheel(with:)`。
+- 2026-05-08 Codex：横向滚动架构修正验证通过：`swift build` 输出 `Build complete! (3.02s)`；`swift test` 输出 `Test run with 38 tests passed after 0.125 seconds`；`swift run PasteFloatingDemo --exercise-preferences` 通过；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
+- 2026-05-08 Codex：用户反馈横向滚动方向相反；仅将 `projectScrollAxis` 中投射值从 `-value` 改为 `value`，不改动系统原生滚动模型。
+- 2026-05-08 Codex：横向滚动方向修正验证通过：`swift build` 输出 `Build complete! (3.35s)`；`swift test` 输出 `Test run with 38 tests passed after 0.100 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
