@@ -28,6 +28,7 @@
 - 当前已支持系统权限状态提示：偏好设置的忽略列表页会显示窗口标题采集依赖的辅助功能权限状态，并可打开系统设置。
 - 当前已支持本地数据维护：启动后会清理软删除条目关联资产、孤儿图片/缩略图/文件快照和 `staging` 残留，并重建 FTS 索引。
 - 当前已支持真实设备 UI QA 探针：`--print-ui-diagnostics` 会输出多屏 frame、visibleFrame、缩放、鼠标所在屏和每屏面板 frame。
+- 当前已支持真实窗口交互自动化 smoke：`--exercise-panel-interactions` 会创建真实 `NSPanel` 和生产面板内容视图，用合成鼠标/键盘事件验证单击、双击、筛选、搜索、右键菜单动作、滚轮横向投射和隐藏链路。
 - 当前已支持 GUI 回归测试地基：面板几何、条目选择、`Escape` 决策和维护状态文案已抽到 `ClipboardPanelApp` 并由 Swift 单元测试覆盖。
 - 当前已支持截图级 GUI 回归雏形：Swift 测试会离屏渲染底部面板视觉快照，生成 `.codex/artifacts/panel-visual-regression.png` 并做尺寸与关键像素锚点检查。
 - 当前已按参考图精简主面板 UI：顶部只保留搜索和类型 chip，条目卡片改为顶部色条样式，并删除旧来源筛选图标组、关闭按钮和占位更多菜单。
@@ -36,6 +37,7 @@
 - 当前已做主面板性能优化：右键菜单不再触发全量卡片重绘，分类/搜索列表查询进入后台串行队列并做 120 ms 防抖，来源分组查询不再随列表刷新重复执行，图标和预览图片会在内存中缓存。
 - 当前图片预览加载会先复用缓存；首次读取图片资产时把文件 I/O 移到后台任务，避免主线程同步读盘卡住。
 - 当前本地维护会清理 `assets`、`thumbnails`、`staging` 和未被 `source_app_icons` 引用的 `app-icons` 孤立文件。
+- 当前已支持本地产品化打包：`scripts/package-macos-app.sh` 会构建 release 产物，生成 `.app` bundle、写入 `Info.plist`、执行 ad-hoc 签名，并用包内可执行文件跑 UI 诊断自检。
 
 ## 运行
 
@@ -45,6 +47,18 @@ swift run
 ```
 
 启动后会自动弹出底部工作台，并在菜单栏显示剪贴板图标。
+
+生成本地 `.app`：
+
+```bash
+scripts/package-macos-app.sh
+```
+
+默认产物路径：
+
+```text
+.codex/artifacts/PasteFloatingDemo.app
+```
 
 本地数据库路径：
 
@@ -77,6 +91,20 @@ swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runti
 
 ```bash
 swift run PasteFloatingDemo --print-ui-diagnostics
+```
+
+需要执行真实窗口交互 smoke 时，使用：
+
+```bash
+swift run PasteFloatingDemo --exercise-panel-interactions
+```
+
+需要验证本地 `.app` 打包时，使用：
+
+```bash
+scripts/package-macos-app.sh
+.codex/artifacts/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics
+codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app
 ```
 
 ## 交互

@@ -236,6 +236,10 @@ private final class ActionMenuItem: NSMenuItem {
     @objc private func performAction(_ sender: Any?) {
         handler()
     }
+
+    func triggerForSmoke() {
+        handler()
+    }
 }
 
 private class PanelActionButton: NSButton {
@@ -910,6 +914,16 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
               index < itemBandStack.arrangedSubviews.count
         else { return }
 
+        let menu = makeManagementMenu(for: item)
+        let cardView = itemBandStack.arrangedSubviews[index]
+        menu.popUp(
+            positioning: nil,
+            at: cardView.convert(event.locationInWindow, from: nil),
+            in: cardView
+        )
+    }
+
+    private func makeManagementMenu(for item: RustClipboardItemSummary) -> NSMenu {
         let menu = NSMenu()
         let pinTitle = item.isPinned ? "取消固定" : "固定条目"
         let pinImage = item.isPinned ? "pin.slash" : "pin"
@@ -934,13 +948,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
                 nil
             )
         })
-
-        let cardView = itemBandStack.arrangedSubviews[index]
-        menu.popUp(
-            positioning: nil,
-            at: cardView.convert(event.locationInWindow, from: nil),
-            in: cardView
-        )
+        return menu
     }
 
     private func updateVisibleSelection(scrollIntoView: Bool = true) {
@@ -1789,6 +1797,51 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 }
 
 @MainActor
+private extension FloatingPanelContentView {
+    var smokeSelectedItemID: String? {
+        selectedItemID
+    }
+
+    var smokeSearchField: NSSearchField {
+        searchField
+    }
+
+    func smokeCardBoxes() -> [ClipboardItemCardBox] {
+        allSmokeSubviews(of: self)
+            .compactMap { $0 as? ClipboardItemCardBox }
+            .filter { $0.itemID != nil }
+    }
+
+    func smokeTypeFilterButton(itemType: String?) -> TypeFilterChipButton? {
+        typeFilterButtons.first { $0.itemType == itemType }
+    }
+
+    func smokeHorizontalScrollView() -> HorizontalWheelScrollView? {
+        allSmokeSubviews(of: self)
+            .compactMap { $0 as? HorizontalWheelScrollView }
+            .first
+    }
+
+    func smokePerformManagementAction(itemID: String, title: String) -> Bool {
+        guard let item = currentItems.first(where: { $0.id == itemID }) else { return false }
+        let menu = makeManagementMenu(for: item)
+        guard let actionItem = menu.items
+            .compactMap({ $0 as? ActionMenuItem })
+            .first(where: { $0.title == title })
+        else {
+            return false
+        }
+
+        actionItem.triggerForSmoke()
+        return true
+    }
+
+    private func allSmokeSubviews(of view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap(allSmokeSubviews(of:))
+    }
+}
+
+@MainActor
 private final class FloatingPanelController {
     private static let defaultPanelHeight = BottomPanelGeometryPlanner.defaultHeight
 
@@ -2051,6 +2104,13 @@ private final class FloatingPanelController {
             return nil
         }
         return screens[index]
+    }
+}
+
+@MainActor
+private extension FloatingPanelController {
+    var smokeContentView: FloatingPanelContentView {
+        contentView
     }
 }
 
@@ -4830,6 +4890,390 @@ private enum PreferencesSmokeCommand {
     }
 }
 
+private enum PanelInteractionSmokeCommand {
+    private static let flag = "--exercise-panel-interactions"
+
+    static func shouldRun(arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
+
+    @MainActor
+    static func run() throws {
+        _ = NSApplication.shared
+
+        let appSupportURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("panel-interaction-smoke", isDirectory: true)
+        try FileManager.default.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
+
+        let imageURL = try makeSmokeImageURL(outputDirectory: appSupportURL)
+        let controller = FloatingPanelController()
+        let sampleItems = makeSampleItems(imagePath: imageURL.path)
+        var queries: [(searchText: String, itemType: String?, sourceAppID: String?)] = []
+        var copiedItemID: String?
+        var pinRequest: (itemID: String, isPinned: Bool)?
+        var deletedItemID: String?
+        var clearRequest: (searchText: String, itemType: String?, sourceAppID: String?)?
+        var hideCount = 0
+
+        controller.onQueryChanged = { searchText, itemType, sourceAppID in
+            queries.append((searchText, itemType, sourceAppID))
+        }
+        controller.onCopyRequested = { item in
+            copiedItemID = item.id
+            controller.hide()
+        }
+        controller.onPinRequested = { item, isPinned in
+            pinRequest = (item.id, isPinned)
+        }
+        controller.onDeleteRequested = { item in
+            deletedItemID = item.id
+        }
+        controller.onClearRequested = { searchText, itemType, sourceAppID in
+            clearRequest = (searchText, itemType, sourceAppID)
+        }
+        controller.onRequestHide = {
+            hideCount += 1
+            controller.hide()
+        }
+
+        controller.setAppSupportDirectory(appSupportURL)
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: sampleItems,
+                totalCount: Int64(sampleItems.count),
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        drainMainRunLoop()
+
+        let contentView = controller.smokeContentView
+        contentView.layoutSubtreeIfNeeded()
+
+        let cards = contentView.smokeCardBoxes()
+        try require(cards.count >= 5, "真实面板未渲染足够的条目卡片")
+        try require(contentView.smokeSelectedItemID == "panel-smoke-text", "初始选中项不正确")
+
+        sendMouseDown(to: cards[1], clickCount: 1)
+        drainMainRunLoop()
+        try require(contentView.smokeSelectedItemID == "panel-smoke-image", "单击条目未立即选中")
+
+        sendCommandNumber(3, to: contentView)
+        drainMainRunLoop()
+        try require(contentView.smokeSelectedItemID == "panel-smoke-file", "Command+3 未选中第三个条目")
+
+        if let imageChip = contentView.smokeTypeFilterButton(itemType: "image") {
+            sendMouseDown(to: imageChip, clickCount: 1)
+            drainMainRunLoop()
+        }
+        try require(queries.last?.itemType == "image", "类型 chip 未触发 image 筛选")
+
+        contentView.smokeSearchField.stringValue = "report"
+        contentView.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: contentView.smokeSearchField
+        ))
+        drainMainRunLoop()
+        try require(queries.last?.searchText == "report", "搜索输入未触发查询回调")
+
+        if let scrollView = contentView.smokeHorizontalScrollView(),
+           let documentView = scrollView.documentView,
+           documentView.frame.width > scrollView.contentView.bounds.width + 1 {
+            let initialX = scrollView.contentView.bounds.origin.x
+            sendVerticalScrollWheel(to: scrollView, deltaY: -180)
+            drainMainRunLoop()
+            var scrolledX = scrollView.contentView.bounds.origin.x
+            if abs(scrolledX - initialX) < 1 {
+                sendVerticalScrollWheel(to: scrollView, deltaY: 180)
+                drainMainRunLoop()
+                scrolledX = scrollView.contentView.bounds.origin.x
+            }
+            try require(abs(scrolledX - initialX) >= 1, "纵向滚轮未投射为横向滚动")
+        }
+
+        try require(
+            contentView.smokePerformManagementAction(itemID: "panel-smoke-file", title: "固定条目"),
+            "未找到固定条目菜单动作"
+        )
+        try require(pinRequest?.itemID == "panel-smoke-file" && pinRequest?.isPinned == true, "固定菜单动作未触发回调")
+
+        try require(
+            contentView.smokePerformManagementAction(itemID: "panel-smoke-file", title: "删除条目"),
+            "未找到删除条目菜单动作"
+        )
+        try require(deletedItemID == "panel-smoke-file", "删除菜单动作未触发回调")
+
+        try require(
+            contentView.smokePerformManagementAction(itemID: "panel-smoke-file", title: "清空当前结果"),
+            "未找到清空当前结果菜单动作"
+        )
+        try require(
+            clearRequest?.searchText == "report" && clearRequest?.itemType == "image",
+            "清空菜单动作未携带当前筛选范围"
+        )
+
+        sendEscape(to: contentView)
+        drainMainRunLoop()
+        try require(queries.last?.searchText == "", "Escape 未先清空搜索")
+
+        sendEscape(to: contentView)
+        drainMainRunLoop()
+        try require(hideCount == 1 && !controller.isVisible, "搜索为空时 Escape 未隐藏面板")
+
+        controller.show()
+        drainMainRunLoop()
+        let refreshedCards = contentView.smokeCardBoxes()
+        try require(refreshedCards.count >= 1, "面板重新显示后未保留条目卡片")
+        sendMouseDown(to: refreshedCards[0], clickCount: 2)
+        drainMainRunLoop()
+        try require(copiedItemID == "panel-smoke-text", "双击条目未触发复制回调")
+        try require(!controller.isVisible, "双击复制后面板未隐藏")
+
+        print("panelInteractions=ok")
+        print("singleClick=panel-smoke-image")
+        print("command3=panel-smoke-file")
+        print("typeFilter=\(queries.first { $0.itemType == "image" }?.itemType ?? "none")")
+        print("search=\(queries.first { $0.searchText == "report" }?.searchText ?? "none")")
+        print("menuPin=\(pinRequest.map { "\($0.itemID):\($0.isPinned)" } ?? "none")")
+        print("menuDelete=\(deletedItemID ?? "none")")
+        print("clearScope=\(clearRequest.map { "\($0.searchText)|\($0.itemType ?? "all")" } ?? "none")")
+        print("escapeHide=\(hideCount)")
+        print("doubleClickCopy=\(copiedItemID ?? "none")")
+    }
+
+    @MainActor
+    private static func sendMouseDown(to view: NSView, clickCount: Int) {
+        let localPoint = NSPoint(x: view.bounds.midX, y: view.bounds.midY)
+        let windowPoint = view.convert(localPoint, to: nil)
+        guard let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: clickCount,
+            pressure: 1
+        ) else {
+            return
+        }
+
+        view.mouseDown(with: event)
+    }
+
+    @MainActor
+    private static func sendCommandNumber(_ number: Int, to view: NSView) {
+        let keyCode: Int
+        switch number {
+        case 1:
+            keyCode = kVK_ANSI_1
+        case 2:
+            keyCode = kVK_ANSI_2
+        case 3:
+            keyCode = kVK_ANSI_3
+        case 4:
+            keyCode = kVK_ANSI_4
+        case 5:
+            keyCode = kVK_ANSI_5
+        default:
+            return
+        }
+
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "\(number)",
+            charactersIgnoringModifiers: "\(number)",
+            isARepeat: false,
+            keyCode: UInt16(keyCode)
+        ) else {
+            return
+        }
+
+        view.keyDown(with: event)
+    }
+
+    @MainActor
+    private static func sendEscape(to view: NSView) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Escape)
+        ) else {
+            return
+        }
+
+        view.keyDown(with: event)
+    }
+
+    @MainActor
+    private static func sendVerticalScrollWheel(to scrollView: NSScrollView, deltaY: Int32) {
+        guard let cgEvent = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: deltaY,
+            wheel2: 0,
+            wheel3: 0
+        ) else {
+            return
+        }
+        cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(deltaY))
+        cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: 0)
+
+        guard let event = NSEvent(cgEvent: cgEvent) else { return }
+        scrollView.scrollWheel(with: event)
+    }
+
+    @MainActor
+    private static func drainMainRunLoop() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    private static func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        if !condition() {
+            throw SmokeError(message: message)
+        }
+    }
+
+    private static func makeSampleItems(imagePath: String) -> [RustClipboardItemSummary] {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var items = [
+            makeItem(
+                id: "panel-smoke-text",
+                itemType: "text",
+                summary: "真实窗口交互 smoke 文本",
+                primaryText: "真实窗口交互 smoke 文本",
+                sourceAppName: "备忘录",
+                timestamp: now,
+                sizeBytes: 34
+            ),
+            makeItem(
+                id: "panel-smoke-image",
+                itemType: "image",
+                summary: "图片 360 x 220",
+                primaryText: nil,
+                sourceAppName: "预览",
+                timestamp: now - 60_000,
+                previewAssetPath: imagePath,
+                payloadAssetPath: imagePath,
+                sizeBytes: 124_000
+            ),
+            makeItem(
+                id: "panel-smoke-file",
+                itemType: "file",
+                summary: "2 个文件 · report.pdf",
+                primaryText: nil,
+                sourceAppName: "Finder",
+                timestamp: now - 120_000,
+                sizeBytes: 2048
+            ),
+            makeItem(
+                id: "panel-smoke-link",
+                itemType: "link",
+                summary: "example.com",
+                primaryText: "https://example.com",
+                sourceAppName: "Safari",
+                timestamp: now - 180_000,
+                sizeBytes: 19
+            )
+        ]
+
+        for index in 5...16 {
+            items.append(makeItem(
+                id: "panel-smoke-extra-\(index)",
+                itemType: "text",
+                summary: "横向滚动填充条目 \(index)",
+                primaryText: "横向滚动填充条目 \(index)",
+                sourceAppName: "终端",
+                timestamp: now - Int64(index * 60_000),
+                sizeBytes: 28
+            ))
+        }
+
+        return items
+    }
+
+    private static func makeItem(
+        id: String,
+        itemType: String,
+        summary: String,
+        primaryText: String?,
+        sourceAppName: String,
+        timestamp: Int64,
+        previewAssetPath: String? = nil,
+        payloadAssetPath: String? = nil,
+        sizeBytes: Int64
+    ) -> RustClipboardItemSummary {
+        RustClipboardItemSummary(
+            id: id,
+            itemType: itemType,
+            summary: summary,
+            primaryText: primaryText,
+            contentHash: "panel-smoke-\(id)",
+            sourceAppId: nil,
+            sourceAppName: sourceAppName,
+            sourceAppIconPath: nil,
+            previewAssetPath: previewAssetPath,
+            payloadAssetPath: payloadAssetPath,
+            sourceConfidence: "high",
+            firstCopiedAtMs: timestamp,
+            lastCopiedAtMs: timestamp,
+            copyCount: 1,
+            isPinned: false,
+            sizeBytes: sizeBytes,
+            previewState: "ready"
+        )
+    }
+
+    @MainActor
+    private static func makeSmokeImageURL(outputDirectory: URL) throws -> URL {
+        let image = NSImage(size: NSSize(width: 360, height: 220))
+        image.lockFocus()
+        NSColor.systemBlue.withAlphaComponent(0.74).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: 360, height: 220), xRadius: 18, yRadius: 18).fill()
+        NSColor.systemTeal.withAlphaComponent(0.42).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 220, y: 108, width: 86, height: 86)).fill()
+        NSColor.white.withAlphaComponent(0.22).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 42, y: 52, width: 160, height: 24), xRadius: 12, yRadius: 12).fill()
+        image.unlockFocus()
+
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:])
+        else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        let url = outputDirectory.appendingPathComponent("panel-interaction-smoke-image.png")
+        try pngData.write(to: url, options: .atomic)
+        return url
+    }
+
+    private struct SmokeError: LocalizedError {
+        let message: String
+
+        var errorDescription: String? {
+            message
+        }
+    }
+}
+
 private enum UIDiagnosticsCommand {
     private static let flag = "--print-ui-diagnostics"
 
@@ -4889,6 +5333,16 @@ private enum ClipboardWorkbenchDemoApp {
     static func main() {
         if PreferencesSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
             PreferencesSmokeCommand.run()
+            return
+        }
+
+        if PanelInteractionSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
+            do {
+                try PanelInteractionSmokeCommand.run()
+            } catch {
+                FileHandle.standardError.write(Data("panel interaction smoke failed: \(error.localizedDescription)\n".utf8))
+                Darwin.exit(1)
+            }
             return
         }
 

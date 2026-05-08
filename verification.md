@@ -892,3 +892,57 @@ history.retention_days = 30
 - UI 诊断命令提供真实设备观察数据，但不自动切换 Space、Dock 状态或鼠标位置。
 - 图片预览已移除主线程文件 I/O；极大图片的完整解码耗时仍需后续用真实数据采样。
 - `app-icons` 清理按数据库引用判断，不实现 LRU 或按时间淘汰。
+
+## 真实窗口交互自动化
+
+变更摘要：
+
+- 新增 `swift run PasteFloatingDemo --exercise-panel-interactions` 隐藏命令。
+- 命令创建真实 `FloatingPanelController` 与生产 `FloatingPanelContentView`，不使用手写视觉夹具。
+- 合成 AppKit 鼠标和键盘事件，覆盖单击选中、`Command + 3` 选中、类型 chip、搜索、滚轮横向投射、右键菜单 action、`Escape` 隐藏和双击复制隐藏。
+- 右键菜单构建拆为 `makeManagementMenu(for:)`，自动化可触发固定、删除和清空当前结果的真实菜单 action closure。
+
+验证结果：
+
+- `swift build`：通过，最终复验输出 `Build complete! (4.25s)`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+
+输出摘要：
+
+```text
+singleClick=panel-smoke-image
+command3=panel-smoke-file
+typeFilter=image
+search=report
+menuPin=panel-smoke-file:true
+menuDelete=panel-smoke-file
+clearScope=report|image
+escapeHide=1
+doubleClickCopy=panel-smoke-text
+```
+
+风险说明：
+
+- 这是应用进程内 AppKit 自动化，不移动真实鼠标、不切换 Space、不修改系统隐私权限；系统级端到端仍需要后续设备矩阵验证。
+
+## 产品化 `.app` 打包
+
+变更摘要：
+
+- 新增 `scripts/package-macos-app.sh`。
+- 脚本先运行 `scripts/build-rust-core.sh`，再执行 `swift build -c release --product PasteFloatingDemo`。
+- 默认生成 `.codex/artifacts/PasteFloatingDemo.app`，写入 `Info.plist`，复制 release 可执行文件，并执行 ad-hoc 签名。
+- 脚本末尾用包内可执行文件运行 `--print-ui-diagnostics`，确认 bundle 形态仍能访问屏幕与面板几何规划。
+- `.gitignore` 忽略 `.codex/artifacts/*.app/`，避免本地打包产物进入版本控制。
+
+验证结果：
+
+- `scripts/package-macos-app.sh`：通过。沙箱内 release SwiftPM 会触发 macOS `sandbox-exec` 限制，已按工具规则在沙箱外重跑；最终复验输出 `Build of product 'PasteFloatingDemo' complete! (6.23s)` 和 `Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/PasteFloatingDemo.app`。
+- `.codex/artifacts/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics`：通过，输出 `screenCount=2`，并列出两块屏幕和每屏 panelFrame。
+- `find .codex/artifacts/PasteFloatingDemo.app -maxdepth 3 -type f`：通过，包含 `Contents/Info.plist`、`Contents/MacOS/PasteFloatingDemo`、`Contents/_CodeSignature/CodeResources`。
+- `codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app`：通过。
+- `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSUIElement' .codex/artifacts/PasteFloatingDemo.app/Contents/Info.plist`：通过，输出 `dev.codex.clipboard-workbench-demo` 和 `true`。
+
+风险说明：
+
+- 当前是本地开发 `.app` 和 ad-hoc 签名，不包含 Developer ID 签名、公证、自动更新、安装器或 universal macOS 架构。

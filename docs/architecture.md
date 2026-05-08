@@ -1176,6 +1176,52 @@ swift test
 - 当前仍被来源应用引用的图标文件保留。
 - 维护摘要继续通过既有 reclaimed bytes 和 orphan file count 呈现。
 
+### 17.13 真实窗口交互自动化
+
+子任务：
+
+- 增加 `swift run PasteFloatingDemo --exercise-panel-interactions` 隐藏命令，启动真实 `FloatingPanelController` 与生产 `FloatingPanelContentView`。
+- 通过合成 AppKit 鼠标和键盘事件验证单击选中、`Command + 1...5` 选中、类型 chip、搜索输入、`Escape` 隐藏和双击复制隐藏。
+- 将右键菜单构建拆为可复用 `makeManagementMenu(for:)`，smoke 可触发固定、删除和清空当前结果的真实菜单 action closure。
+- 对横向 `NSScrollView` 注入纵向 wheel 事件，确认轴投射后能改变横向滚动位置。
+- 该命令不依赖系统辅助功能授权，不使用外部 UI scripting；它验证 AppKit 窗口内的生产视图和事件处理链路。
+
+自动验证命令：
+
+```bash
+swift run PasteFloatingDemo --exercise-panel-interactions
+```
+
+人工可观察行为：
+
+- 输出 `panelInteractions=ok`。
+- 输出单击、Command 数字、类型筛选、搜索、菜单固定/删除/清空、Escape 隐藏和双击复制对应的结果行。
+- 若任一交互链路失效，命令以非 0 状态退出并输出失败原因。
+
+### 17.14 产品化 `.app` 打包
+
+子任务：
+
+- 增加 `scripts/package-macos-app.sh`，先刷新 Rust/Swift bridge，再执行 release 构建。
+- 默认生成 `.codex/artifacts/PasteFloatingDemo.app`，包含 `Contents/Info.plist`、`Contents/MacOS/PasteFloatingDemo` 和 `_CodeSignature`。
+- `Info.plist` 声明 `CFBundleIdentifier`、显示名、最低 macOS 版本、Retina 能力和 `LSUIElement`，让调试版以菜单栏/辅助应用形态运行。
+- 如果系统存在 `codesign`，执行 ad-hoc 签名；脚本末尾用包内可执行文件运行 `--print-ui-diagnostics` 做自检。
+
+自动验证命令：
+
+```bash
+scripts/package-macos-app.sh
+.codex/artifacts/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics
+codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSUIElement' .codex/artifacts/PasteFloatingDemo.app/Contents/Info.plist
+```
+
+人工可观察行为：
+
+- `.app` bundle 可在 Finder 或命令行启动。
+- 包内诊断输出仍能读取真实屏幕、鼠标所在屏和每屏 panelFrame。
+- 这是本地开发包；正式分发仍需要 Developer ID 签名、公证和发布渠道策略。
+
 ## 18. 架构验收清单
 
 - Swift/AppKit 负责 macOS 原生窗口、粘贴板、图标、快捷键和设置窗口。
@@ -1183,6 +1229,8 @@ swift test
 - UI 硬性契约覆盖原创边界、几何公式、轻量顶部工具条、横向条目带、临时预览、偏好窗口和状态枚举。
 - Swift/Rust 边界不包含用户可见文案，只返回结构化 reason code、message key 和错误对象。
 - 构建方案能解释 SwiftPM library/executable/tests、Rust workspace、`swift-bridge`、staticlib/XCFramework 和本地验证命令。
+- 本地打包方案能生成可诊断的 `.app` bundle，并通过 ad-hoc 签名验证。
+- 真实窗口交互 smoke 能覆盖生产面板的核心鼠标、键盘、菜单和滚动路径。
 - 数据库 schema 明确 timestamp 单位、preview_state CHECK、FTS rowid/content 策略、preferences version、migration runner 和独立图标缓存。
 - 采集流程明确线程模型、自写入抑制、来源应用置信度与 fallback。
 - 功能切片顺序严格映射 delivery workflow 的 6 大功能，并包含自动验证、人工观察和 QA 记录目标。
@@ -1194,4 +1242,5 @@ swift test
 - 来源应用识别依赖前台应用时序，某些自动化复制、后台服务或浏览器内嵌来源只能得到 `medium` 或 `low` 置信度。
 - staged asset 需要清理异常退出留下的临时文件；清理策略应在 Rust maintenance 与 Swift 启动流程中共同验证。
 - FTS5 `unicode61` 对中文搜索的分词能力有限；第一阶段可接受基础匹配，后续若 QA 认为中文搜索不足，需要评估 SQLite tokenizer 扩展或额外索引策略。
-- 多屏、不同缩放比例、全屏 Space 和 Dock 自动隐藏组合仍需要 UI QA 在真实设备上验证几何与层级表现。
+- 多屏、不同缩放比例、全屏 Space 和 Dock 自动隐藏组合已有诊断入口，但仍需要 UI QA 在真实设备上观察几何与层级表现。
+- `.app` 当前只做本地 ad-hoc 签名，尚未处理 Developer ID 签名、公证、更新机制和安装器。

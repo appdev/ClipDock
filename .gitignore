@@ -4,3 +4,5 @@ DerivedData/
 *.xcuserstate
 rust/target/
 .DS_Store
+.codex/artifacts/*.app/
+.codex/artifacts/panel-interaction-smoke/

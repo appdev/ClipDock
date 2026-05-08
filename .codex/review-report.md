@@ -983,3 +983,35 @@
 ### 结论
 
 综合评分：92/100。建议通过。4/5/6 都已完成可自动验证的工程闭环；仍需后续补真实窗口交互自动化和产品化打包。
+
+## 剩余任务收尾审查
+
+日期：2026-05-08
+执行者：Codex
+审查者：Codex
+
+### 原定目标
+
+完成 `docs/delivery-workflow.md` 中仍允许推进的剩余任务：真实窗口交互自动化和产品化 `.app` 打包；同步、导入和导出继续冻结。
+
+### 完成情况
+
+- [x] 已完成：新增 `swift run PasteFloatingDemo --exercise-panel-interactions`。
+- [x] 已完成：交互 smoke 使用真实 `FloatingPanelController` / `FloatingPanelContentView`，覆盖鼠标、键盘、类型筛选、搜索、菜单动作、横向滚动和隐藏链路。
+- [x] 已完成：右键菜单构建拆为可复用方法，自动化可触发真实菜单 action closure。
+- [x] 已完成：新增 `scripts/package-macos-app.sh` 生成 `.app` bundle。
+- [x] 已完成：打包脚本写入 `Info.plist`、复制 release 可执行文件、执行 ad-hoc 签名，并通过包内 UI diagnostics 自检。
+- [x] 已完成：README、架构、交付流程、QA、验证和 `.codex` 留痕已更新。
+
+### 发现的问题
+
+| 严重程度 | 问题描述 | 根本原因 | 改进建议 |
+| --- | --- | --- | --- |
+| 已改正 | 缺少真实窗口内核心交互自动化。 | 之前只有 planner 单测、偏好 smoke 和快照，未驱动生产面板鼠标/键盘事件。 | 已新增 `--exercise-panel-interactions`。 |
+| 已改正 | `swift run` 形态无法验证 Login Item “打包为 .app 后可用”的前置条件。 | 项目没有本地 `.app` 生成路径。 | 已新增打包脚本和包内诊断验证。 |
+| 已处理 | 沙箱内 release 打包失败。 | SwiftPM release 构建触发系统 `sandbox-exec` 和用户缓存访问。 | 脚本把 clang cache 指向项目 `.build`，并按工具规则在沙箱外执行打包验证。 |
+| 建议改进 | 当前 `.app` 不是正式分发产物。 | 只做本地 ad-hoc 签名。 | 后续补 Developer ID 签名、公证、universal 架构、安装器和自动更新。 |
+
+### 结论
+
+综合评分：94/100。建议通过。当前剩余任务已经完成工程闭环：真实窗口交互有自动 smoke，本地 `.app` 打包可重复生成并验证；保留的风险属于发布工程和系统级设备矩阵，不阻塞当前阶段。

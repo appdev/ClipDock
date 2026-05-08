@@ -305,3 +305,21 @@
 - 人工可观察行为：代码复核确认 `ScreenSelectionPlanner` 接管鼠标位置到屏幕 frame 的选择逻辑，并新增 `--print-ui-diagnostics` 输出 `NSScreen.frame`、`visibleFrame`、缩放、目标屏和每屏面板 frame；图片预览首次读取时先显示“载入预览”，文件读取进入后台任务，完成后回到 MainActor 更新 `NSImageView`；Rust maintenance 扫描范围扩展到 `app-icons`，保留 `source_app_icons.relative_path` 引用的图标，删除孤立图标文件。
 - QA 结论：通过。当前切片分别补强真实设备 UI QA 入口、首次图片预览读盘卡顿和长期来源图标缓存膨胀问题；同步、导入和导出继续冻结。
 - 遗留风险：`--print-ui-diagnostics` 是真机 QA 辅助探针，不等同于自动移动鼠标或切换 Space；图片解码仍依赖系统 `NSImage`，极大图片的完整解码耗时需后续采样；图标缓存按数据库引用清理，不做按时间淘汰。
+
+### 真实窗口交互自动化
+
+- 完成日期：2026-05-08
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过，最终复验输出 `Build complete! (4.25s)`；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`，并确认单击、`Command+3`、类型筛选、搜索、右键菜单动作、`Escape` 隐藏和双击复制隐藏；后续完整验证中 `swift test` 通过 41 个 Swift 测试。
+- 人工可观察行为：代码复核确认 smoke 创建真实 `FloatingPanelController` 和生产 `FloatingPanelContentView`，用合成 AppKit 事件驱动卡片单击、数字快捷键、类型 chip、搜索框、横向滚动、菜单固定/删除/清空、Escape 隐藏和双击复制；右键菜单构建已拆为可复用 `makeManagementMenu(for:)`，smoke 触发真实菜单 action closure。
+- QA 结论：通过。当前切片补齐此前缺失的真实窗口内交互自动化入口，不依赖辅助功能权限或外部 UI scripting，能在本地稳定捕捉核心鼠标/键盘/菜单链路回归。
+- 遗留风险：该 smoke 是应用进程内自动化，不会移动真实鼠标、切换 Space 或操作系统 Dock；正式 GUI 端到端仍需后续按设备矩阵做人工观察或引入系统级 UI automation。
+
+### 产品化 `.app` 打包
+
+- 完成日期：2026-05-08
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`scripts/package-macos-app.sh` 在沙箱外通过，最终复验 release 构建输出 `Build of product 'PasteFloatingDemo' complete! (6.23s)`，生成 `.codex/artifacts/PasteFloatingDemo.app` 并完成 ad-hoc 签名；包内可执行文件 `--print-ui-diagnostics` 输出 2 块屏幕和每屏 panelFrame；`codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app` 通过；`PlistBuddy` 确认 `CFBundleIdentifier=dev.codex.clipboard-workbench-demo`、`LSUIElement=true`。
+- 人工可观察行为：打包脚本先刷新 Rust bridge，再执行 SwiftPM release 构建；生成的 bundle 包含 `Contents/Info.plist`、`Contents/MacOS/PasteFloatingDemo` 和 `_CodeSignature/CodeResources`；`Info.plist` 设置中文显示名、最低 macOS 版本、Retina 能力和菜单栏辅助应用形态。
+- QA 结论：通过。本地 `.app` 产品化路径已经可重复执行，Login Item 的“打包为 .app 后可用”前置条件得到满足；同步、导入和导出继续冻结。
+- 遗留风险：当前是本地 ad-hoc 签名开发包，不包含 Developer ID 签名、公证、自动更新、安装器或通用架构；这些属于发布工程后续任务。

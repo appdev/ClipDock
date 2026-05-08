@@ -1312,3 +1312,67 @@ GUI smoke: Build of product 'PasteFloatingDemo' complete! (0.30s); stayed up for
 - UI 诊断不是完整鼠标/Space/Dock 自动化；它提供真机 QA 数据，仍需要在设备上观察。
 - 图片解码仍需后续针对大量大图做性能采样。
 - 图标缓存只按数据库引用清理，不做按最近使用时间淘汰。
+
+## 真实窗口交互自动化
+
+命令：
+
+```bash
+swift build
+swift run PasteFloatingDemo --exercise-panel-interactions
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (4.25s)
+panelInteractions=ok
+singleClick=panel-smoke-image
+command3=panel-smoke-file
+typeFilter=image
+search=report
+menuPin=panel-smoke-file:true
+menuDelete=panel-smoke-file
+clearScope=report|image
+escapeHide=1
+doubleClickCopy=panel-smoke-text
+```
+
+覆盖点：
+
+- 真实 `NSPanel`、生产内容视图和核心鼠标/键盘/菜单/滚动事件链路。
+
+风险：
+
+- 不覆盖系统级鼠标移动、Space 切换或权限授权。
+
+## 产品化 `.app` 打包
+
+命令：
+
+```bash
+scripts/package-macos-app.sh
+.codex/artifacts/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics
+find .codex/artifacts/PasteFloatingDemo.app -maxdepth 3 -type f
+codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSUIElement' .codex/artifacts/PasteFloatingDemo.app/Contents/Info.plist
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+package: Build of product 'PasteFloatingDemo' complete! (6.23s)
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/PasteFloatingDemo.app
+packaged diagnostics: screenCount=2; targetScreenIndex=0
+bundle files: Info.plist, MacOS/PasteFloatingDemo, _CodeSignature/CodeResources
+codesign verify: passed
+plist: dev.codex.clipboard-workbench-demo; true
+```
+
+风险：
+
+- 本地 ad-hoc 开发包尚未覆盖 Developer ID 签名、公证、安装器、自动更新或 universal 架构。

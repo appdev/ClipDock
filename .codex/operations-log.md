@@ -217,3 +217,10 @@
 - 2026-05-08 Codex：图片预览首次读取从主线程同步 `NSImage(contentsOf:)` 调整为先查 `NSCache`，未命中时显示“载入预览”并在后台任务读取文件，完成后回 MainActor 更新 `NSImageView`。
 - 2026-05-08 Codex：Rust maintenance 扫描范围扩展到 `app-icons`，引用集合加入 `source_app_icons.relative_path`；孤立图标文件会被清理，仍被数据库引用的来源图标保留。
 - 2026-05-08 Codex：4/5/6 补强验证通过：`swift build` 输出 `Build complete! (3.12s)`；`cargo fmt` 通过；`cargo test --manifest-path rust/Cargo.toml` 19 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift test` 输出 `Test run with 41 tests passed after 0.131 seconds`；UI diagnostics、设置页 smoke、真实快照和 GUI 启动冒烟均通过。
+- 2026-05-08 Codex：收到用户“完成剩余任务”；按 `docs/delivery-workflow.md` 确认剩余允许范围为真实窗口交互自动化和产品化 `.app` 打包，同步、导入、导出继续冻结。
+- 2026-05-08 Codex：新增 `swift run PasteFloatingDemo --exercise-panel-interactions`，创建真实 `FloatingPanelController` / `FloatingPanelContentView`，用合成 AppKit 鼠标键盘事件覆盖单击、`Command+3`、类型 chip、搜索、横向滚动、右键菜单固定/删除/清空、`Escape` 隐藏和双击复制隐藏。
+- 2026-05-08 Codex：右键菜单构建拆出 `makeManagementMenu(for:)`，`ActionMenuItem` 新增 `triggerForSmoke()`，便于交互 smoke 触发真实菜单 action closure 而不弹出阻塞菜单。
+- 2026-05-08 Codex：交互 smoke 验证通过：`swift build` 输出 `Build complete! (9.23s)`；`swift run PasteFloatingDemo --exercise-panel-interactions` 输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`command3=panel-smoke-file`、`doubleClickCopy=panel-smoke-text`。
+- 2026-05-08 Codex：新增 `scripts/package-macos-app.sh`，默认生成 `.codex/artifacts/PasteFloatingDemo.app`；脚本刷新 Rust bridge、执行 SwiftPM release 构建、写入 Info.plist、复制可执行文件、ad-hoc 签名并运行包内 UI diagnostics。
+- 2026-05-08 Codex：首次在沙箱内执行打包脚本失败，原因是 SwiftPM release 构建触发 macOS `sandbox-exec` / 用户缓存权限限制；已将 clang module cache 指向 `.build/clang-module-cache`，并按工具规则在沙箱外重跑打包脚本。
+- 2026-05-08 Codex：产品化打包验证通过：`scripts/package-macos-app.sh` 沙箱外最终复验输出 `Build of product 'PasteFloatingDemo' complete! (6.23s)` 和 `Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/PasteFloatingDemo.app`；包内 `--print-ui-diagnostics`、`codesign --verify --deep --strict` 和 `PlistBuddy` bundle id / `LSUIElement` 检查通过。
