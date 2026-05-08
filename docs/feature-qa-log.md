@@ -296,3 +296,12 @@
 - 人工可观察行为：代码复核确认 `AccessibilityPermissionPresenter` 将辅助功能权限映射为“已允许 / 未允许 / 未知”三类 UI 状态；偏好设置“忽略列表”页新增“系统权限 / 窗口标题采集”行，未允许时显示“未允许，仅使用可见窗口名回退”并提供“打开系统设置”，已允许时显示“已允许，标题关键词可读取当前窗口”并提供“重新检查”；点击按钮通过 `NSWorkspace` 打开辅助功能隐私设置或刷新当前状态。
 - QA 结论：通过。当前切片让窗口标题关键词规则的系统依赖变得可见，保持主面板轻量结构，不新增同步、导入或导出入口。
 - 遗留风险：自动化只能验证 presenter、设置页 smoke 和启动稳定性，不能替用户在系统设置中授予权限；授权后的真实标题读取仍需真机权限矩阵验证。
+
+### 真实设备 UI QA 探针、图片预览后台加载与图标缓存维护
+
+- 完成日期：2026-05-08
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`cargo fmt --manifest-path rust/Cargo.toml --all` 通过；`cargo test --manifest-path rust/Cargo.toml` 通过，19 个 Rust 测试；`scripts/build-rust-core.sh` 通过；`swift test` 通过，41 个 Swift 测试；`swift run PasteFloatingDemo --print-ui-diagnostics` 通过，当前机器输出 2 块屏幕、鼠标所在屏和每屏 panelFrame；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，真实主面板快照为 960 x 320；`swift run PasteFloatingDemo` 真实启动 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- 人工可观察行为：代码复核确认 `ScreenSelectionPlanner` 接管鼠标位置到屏幕 frame 的选择逻辑，并新增 `--print-ui-diagnostics` 输出 `NSScreen.frame`、`visibleFrame`、缩放、目标屏和每屏面板 frame；图片预览首次读取时先显示“载入预览”，文件读取进入后台任务，完成后回到 MainActor 更新 `NSImageView`；Rust maintenance 扫描范围扩展到 `app-icons`，保留 `source_app_icons.relative_path` 引用的图标，删除孤立图标文件。
+- QA 结论：通过。当前切片分别补强真实设备 UI QA 入口、首次图片预览读盘卡顿和长期来源图标缓存膨胀问题；同步、导入和导出继续冻结。
+- 遗留风险：`--print-ui-diagnostics` 是真机 QA 辅助探针，不等同于自动移动鼠标或切换 Space；图片解码仍依赖系统 `NSImage`，极大图片的完整解码耗时需后续采样；图标缓存按数据库引用清理，不做按时间淘汰。

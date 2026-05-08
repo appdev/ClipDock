@@ -3,15 +3,15 @@
   "executor": "Codex",
   "workspace": "/Users/evan/IdeaProjects/Paste",
   "scan": {
-    "project_state": "SwiftPM AppKit demo 已完成底部全宽面板、Rust SQLite 存储、swift-bridge、文本/链接/图片/文件 URL 捕获、真实搜索/类型筛选、来源应用记录与图标展示、基础键盘导航、鼠标双击复制到剪贴板、临时预览浮层、偏好设置持久化、忽略列表捕获跳过、窗口标题采集、历史自动软清理、本地数据维护、GUI 回归测试地基、截图级 GUI 回归雏形、主面板 UI 精简、macOS Login Item 启动时运行、条目管理、主面板性能优化、条目删除卡顿修正、删除后 executor trap 修正、单击响应优化、设置页 selector 崩溃修正、横向滚动架构修正、横向滚动方向修正和系统权限状态提示；同步、导入和导出暂时冻结，偏好设置不展示相关入口。",
+    "project_state": "SwiftPM AppKit demo 已完成底部全宽面板、Rust SQLite 存储、swift-bridge、文本/链接/图片/文件 URL 捕获、真实搜索/类型筛选、来源应用记录与图标展示、基础键盘导航、鼠标双击复制到剪贴板、临时预览浮层、偏好设置持久化、忽略列表捕获跳过、窗口标题采集、历史自动软清理、本地数据维护、GUI 回归测试地基、截图级 GUI 回归雏形、主面板 UI 精简、macOS Login Item 启动时运行、条目管理、主面板性能优化、条目删除卡顿修正、删除后 executor trap 修正、单击响应优化、设置页 selector 崩溃修正、横向滚动架构修正、横向滚动方向修正、系统权限状态提示、真实设备 UI QA 探针、图片预览后台加载和图标缓存维护；同步、导入和导出暂时冻结，偏好设置不展示相关入口。",
     "feature_location": [
-      "Sources/PasteFloatingDemo/main.swift：FloatingPanelContentView 维护 currentItems/selectedItemID，处理轻量搜索入口、类型 chip、键盘、鼠标条目事件、右键条目管理菜单和 Space 预览；HorizontalWheelScrollView 将所有 wheel 意图投射到横向轴后交给 AppKit 原生 NSScrollView，不再手动滚动或自定义惯性；卡片单击立即选中，选中态局部更新，不再等待双击间隔或全量重建；右键菜单不再全量重绘，来源图标和图片预览有内存缓存；FloatingPanelController 负责底部面板显示、隐藏、外部点击 monitor、高度调整和条目管理回调；ClipboardPreviewPopoverController 使用 NSPopover 呈现临时预览；PreferencesWindowController 渲染偏好窗口并持久化忽略列表、Login Item 状态和辅助功能权限状态，设置页主要控件使用闭包控件子类并延迟偏好保存后的重绘；LaunchAtLoginController 通过 SMAppService.mainApp 接入 macOS 登录项；AccessibilityPermissionController 通过 AXIsProcessTrusted 读取窗口标题采集所需权限；SourceWindowTitleProvider 采集来源应用窗口标题；ClipboardMonitor 轮询 NSPasteboard changeCount；ClipboardDatabaseWorker actor 负责列表查询、固定、删除和清空；AppDelegate 负责系统剪贴板、面板回调、偏好保存、捕获前忽略规则、启动后本地维护、登录项状态归一化、辅助功能权限刷新、列表刷新防抖/取消/generation 校验和状态项；关键选择/几何/维护文案/外部点击隐藏/Login Item 与权限状态文案已改为复用 ClipboardPanelApp planner。",
+      "Sources/PasteFloatingDemo/main.swift：FloatingPanelContentView 维护 currentItems/selectedItemID，处理轻量搜索入口、类型 chip、键盘、鼠标条目事件、右键条目管理菜单和 Space 预览；HorizontalWheelScrollView 将所有 wheel 意图投射到横向轴后交给 AppKit 原生 NSScrollView，不再手动滚动或自定义惯性；卡片单击立即选中，选中态局部更新，不再等待双击间隔或全量重建；右键菜单不再全量重绘，来源图标和图片预览有内存缓存，图片预览未命中缓存时后台读取文件并回 MainActor 更新；FloatingPanelController 负责底部面板显示、隐藏、外部点击 monitor、高度调整和条目管理回调，并通过 ScreenSelectionPlanner 选择鼠标所在屏幕；ClipboardPreviewPopoverController 使用 NSPopover 呈现临时预览；PreferencesWindowController 渲染偏好窗口并持久化忽略列表、Login Item 状态和辅助功能权限状态，设置页主要控件使用闭包控件子类并延迟偏好保存后的重绘；LaunchAtLoginController 通过 SMAppService.mainApp 接入 macOS 登录项；AccessibilityPermissionController 通过 AXIsProcessTrusted 读取窗口标题采集所需权限；SourceWindowTitleProvider 采集来源应用窗口标题；ClipboardMonitor 轮询 NSPasteboard changeCount；ClipboardDatabaseWorker actor 负责列表查询、固定、删除和清空；UIDiagnosticsCommand 输出真机屏幕 frame、visibleFrame、scale 和 panelFrame；AppDelegate 负责系统剪贴板、面板回调、偏好保存、捕获前忽略规则、启动后本地维护、登录项状态归一化、辅助功能权限刷新、列表刷新防抖/取消/generation 校验和状态项；关键选择/几何/维护文案/外部点击隐藏/Login Item 与权限状态文案已改为复用 ClipboardPanelApp planner。",
       "Sources/ClipboardPanelApp/RustCoreClient.swift：RustClipboardItemSummary 提供 itemType、primaryText、previewAssetPath、payloadAssetPath、isPinned 和来源应用图标字段；RustSourceAppSummary/listSourceApps 与 sourceAppId 查询能力保留在数据层；RustPreferencesDocument 暴露 ignoreList 偏好；runMaintenance(appSupportDirectory:) 暴露 Rust 维护结果；setItemPinned/deleteItem/clearItems 暴露条目管理 mutation。",
       "Sources/ClipboardPanelApp/ClipboardIgnoreRuleEvaluator.swift：提供可测试的忽略规则判断，支持应用标识、未知来源和采集到的窗口标题关键词。",
       "Sources/ClipboardPanelApp/ClipboardPreviewContentPlanner.swift：将 Rust 列表条目规划成可测试的预览内容，图片预览优先 thumbnail，再回退 payload。",
-      "Sources/ClipboardPanelApp/PanelRegressionPlanner.swift：提供 BottomPanelGeometryPlanner、PanelInteractionPlanner、MaintenanceStatusPresenter、LaunchAtLoginPresenter 和 AccessibilityPermissionPresenter，覆盖面板几何、条目选择、Escape 行为、维护状态文案、Login Item UI 状态文案和辅助功能权限状态文案。",
-      "rust/crates/clipboard_core/src/storage.rs：ClipboardCore 提供 get_preferences/update_preferences、list_source_apps、source_app_id 列表过滤、capture_files 文件 URL 快照捕获、ignore_list 归一化持久化、apply_history_preferences 历史自动软清理、run_maintenance 本地数据维护、set_item_pinned 固定状态、delete_item 单条软删除和 clear_items 当前查询范围未固定条目软删除。",
-      "Tests/ClipboardPanelAppTests/RustCoreClientTests.swift：现有 swift-bridge contract tests 覆盖 capture/list/search/source filter/preferences/ignore list/file paste payload/preview content/item management；ClipboardIgnoreRuleEvaluatorTests 覆盖标题关键词有标题/无标题两种路径；PanelRegressionPlannerTests 覆盖 GUI 决策回归、Login Item 状态映射和辅助功能权限状态映射；PanelVisualSnapshotTests 生成离屏视觉 PNG 并做像素锚点断言。"
+      "Sources/ClipboardPanelApp/PanelRegressionPlanner.swift：提供 BottomPanelGeometryPlanner、ScreenSelectionPlanner、PanelInteractionPlanner、MaintenanceStatusPresenter、LaunchAtLoginPresenter 和 AccessibilityPermissionPresenter，覆盖面板几何、多屏选择、条目选择、Escape 行为、维护状态文案、Login Item UI 状态文案和辅助功能权限状态文案。",
+      "rust/crates/clipboard_core/src/storage.rs：ClipboardCore 提供 get_preferences/update_preferences、list_source_apps、source_app_id 列表过滤、capture_files 文件 URL 快照捕获、ignore_list 归一化持久化、apply_history_preferences 历史自动软清理、run_maintenance 本地数据维护、set_item_pinned 固定状态、delete_item 单条软删除和 clear_items 当前查询范围未固定条目软删除；maintenance 现在扫描 app-icons，并保留 source_app_icons.relative_path 引用的图标。",
+      "Tests/ClipboardPanelAppTests/RustCoreClientTests.swift：现有 swift-bridge contract tests 覆盖 capture/list/search/source filter/preferences/ignore list/file paste payload/preview content/item management 和 app-icons maintenance；ClipboardIgnoreRuleEvaluatorTests 覆盖标题关键词有标题/无标题两种路径；PanelRegressionPlannerTests 覆盖 GUI 决策回归、ScreenSelectionPlanner、Login Item 状态映射和辅助功能权限状态映射；PanelVisualSnapshotTests 生成离屏视觉 PNG 并做像素锚点断言。"
     ],
     "technology_stack": [
       "Swift 6.1",
@@ -30,15 +30,16 @@
       "预览浮层使用 AppKit NSPopover 保持临时语义；隐藏面板、切换选中项、刷新列表和双击复制都会关闭旧预览。",
       "历史清理复用 deleted_at_ms；列表、来源应用聚合和计数均已过滤 deleted_at_ms IS NULL。",
       "文件 URL 剪贴板捕获复用 clipboard_items.type = file 和 clipboard_assets.kind = file_snapshot，不复制文件内容，只保存路径快照。",
-      "本地数据维护复用 deleted_at_ms 和 clipboard_assets.relative_path，不新增 schema；只清理 assets/thumbnails/staging，不清理 app-icons。",
+      "本地数据维护复用 deleted_at_ms、clipboard_assets.relative_path 和 source_app_icons.relative_path，不新增 schema；清理 assets/thumbnails/app-icons/staging 中未被数据库引用的文件。",
       "GUI 回归测试地基采用 pure Swift planner，避免在 AppKit 私有事件处理里复制一套不可验证规则；外部点击隐藏判断已进入 PanelInteractionPlanner。",
       "截图级 GUI 回归雏形采用 AppKit 离屏渲染，不依赖屏幕录制权限，fixture artifact 写入 .codex/artifacts/panel-visual-regression.png。",
       "真实主面板快照通过 swift run PasteFloatingDemo --render-panel-snapshot 生成，直接渲染生产 FloatingPanelContentView，artifact 写入 .codex/artifacts/panel-runtime-snapshot.png。",
+      "真实设备 UI QA 探针通过 swift run PasteFloatingDemo --print-ui-diagnostics 输出 screen frame、visibleFrame、scale、target index 和 panelFrame，辅助验证多屏、缩放和 Dock 覆盖。",
       "主面板 UI 精简采用居中搜索图标 + 类型 chip + 顶部色条卡片，去除来源筛选图标组、关闭按钮和占位更多菜单；根据真实运行截图已增大卡片宽度、隐藏横向滚动条、降低非选中头部色块强度，并强制卡片文本 LTR 左对齐。",
       "Login Item 采用 ServiceManagement.SMAppService.mainApp；swift run 形态禁用开关并提示“打包为 .app 后可用”，packaged .app 后才注册或取消系统登录项，Rust 偏好只镜像实际系统状态。",
       "系统权限状态提示采用 AXIsProcessTrusted 读取辅助功能权限，偏好设置忽略列表页展示窗口标题采集状态，打开系统设置使用 NSWorkspace，状态文案放在 ClipboardPanelApp presenter 以便单元测试。",
       "条目管理复用现有 is_pinned 与 deleted_at_ms，不新增 schema；单条删除和批量清空均为软删除，批量清空跳过固定条目，主面板用右键菜单承载管理操作以避免污染顶部工具条。",
-      "主面板性能优化先处理高收益路径：右键菜单不再 renderCurrentItems，全量列表查询迁入后台串行队列，搜索/类型切换 120 ms 防抖，隐藏来源入口后不再重复 listSourceApps，NSImage 文件加载结果进入 NSCache。",
+      "主面板性能优化先处理高收益路径：右键菜单不再 renderCurrentItems，全量列表查询迁入后台串行队列，搜索/类型切换 120 ms 防抖，隐藏来源入口后不再重复 listSourceApps，NSImage 文件加载结果进入 NSCache，图片预览首次文件读取进入后台任务。",
       "条目删除卡顿修正复用同一个后台数据库执行器：固定、删除和清空 mutation 开始前取消 pending list refresh 并递增 generation，后台写入完成后主线程只触发异步刷新和状态更新。",
       "删除后 executor trap 修正将 GCD databaseQueue/DispatchWorkItem 替换为 ClipboardDatabaseWorker actor，避免 @MainActor AppDelegate 中创建的 closure 在后台 GCD 队列执行时触发 Swift concurrency executor trap。",
       "单击响应优化移除了卡片单击等待 doubleClickInterval 的延迟；选中态更新改为 applySelection 局部更新可见卡片，保留双击复制行为。"
@@ -50,6 +51,7 @@
       "swift build",
       "swift test",
       "swift run PasteFloatingDemo",
+      "swift run PasteFloatingDemo --print-ui-diagnostics",
       "swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png",
       "swift run PasteFloatingDemo --exercise-preferences"
     ],
@@ -69,7 +71,7 @@
     {
       "question": "本轮性能优化仍有哪些风险？",
       "priority": "medium",
-      "answer": "选中项变化已改为局部更新可见卡片；首次展示未缓存图片仍会同步解码一次；当前没有自动性能基准，后续应做图片后台解码和真实鼠标事件自动化。同步、导入和导出仍暂时冻结。"
+      "answer": "选中项变化已改为局部更新可见卡片；图片预览首次文件读取已迁入后台任务并继续使用 NSCache；当前没有自动性能基准，后续应做大图片解码采样和真实鼠标事件自动化。同步、导入和导出仍暂时冻结。"
     },
     {
       "question": "为什么删除单个条目也可能卡死？",
@@ -100,6 +102,11 @@
       "question": "为什么下一片选择系统权限状态提示？",
       "priority": "medium",
       "answer": "delivery workflow 明确同步、导入和导出冻结，剩余方向包括系统权限状态提示、真实窗口交互自动化和产品化打包。窗口标题关键词已经进入捕获链路，但辅助功能权限不可见会让用户误以为规则失效；本切片用 AXIsProcessTrusted 展示权限状态，并在忽略列表页提供系统设置入口。"
+    },
+    {
+      "question": "剩余工作 4/5/6 如何落地？",
+      "priority": "high",
+      "answer": "4 用 ScreenSelectionPlanner 和 --print-ui-diagnostics 提供真机多屏/Dock/缩放观察入口；5 把图片预览首次文件读取移到后台任务并继续使用 NSCache；6 将 Rust maintenance 扩展到 app-icons，按 source_app_icons.relative_path 保留仍被引用的来源图标并删除孤立文件。"
     }
   ],
   "sufficiency_check": {

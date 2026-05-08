@@ -976,7 +976,8 @@ impl ClipboardCore {
     }
 
     fn referenced_asset_paths(&self) -> Result<HashSet<String>> {
-        let mut statement = self.connection.prepare(
+        let mut paths = Vec::new();
+        let mut asset_statement = self.connection.prepare(
             r#"
             SELECT a.relative_path
             FROM clipboard_assets a
@@ -984,9 +985,24 @@ impl ClipboardCore {
             WHERE i.deleted_at_ms IS NULL
             "#,
         )?;
-        let paths = statement
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        paths.extend(
+            asset_statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        );
+
+        let mut icon_statement = self.connection.prepare(
+            r#"
+            SELECT relative_path
+            FROM source_app_icons
+            "#,
+        )?;
+        paths.extend(
+            icon_statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        );
+
         Ok(paths.into_iter().collect())
     }
 
@@ -1237,7 +1253,7 @@ fn delete_relative_file(root: &Path, relative_path: &str) -> Result<Option<i64>>
 
 fn collect_maintenance_files(root: &Path) -> Result<Vec<String>> {
     let mut files = Vec::new();
-    for directory in ["assets", "thumbnails", "staging"] {
+    for directory in ["assets", "thumbnails", "app-icons", "staging"] {
         collect_files_in_directory(&root.join(directory), directory, &mut files)?;
     }
     Ok(files)
@@ -1286,12 +1302,14 @@ fn should_remove_unreferenced_file(
         return true;
     }
 
-    (relative_path.starts_with("assets/") || relative_path.starts_with("thumbnails/"))
+    (relative_path.starts_with("assets/")
+        || relative_path.starts_with("thumbnails/")
+        || relative_path.starts_with("app-icons/"))
         && !referenced_paths.contains(relative_path)
 }
 
 fn remove_empty_maintenance_directories(root: &Path) -> Result<()> {
-    for directory in ["assets", "thumbnails", "staging"] {
+    for directory in ["assets", "thumbnails", "app-icons", "staging"] {
         remove_empty_child_directories(&root.join(directory))?;
     }
     Ok(())
@@ -2349,8 +2367,11 @@ mod tests {
         let (temp_dir, mut core) = open_temp_core();
         let payload_path = temp_dir.path().join("assets/active.png");
         let thumbnail_path = temp_dir.path().join("thumbnails/active.png");
+        let icon_path = temp_dir.path().join("app-icons/preview.tiff");
+        fs::create_dir_all(icon_path.parent().unwrap()).expect("icon dir");
         fs::write(&payload_path, b"active image payload").expect("payload");
         fs::write(&thumbnail_path, b"active image thumbnail").expect("thumbnail");
+        fs::write(&icon_path, b"active app icon").expect("icon");
         core.capture_image(CaptureImageRequest {
             payload_relative_path: "assets/active.png".to_string(),
             preview_relative_path: Some("thumbnails/active.png".to_string()),
@@ -2361,7 +2382,7 @@ mod tests {
             source_bundle_id: Some("com.apple.Preview".to_string()),
             source_app_name: Some("Preview".to_string()),
             source_bundle_path: None,
-            source_icon_relative_path: None,
+            source_icon_relative_path: Some("app-icons/preview.tiff".to_string()),
             source_confidence: SourceConfidence::High,
             pasteboard_change_count: 91,
             self_write_token: None,
@@ -2370,11 +2391,13 @@ mod tests {
 
         let orphan_asset = temp_dir.path().join("assets/orphan.bin");
         let orphan_thumbnail = temp_dir.path().join("thumbnails/orphan.png");
+        let orphan_icon = temp_dir.path().join("app-icons/orphan.tiff");
         let orphan_snapshot = temp_dir.path().join("assets/file-snapshots/orphan.json");
         let staging_file = temp_dir.path().join("staging/leftover.tmp");
         fs::create_dir_all(orphan_snapshot.parent().unwrap()).expect("snapshot dir");
         fs::write(&orphan_asset, b"orphan asset").expect("orphan asset");
         fs::write(&orphan_thumbnail, b"orphan thumbnail").expect("orphan thumbnail");
+        fs::write(&orphan_icon, b"orphan icon").expect("orphan icon");
         fs::write(&orphan_snapshot, b"orphan snapshot").expect("orphan snapshot");
         fs::write(&staging_file, b"staging leftover").expect("staging");
 
@@ -2383,11 +2406,13 @@ mod tests {
         assert_eq!(maintenance.purged_item_count, 0);
         assert_eq!(maintenance.deleted_asset_row_count, 0);
         assert_eq!(maintenance.deleted_asset_file_count, 0);
-        assert_eq!(maintenance.deleted_orphan_file_count, 4);
+        assert_eq!(maintenance.deleted_orphan_file_count, 5);
         assert!(payload_path.exists());
         assert!(thumbnail_path.exists());
+        assert!(icon_path.exists());
         assert!(!orphan_asset.exists());
         assert!(!orphan_thumbnail.exists());
+        assert!(!orphan_icon.exists());
         assert!(!orphan_snapshot.exists());
         assert!(!staging_file.exists());
 

@@ -951,3 +951,35 @@
 ### 结论
 
 综合评分：93/100。建议通过。当前切片让标题关键词规则的系统依赖对用户可见，未污染主面板，也未触碰同步、导入或导出冻结范围。
+
+## 真实设备 UI QA、性能与维护补强审查
+
+日期：2026-05-08
+执行者：Codex
+审查者：Codex
+
+### 原定目标
+
+先推进剩余工作 4、5、6：真实设备 UI QA、进一步性能优化和长期数据维护补强；同步、导入和导出继续冻结。
+
+### 完成情况
+
+- [x] 已完成：屏幕选择逻辑抽到 `ScreenSelectionPlanner`，新增多屏单元测试。
+- [x] 已完成：生产面板定位复用 `ScreenSelectionPlanner`。
+- [x] 已完成：新增 `swift run PasteFloatingDemo --print-ui-diagnostics` 输出真机屏幕和面板几何。
+- [x] 已完成：图片预览首次文件读取迁到后台任务，主线程先显示轻量占位。
+- [x] 已完成：Rust maintenance 清理孤立 `app-icons`，保留仍被 `source_app_icons` 引用的图标。
+- [x] 已完成：Rust staticlib/bridge 产物已重建，Swift/Rust 测试和 GUI 冒烟通过。
+
+### 发现的问题
+
+| 严重程度 | 问题描述 | 根本原因 | 改进建议 |
+| --- | --- | --- | --- |
+| 已改正 | 多屏选择规则缺少独立可测试入口。 | 逻辑只在 `FloatingPanelController.screenContainingMouse()` 内部。 | 已抽到 `ScreenSelectionPlanner` 并增加诊断命令。 |
+| 已改正 | 首次图片预览可能在主线程同步读盘。 | `NSImage(contentsOf:)` 直接发生在卡片构建路径。 | 已改为缓存优先，未命中时后台读取文件并回主线程更新。 |
+| 已改正 | `app-icons` 长期可能积累孤立文件。 | maintenance 之前只扫描 `assets`、`thumbnails` 和 `staging`。 | 已纳入 `app-icons`，并以 `source_app_icons.relative_path` 作为保留依据。 |
+| 建议改进 | UI 诊断不是完整真实交互自动化。 | 真机鼠标移动、Space、Dock 自动隐藏仍需要系统交互。 | 下一步应做真实窗口交互自动化或产品化打包验收。 |
+
+### 结论
+
+综合评分：92/100。建议通过。4/5/6 都已完成可自动验证的工程闭环；仍需后续补真实窗口交互自动化和产品化打包。

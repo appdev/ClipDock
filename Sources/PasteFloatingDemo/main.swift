@@ -1352,29 +1352,40 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         container.translatesAutoresizingMaskIntoConstraints = false
 
         let imageView = NSImageView()
-        let resolvedImage = Self.loadPreviewImage(paths: [previewPath, payloadPath])
+        let imagePaths = Self.existingPreviewImagePaths(paths: [previewPath, payloadPath])
+        let resolvedImage = Self.cachedPreviewImage(paths: imagePaths)
         imageView.image = resolvedImage
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.toolTip = [previewPath, payloadPath]
             .compactMap { $0 }
             .joined(separator: "\n")
+        imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
         itemImagePreviewViews.append(imageView)
 
         container.addSubview(imageView)
 
-        if resolvedImage == nil {
-            let fallbackLabel = NSTextField(labelWithString: "预览不可用")
-            fallbackLabel.font = .systemFont(ofSize: 12, weight: .medium)
-            fallbackLabel.textColor = .secondaryLabelColor
-            fallbackLabel.alignment = .center
-            fallbackLabel.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(fallbackLabel)
+        let fallbackLabel = NSTextField(labelWithString: imagePaths.isEmpty ? "预览不可用" : "载入预览")
+        fallbackLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        fallbackLabel.textColor = .secondaryLabelColor
+        fallbackLabel.alignment = .center
+        fallbackLabel.translatesAutoresizingMaskIntoConstraints = false
+        fallbackLabel.isHidden = resolvedImage != nil
+        container.addSubview(fallbackLabel)
 
-            NSLayoutConstraint.activate([
-                fallbackLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                fallbackLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-            ])
+        NSLayoutConstraint.activate([
+            fallbackLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            fallbackLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        if resolvedImage == nil, !imagePaths.isEmpty {
+            let loadIdentifier = imageView.identifier
+            Self.loadPreviewImageAsync(paths: imagePaths) { [weak imageView, weak fallbackLabel] image in
+                guard imageView?.identifier == loadIdentifier else { return }
+                imageView?.image = image
+                fallbackLabel?.stringValue = image == nil ? "预览不可用" : ""
+                fallbackLabel?.isHidden = image != nil
+            }
         }
 
         let dimensionBadge = makePreviewBadge(summary)
@@ -1427,19 +1438,53 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         return visualEffectView
     }
 
-    private static func loadPreviewImage(paths: [String?]) -> NSImage? {
-        for path in paths.compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) }) where !path.isEmpty {
+    private static func existingPreviewImagePaths(paths: [String?]) -> [String] {
+        paths.compactMap { path in
+            let path = path?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !path.isEmpty else { return nil }
             let url = resolvedImageURL(for: path)
             guard FileManager.default.fileExists(atPath: url.path) else {
-                continue
+                return nil
             }
+            return url.path
+        }
+    }
 
-            if let image = loadCachedImage(path: url.path) {
+    private static func cachedPreviewImage(paths: [String]) -> NSImage? {
+        for path in paths {
+            if let image = imageCache.object(forKey: path as NSString) {
                 return image
             }
         }
 
         return nil
+    }
+
+    private static func loadPreviewImageAsync(
+        paths: [String],
+        completion: @escaping @MainActor (NSImage?) -> Void
+    ) {
+        Task { @MainActor in
+            let loadedData = await Task.detached(priority: .userInitiated) { () -> (String, Data)? in
+                for path in paths {
+                    let url = URL(fileURLWithPath: path)
+                    if let data = try? Data(contentsOf: url) {
+                        return (path, data)
+                    }
+                }
+                return nil
+            }.value
+
+            guard let (path, data) = loadedData,
+                  let image = NSImage(data: data)
+            else {
+                completion(nil)
+                return
+            }
+
+            imageCache.setObject(image, forKey: path as NSString)
+            completion(image)
+        }
     }
 
     private static func loadCachedImage(path: String) -> NSImage? {
@@ -1997,9 +2042,15 @@ private final class FloatingPanelController {
 
     private func screenContainingMouse() -> NSScreen? {
         let mouseLocation = NSEvent.mouseLocation
-        return NSScreen.screens.first { screen in
-            NSMouseInRect(mouseLocation, screen.frame, false)
+        let screens = NSScreen.screens
+        let frames = screens.map(\.frame)
+        guard let index = ScreenSelectionPlanner.selectedScreenIndex(
+            mouseLocation: mouseLocation,
+            screenFrames: frames
+        ) else {
+            return nil
         }
+        return screens[index]
     }
 }
 
@@ -4522,6 +4573,7 @@ private enum PanelSnapshotCommand {
             isFiltered: false
         )
         view.updatePanelHeight(frame.height)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.12))
 
         let window = NSWindow(
             contentRect: frame,
@@ -4778,12 +4830,70 @@ private enum PreferencesSmokeCommand {
     }
 }
 
+private enum UIDiagnosticsCommand {
+    private static let flag = "--print-ui-diagnostics"
+
+    static func shouldRun(arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
+
+    @MainActor
+    static func run() {
+        _ = NSApplication.shared
+        let screens = NSScreen.screens
+        let mouseLocation = NSEvent.mouseLocation
+        let frames = screens.map(\.frame)
+        let targetIndex = ScreenSelectionPlanner.selectedScreenIndex(
+            mouseLocation: mouseLocation,
+            screenFrames: frames
+        )
+        let plannedFrames = ScreenSelectionPlanner.panelFrames(
+            screenFrames: frames,
+            preferredHeight: BottomPanelGeometryPlanner.defaultHeight
+        )
+
+        print("screenCount=\(screens.count)")
+        print("mouseLocation=\(format(point: mouseLocation))")
+        print("targetScreenIndex=\(targetIndex.map(String.init) ?? "none")")
+
+        for (index, screen) in screens.enumerated() {
+            let plannedFrame = plannedFrames[index]
+            print(
+                [
+                    "screen[\(index)]",
+                    "frame=\(format(rect: screen.frame))",
+                    "visibleFrame=\(format(rect: screen.visibleFrame))",
+                    "scale=\(String(format: "%.2f", screen.backingScaleFactor))",
+                    "panelFrame=\(format(rect: plannedFrame))"
+                ].joined(separator: " ")
+            )
+        }
+    }
+
+    private static func format(point: CGPoint) -> String {
+        "(\(format(point.x)),\(format(point.y)))"
+    }
+
+    private static func format(rect: CGRect) -> String {
+        "(x:\(format(rect.origin.x)),y:\(format(rect.origin.y)),w:\(format(rect.width)),h:\(format(rect.height)))"
+    }
+
+    private static func format(_ value: CGFloat) -> String {
+        String(format: "%.1f", value)
+    }
+}
+
 @main
 private enum ClipboardWorkbenchDemoApp {
     @MainActor
     static func main() {
         if PreferencesSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
             PreferencesSmokeCommand.run()
+            return
+        }
+
+        if UIDiagnosticsCommand.shouldRun(arguments: CommandLine.arguments) {
+            UIDiagnosticsCommand.run()
             return
         }
 

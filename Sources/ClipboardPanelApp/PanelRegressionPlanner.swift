@@ -40,6 +40,29 @@ public enum BottomPanelGeometryPlanner {
     }
 }
 
+public enum ScreenSelectionPlanner {
+    public static func selectedScreenIndex(
+        mouseLocation: CGPoint,
+        screenFrames: [CGRect]
+    ) -> Int? {
+        screenFrames.firstIndex { frame in
+            frame.contains(mouseLocation)
+        }
+    }
+
+    public static func panelFrames(
+        screenFrames: [CGRect],
+        preferredHeight: CGFloat
+    ) -> [CGRect] {
+        screenFrames.map {
+            BottomPanelGeometryPlanner.frame(
+                screenFrame: $0,
+                preferredHeight: preferredHeight
+            )
+        }
+    }
+}
+
 public enum PanelEscapeAction: Equatable, Sendable {
     case closePreview
     case clearSearch

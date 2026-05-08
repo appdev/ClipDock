@@ -863,3 +863,32 @@ history.retention_days = 30
 
 - 本地自动化没有修改 macOS 系统隐私权限，只验证状态映射、设置页稳定性和启动稳定性。
 - 真机授予辅助功能权限后，窗口标题采集仍需覆盖不同来源应用和权限组合。
+
+## 真实设备 UI QA 探针、图片预览后台加载与图标缓存维护
+
+变更摘要：
+
+- 新增 `ScreenSelectionPlanner`，把鼠标所在屏幕选择和每屏全宽 panel frame 规划抽到可测试层。
+- `FloatingPanelController` 复用 `ScreenSelectionPlanner`，多屏选择逻辑不再只藏在 AppKit 方法里。
+- 新增 `swift run PasteFloatingDemo --print-ui-diagnostics`，输出屏幕数量、鼠标位置、目标屏 index、每屏 frame、visibleFrame、缩放和 panelFrame。
+- 图片预览首次读取时先显示占位，把文件读取放到后台任务，完成后回 MainActor 更新图片并写入缓存。
+- Rust maintenance 扩展到 `app-icons`，保留 `source_app_icons.relative_path` 引用的图标，删除孤立图标文件。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.12s)`。
+- `cargo fmt --manifest-path rust/Cargo.toml --all`：通过。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，19 个 Rust 测试。
+- `scripts/build-rust-core.sh`：通过。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.131 seconds`。
+- `swift run PasteFloatingDemo --print-ui-diagnostics`：通过，当前机器输出 `screenCount=2`，并列出每屏 frame、visibleFrame、scale 和 panelFrame。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.37s)`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.32s)`。
+- `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
+- `swift run PasteFloatingDemo`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.30s)`，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+
+风险说明：
+
+- UI 诊断命令提供真实设备观察数据，但不自动切换 Space、Dock 状态或鼠标位置。
+- 图片预览已移除主线程文件 I/O；极大图片的完整解码耗时仍需后续用真实数据采样。
+- `app-icons` 清理按数据库引用判断，不实现 LRU 或按时间淘汰。

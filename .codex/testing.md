@@ -1267,3 +1267,48 @@ GUI smoke: Build of product 'PasteFloatingDemo' complete! (0.35s); stayed up for
 风险：
 
 - 自动化未修改系统隐私设置，也未验证授权后的真实跨应用标题读取；这部分仍需真机权限矩阵验证。
+
+## 真实设备 UI QA 探针、图片预览后台加载与图标缓存维护
+
+命令：
+
+```bash
+swift build
+cargo fmt --manifest-path rust/Cargo.toml --all
+cargo test --manifest-path rust/Cargo.toml
+scripts/build-rust-core.sh
+swift test
+swift run PasteFloatingDemo --print-ui-diagnostics
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.12s)
+cargo test: 19 passed
+scripts/build-rust-core.sh: Finished dev profile
+swift test: Test run with 41 tests passed after 0.131 seconds
+ui diagnostics: screenCount=2; targetScreenIndex=0; panelFrame width equals screen frame width on both screens
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.37s)
+runtime snapshot: Build of product 'PasteFloatingDemo' complete! (0.32s); pixelWidth 960; pixelHeight 320
+GUI smoke: Build of product 'PasteFloatingDemo' complete! (0.30s); stayed up for 9 seconds without new crash or warning output
+```
+
+覆盖点：
+
+- 多屏选择规则进入 `ScreenSelectionPlanner`，新增负坐标副屏和右侧副屏测试。
+- 真机 UI 诊断命令输出 screen frame、visibleFrame、scale、target index 和 panelFrame。
+- 图片预览首次文件读取进入后台任务，完成后回 MainActor 更新图片。
+- Rust maintenance 清理孤立 `app-icons`，并保留仍被 `source_app_icons` 引用的图标。
+
+风险：
+
+- UI 诊断不是完整鼠标/Space/Dock 自动化；它提供真机 QA 数据，仍需要在设备上观察。
+- 图片解码仍需后续针对大量大图做性能采样。
+- 图标缓存只按数据库引用清理，不做按最近使用时间淘汰。

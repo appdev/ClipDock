@@ -1109,6 +1109,73 @@ QA 记录目标：
 
 - 在 `docs/feature-qa-log.md` 记录“系统权限状态提示”验收，重点覆盖权限 presenter、设置页 smoke、真实启动稳定性和同步/导出冻结边界。
 
+### 17.10 真实设备 UI QA 探针
+
+子任务：
+
+- 将鼠标位置到屏幕 frame 的选择逻辑抽到 `ScreenSelectionPlanner`，覆盖负坐标副屏、右侧副屏和落在屏幕外的情况。
+- 生产 `FloatingPanelController` 复用同一 planner，避免多屏定位规则只存在于 AppKit 私有方法中。
+- 增加 `swift run PasteFloatingDemo --print-ui-diagnostics`，输出当前 `NSScreen.frame`、`visibleFrame`、缩放、鼠标所在屏和每屏计划面板 frame。
+- 诊断命令继续使用 `NSScreen.frame` 规划面板，便于观察是否覆盖 Dock 区域，而不是落到 `visibleFrame`。
+
+自动验证命令：
+
+```bash
+swift test
+swift run PasteFloatingDemo --print-ui-diagnostics
+```
+
+人工可观察行为：
+
+- 多显示器环境下，诊断输出包含每块屏幕的 frame、visibleFrame 和 panelFrame。
+- 鼠标所在屏幕 index 与当前鼠标位置匹配。
+- panelFrame 宽度等于对应屏幕 frame 宽度，底边使用对应屏幕 frame.minY。
+
+### 17.11 图片预览后台加载
+
+子任务：
+
+- 图片卡片优先从 `NSCache` 读取已解码预览。
+- 首次读取图片资产时，先显示轻量占位，把文件读取移动到后台任务，完成后回到 MainActor 设置 `NSImageView.image`。
+- 快照命令在渲染前短暂推进主循环，保证异步预览有机会完成，不把占位态误判为视觉回归。
+
+自动验证命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+```
+
+人工可观察行为：
+
+- 首次出现图片卡片时主线程不再同步读图片文件。
+- 图片预览加载完成后替换“载入预览”占位。
+- 缩略图缺失时仍显示“预览不可用”。
+
+### 17.12 图标缓存维护
+
+子任务：
+
+- Rust maintenance 将 `source_app_icons.relative_path` 纳入引用集合。
+- 文件扫描范围扩展到 `app-icons`，删除未被 `source_app_icons` 引用的孤立图标文件。
+- 保留仍被来源图标表引用的图标文件，避免破坏卡片来源图标展示。
+
+自动验证命令：
+
+```bash
+cargo fmt --manifest-path rust/Cargo.toml --all
+cargo test --manifest-path rust/Cargo.toml
+scripts/build-rust-core.sh
+swift test
+```
+
+人工可观察行为：
+
+- 启动维护后孤立 `app-icons/*` 文件会被删除。
+- 当前仍被来源应用引用的图标文件保留。
+- 维护摘要继续通过既有 reclaimed bytes 和 orphan file count 呈现。
+
 ## 18. 架构验收清单
 
 - Swift/AppKit 负责 macOS 原生窗口、粘贴板、图标、快捷键和设置窗口。

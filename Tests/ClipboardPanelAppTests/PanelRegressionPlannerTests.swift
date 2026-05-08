@@ -42,6 +42,54 @@ struct PanelRegressionPlannerTests {
     }
 
     @Test
+    func screenSelectionUsesMouseLocationAcrossMultipleDisplays() {
+        let screens = [
+            CGRect(x: -1440, y: 0, width: 1440, height: 900),
+            CGRect(x: 0, y: 0, width: 1728, height: 1117),
+            CGRect(x: 1728, y: -120, width: 1280, height: 720)
+        ]
+
+        #expect(ScreenSelectionPlanner.selectedScreenIndex(
+            mouseLocation: CGPoint(x: -40, y: 420),
+            screenFrames: screens
+        ) == 0)
+        #expect(ScreenSelectionPlanner.selectedScreenIndex(
+            mouseLocation: CGPoint(x: 1200, y: 1000),
+            screenFrames: screens
+        ) == 1)
+        #expect(ScreenSelectionPlanner.selectedScreenIndex(
+            mouseLocation: CGPoint(x: 1800, y: -80),
+            screenFrames: screens
+        ) == 2)
+        #expect(ScreenSelectionPlanner.selectedScreenIndex(
+            mouseLocation: CGPoint(x: 3200, y: 900),
+            screenFrames: screens
+        ) == nil)
+    }
+
+    @Test
+    func screenSelectionPlansFullWidthPanelForEveryDisplay() {
+        let screens = [
+            CGRect(x: -1440, y: -40, width: 1440, height: 900),
+            CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        ]
+
+        let frames = ScreenSelectionPlanner.panelFrames(
+            screenFrames: screens,
+            preferredHeight: 999
+        )
+
+        #expect(frames[0].minX == -1440)
+        #expect(frames[0].minY == -40)
+        #expect(frames[0].width == 1440)
+        #expect(frames[0].height == 558)
+        #expect(frames[1].minX == 0)
+        #expect(frames[1].minY == 0)
+        #expect(frames[1].width == 1728)
+        #expect(frames[1].height == 560)
+    }
+
+    @Test
     func listUpdatePreservesSelectionOrFallsBackToFirstVisibleItem() {
         #expect(PanelInteractionPlanner.selectedIDAfterListUpdate(
             previousSelectedID: "b",

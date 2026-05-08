@@ -212,3 +212,8 @@
 - 2026-05-08 Codex：新增 `AccessibilityPermissionPresenter` 和单元测试，覆盖辅助功能权限已允许、未允许和未知状态；`PreferencesWindowController` 忽略列表页新增“系统权限 / 窗口标题采集”行。
 - 2026-05-08 Codex：新增 `AccessibilityPermissionController`，通过 `AXIsProcessTrusted()` 读取权限，并用 `NSWorkspace` 打开辅助功能隐私设置；新增权限按钮沿用闭包控件，避免恢复 target/action wrapper。
 - 2026-05-08 Codex：系统权限状态提示验证通过：`swift build` 输出 `Build complete! (3.57s)`；`swift test` 输出 `Test run with 39 tests passed after 0.143 seconds`；`swift run PasteFloatingDemo --exercise-preferences` 通过；真实主面板快照 960 x 320；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
+- 2026-05-08 Codex：用户要求先进行剩余工作 4/5/6；确认对应为真实设备 UI QA、进一步性能优化和长期数据维护补强，继续冻结同步、导入和导出。
+- 2026-05-08 Codex：新增 `ScreenSelectionPlanner` 和 `swift run PasteFloatingDemo --print-ui-diagnostics`；当前机器诊断输出 `screenCount=2`，主屏 frame 为 2048 x 1152、副屏 frame 为 -1920 x 72 / 1920 x 1080，panelFrame 使用完整 screen frame 而不是 visibleFrame。
+- 2026-05-08 Codex：图片预览首次读取从主线程同步 `NSImage(contentsOf:)` 调整为先查 `NSCache`，未命中时显示“载入预览”并在后台任务读取文件，完成后回 MainActor 更新 `NSImageView`。
+- 2026-05-08 Codex：Rust maintenance 扫描范围扩展到 `app-icons`，引用集合加入 `source_app_icons.relative_path`；孤立图标文件会被清理，仍被数据库引用的来源图标保留。
+- 2026-05-08 Codex：4/5/6 补强验证通过：`swift build` 输出 `Build complete! (3.12s)`；`cargo fmt` 通过；`cargo test --manifest-path rust/Cargo.toml` 19 个 Rust 测试通过；`scripts/build-rust-core.sh` 通过；`swift test` 输出 `Test run with 41 tests passed after 0.131 seconds`；UI diagnostics、设置页 smoke、真实快照和 GUI 启动冒烟均通过。
