@@ -207,3 +207,8 @@
 - 2026-05-08 Codex：横向滚动架构修正验证通过：`swift build` 输出 `Build complete! (3.02s)`；`swift test` 输出 `Test run with 38 tests passed after 0.125 seconds`；`swift run PasteFloatingDemo --exercise-preferences` 通过；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
 - 2026-05-08 Codex：用户反馈横向滚动方向相反；仅将 `projectScrollAxis` 中投射值从 `-value` 改为 `value`，不改动系统原生滚动模型。
 - 2026-05-08 Codex：横向滚动方向修正验证通过：`swift build` 输出 `Build complete! (3.35s)`；`swift test` 输出 `Test run with 38 tests passed after 0.100 seconds`；真实主面板快照 960 x 320、41283 bytes；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。
+- 2026-05-08 Codex：用户已初始化 git，按要求提交当前代码；创建首个提交 `373e242 Initial Paste floating demo`，提交前确认 `.DS_Store`、`.build` 和 `rust/target` 未进入版本控制。
+- 2026-05-08 Codex：进入“系统权限状态提示”切片；调查 `docs/delivery-workflow.md` 后确认同步、导入和导出继续冻结，下一片选择系统权限状态提示而非主面板 UI 变更。
+- 2026-05-08 Codex：新增 `AccessibilityPermissionPresenter` 和单元测试，覆盖辅助功能权限已允许、未允许和未知状态；`PreferencesWindowController` 忽略列表页新增“系统权限 / 窗口标题采集”行。
+- 2026-05-08 Codex：新增 `AccessibilityPermissionController`，通过 `AXIsProcessTrusted()` 读取权限，并用 `NSWorkspace` 打开辅助功能隐私设置；新增权限按钮沿用闭包控件，避免恢复 target/action wrapper。
+- 2026-05-08 Codex：系统权限状态提示验证通过：`swift build` 输出 `Build complete! (3.57s)`；`swift test` 输出 `Test run with 39 tests passed after 0.143 seconds`；`swift run PasteFloatingDemo --exercise-preferences` 通过；真实主面板快照 960 x 320；`swift run PasteFloatingDemo` 启动 9 秒无新增 crash 或 warning 后停止。

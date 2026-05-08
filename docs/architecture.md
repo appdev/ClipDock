@@ -700,7 +700,7 @@ Swift 生成 PreferencesPatch
 - 快捷键修改由 Swift 完成注册和冲突反馈，Rust 只保存用户选择。
 - 面板高度由 `Windowing` 在拖动结束或节流间隔后写入偏好；每块显示器可保存独立高度，但必须受硬性几何契约约束。
 - 历史数量和保留时长由 Rust 保存，并在打开 core、捕获和偏好更新后驱动自动软清理；图片/文件记录开关由 Swift 捕获层读取并影响后续采集行为。
-- 忽略列表由 Rust 保存规则，Swift 在 capture 前读取偏好快照并提前跳过已忽略应用、未知来源或命中窗口标题关键词的来源；窗口标题由 Swift 通过 Accessibility focused window 优先、CGWindow 可见窗口名兜底的方式进行 best-effort 采集，不阻塞其他捕获规则。
+- 忽略列表由 Rust 保存规则，Swift 在 capture 前读取偏好快照并提前跳过已忽略应用、未知来源或命中窗口标题关键词的来源；窗口标题由 Swift 通过 Accessibility focused window 优先、CGWindow 可见窗口名兜底的方式进行 best-effort 采集，不阻塞其他捕获规则；偏好设置忽略列表页展示辅助功能权限状态，并提供打开系统设置入口。
 - 本地数据维护通过明确的 Rust mutation 暴露，启动后自动清理软删除条目关联资产、孤儿 assets/thumbnails 文件和 staging 残留，并重建 FTS；同步、导入和导出暂不进入近期切片，Swift 不保留未接线按钮。
 
 ## 14. UI 状态流
@@ -1078,6 +1078,36 @@ swift run PasteFloatingDemo
 QA 记录目标：
 
 - 在 `docs/feature-qa-log.md` 记录“条目管理”验收，重点覆盖 pinned 排序、单条软删除、按筛选范围批量软删除、固定保护和右键入口。
+
+### 17.9 系统权限状态提示
+
+子任务：
+
+- 使用 `AXIsProcessTrusted()` 读取辅助功能权限状态，不在 Rust core 保存系统权限快照。
+- 将权限状态文案抽到 `ClipboardPanelApp` 的 pure Swift presenter，覆盖已允许、未允许和未知状态。
+- 偏好设置“忽略列表”页新增“系统权限”分组，展示窗口标题采集的权限状态。
+- 未允许时提供“打开系统设置”按钮，通过 `NSWorkspace` 打开辅助功能隐私设置；返回应用或再次打开偏好设置时重新检查状态。
+- 继续保持主面板轻量顶部工具条，不在主面板增加权限提示。
+
+自动验证命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo
+```
+
+人工可观察行为：
+
+- 打开偏好设置的忽略列表页，可以看到“系统权限 / 窗口标题采集”状态行。
+- 未允许辅助功能时显示“未允许，仅使用可见窗口名回退”，按钮为“打开系统设置”。
+- 已允许辅助功能时显示“已允许，标题关键词可读取当前窗口”，按钮为“重新检查”。
+
+QA 记录目标：
+
+- 在 `docs/feature-qa-log.md` 记录“系统权限状态提示”验收，重点覆盖权限 presenter、设置页 smoke、真实启动稳定性和同步/导出冻结边界。
 
 ## 18. 架构验收清单
 

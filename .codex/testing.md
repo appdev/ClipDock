@@ -1232,3 +1232,38 @@ GUI smoke: Build of product 'PasteFloatingDemo' complete! (0.37s); stayed up for
 风险：
 
 - 方向仍需真机确认。
+
+## 系统权限状态提示
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.57s)
+swift test: Test run with 39 tests passed after 0.143 seconds
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.37s)
+runtime snapshot: Build of product 'PasteFloatingDemo' complete! (0.41s); pixelWidth 960; pixelHeight 320
+GUI smoke: Build of product 'PasteFloatingDemo' complete! (0.35s); stayed up for 9 seconds without new crash or warning output
+```
+
+覆盖点：
+
+- `AccessibilityPermissionPresenter` 覆盖已允许、未允许和未知三类状态。
+- 偏好设置忽略列表页新增权限状态行，新增按钮使用闭包控件，不恢复 target/action wrapper。
+- 打开偏好设置、应用重新激活和点击权限按钮都会刷新辅助功能权限状态。
+
+风险：
+
+- 自动化未修改系统隐私设置，也未验证授权后的真实跨应用标题读取；这部分仍需真机权限矩阵验证。

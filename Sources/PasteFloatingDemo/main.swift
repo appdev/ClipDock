@@ -2115,6 +2115,28 @@ private final class PreferenceNavigationButton: NSButton {
     }
 }
 
+private final class PreferenceActionButton: NSButton {
+    var onPress: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        triggerPress()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch Int(event.keyCode) {
+        case kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter:
+            triggerPress()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    func triggerPress() {
+        onPress?()
+    }
+}
+
 private final class PreferenceSwitch: NSSwitch {
     var onChange: ((Bool) -> Void)?
 
@@ -2208,6 +2230,7 @@ private final class PreferenceStepper: NSStepper {
 }
 
 private typealias LaunchAtLoginState = LaunchAtLoginPresentation
+private typealias AccessibilityPermissionState = AccessibilityPermissionPresentation
 
 private struct LaunchAtLoginError: LocalizedError {
     let message: String
@@ -2274,6 +2297,29 @@ private final class LaunchAtLoginController {
 }
 
 @MainActor
+private final class AccessibilityPermissionController {
+    func currentState() -> AccessibilityPermissionState {
+        AccessibilityPermissionPresenter.presentation(
+            status: AXIsProcessTrusted() ? .trusted : .notTrusted
+        )
+    }
+
+    func openAccessibilitySettings() {
+        let settingsURLs = [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security"
+        ]
+
+        for value in settingsURLs {
+            guard let url = URL(string: value) else { continue }
+            if NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+    }
+}
+
+@MainActor
 private final class PreferencesWindowController: NSWindowController {
     private enum Layout {
         static let defaultWindowSize = NSSize(width: 720, height: 520)
@@ -2298,8 +2344,15 @@ private final class PreferencesWindowController: NSWindowController {
         canChange: false,
         detail: "正在读取状态"
     )
+    private var accessibilityPermissionState = AccessibilityPermissionState(
+        isTrusted: false,
+        detail: "正在读取状态",
+        actionTitle: "重新检查",
+        canOpenSettings: true
+    )
 
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
+    var onAccessibilityPermissionRequested: (() -> Void)?
 
     init() {
         let window = NSWindow(
@@ -2343,6 +2396,13 @@ private final class PreferencesWindowController: NSWindowController {
     func updateLaunchAtLoginState(_ state: LaunchAtLoginState) {
         launchAtLoginState = state
         if selectedSection == .general {
+            renderSelectedSectionRespectingControlAction()
+        }
+    }
+
+    func updateAccessibilityPermissionState(_ state: AccessibilityPermissionState) {
+        accessibilityPermissionState = state
+        if selectedSection == .ignoreList {
             renderSelectedSectionRespectingControlAction()
         }
     }
@@ -2574,6 +2634,18 @@ private final class PreferencesWindowController: NSWindowController {
             return makeContentPage(
                 title: section.title,
                 sections: [
+                    makeSection(title: "系统权限", rows: [
+                        makeSettingRow(
+                            title: "窗口标题采集",
+                            detail: accessibilityPermissionState.detail,
+                            control: makeActionButton(
+                                title: accessibilityPermissionState.actionTitle,
+                                isEnabled: accessibilityPermissionState.canOpenSettings
+                            ) { [weak self] in
+                                self?.onAccessibilityPermissionRequested?()
+                            }
+                        )
+                    ]),
                     makeSection(title: "应用", rows: [
                         makeTextInputRow(
                             title: "应用标识",
@@ -2915,6 +2987,23 @@ private final class PreferencesWindowController: NSWindowController {
         control.action = nil
         control.onChange = onChange
         return control
+    }
+
+    private func makeActionButton(
+        title: String,
+        isEnabled: Bool = true,
+        onPress: (() -> Void)? = nil
+    ) -> NSButton {
+        let button = PreferenceActionButton(title: title, target: nil, action: nil)
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.isEnabled = isEnabled
+        button.target = nil
+        button.action = nil
+        button.onPress = onPress
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 92).isActive = true
+        return button
     }
 
     private func appearanceModeIndex(_ mode: String) -> Int {
@@ -3561,6 +3650,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferencesController = PreferencesWindowController()
     private let rustCoreClient = RustCoreClient()
     private let launchAtLoginController = LaunchAtLoginController()
+    private let accessibilityPermissionController = AccessibilityPermissionController()
     private let sourceApplicationTracker = SourceApplicationTracker()
     private let clipboardMonitor = ClipboardMonitor()
     private let databaseWorker = ClipboardDatabaseWorker()
@@ -3606,6 +3696,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         unregisterGlobalHotKey()
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        refreshAccessibilityPermissionState()
+    }
+
     @objc private func togglePanel(_ sender: Any?) {
         panelController.toggle()
     }
@@ -3629,6 +3723,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showPreferences(_ sender: Any?) {
+        refreshAccessibilityPermissionState()
         preferencesController.showPreferences()
     }
 
@@ -3651,6 +3746,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         preferencesController.onPreferencesChanged = { [weak self] preferences in
             self?.persistPreferences(preferences)
+        }
+        preferencesController.onAccessibilityPermissionRequested = { [weak self] in
+            self?.openAccessibilitySettingsFromPreferences()
         }
     }
 
@@ -3981,6 +4079,25 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController.setPreviewPopoverEnabled(preferences.appearance.previewPopoverEnabled)
         statusItem?.isVisible = preferences.general.showMenuBarItem
         preferencesController.updateLaunchAtLoginState(launchAtLoginController.currentState())
+        refreshAccessibilityPermissionState()
+        refreshStatusText()
+    }
+
+    private func refreshAccessibilityPermissionState() {
+        preferencesController.updateAccessibilityPermissionState(
+            accessibilityPermissionController.currentState()
+        )
+    }
+
+    private func openAccessibilitySettingsFromPreferences() {
+        let state = accessibilityPermissionController.currentState()
+        if !state.isTrusted {
+            accessibilityPermissionController.openAccessibilitySettings()
+            storageStatusText = "权限：已打开辅助功能设置"
+        } else {
+            storageStatusText = "权限：辅助功能已允许"
+        }
+        refreshAccessibilityPermissionState()
         refreshStatusText()
     }
 
@@ -4576,6 +4693,14 @@ private enum PreferencesSmokeCommand {
                 isOn: false,
                 canChange: true,
                 detail: "Smoke"
+            )
+        )
+        controller.updateAccessibilityPermissionState(
+            AccessibilityPermissionState(
+                isTrusted: false,
+                detail: "Smoke",
+                actionTitle: "重新检查",
+                canOpenSettings: true
             )
         )
         controller.onPreferencesChanged = { [weak controller] preferences in

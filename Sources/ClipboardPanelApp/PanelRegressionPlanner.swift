@@ -187,3 +187,58 @@ public enum LaunchAtLoginPresenter {
         }
     }
 }
+
+public enum AccessibilityPermissionStatus: Equatable, Sendable {
+    case trusted
+    case notTrusted
+    case unknown
+}
+
+public struct AccessibilityPermissionPresentation: Equatable, Sendable {
+    public let isTrusted: Bool
+    public let detail: String
+    public let actionTitle: String
+    public let canOpenSettings: Bool
+
+    public init(
+        isTrusted: Bool,
+        detail: String,
+        actionTitle: String,
+        canOpenSettings: Bool
+    ) {
+        self.isTrusted = isTrusted
+        self.detail = detail
+        self.actionTitle = actionTitle
+        self.canOpenSettings = canOpenSettings
+    }
+}
+
+public enum AccessibilityPermissionPresenter {
+    public static func presentation(
+        status: AccessibilityPermissionStatus
+    ) -> AccessibilityPermissionPresentation {
+        switch status {
+        case .trusted:
+            return AccessibilityPermissionPresentation(
+                isTrusted: true,
+                detail: "已允许，标题关键词可读取当前窗口",
+                actionTitle: "重新检查",
+                canOpenSettings: true
+            )
+        case .notTrusted:
+            return AccessibilityPermissionPresentation(
+                isTrusted: false,
+                detail: "未允许，仅使用可见窗口名回退",
+                actionTitle: "打开系统设置",
+                canOpenSettings: true
+            )
+        case .unknown:
+            return AccessibilityPermissionPresentation(
+                isTrusted: false,
+                detail: "当前权限状态未知",
+                actionTitle: "重新检查",
+                canOpenSettings: true
+            )
+        }
+    }
+}

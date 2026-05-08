@@ -287,3 +287,12 @@
 - 人工可观察行为：代码复核确认 `projectScrollAxis` 的轴投射符号从 `-value` 改为 `value`，未改动 AppKit 原生滚动模型。
 - QA 结论：通过。当前切片只修正方向，不重新引入自定义惯性。
 - 遗留风险：滚动方向仍需用户真机确认。
+
+### 系统权限状态提示
+
+- 完成日期：2026-05-08
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过，输出 `Build complete! (3.57s)`；`swift test` 通过，39 个 Swift 测试；`swift run PasteFloatingDemo --exercise-preferences` 通过，设置页 smoke 无 NSForwarding warning 或 crash；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，真实主面板快照为 960 x 320；`swift run PasteFloatingDemo` 真实启动 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- 人工可观察行为：代码复核确认 `AccessibilityPermissionPresenter` 将辅助功能权限映射为“已允许 / 未允许 / 未知”三类 UI 状态；偏好设置“忽略列表”页新增“系统权限 / 窗口标题采集”行，未允许时显示“未允许，仅使用可见窗口名回退”并提供“打开系统设置”，已允许时显示“已允许，标题关键词可读取当前窗口”并提供“重新检查”；点击按钮通过 `NSWorkspace` 打开辅助功能隐私设置或刷新当前状态。
+- QA 结论：通过。当前切片让窗口标题关键词规则的系统依赖变得可见，保持主面板轻量结构，不新增同步、导入或导出入口。
+- 遗留风险：自动化只能验证 presenter、设置页 smoke 和启动稳定性，不能替用户在系统设置中授予权限；授权后的真实标题读取仍需真机权限矩阵验证。

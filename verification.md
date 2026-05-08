@@ -840,3 +840,26 @@ history.retention_days = 30
 风险说明：
 
 - 自动化仍无法判断滚动方向是否符合用户手感；本轮只做符号修正，需真机确认。
+
+## 系统权限状态提示
+
+变更摘要：
+
+- 新增 `AccessibilityPermissionPresenter`，把辅助功能权限映射为可测试 UI 状态。
+- 新增 `AccessibilityPermissionController`，通过 `AXIsProcessTrusted()` 读取当前辅助功能权限。
+- 偏好设置“忽略列表”页新增“系统权限 / 窗口标题采集”行，显示权限状态，并通过闭包按钮打开系统设置或重新检查。
+- `AppDelegate` 在打开偏好设置、应用重新激活和点击权限按钮时刷新状态；主面板 UI 不新增权限控件。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.57s)`。
+- `swift test`：通过，39 个 Swift 测试，输出 `Test run with 39 tests passed after 0.143 seconds`。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.37s)`，无 NSForwarding warning 或 crash。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.41s)`。
+- `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
+- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+
+风险说明：
+
+- 本地自动化没有修改 macOS 系统隐私权限，只验证状态映射、设置页稳定性和启动稳定性。
+- 真机授予辅助功能权限后，窗口标题采集仍需覆盖不同来源应用和权限组合。

@@ -184,4 +184,26 @@ struct PanelRegressionPlannerTests {
             status: .notFound
         ) == LaunchAtLoginPresentation(isOn: false, canChange: false, detail: "当前应用包不可注册"))
     }
+
+    @Test
+    func accessibilityPermissionPresenterExplainsWindowTitleCaptureState() {
+        #expect(AccessibilityPermissionPresenter.presentation(status: .trusted) == AccessibilityPermissionPresentation(
+            isTrusted: true,
+            detail: "已允许，标题关键词可读取当前窗口",
+            actionTitle: "重新检查",
+            canOpenSettings: true
+        ))
+        #expect(AccessibilityPermissionPresenter.presentation(status: .notTrusted) == AccessibilityPermissionPresentation(
+            isTrusted: false,
+            detail: "未允许，仅使用可见窗口名回退",
+            actionTitle: "打开系统设置",
+            canOpenSettings: true
+        ))
+        #expect(AccessibilityPermissionPresenter.presentation(status: .unknown) == AccessibilityPermissionPresentation(
+            isTrusted: false,
+            detail: "当前权限状态未知",
+            actionTitle: "重新检查",
+            canOpenSettings: true
+        ))
+    }
 }
