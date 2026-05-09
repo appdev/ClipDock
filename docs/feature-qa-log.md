@@ -368,3 +368,12 @@
 - 人工可观察行为：预览 popover 显示期间会安装本地 keyDown monitor，Space 和 Escape 直接关闭预览；popover 弹出后主面板重新成为 first responder，避免第二次空格被预览内容吃掉；关闭动画关闭，让状态和视觉关闭同步。
 - QA 结论：通过。当前修复覆盖用户反馈的“再次按空格不能关闭预览”路径，并保持原有双击复制、Command 编号、搜索、右键菜单和设置 smoke 稳定。
 - 遗留风险：当前自动化是 AppKit 进程内事件，不等同于真实物理键盘端到端；建议真机运行时再观察一次焦点在文本预览内的 Space 行为。
+
+### 来源色条
+
+- 完成日期：2026-05-09
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift test` 通过，41 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，主面板快照为 960 x 320；`swift run PasteFloatingDemo --exercise-preferences` 通过；`git diff --check` 通过。
+- 人工可观察行为：卡片顶部色条不再只按内容类型着色，而是优先按来源 App ID / 名称做稳定哈希并映射到系统色盘；同一个来源在文本、图片、文件或链接之间保持同色；选中态保留来源色，只用系统强调色描边表达选中；错误和空态仍使用红/灰。
+- QA 结论：通过。当前实现把用户要求的“来源/collection 色”落到已有来源模型上，并保留 collection 数据模型未来接入时的扩展口。
+- 遗留风险：当前尚未实现 collection/tag 数据模型；真正的 collection 色还需要后续在 Rust schema、偏好/管理 UI 和查询层补齐。

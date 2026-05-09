@@ -1338,6 +1338,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             appNameLabel: NSTextField(labelWithString: item.sourceAppName ?? "未知来源"),
             timeLabel: NSTextField(labelWithString: relativeTime(from: item.lastCopiedAtMs)),
             typeText: displayType(for: item),
+            sourceColorKey: sourceColorKey(for: item),
             summary: displaySummary(for: item),
             footnote: contentFootnote(for: item),
             previewView: previewView,
@@ -1369,6 +1370,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             appNameLabel: NSTextField(labelWithString: appName),
             timeLabel: NSTextField(labelWithString: time),
             typeText: typeText,
+            sourceColorKey: nil,
             summary: "等待本地历史数据",
             previewView: nil,
             isSelected: isSelected
@@ -1381,6 +1383,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         appNameLabel: NSTextField,
         timeLabel: NSTextField,
         typeText: String,
+        sourceColorKey: String? = nil,
         summary: String,
         footnote: String? = nil,
         previewView: NSView? = nil,
@@ -1445,8 +1448,16 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         let headerView = NSView()
         headerView.userInterfaceLayoutDirection = .leftToRight
         headerView.wantsLayer = true
-        let unselectedHeaderColor = headerColor(forTypeText: typeText, isSelected: false)
-        headerView.layer?.backgroundColor = headerColor(forTypeText: typeText, isSelected: isSelected).cgColor
+        let unselectedHeaderColor = headerColor(
+            forTypeText: typeText,
+            sourceColorKey: sourceColorKey,
+            isSelected: false
+        )
+        headerView.layer?.backgroundColor = headerColor(
+            forTypeText: typeText,
+            sourceColorKey: sourceColorKey,
+            isSelected: isSelected
+        ).cgColor
         headerView.layer?.cornerRadius = Layout.cardCornerRadius
         headerView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         headerView.layer?.masksToBounds = true
@@ -2233,32 +2244,75 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         let paths: [String]
     }
 
-    private func headerColor(forTypeText typeText: String, isSelected: Bool) -> NSColor {
-        if isSelected {
-            return NSColor.systemBlue
+    private func sourceColorKey(for item: RustClipboardItemSummary) -> String? {
+        if let sourceAppID = item.sourceAppId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sourceAppID.isEmpty {
+            return sourceAppID
         }
 
-        if typeText.contains("链接") {
-            return NSColor.systemPurple
+        if let sourceAppName = item.sourceAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sourceAppName.isEmpty {
+            return sourceAppName
         }
 
-        if typeText.contains("图片") {
-            return NSColor.systemBlue.withAlphaComponent(0.86)
-        }
+        return nil
+    }
 
-        if typeText.contains("文件") {
-            return NSColor.systemBlue.withAlphaComponent(0.78)
-        }
-
+    private func headerColor(forTypeText typeText: String, sourceColorKey: String?, isSelected: Bool) -> NSColor {
         if typeText.contains("错误") {
-            return NSColor.systemRed.withAlphaComponent(0.88)
+            return NSColor.systemRed.withAlphaComponent(isSelected ? 0.96 : 0.88)
         }
 
         if typeText.contains("空态") {
-            return NSColor.systemGray.withAlphaComponent(0.82)
+            return NSColor.systemGray.withAlphaComponent(isSelected ? 0.90 : 0.82)
         }
 
-        return NSColor.systemBlue.withAlphaComponent(0.92)
+        if let sourceColorKey,
+           !sourceColorKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return sourceHeaderColor(for: sourceColorKey, isSelected: isSelected)
+        }
+
+        if typeText.contains("链接") {
+            return NSColor.systemPurple.withAlphaComponent(isSelected ? 1 : 0.92)
+        }
+
+        if typeText.contains("图片") {
+            return NSColor.systemBlue.withAlphaComponent(isSelected ? 1 : 0.86)
+        }
+
+        if typeText.contains("文件") {
+            return NSColor.systemBlue.withAlphaComponent(isSelected ? 0.94 : 0.78)
+        }
+
+        return NSColor.systemBlue.withAlphaComponent(isSelected ? 1 : 0.92)
+    }
+
+    private func sourceHeaderColor(for key: String, isSelected: Bool) -> NSColor {
+        let palette: [NSColor] = [
+            .systemBlue,
+            .systemPurple,
+            .systemGreen,
+            .systemOrange,
+            .systemTeal,
+            .systemPink,
+            .systemIndigo,
+            .systemMint,
+            .systemBrown
+        ]
+        let index = stableColorIndex(for: key, count: palette.count)
+        return palette[index].withAlphaComponent(isSelected ? 0.98 : 0.90)
+    }
+
+    private func stableColorIndex(for key: String, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in key.lowercased().utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 1_099_511_628_211
+        }
+
+        return Int(hash % UInt64(count))
     }
 
     private func headerTextColor(isSelected: Bool) -> NSColor {

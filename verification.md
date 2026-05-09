@@ -1072,3 +1072,26 @@ doubleClickCopy=panel-smoke-text
 风险说明：
 
 - 自动化覆盖进程内 AppKit 事件；真实物理键盘焦点路径仍建议在真机运行窗口中观察一次。
+
+## 来源色条
+
+变更摘要：
+
+- 卡片顶部色条从“按内容类型固定色”升级为“按来源 App 稳定色”。
+- 当前项目尚无 collection/tag 数据模型，因此先使用 `sourceAppId`，缺失时使用 `sourceAppName`，作为稳定色 key。
+- 色值通过固定 FNV-1a 哈希映射到系统色盘，避免 Swift `hashValue` 跨进程随机化。
+- 选中态不再强制改为蓝色顶部色条；蓝色只作为卡片描边，顶部色条保留来源语义。
+- 错误态、空态继续使用红色和灰色；无来源的普通条目回退到内容类型色。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.36s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.115 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。
+
+风险说明：
+
+- collection/tag 尚未实现，当前“collection 色”由来源 App 色先承接；未来引入 collection 后可把 color key 从 source 替换或提升为 collection。

@@ -245,3 +245,5 @@
 - 2026-05-09 Codex：处理用户反馈“空格预览后再次按空格不能关闭”；确认原因是预览弹出后焦点可能落到 `NSPopover` / 预览文本视图，第二次 Space 不再回到主面板 `keyDown`。
 - 2026-05-09 Codex：`ClipboardPreviewPopoverController` 改为 `NSPopoverDelegate`，预览显示期间安装本地 keyDown monitor，Space 和 Escape 会直接关闭预览；弹出后主动把主面板 content view 恢复为 first responder；关闭动画关闭以避免 `isShown` 在短动画期间残留。
 - 2026-05-09 Codex：交互 smoke 新增 Space 打开预览、预览焦点下 Space 关闭预览断言；验证通过：`swift build` 通过；`--exercise-panel-interactions` 输出 `panelInteractions=ok`；`swift test` 41 个测试通过；设置 smoke、主面板快照、设置快照和 `git diff --check` 均通过。
+- 2026-05-09 Codex：按用户要求将卡片顶部色条升级为“来源/collection 色”；当前尚无 collection 数据模型，因此先以来源 App ID / 名称作为稳定色 key，同一来源稳定映射到同一种系统色，缺少来源时回退内容类型色。
+- 2026-05-09 Codex：选中态不再强制把顶部色条改成系统蓝，只保留蓝色粗描边表达选中；错误/空态继续使用红/灰。验证通过：`swift build`、`swift test` 41 个测试、`--exercise-panel-interactions`、`--exercise-preferences`、主面板快照 960 x 320 和 `git diff --check`。

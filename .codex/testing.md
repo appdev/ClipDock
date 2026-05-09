@@ -1567,3 +1567,40 @@ git diff --check: passed
 风险：
 
 - 本地 monitor 覆盖应用进程内事件；真实物理键盘仍建议用户在运行窗口中再观察一次。
+
+## 来源色条
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.36s)
+swift test: Test run with 41 tests passed after 0.115 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.35s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 卡片顶部色条优先按来源 App ID / 名称稳定映射颜色。
+- 选中卡片保留来源色条，只用系统强调色描边表达选中。
+- 错误和空态继续使用红色、灰色，不参与来源色映射。
+
+风险：
+
+- 当前项目尚无 collection/tag 数据模型，因此 collection 色语义暂由来源 App 色先承接。
