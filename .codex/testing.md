@@ -1804,3 +1804,36 @@ git diff --check: passed
 - 卡片宽度和高度由同一个 `itemSide` 驱动，保持 1:1。
 - 面板高度变化后，横向滚动 document 宽度按新的 item side 重新计算。
 - 交互 smoke 新增高度变化后卡片宽高相等且宽度跟随增长的断言。
+
+## 顶部类型 Tab 选中态增强
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (4.25s)
+swift test: Test run with 41 tests passed after 0.113 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.25s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 选中 tab/chip 增加对应类型色浅底。
+- 选中 tab/chip 增加细描边和轻微阴影。
+- 选中标题颜色随类型色变化，避免仅靠透明背景表达状态。

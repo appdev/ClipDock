@@ -309,6 +309,8 @@ private class PanelActionButton: NSButton {
 
 private final class TypeFilterChipButton: PanelActionButton {
     var itemType: String?
+    var chipTitleText = ""
+    var chipDotColor: NSColor = .clear
 }
 
 @MainActor
@@ -2318,6 +2320,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         button.target = nil
         button.action = nil
         button.itemType = itemType
+        button.chipTitleText = title
+        button.chipDotColor = dotColor
         button.onPress = { [weak self, weak button] in
             guard let button else { return }
             self?.typeFilterChipPressed(button)
@@ -2326,6 +2330,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
         button.layer?.cornerRadius = Layout.chipCornerRadius
+        button.layer?.borderWidth = 0
         button.setButtonType(.momentaryChange)
         button.attributedTitle = chipTitle(title, dotColor: dotColor)
 
@@ -2340,18 +2345,37 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private func updateTypeFilterChipAppearance() {
         typeFilterButtons.forEach { button in
             let isSelected = button.itemType == currentItemTypeFilter
+            let selectedColor = button.itemType == nil
+                ? NSColor.labelColor
+                : button.chipDotColor
             button.layer?.backgroundColor = isSelected
-                ? NSColor.windowBackgroundColor.withAlphaComponent(0.48).cgColor
+                ? selectedColor.withAlphaComponent(0.16).cgColor
                 : NSColor.clear.cgColor
-            button.contentTintColor = isSelected ? .controlAccentColor : .labelColor
+            button.layer?.borderWidth = isSelected ? 1 : 0
+            button.layer?.borderColor = selectedColor.withAlphaComponent(0.52).cgColor
+            button.layer?.shadowColor = selectedColor.withAlphaComponent(isSelected ? 0.22 : 0).cgColor
+            button.layer?.shadowOpacity = isSelected ? 1 : 0
+            button.layer?.shadowRadius = isSelected ? 5 : 0
+            button.layer?.shadowOffset = CGSize(width: 0, height: 1)
+            button.attributedTitle = chipTitle(
+                button.chipTitleText,
+                dotColor: button.chipDotColor,
+                isSelected: isSelected
+            )
         }
     }
 
-    private func chipTitle(_ title: String, dotColor: NSColor) -> NSAttributedString {
+    private func chipTitle(
+        _ title: String,
+        dotColor: NSColor,
+        isSelected: Bool = false
+    ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .left
         paragraph.baseWritingDirection = .leftToRight
+        let selectedTextColor = dotColor == .clear ? NSColor.labelColor : dotColor
+        let textColor = isSelected ? selectedTextColor : NSColor.labelColor
         if dotColor != .clear {
             result.append(NSAttributedString(
                 string: "● ",
@@ -2366,7 +2390,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: NSColor.labelColor,
+                .foregroundColor: textColor,
                 .paragraphStyle: paragraph
             ]
         ))

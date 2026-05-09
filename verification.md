@@ -1206,3 +1206,20 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## 顶部类型 Tab 选中态增强
+
+变更摘要：
+
+- `TypeFilterChipButton` 保存标题和 dot color，选中态会重建 attributed title。
+- 选中 chip 使用对应类型色的浅底、细边框、轻阴影和标题着色。
+- “剪贴板”选中态使用中性色，其他类型沿用蓝/紫/绿/橙语义色。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (4.25s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.113 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。
