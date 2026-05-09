@@ -1870,3 +1870,36 @@ git diff --check: passed
 - 顶部 tab/chip attributed title 使用居中段落，按钮 alignment 同步居中。
 - 卡片正文 label 明确左对齐。
 - 正文容器和 footer 宽度显式跟随 body stack，避免 stack 内部宽度漂移。
+
+## Command 数字提示残留修复
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.54s)
+swift test: Test run with 41 tests passed after 0.113 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.28s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- Command 正常松开时数字提示隐藏。
+- 未收到 Command 松开事件、随后普通按键到达时，数字提示会自愈清理。
+- Command+数字复制前清理提示，避免面板隐藏后残留。

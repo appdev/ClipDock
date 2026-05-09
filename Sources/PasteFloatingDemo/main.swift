@@ -678,7 +678,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private var previewPopoverEnabled = true
     private var isShowingFilteredEmptyState = false
     private var commandHintModeEnabled = false
-    private var flagsChangedMonitor: Any?
+    private var commandHintMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -695,11 +695,10 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil {
-            stopFlagsChangedMonitor()
-            commandHintModeEnabled = false
-            updateCommandNumberHints()
+            stopCommandHintMonitor()
+            clearCommandHintMode()
         } else {
-            startFlagsChangedMonitor()
+            startCommandHintMonitor()
         }
     }
 
@@ -1022,14 +1021,18 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
         switch Int(event.keyCode) {
         case kVK_Space:
+            clearCommandHintModeIfCommandIsNotPressed(in: event)
             return toggleSelectedPreview()
         case kVK_RightArrow:
+            clearCommandHintModeIfCommandIsNotPressed(in: event)
             selectItem(offset: 1)
             return true
         case kVK_LeftArrow:
+            clearCommandHintModeIfCommandIsNotPressed(in: event)
             selectItem(offset: -1)
             return true
         case kVK_Escape:
+            clearCommandHintMode()
             switch PanelInteractionPlanner.escapeAction(
                 isPreviewShown: previewPopoverController.isShown,
                 searchText: searchField.stringValue
@@ -1070,6 +1073,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         }
 
         guard let item = currentItems.first(where: { $0.id == nextID }) else { return }
+        clearCommandHintMode()
         copyItemToPasteboard(item)
     }
 
@@ -1194,22 +1198,31 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         }
     }
 
-    private func startFlagsChangedMonitor() {
-        guard flagsChangedMonitor == nil else { return }
-        flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+    private func startCommandHintMonitor() {
+        guard commandHintMonitor == nil else { return }
+        commandHintMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
             guard let self else { return event }
-            self.updateCommandHintMode(
-                event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
-            )
+            let commandPressed = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .contains(.command)
+
+            if event.type == .flagsChanged {
+                self.updateCommandHintMode(commandPressed)
+            } else if !commandPressed {
+                self.clearCommandHintMode()
+            }
+
             return event
         }
     }
 
-    private func stopFlagsChangedMonitor() {
-        if let flagsChangedMonitor {
-            NSEvent.removeMonitor(flagsChangedMonitor)
+    private func stopCommandHintMonitor() {
+        if let commandHintMonitor {
+            NSEvent.removeMonitor(commandHintMonitor)
         }
-        flagsChangedMonitor = nil
+        commandHintMonitor = nil
     }
 
     private func updateCommandHintMode(_ enabled: Bool) {
@@ -1222,6 +1235,19 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
         commandHintModeEnabled = enabled
         updateCommandNumberHints()
+    }
+
+    private func clearCommandHintMode() {
+        updateCommandHintMode(false)
+    }
+
+    private func clearCommandHintModeIfCommandIsNotPressed(in event: NSEvent) {
+        let commandPressed = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .contains(.command)
+        if !commandPressed {
+            clearCommandHintMode()
+        }
     }
 
     private func updateCommandNumberHints() {
@@ -6132,6 +6158,11 @@ private enum PreferencesSmokeCommand {
 }
 
 private enum PanelInteractionSmokeCommand {
+    private enum ArrowDirection {
+        case left
+        case right
+    }
+
     private static let flag = "--exercise-panel-interactions"
 
     static func shouldRun(arguments: [String]) -> Bool {
@@ -6233,6 +6264,12 @@ private enum PanelInteractionSmokeCommand {
         sendCommandModifier(down: false, to: contentView)
         drainMainRunLoop()
         try require(contentView.smokeCommandHintTexts().isEmpty, "Command 松开后提示应隐藏")
+        sendCommandModifier(down: true, to: contentView)
+        drainMainRunLoop()
+        try require(!contentView.smokeCommandHintTexts().isEmpty, "Command 再次按下未显示提示")
+        sendArrow(.right, to: contentView)
+        drainMainRunLoop()
+        try require(contentView.smokeCommandHintTexts().isEmpty, "未收到 Command 松开事件时，普通按键未清理提示")
 
         if let imageChip = contentView.smokeTypeFilterButton(itemType: "image") {
             sendMouseDown(to: imageChip, clickCount: 1)
@@ -6326,6 +6363,37 @@ private enum PanelInteractionSmokeCommand {
         print("clearScope=\(clearRequest.map { "\($0.searchText)|\($0.itemType ?? "all")" } ?? "none")")
         print("escapeHide=\(hideCount)")
         print("doubleClickCopy=\(doubleClickCopiedItemID ?? "none")")
+    }
+
+    @MainActor
+    private static func sendArrow(_ direction: ArrowDirection, to view: NSView) {
+        let character: String
+        let keyCode: Int
+        switch direction {
+        case .left:
+            character = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+            keyCode = kVK_LeftArrow
+        case .right:
+            character = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+            keyCode = kVK_RightArrow
+        }
+
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: character,
+            charactersIgnoringModifiers: character,
+            isARepeat: false,
+            keyCode: UInt16(keyCode)
+        ) else {
+            return
+        }
+
+        view.keyDown(with: event)
     }
 
     @MainActor

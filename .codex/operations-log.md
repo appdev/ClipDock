@@ -256,3 +256,4 @@
 - 2026-05-09 Codex：按用户要求将条目卡片改为始终 1:1；面板高度变化时根据可用内容高度计算 item side，同步更新卡片宽高、横向 document 宽度、图片/文件预览约束和正文换行宽度。
 - 2026-05-09 Codex：增强顶部类型 tab/chip 选中态；选中项使用对应类型色的浅底、细描边、轻阴影和标题着色，解决浅色毛玻璃背景上选中状态不明显的问题。
 - 2026-05-09 Codex：修正顶部 tab/chip 内容居中和卡片正文对齐；chip attributed title 改为居中段落并设置按钮居中，卡片正文区域改为 leading alignment，正文容器和 footer 宽度显式跟随 body stack。
+- 2026-05-09 Codex：修复 Command 数字提示残留；将 flagsChanged monitor 扩展为 command hint monitor，监听 flags/key/mouse，本地事件不带 Command 时自愈清理；Command+数字复制前和窗口移除时也清空提示。
