@@ -1903,3 +1903,36 @@ git diff --check: passed
 - Command 正常松开时数字提示隐藏。
 - 未收到 Command 松开事件、随后普通按键到达时，数字提示会自愈清理。
 - Command+数字复制前清理提示，避免面板隐藏后残留。
+
+## 快捷键打开后键盘焦点修复
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.92s)
+swift test: Test run with 41 tests passed after 0.135 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.25s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 面板显示时主动激活 App 并成为 key window。
+- 显示后立即将 content view 设为 first responder。
+- 下一轮 run loop 再次确认 key window 和 first responder，覆盖全局热键回调后的焦点时序。

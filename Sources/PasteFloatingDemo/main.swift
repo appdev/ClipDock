@@ -2867,8 +2867,10 @@ private final class FloatingPanelController {
 
     func show() {
         positionOverDock()
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
-        panel.makeFirstResponder(contentView)
+        focusContentView()
         startOutsideClickMonitoring()
     }
 
@@ -2972,6 +2974,15 @@ private final class FloatingPanelController {
 
         panel.setFrame(frame, display: true, animate: animate)
         contentView.updatePanelHeight(height)
+    }
+
+    private func focusContentView() {
+        panel.makeFirstResponder(contentView)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.panel.isVisible else { return }
+            self.panel.makeKey()
+            self.panel.makeFirstResponder(self.contentView)
+        }
     }
 
     private func clampedHeight(_ height: CGFloat, for screen: NSScreen) -> CGFloat {
@@ -3098,6 +3109,14 @@ private final class FloatingPanelController {
 private extension FloatingPanelController {
     var smokeContentView: FloatingPanelContentView {
         contentView
+    }
+
+    var smokePanelIsKeyWindow: Bool {
+        panel.isKeyWindow
+    }
+
+    var smokeFirstResponderIsContentView: Bool {
+        panel.firstResponder === contentView
     }
 }
 
@@ -6331,6 +6350,9 @@ private enum PanelInteractionSmokeCommand {
 
         controller.show()
         drainMainRunLoop()
+        try require(controller.smokePanelIsKeyWindow, "快捷键显示面板后面板未成为 key window")
+        try require(controller.smokeFirstResponderIsContentView, "快捷键显示面板后 content view 未成为 first responder")
+
         let refreshedCards = contentView.smokeCardBoxes()
         try require(refreshedCards.count >= 1, "面板重新显示后未保留条目卡片")
         sendMouseDown(to: refreshedCards[0], clickCount: 2)

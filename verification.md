@@ -1260,3 +1260,21 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## 快捷键打开后键盘焦点修复
+
+变更摘要：
+
+- `FloatingPanelController.show()` 显示面板时先激活 App。
+- 使用 `makeKeyAndOrderFront` 让非激活面板立即成为 key window。
+- 显示后立即将 `FloatingPanelContentView` 设为 first responder，并在下一轮 main queue 再补一次。
+- 交互 smoke 新增 key window 和 first responder 断言。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.92s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.135 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。
