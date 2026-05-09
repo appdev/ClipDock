@@ -211,7 +211,6 @@ private final class PanelSnapshotFixtureView: NSView {
             let summaryY = index == 0 || index >= 3 ? cardY + 70 : cardY + 154
             drawText(summaries[index], in: NSRect(x: x + 12, y: summaryY, width: cardWidth - 24, height: 32), size: 12, color: NSColor(deviceWhite: 0.18, alpha: 1), weight: .regular)
             drawText(index == 2 ? "" : "\(summaries[index].count) 个字符", in: NSRect(x: x + 12, y: cardY + 198, width: 86, height: 14), size: 10, color: NSColor(deviceWhite: 0.50, alpha: 1), weight: .medium)
-            drawText("\(index + 1)", in: NSRect(x: x + cardWidth - 26, y: cardY + 198, width: 14, height: 14), size: 10, color: NSColor(deviceWhite: 0.50, alpha: 1), weight: .medium)
         }
     }
 

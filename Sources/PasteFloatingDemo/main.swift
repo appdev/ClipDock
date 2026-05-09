@@ -126,6 +126,8 @@ private final class HeightResizeHandleView: NSView {
 }
 
 private final class HorizontalWheelScrollView: NSScrollView {
+    var onScrollDidChange: (() -> Void)?
+
     override func scrollWheel(with event: NSEvent) {
         guard documentView != nil else {
             super.scrollWheel(with: event)
@@ -138,6 +140,7 @@ private final class HorizontalWheelScrollView: NSScrollView {
         }
 
         super.scrollWheel(with: projectedEvent)
+        onScrollDidChange?()
     }
 
     private func horizontalOnlyEvent(from event: NSEvent) -> NSEvent? {
@@ -175,6 +178,7 @@ private final class ClipboardItemCardBox: NSBox {
     private weak var selectionHeaderView: NSView?
     private weak var typeHeaderLabel: NSTextField?
     private weak var timeLabel: NSTextField?
+    private weak var commandIndexLabel: NSTextField?
     private var unselectedHeaderColor: NSColor = .clear
 
     override func viewDidMoveToWindow() {
@@ -208,6 +212,16 @@ private final class ClipboardItemCardBox: NSBox {
         self.timeLabel = timeLabel
         self.unselectedHeaderColor = unselectedHeaderColor
         applySelection(isSelected)
+    }
+
+    func configureCommandIndexLabel(_ label: NSTextField) {
+        commandIndexLabel = label
+        setCommandIndexText(nil)
+    }
+
+    func setCommandIndexText(_ text: String?) {
+        commandIndexLabel?.stringValue = text ?? ""
+        commandIndexLabel?.isHidden = text == nil
     }
 
     func applySelection(_ isSelected: Bool) {
@@ -579,6 +593,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private let previewPopoverController = ClipboardPreviewPopoverController()
     private let itemBandDocumentView = NSView()
     private let itemBandStack = NSStackView()
+    private weak var itemBandScrollView: HorizontalWheelScrollView?
     private var itemHeightConstraints: [NSLayoutConstraint] = []
     private var itemPreviewHeightConstraints: [NSLayoutConstraint] = []
     private var itemImagePreviewViews: [NSImageView] = []
@@ -591,6 +606,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private var currentItemTypeFilter: String?
     private var previewPopoverEnabled = true
     private var isShowingFilteredEmptyState = false
+    private var commandHintModeEnabled = false
+    private var flagsChangedMonitor: Any?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -602,6 +619,17 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            stopFlagsChangedMonitor()
+            commandHintModeEnabled = false
+            updateCommandNumberHints()
+        } else {
+            startFlagsChangedMonitor()
+        }
     }
 
     func update(levelMode: PanelLevelMode, dockIconVisible: Bool, hotKeyAvailable: Bool, panelHeight: CGFloat) {
@@ -656,6 +684,13 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         }
 
         super.keyDown(with: event)
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        updateCommandHintMode(
+            event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+        )
+        super.flagsChanged(with: event)
     }
 
     func updatePanelHeight(_ panelHeight: CGFloat) {
@@ -821,6 +856,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
     private func makeItemBand() -> NSView {
         let scrollView = HorizontalWheelScrollView()
+        itemBandScrollView = scrollView
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasHorizontalScroller = false
@@ -829,6 +865,10 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         scrollView.verticalScrollElasticity = .none
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.usesPredominantAxisScrolling = true
+        scrollView.onScrollDidChange = { [weak self] in
+            guard let self, self.commandHintModeEnabled else { return }
+            self.updateCommandNumberHints()
+        }
 
         itemBandStack.orientation = .horizontal
         itemBandStack.alignment = .top
@@ -869,11 +909,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             return
         }
 
-        renderItemCards(
-            currentItems.enumerated().map { index, item in
-                makeItemCard(item, displayIndex: index + 1)
-            }
-        )
+        renderItemCards(currentItems.map(makeItemCard))
         scrollSelectedItemIntoView()
     }
 
@@ -887,8 +923,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
                 return true
             }
 
-            if let segment = Int(character), (1...5).contains(segment) {
-                selectItem(at: segment - 1)
+            if let segment = Int(character), (1...9).contains(segment) {
+                copyCommandNumberedItem(number: segment)
                 return true
             }
         }
@@ -934,16 +970,16 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         updateVisibleSelection()
     }
 
-    private func selectItem(at index: Int) {
+    private func copyCommandNumberedItem(number: Int) {
         guard let nextID = PanelInteractionPlanner.selectedIDForCommandNumber(
-            index + 1,
-            itemIDs: currentItems.map(\.id)
-        ) else { return }
+            number,
+            itemIDs: fullyVisibleCommandItemIDs()
+        ) else {
+            return
+        }
 
-        guard selectedItemID != nextID else { return }
-        previewPopoverController.close()
-        selectedItemID = nextID
-        updateVisibleSelection()
+        guard let item = currentItems.first(where: { $0.id == nextID }) else { return }
+        copyItemToPasteboard(item)
     }
 
     private func selectItem(id: String) {
@@ -1062,6 +1098,73 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
         let selectedView = itemBandStack.arrangedSubviews[index]
         itemBandDocumentView.scrollToVisible(selectedView.frame.insetBy(dx: -24, dy: 0))
+        if commandHintModeEnabled {
+            updateCommandNumberHints()
+        }
+    }
+
+    private func startFlagsChangedMonitor() {
+        guard flagsChangedMonitor == nil else { return }
+        flagsChangedMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            guard let self else { return event }
+            self.updateCommandHintMode(
+                event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+            )
+            return event
+        }
+    }
+
+    private func stopFlagsChangedMonitor() {
+        if let flagsChangedMonitor {
+            NSEvent.removeMonitor(flagsChangedMonitor)
+        }
+        flagsChangedMonitor = nil
+    }
+
+    private func updateCommandHintMode(_ enabled: Bool) {
+        guard commandHintModeEnabled != enabled else {
+            if enabled {
+                updateCommandNumberHints()
+            }
+            return
+        }
+
+        commandHintModeEnabled = enabled
+        updateCommandNumberHints()
+    }
+
+    private func updateCommandNumberHints() {
+        let visibleItemIDs = commandHintModeEnabled ? fullyVisibleCommandItemIDs() : []
+        let commandNumbersByID = Dictionary(uniqueKeysWithValues: visibleItemIDs.enumerated().map {
+            ($0.element, "\($0.offset + 1)")
+        })
+
+        for view in itemBandStack.arrangedSubviews {
+            guard let card = view as? ClipboardItemCardBox else { continue }
+            card.setCommandIndexText(card.itemID.flatMap { commandNumbersByID[$0] })
+        }
+    }
+
+    private func fullyVisibleCommandItemIDs(limit: Int = 9) -> [String] {
+        guard let scrollView = itemBandScrollView else { return [] }
+        let visibleRect = scrollView.contentView.bounds
+        let visibleMinX = visibleRect.minX - 0.5
+        let visibleMaxX = visibleRect.maxX + 0.5
+
+        return itemBandStack.arrangedSubviews.compactMap { view -> String? in
+            guard let card = view as? ClipboardItemCardBox,
+                  let itemID = card.itemID
+            else { return nil }
+
+            let frame = card.frame
+            guard frame.minX >= visibleMinX, frame.maxX <= visibleMaxX else {
+                return nil
+            }
+
+            return itemID
+        }
+        .prefix(limit)
+        .map { $0 }
     }
 
     private func focusSearchField() {
@@ -1120,6 +1223,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             height: Layout.defaultItemHeight
         )
         updatePanelHeight(currentPanelHeight)
+        updateCommandNumberHints()
     }
 
     private func makeEmptyHistoryCard() -> NSView {
@@ -1164,7 +1268,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         )
     }
 
-    private func makeItemCard(_ item: RustClipboardItemSummary, displayIndex: Int? = nil) -> NSView {
+    private func makeItemCard(_ item: RustClipboardItemSummary) -> NSView {
         let imageView = NSImageView()
         imageView.image = item.sourceAppIconPath.flatMap(Self.loadCachedImage(path:))
             ?? NSImage(
@@ -1194,7 +1298,6 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             typeText: displayType(for: item),
             summary: displaySummary(for: item),
             footnote: contentFootnote(for: item),
-            indexText: displayIndex.map(String.init),
             previewView: previewView,
             isSelected: item.id == selectedItemID,
             toolTip: "单击选中，双击复制到剪贴板，右键管理",
@@ -1238,7 +1341,6 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         typeText: String,
         summary: String,
         footnote: String? = nil,
-        indexText: String? = nil,
         previewView: NSView? = nil,
         isSelected: Bool,
         toolTip: String? = nil,
@@ -1325,12 +1427,13 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             summaryLabel: summaryLabel
         )
 
-        let indexLabel = NSTextField(labelWithString: indexText ?? "")
+        let indexLabel = NSTextField(labelWithString: "")
         indexLabel.font = .systemFont(ofSize: 11, weight: .medium)
         indexLabel.textColor = .tertiaryLabelColor
         indexLabel.lineBreakMode = .byTruncatingTail
         configureLeftToRightText(indexLabel, alignment: .right)
         indexLabel.setContentHuggingPriority(.required, for: .horizontal)
+        indexLabel.isHidden = true
 
         let countLabel = NSTextField(labelWithString: contentFootnote(for: summary))
         countLabel.stringValue = footnote ?? contentFootnote(for: summary)
@@ -1344,6 +1447,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         footerRow.alignment = .centerY
         footerRow.spacing = 6
         footerRow.userInterfaceLayoutDirection = .leftToRight
+        container.configureCommandIndexLabel(indexLabel)
 
         let flexibleSpacer = NSView()
         flexibleSpacer.setContentHuggingPriority(.defaultLow, for: .vertical)
@@ -2179,6 +2283,16 @@ private extension FloatingPanelContentView {
         allSmokeSubviews(of: self)
             .compactMap { $0 as? HorizontalWheelScrollView }
             .first
+    }
+
+    func smokeCommandHintTexts() -> [String] {
+        smokeCardBoxes()
+            .compactMap { card in
+                allSmokeSubviews(of: card)
+                    .compactMap { $0 as? NSTextField }
+                    .map(\.stringValue)
+                    .first { Int($0) != nil }
+            }
     }
 
     func smokePerformManagementAction(itemID: String, title: String) -> Bool {
@@ -5339,9 +5453,16 @@ private enum PanelInteractionSmokeCommand {
         drainMainRunLoop()
         try require(contentView.smokeSelectedItemID == "panel-smoke-image", "单击条目未立即选中")
 
-        sendCommandNumber(3, to: contentView)
+        try require(contentView.smokeCommandHintTexts().isEmpty, "Command 提示默认应隐藏")
+        sendCommandModifier(down: true, to: contentView)
         drainMainRunLoop()
-        try require(contentView.smokeSelectedItemID == "panel-smoke-file", "Command+3 未选中第三个条目")
+        try require(
+            Array(contentView.smokeCommandHintTexts().prefix(3)) == ["1", "2", "3"],
+            "Command 按下后未按完整可见条目从 1 开始编号"
+        )
+        sendCommandModifier(down: false, to: contentView)
+        drainMainRunLoop()
+        try require(contentView.smokeCommandHintTexts().isEmpty, "Command 松开后提示应隐藏")
 
         if let imageChip = contentView.smokeTypeFilterButton(itemType: "image") {
             sendMouseDown(to: imageChip, clickCount: 1)
@@ -5408,18 +5529,33 @@ private enum PanelInteractionSmokeCommand {
         sendMouseDown(to: refreshedCards[0], clickCount: 2)
         drainMainRunLoop()
         try require(copiedItemID == "panel-smoke-text", "双击条目未触发复制回调")
+        let doubleClickCopiedItemID = copiedItemID
         try require(!controller.isVisible, "双击复制后面板未隐藏")
+
+        copiedItemID = nil
+        controller.show()
+        drainMainRunLoop()
+        if let scrollView = contentView.smokeHorizontalScrollView() {
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        sendCommandModifier(down: true, to: contentView)
+        sendCommandNumber(3, to: contentView)
+        drainMainRunLoop()
+        try require(copiedItemID == "panel-smoke-file", "Command+3 未直接复制第三个完整可见条目")
+        try require(!controller.isVisible, "Command+数字复制后面板未隐藏")
 
         print("panelInteractions=ok")
         print("singleClick=panel-smoke-image")
-        print("command3=panel-smoke-file")
+        print("commandHints=1,2,3")
+        print("command3Copy=panel-smoke-file")
         print("typeFilter=\(queries.first { $0.itemType == "image" }?.itemType ?? "none")")
         print("search=\(queries.first { $0.searchText == "report" }?.searchText ?? "none")")
         print("menuPin=\(pinRequest.map { "\($0.itemID):\($0.isPinned)" } ?? "none")")
         print("menuDelete=\(deletedItemID ?? "none")")
         print("clearScope=\(clearRequest.map { "\($0.searchText)|\($0.itemType ?? "all")" } ?? "none")")
         print("escapeHide=\(hideCount)")
-        print("doubleClickCopy=\(copiedItemID ?? "none")")
+        print("doubleClickCopy=\(doubleClickCopiedItemID ?? "none")")
     }
 
     @MainActor
@@ -5457,6 +5593,14 @@ private enum PanelInteractionSmokeCommand {
             keyCode = kVK_ANSI_4
         case 5:
             keyCode = kVK_ANSI_5
+        case 6:
+            keyCode = kVK_ANSI_6
+        case 7:
+            keyCode = kVK_ANSI_7
+        case 8:
+            keyCode = kVK_ANSI_8
+        case 9:
+            keyCode = kVK_ANSI_9
         default:
             return
         }
@@ -5477,6 +5621,26 @@ private enum PanelInteractionSmokeCommand {
         }
 
         view.keyDown(with: event)
+    }
+
+    @MainActor
+    private static func sendCommandModifier(down: Bool, to view: NSView) {
+        guard let event = NSEvent.keyEvent(
+            with: .flagsChanged,
+            location: .zero,
+            modifierFlags: down ? [.command] : [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Command)
+        ) else {
+            return
+        }
+
+        view.flagsChanged(with: event)
     }
 
     @MainActor

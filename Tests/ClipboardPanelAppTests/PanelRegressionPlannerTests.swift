@@ -127,13 +127,13 @@ struct PanelRegressionPlannerTests {
     }
 
     @Test
-    func commandNumberSelectsVisibleItemsOneThroughFive() {
-        let ids = ["a", "b", "c", "d", "e", "f"]
+    func commandNumberMapsVisibleItemsOneThroughNine() {
+        let ids = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
 
         #expect(PanelInteractionPlanner.selectedIDForCommandNumber(1, itemIDs: ids) == "a")
-        #expect(PanelInteractionPlanner.selectedIDForCommandNumber(5, itemIDs: ids) == "e")
+        #expect(PanelInteractionPlanner.selectedIDForCommandNumber(9, itemIDs: ids) == "i")
         #expect(PanelInteractionPlanner.selectedIDForCommandNumber(0, itemIDs: ids) == nil)
-        #expect(PanelInteractionPlanner.selectedIDForCommandNumber(6, itemIDs: ids) == nil)
+        #expect(PanelInteractionPlanner.selectedIDForCommandNumber(10, itemIDs: ids) == nil)
         #expect(PanelInteractionPlanner.selectedIDForCommandNumber(5, itemIDs: ["a", "b"]) == nil)
     }
 

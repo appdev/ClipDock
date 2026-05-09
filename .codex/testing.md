@@ -1445,3 +1445,43 @@ git diff --check: passed
 
 - 顶部 chip 功能仍是类型筛选，不是 collection/tag。
 - 真机超宽屏视觉密度和真实来源 app icon 仍需继续用用户截图反馈微调。
+
+## Command 临时取用序号
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.32s)
+swift test: Test run with 41 tests passed after 0.108 seconds
+panel interactions: panelInteractions=ok; commandHints=1,2,3; command3Copy=panel-smoke-file
+runtime snapshot: Build of product 'PasteFloatingDemo' complete! (0.25s); pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.25s)
+visual regression: pixelWidth 960; pixelHeight 320
+git diff --check: passed
+```
+
+覆盖点：
+
+- 默认不展示右下角序号。
+- 按住 Command 后，完整可见卡片从 1 开始显示临时编号。
+- `Command + 3` 直接复制第三个完整可见卡片并隐藏面板。
+- `PanelInteractionPlanner` 数字映射范围扩展为 1...9。
+
+风险：
+
+- 未做系统级物理键盘自动化；当前覆盖为 AppKit 进程内 smoke。

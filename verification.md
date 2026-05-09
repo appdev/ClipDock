@@ -996,3 +996,29 @@ doubleClickCopy=panel-smoke-text
 
 - 当前顶部 chip 仍是已有类型筛选功能，尚未引入 Paste 式 collection/tag 数据模型。
 - 真实应用图标、文件缩略图和超宽屏卡片密度需要继续基于用户真机截图微调。
+
+## Command 临时取用序号
+
+变更摘要：
+
+- 卡片 footer 右下角编号从永久序号改为 Command 模式临时提示。
+- 默认状态不展示右下角编号；按住 Command 时，只给当前横向 viewport 中完整展示的卡片编号。
+- 编号每次从 1 开始，最多显示 9 个。
+- `Command + 1...9` 不再只是选中条目，而是直接复制对应完整可见卡片，并沿用复制后隐藏面板行为。
+- 横向滚动时若仍处于 Command 模式，会重新计算当前完整可见卡片编号。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.32s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.108 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`doubleClickCopy=panel-smoke-text`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，默认真实快照不显示临时编号。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
+- `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
+- `git diff --check`：通过。
+
+风险说明：
+
+- `--exercise-panel-interactions` 是进程内 AppKit 自动化，不等同于物理键盘端到端测试。
+- 编号刷新已接入滚轮事件；真实触控板连续惯性滚动下的视觉刷新仍需真机观察。

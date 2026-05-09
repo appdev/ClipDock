@@ -233,3 +233,7 @@
 - 2026-05-09 Codex：顶部工具条已补齐加号和右侧更多入口；加号执行重置筛选/搜索并回到全部剪贴板，更多菜单提供偏好设置和隐藏面板。
 - 2026-05-09 Codex：`PanelSnapshotCommand` 的真实快照样例扩展为多张窄卡片，`PanelVisualSnapshotTests` 离屏视觉夹具同步到新参考风格。
 - 2026-05-09 Codex：生产级 UI 参考还原验证通过：`swift build` 输出 `Build complete! (0.37s)`；`swift test` 输出 `Test run with 41 tests passed after 0.105 seconds`；真实主面板快照和视觉回归图均为 960 x 320；`--exercise-panel-interactions` 输出 `panelInteractions=ok`；`--exercise-preferences`、`--print-ui-diagnostics` 和 `git diff --check` 通过。
+- 2026-05-09 Codex：收到用户纠正“右下角编号不是序列号，而是按下 Command 后展示的取用序号”；确认新语义为默认隐藏，只对当前完整展示 item 从 1 到最多 9 编号，`Command + 数字` 直接复制。
+- 2026-05-09 Codex：`ClipboardItemCardBox` 新增 Command index label 管理；`FloatingPanelContentView` 新增 Command flags 监听、完整可见卡片计算、横向滚动时刷新提示和 `copyCommandNumberedItem`；默认快照不再显示右下角序号。
+- 2026-05-09 Codex：`PanelInteractionPlanner.selectedIDForCommandNumber` 范围从 1...5 扩展到 1...9；交互 smoke 改为验证 `commandHints=1,2,3` 和 `command3Copy=panel-smoke-file`。
+- 2026-05-09 Codex：Command 临时取用序号验证通过：`swift build` 输出 `Build complete! (3.32s)`；`swift test` 输出 `Test run with 41 tests passed after 0.108 seconds`；`--exercise-panel-interactions` 通过；真实快照和视觉回归图均为 960 x 320；`--exercise-preferences` 和 `git diff --check` 通过。

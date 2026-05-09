@@ -100,7 +100,7 @@ public enum PanelInteractionPlanner {
         _ number: Int,
         itemIDs: [String]
     ) -> String? {
-        guard (1...5).contains(number) else { return nil }
+        guard (1...9).contains(number) else { return nil }
 
         let index = number - 1
         guard itemIDs.indices.contains(index) else { return nil }

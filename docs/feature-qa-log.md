@@ -341,3 +341,12 @@
 - 人工可观察行为：主面板参考用户截图调整为更接近 Paste 的窄卡片横向带；面板圆角增大为完整圆角，背景更轻；卡片宽度收窄、圆角增大，选中卡片使用更粗蓝色描边；卡片顶部改为高饱和色块，来源应用图标放大并贴右上角；图片和文件预览改为居中缩略图，文件正文优先展示路径；footer 改为左侧内容度量、右侧条目序号；顶部工具条保留搜索、类型 chip，并补齐加号重置筛选和右侧更多菜单。
 - QA 结论：通过。当前 UI 已以用户提供的截图为基准完成一轮生产级还原，同时保留已有搜索、类型筛选、右键管理、双击复制隐藏和设置页稳定性。
 - 遗留风险：顶部 chip 仍承载当前产品已有的类型筛选语义，而不是 Paste 的 collection/tag 数据模型；真实来源应用图标效果依赖运行时已采集到的 app icon；超宽真实屏幕上的卡片密度需继续通过真机截图观察微调。
+
+### Command 临时取用序号
+
+- 完成日期：2026-05-09
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过，输出 `Build complete! (3.32s)`；`swift test` 通过，41 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `commandHints=1,2,3` 和 `command3Copy=panel-smoke-file`；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，默认快照不显示右下角序号；`swift run PasteFloatingDemo --exercise-preferences` 通过；`sips` 确认真实快照和视觉回归图均为 960 x 320；`git diff --check` 通过。
+- 人工可观察行为：卡片右下角编号不再是永久序列号；默认隐藏；按住 Command 后，当前横向 viewport 中完整展示的卡片从 1 开始显示临时编号，最多 9 个；松开 Command 后编号消失；`Command + 1...9` 会直接复制对应完整可见卡片并沿用复制后隐藏面板行为。
+- QA 结论：通过。当前实现符合“编号只在按下 Command 后显示，且只映射当前完整展示 item”的交互语义。
+- 遗留风险：自动化为进程内 AppKit smoke，不移动真实物理键盘；触控板惯性滚动过程中编号刷新仍建议在真机继续观察手感。
