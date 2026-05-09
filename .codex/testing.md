@@ -1672,3 +1672,36 @@ git diff --check: passed
 - 同一来源 App 优先按 `sourceAppId` / `sourceAppName` 复用自动取色结果。
 - 已按图标路径缓存过的颜色会回填到来源 App 缓存键，兼容上一版缓存。
 - 新计算出的颜色同时写入来源 App key 和图标路径 key，降低后续卡片构建成本。
+
+## 来源图标 API 取色
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.15s)
+swift test: Test run with 41 tests passed after 0.113 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.25s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 来源图标主色优先由 Core Image `CIAreaAverage` API 计算整体色调。
+- Core Image 不可用时回退简单 bitmap 平均，避免回到高饱和色相桶逻辑。
+- 低饱和平均色保持灰阶，Terminal 等黑白图标不会被强行拉成橘色/红色。

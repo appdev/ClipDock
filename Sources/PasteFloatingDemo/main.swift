@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 import ClipboardPanelApp
+import CoreImage
 import Darwin
 import ServiceManagement
 
@@ -599,6 +600,10 @@ private final class ClipboardPreviewViewController: NSViewController {
 private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate {
     private static let imageCache = NSCache<NSString, NSImage>()
     private static let sourceColorCache = NSCache<NSString, NSColor>()
+    private static let sourceColorContext = CIContext(options: [
+        .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB) as Any,
+        .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB) as Any
+    ])
 
     var onHide: (() -> Void)?
     var onHeightResizeBegan: (() -> Void)?
@@ -1927,66 +1932,10 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             return cachedColor
         }
 
-        guard let bitmap = sampledBitmap(for: image) else {
-            return nil
-        }
-
-        struct Bucket {
-            var red: CGFloat = 0
-            var green: CGFloat = 0
-            var blue: CGFloat = 0
-            var weight: CGFloat = 0
-        }
-
-        var buckets = Array(repeating: Bucket(), count: 24)
-        let step = max(1, min(bitmap.pixelsWide, bitmap.pixelsHigh) / 24)
-
-        for x in stride(from: 0, to: bitmap.pixelsWide, by: step) {
-            for y in stride(from: 0, to: bitmap.pixelsHigh, by: step) {
-                guard let color = bitmap.colorAt(x: x, y: y)?
-                    .usingColorSpace(.sRGB)
-                else {
-                    continue
-                }
-
-                var hue: CGFloat = 0
-                var saturation: CGFloat = 0
-                var brightness: CGFloat = 0
-                var alpha: CGFloat = 0
-                color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-
-                guard alpha > 0.35,
-                      saturation > 0.18,
-                      brightness > 0.12,
-                      !(brightness > 0.94 && saturation < 0.30)
-                else {
-                    continue
-                }
-
-                let bucketIndex = min(buckets.count - 1, max(0, Int((hue * CGFloat(buckets.count)).rounded(.down))))
-                let weight = pow(saturation, 1.35) * alpha * min(max(brightness, 0.25), 1)
-                guard weight > 0 else { continue }
-
-                buckets[bucketIndex].red += color.redComponent * weight
-                buckets[bucketIndex].green += color.greenComponent * weight
-                buckets[bucketIndex].blue += color.blueComponent * weight
-                buckets[bucketIndex].weight += weight
-            }
-        }
-
-        guard let selectedBucket = buckets.max(by: { $0.weight < $1.weight }),
-              selectedBucket.weight > 0
+        guard let averagedColor = coreImageAverageColor(for: image)
+            ?? bitmapAverageColor(for: image),
+            let normalizedColor = normalizedHeaderColor(averagedColor)
         else {
-            return nil
-        }
-
-        let averagedColor = NSColor(
-            srgbRed: selectedBucket.red / selectedBucket.weight,
-            green: selectedBucket.green / selectedBucket.weight,
-            blue: selectedBucket.blue / selectedBucket.weight,
-            alpha: 1
-        )
-        guard let normalizedColor = normalizedHeaderColor(averagedColor) else {
             return nil
         }
 
@@ -2000,6 +1949,87 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         }
 
         return normalizedColor
+    }
+
+    private static func coreImageAverageColor(for image: NSImage) -> NSColor? {
+        guard let bitmap = sampledBitmap(for: image),
+              let cgImage = bitmap.cgImage,
+              let filter = CIFilter(name: "CIAreaAverage")
+        else {
+            return nil
+        }
+
+        let inputImage = CIImage(cgImage: cgImage)
+        filter.setValue(inputImage, forKey: kCIInputImageKey)
+        filter.setValue(CIVector(cgRect: inputImage.extent), forKey: kCIInputExtentKey)
+
+        guard let outputImage = filter.outputImage else {
+            return nil
+        }
+
+        var rgba = [UInt8](repeating: 0, count: 4)
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            return nil
+        }
+
+        sourceColorContext.render(
+            outputImage,
+            toBitmap: &rgba,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: colorSpace
+        )
+
+        guard rgba[3] > 0 else {
+            return nil
+        }
+
+        return NSColor(
+            srgbRed: CGFloat(rgba[0]) / 255,
+            green: CGFloat(rgba[1]) / 255,
+            blue: CGFloat(rgba[2]) / 255,
+            alpha: 1
+        )
+    }
+
+    private static func bitmapAverageColor(for image: NSImage) -> NSColor? {
+        guard let bitmap = sampledBitmap(for: image) else {
+            return nil
+        }
+
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var weight: CGFloat = 0
+        let step = max(1, min(bitmap.pixelsWide, bitmap.pixelsHigh) / 40)
+
+        for x in stride(from: 0, to: bitmap.pixelsWide, by: step) {
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: step) {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+
+                let alpha = color.alphaComponent
+                guard alpha > 0.05 else { continue }
+
+                red += color.redComponent * alpha
+                green += color.greenComponent * alpha
+                blue += color.blueComponent * alpha
+                weight += alpha
+            }
+        }
+
+        guard weight > 0 else {
+            return nil
+        }
+
+        return NSColor(
+            srgbRed: red / weight,
+            green: green / weight,
+            blue: blue / weight,
+            alpha: 1
+        )
     }
 
     private static func sampledBitmap(for image: NSImage) -> NSBitmapImageRep? {
@@ -2052,9 +2082,16 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         var alpha: CGFloat = 0
         color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
 
+        if saturation < 0.14 {
+            return NSColor(
+                calibratedWhite: min(max(brightness, 0.26), 0.62),
+                alpha: 1
+            )
+        }
+
         return NSColor(
             calibratedHue: hue,
-            saturation: min(max(saturation, 0.48), 0.82),
+            saturation: min(max(saturation, 0.28), 0.74),
             brightness: min(max(brightness, 0.58), 0.88),
             alpha: 1
         )

@@ -1135,3 +1135,21 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## 来源图标 API 取色
+
+变更摘要：
+
+- 替换旧的高饱和像素过滤和色相桶胜出算法。
+- 主路径使用 Core Image `CIAreaAverage` 对来源图标计算整体色调。
+- Core Image 返回不可用时，只使用简单 bitmap 平均作为兜底。
+- 低饱和图标保留灰阶归一化，避免黑白图标被 HSB 默认 hue 或 fallback 色映射带偏。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.15s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.113 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。
