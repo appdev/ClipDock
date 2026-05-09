@@ -377,3 +377,12 @@
 - 人工可观察行为：卡片顶部色条不再只按内容类型着色，而是优先按来源 App ID / 名称做稳定哈希并映射到系统色盘；同一个来源在文本、图片、文件或链接之间保持同色；选中态保留来源色，只用系统强调色描边表达选中；错误和空态仍使用红/灰。
 - QA 结论：通过。当前实现把用户要求的“来源/collection 色”落到已有来源模型上，并保留 collection 数据模型未来接入时的扩展口。
 - 遗留风险：当前尚未实现 collection/tag 数据模型；真正的 collection 色还需要后续在 Rust schema、偏好/管理 UI 和查询层补齐。
+
+### 来源图标自动取色
+
+- 完成日期：2026-05-09
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift test` 通过，41 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过；`swift run PasteFloatingDemo --exercise-preferences` 通过；`git diff --check` 通过。
+- 人工可观察行为：真实来源 App 图标存在时，顶部色条优先从图标像素中提取主色；取色过程会过滤透明、过白、过暗和低饱和像素，按色相桶选择主色并做亮度/饱和度归一化；若没有图标或取色失败，则回退来源 App 稳定哈希色，再回退内容类型色。
+- QA 结论：通过。当前实现让来源色更贴近真实 App 图标，同时保留稳定回退，避免颜色随机或空白。
+- 遗留风险：自动化没有覆盖真实系统 `.app` 图标矩阵；后续应基于用户真实剪贴板数据观察 Safari、Chrome、Finder、Xcode 等常见来源图标的取色质量。

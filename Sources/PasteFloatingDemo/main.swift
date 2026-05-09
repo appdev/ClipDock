@@ -598,6 +598,7 @@ private final class ClipboardPreviewViewController: NSViewController {
 
 private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate {
     private static let imageCache = NSCache<NSString, NSImage>()
+    private static let sourceColorCache = NSCache<NSString, NSColor>()
 
     var onHide: (() -> Void)?
     var onHeightResizeBegan: (() -> Void)?
@@ -1312,7 +1313,15 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
     private func makeItemCard(_ item: RustClipboardItemSummary) -> NSView {
         let imageView = NSImageView()
-        imageView.image = item.sourceAppIconPath.flatMap(Self.loadCachedImage(path:))
+        let sourceIconImage = item.sourceAppIconPath.flatMap(Self.loadCachedImage(path:))
+        let sourceColorKey = sourceColorKey(for: item)
+        let sourceIconColor = sourceIconImage.flatMap {
+            Self.dominantHeaderColor(
+                for: $0,
+                cacheKey: item.sourceAppIconPath ?? sourceColorKey
+            )
+        }
+        imageView.image = sourceIconImage
             ?? NSImage(
                 systemSymbolName: symbolName(forItemType: item.itemType),
                 accessibilityDescription: item.sourceAppName ?? displayType(for: item)
@@ -1338,7 +1347,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             appNameLabel: NSTextField(labelWithString: item.sourceAppName ?? "未知来源"),
             timeLabel: NSTextField(labelWithString: relativeTime(from: item.lastCopiedAtMs)),
             typeText: displayType(for: item),
-            sourceColorKey: sourceColorKey(for: item),
+            sourceColorKey: sourceColorKey,
+            sourceIconColor: sourceIconColor,
             summary: displaySummary(for: item),
             footnote: contentFootnote(for: item),
             previewView: previewView,
@@ -1384,6 +1394,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         timeLabel: NSTextField,
         typeText: String,
         sourceColorKey: String? = nil,
+        sourceIconColor: NSColor? = nil,
         summary: String,
         footnote: String? = nil,
         previewView: NSView? = nil,
@@ -1451,11 +1462,13 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         let unselectedHeaderColor = headerColor(
             forTypeText: typeText,
             sourceColorKey: sourceColorKey,
+            sourceIconColor: sourceIconColor,
             isSelected: false
         )
         headerView.layer?.backgroundColor = headerColor(
             forTypeText: typeText,
             sourceColorKey: sourceColorKey,
+            sourceIconColor: sourceIconColor,
             isSelected: isSelected
         ).cgColor
         headerView.layer?.cornerRadius = Layout.cardCornerRadius
@@ -1889,6 +1902,142 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         return image
     }
 
+    private static func dominantHeaderColor(for image: NSImage, cacheKey: String?) -> NSColor? {
+        let resolvedCacheKey = cacheKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let resolvedCacheKey,
+           !resolvedCacheKey.isEmpty,
+           let cachedColor = sourceColorCache.object(forKey: resolvedCacheKey as NSString) {
+            return cachedColor
+        }
+
+        guard let bitmap = sampledBitmap(for: image) else {
+            return nil
+        }
+
+        struct Bucket {
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var weight: CGFloat = 0
+        }
+
+        var buckets = Array(repeating: Bucket(), count: 24)
+        let step = max(1, min(bitmap.pixelsWide, bitmap.pixelsHigh) / 24)
+
+        for x in stride(from: 0, to: bitmap.pixelsWide, by: step) {
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: step) {
+                guard let color = bitmap.colorAt(x: x, y: y)?
+                    .usingColorSpace(.sRGB)
+                else {
+                    continue
+                }
+
+                var hue: CGFloat = 0
+                var saturation: CGFloat = 0
+                var brightness: CGFloat = 0
+                var alpha: CGFloat = 0
+                color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+
+                guard alpha > 0.35,
+                      saturation > 0.18,
+                      brightness > 0.12,
+                      !(brightness > 0.94 && saturation < 0.30)
+                else {
+                    continue
+                }
+
+                let bucketIndex = min(buckets.count - 1, max(0, Int((hue * CGFloat(buckets.count)).rounded(.down))))
+                let weight = pow(saturation, 1.35) * alpha * min(max(brightness, 0.25), 1)
+                guard weight > 0 else { continue }
+
+                buckets[bucketIndex].red += color.redComponent * weight
+                buckets[bucketIndex].green += color.greenComponent * weight
+                buckets[bucketIndex].blue += color.blueComponent * weight
+                buckets[bucketIndex].weight += weight
+            }
+        }
+
+        guard let selectedBucket = buckets.max(by: { $0.weight < $1.weight }),
+              selectedBucket.weight > 0
+        else {
+            return nil
+        }
+
+        let averagedColor = NSColor(
+            srgbRed: selectedBucket.red / selectedBucket.weight,
+            green: selectedBucket.green / selectedBucket.weight,
+            blue: selectedBucket.blue / selectedBucket.weight,
+            alpha: 1
+        )
+        guard let normalizedColor = normalizedHeaderColor(averagedColor) else {
+            return nil
+        }
+
+        if let resolvedCacheKey, !resolvedCacheKey.isEmpty {
+            sourceColorCache.setObject(normalizedColor, forKey: resolvedCacheKey as NSString)
+        }
+
+        return normalizedColor
+    }
+
+    private static func sampledBitmap(for image: NSImage) -> NSBitmapImageRep? {
+        if let bitmap = image.representations
+            .compactMap({ $0 as? NSBitmapImageRep })
+            .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) }) {
+            return bitmap
+        }
+
+        let targetSize = NSSize(width: 48, height: 48)
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(targetSize.width),
+            pixelsHigh: Int(targetSize.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+
+        guard let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap) else {
+            return nil
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        image.draw(
+            in: NSRect(origin: .zero, size: targetSize),
+            from: NSRect(origin: .zero, size: image.size),
+            operation: .copy,
+            fraction: 1
+        )
+        NSGraphicsContext.restoreGraphicsState()
+        return bitmap
+    }
+
+    private static func normalizedHeaderColor(_ color: NSColor) -> NSColor? {
+        guard let color = color.usingColorSpace(.sRGB) else {
+            return nil
+        }
+
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+
+        return NSColor(
+            calibratedHue: hue,
+            saturation: min(max(saturation, 0.48), 0.82),
+            brightness: min(max(brightness, 0.58), 0.88),
+            alpha: 1
+        )
+    }
+
     private static func resolvedImageURL(for path: String) -> URL {
         if path.hasPrefix("/") {
             return URL(fileURLWithPath: path)
@@ -2258,13 +2407,22 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         return nil
     }
 
-    private func headerColor(forTypeText typeText: String, sourceColorKey: String?, isSelected: Bool) -> NSColor {
+    private func headerColor(
+        forTypeText typeText: String,
+        sourceColorKey: String?,
+        sourceIconColor: NSColor?,
+        isSelected: Bool
+    ) -> NSColor {
         if typeText.contains("错误") {
             return NSColor.systemRed.withAlphaComponent(isSelected ? 0.96 : 0.88)
         }
 
         if typeText.contains("空态") {
             return NSColor.systemGray.withAlphaComponent(isSelected ? 0.90 : 0.82)
+        }
+
+        if let sourceIconColor {
+            return sourceIconColor.withAlphaComponent(isSelected ? 0.98 : 0.90)
         }
 
         if let sourceColorKey,

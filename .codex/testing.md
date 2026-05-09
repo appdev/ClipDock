@@ -1604,3 +1604,39 @@ git diff --check: passed
 风险：
 
 - 当前项目尚无 collection/tag 数据模型，因此 collection 色语义暂由来源 App 色先承接。
+
+## 来源图标自动取色
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.48s)
+swift test: Test run with 41 tests passed after 0.083 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: Build of product 'PasteFloatingDemo' complete! (0.35s)
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.37s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 真实来源 App 图标存在时，卡片顶部色条优先使用图标主色。
+- 自动取色会过滤透明、过白、过暗和低饱和像素，并归一化亮度/饱和度，避免色条灰暗。
+- 取色失败时回退来源 App 稳定哈希色；缺少来源时继续回退内容类型色。
+
+风险：
+
+- 当前自动化样例没有真实 `.app` 图标矩阵；真实 Chrome、Finder、Xcode 等图标主色仍需要真机数据继续观察。

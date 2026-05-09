@@ -1095,3 +1095,26 @@ doubleClickCopy=panel-smoke-text
 风险说明：
 
 - collection/tag 尚未实现，当前“collection 色”由来源 App 色先承接；未来引入 collection 后可把 color key 从 source 替换或提升为 collection。
+
+## 来源图标自动取色
+
+变更摘要：
+
+- 顶部色条优先从真实来源 App 图标自动提取主色。
+- 提取算法会采样图标 bitmap，过滤透明、过白、过暗和低饱和像素，再按色相桶选择主色。
+- 输出色会归一化饱和度和亮度，避免直接使用图标阴影、白底或极暗边缘色。
+- 取色结果按图标路径或来源 key 缓存，避免反复扫描图标像素。
+- 取色失败时回退来源稳定哈希色；没有来源时回退内容类型色。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.48s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.083 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。
+
+风险说明：
+
+- 快照样例主要验证回归稳定性；真实系统 App 图标取色质量仍需通过实际采集的来源图标继续观察。
