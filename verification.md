@@ -1048,3 +1048,27 @@ doubleClickCopy=panel-smoke-text
 
 - 当前设置窗口视觉快照只覆盖通用页；其余页面由设置 smoke、代码复核和共享布局组件覆盖。
 - 真实 macOS 26 系统材质在用户机器上可能与离屏快照略有差异，仍需用真实运行窗口继续微调细节。
+
+## Space 预览开关修复
+
+变更摘要：
+
+- 修复预览打开后焦点进入 `NSPopover` / 预览内容，第二次 Space 不再回到主面板的问题。
+- `ClipboardPreviewPopoverController` 现在在预览显示期间安装本地 keyDown monitor，Space 和 Escape 会关闭当前预览。
+- 预览弹出后主动把主面板 content view 恢复为 first responder，保持键盘操作落在主面板。
+- 关闭 popover 时使用无动画关闭，避免短动画期间 `isShown` 状态滞后。
+- `--exercise-panel-interactions` 新增 Space 打开预览、预览焦点下 Space 关闭预览断言。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (2.95s)`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.085 seconds`。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png`：通过，`sips` 确认 920 x 700。
+- `git diff --check`：通过。
+
+风险说明：
+
+- 自动化覆盖进程内 AppKit 事件；真实物理键盘焦点路径仍建议在真机运行窗口中观察一次。

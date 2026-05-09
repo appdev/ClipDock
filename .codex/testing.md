@@ -1527,3 +1527,43 @@ git diff --check: passed
 
 - 设置窗口快照只渲染通用页；其余页面通过 smoke 和代码复核覆盖，后续可扩展为多页视觉快照。
 - 视觉参考来自用户截图和本地快照观察，仍建议用户用真实 `swift run PasteFloatingDemo` 打开设置窗口做最终肉眼对齐。
+
+## Space 预览开关修复
+
+命令：
+
+```bash
+swift build
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift test
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/preferences-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (2.95s)
+panel interactions: panelInteractions=ok; singleClick=panel-smoke-image; commandHints=1,2,3
+swift test: Test run with 41 tests passed after 0.085 seconds
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.34s)
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences snapshot: pixelWidth 920; pixelHeight 700
+git diff --check: passed
+```
+
+覆盖点：
+
+- Space 打开当前选中条目的预览。
+- 预览已显示且焦点位于 popover 内容时，再次 Space 会关闭预览。
+- Escape 在预览焦点下同样走预览控制器关闭路径。
+
+风险：
+
+- 本地 monitor 覆盖应用进程内事件；真实物理键盘仍建议用户在运行窗口中再观察一次。

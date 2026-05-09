@@ -292,13 +292,16 @@ private final class TypeFilterChipButton: PanelActionButton {
 }
 
 @MainActor
-private final class ClipboardPreviewPopoverController {
+private final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private var shownItemID: String?
+    private var keyDownMonitor: Any?
 
-    init() {
+    override init() {
+        super.init()
         popover.behavior = .transient
-        popover.animates = true
+        popover.animates = false
+        popover.delegate = self
     }
 
     var isShown: Bool {
@@ -333,18 +336,57 @@ private final class ClipboardPreviewPopoverController {
         popover.contentViewController = viewController
         popover.contentSize = viewController.preferredContentSize
         shownItemID = item.id
+        startKeyDownMonitor()
         popover.show(
             relativeTo: anchorView.bounds.insetBy(dx: 10, dy: 10),
             of: anchorView,
             preferredEdge: .maxY
         )
+        anchorView.window?.makeFirstResponder(anchorView.window?.contentView)
     }
 
     func close() {
         if popover.isShown {
+            popover.performClose(nil)
             popover.close()
         }
+        stopKeyDownMonitor()
         shownItemID = nil
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        stopKeyDownMonitor()
+        shownItemID = nil
+    }
+
+    private func startKeyDownMonitor() {
+        guard keyDownMonitor == nil else { return }
+
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handleKeyDownForShownPopover(event) ? nil : event
+        }
+    }
+
+    func handleKeyDownForShownPopover(_ event: NSEvent) -> Bool {
+        guard popover.isShown else {
+            stopKeyDownMonitor()
+            return false
+        }
+
+        switch Int(event.keyCode) {
+        case kVK_Space, kVK_Escape:
+            close()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func stopKeyDownMonitor() {
+        guard let keyDownMonitor else { return }
+        NSEvent.removeMonitor(keyDownMonitor)
+        self.keyDownMonitor = nil
     }
 }
 
@@ -2293,6 +2335,29 @@ private extension FloatingPanelContentView {
                     .map(\.stringValue)
                     .first { Int($0) != nil }
             }
+    }
+
+    var smokeIsPreviewShown: Bool {
+        previewPopoverController.isShown
+    }
+
+    func smokeClosePreviewWithSpaceFromPopoverFocus() -> Bool {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window?.windowNumber ?? 0,
+            context: nil,
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Space)
+        ) else {
+            return false
+        }
+
+        return previewPopoverController.handleKeyDownForShownPopover(event)
     }
 
     func smokePerformManagementAction(itemID: String, title: String) -> Bool {
@@ -5714,6 +5779,13 @@ private enum PanelInteractionSmokeCommand {
         drainMainRunLoop()
         try require(contentView.smokeSelectedItemID == "panel-smoke-image", "单击条目未立即选中")
 
+        sendSpace(to: contentView)
+        drainMainRunLoop()
+        try require(contentView.smokeIsPreviewShown, "Space 未打开当前选中条目的预览")
+        try require(contentView.smokeClosePreviewWithSpaceFromPopoverFocus(), "预览焦点下的 Space 未被预览控制器接管")
+        drainMainRunLoop()
+        try require(!contentView.smokeIsPreviewShown, "预览显示后再次 Space 未关闭预览")
+
         try require(contentView.smokeCommandHintTexts().isEmpty, "Command 提示默认应隐藏")
         sendCommandModifier(down: true, to: contentView)
         drainMainRunLoop()
@@ -5877,6 +5949,26 @@ private enum PanelInteractionSmokeCommand {
             charactersIgnoringModifiers: "\(number)",
             isARepeat: false,
             keyCode: UInt16(keyCode)
+        ) else {
+            return
+        }
+
+        view.keyDown(with: event)
+    }
+
+    @MainActor
+    private static func sendSpace(to view: NSView) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Space)
         ) else {
             return
         }

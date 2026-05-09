@@ -242,3 +242,6 @@
 - 2026-05-09 Codex：偏好设置页面文案和分区重排为通用、隐私、键盘快捷键、保留历史、外观；同步/导入/导出继续不展示；快捷键页新增 `Command + 1...9` 快速取用说明，保留现有真实偏好持久化绑定。
 - 2026-05-09 Codex：新增 `swift run PasteFloatingDemo --render-preferences-snapshot <path>`，可离屏渲染生产 `PreferencesWindowController`，用于设置窗口视觉回归观察。
 - 2026-05-09 Codex：macOS 26 设置界面重设计验证通过：`swift build` 通过；`swift test` 输出 `Test run with 41 tests passed after 0.106 seconds`；`--exercise-preferences` 通过；`--render-preferences-snapshot` 生成 920 x 700 快照；`--exercise-panel-interactions` 输出 `panelInteractions=ok`；主面板快照 960 x 320；`git diff --check` 通过。
+- 2026-05-09 Codex：处理用户反馈“空格预览后再次按空格不能关闭”；确认原因是预览弹出后焦点可能落到 `NSPopover` / 预览文本视图，第二次 Space 不再回到主面板 `keyDown`。
+- 2026-05-09 Codex：`ClipboardPreviewPopoverController` 改为 `NSPopoverDelegate`，预览显示期间安装本地 keyDown monitor，Space 和 Escape 会直接关闭预览；弹出后主动把主面板 content view 恢复为 first responder；关闭动画关闭以避免 `isShown` 在短动画期间残留。
+- 2026-05-09 Codex：交互 smoke 新增 Space 打开预览、预览焦点下 Space 关闭预览断言；验证通过：`swift build` 通过；`--exercise-panel-interactions` 输出 `panelInteractions=ok`；`swift test` 41 个测试通过；设置 smoke、主面板快照、设置快照和 `git diff --check` 均通过。

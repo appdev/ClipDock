@@ -359,3 +359,12 @@
 - 人工可观察行为：设置窗口改为透明标题栏和 full-size content view，外层 24 px 圆角；左侧为 264 pt 圆角毛玻璃侧栏，选中项使用整行蓝色胶囊；右侧页面使用 28 pt 标题、说明文字、分组标题、18 px 圆角卡片、62 pt 行高和内缩分隔线；快捷键页同步展示 `Command + 1...9` 快速取用语义。
 - QA 结论：通过。当前设置界面已从早期标准偏好窗口升级为更接近 macOS 26 / Paste 参考图的设置体验，同时保留原有 Rust 偏好持久化、权限入口和设置 smoke 稳定性。
 - 遗留风险：自动视觉快照当前覆盖通用页；隐私、快捷键、保留历史和外观页主要通过 smoke 与代码复核覆盖，后续可补多页设置快照矩阵。
+
+### Space 预览开关修复
+
+- 完成日期：2026-05-09
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，并新增 Space 打开预览、预览焦点下 Space 关闭预览断言；`swift test` 通过，41 个 Swift 测试；`swift run PasteFloatingDemo --exercise-preferences` 通过；主面板运行时快照为 960 x 320，设置快照为 920 x 700；`git diff --check` 通过。
+- 人工可观察行为：预览 popover 显示期间会安装本地 keyDown monitor，Space 和 Escape 直接关闭预览；popover 弹出后主面板重新成为 first responder，避免第二次空格被预览内容吃掉；关闭动画关闭，让状态和视觉关闭同步。
+- QA 结论：通过。当前修复覆盖用户反馈的“再次按空格不能关闭预览”路径，并保持原有双击复制、Command 编号、搜索、右键菜单和设置 smoke 稳定。
+- 遗留风险：当前自动化是 AppKit 进程内事件，不等同于真实物理键盘端到端；建议真机运行时再观察一次焦点在文本预览内的 Space 行为。
