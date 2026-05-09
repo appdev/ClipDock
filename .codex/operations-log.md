@@ -249,3 +249,4 @@
 - 2026-05-09 Codex：选中态不再强制把顶部色条改成系统蓝，只保留蓝色粗描边表达选中；错误/空态继续使用红/灰。验证通过：`swift build`、`swift test` 41 个测试、`--exercise-panel-interactions`、`--exercise-preferences`、主面板快照 960 x 320 和 `git diff --check`。
 - 2026-05-09 Codex：继续升级色条为自动取色：真实来源图标存在时，从图标像素中提取高饱和主色并缓存；过滤透明、过白、过暗和低饱和像素，取不到时回退上一版来源哈希色。
 - 2026-05-09 Codex：自动取色验证通过：`swift build` 输出 `Build complete! (3.48s)`；`swift test` 输出 `Test run with 41 tests passed after 0.083 seconds`；`--exercise-panel-interactions` 输出 `panelInteractions=ok`；主面板快照和设置 smoke 通过。
+- 2026-05-09 Codex：按用户要求优化自动取色缓存键：同一来源 App 优先使用 `sourceAppId`，缺失时使用 `sourceAppName` 缓存主色；图标路径只作为 fallback alias，避免同一 App 因多条剪贴板或图标路径重复扫描像素导致卡顿。

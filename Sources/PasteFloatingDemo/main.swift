@@ -1315,10 +1315,12 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         let imageView = NSImageView()
         let sourceIconImage = item.sourceAppIconPath.flatMap(Self.loadCachedImage(path:))
         let sourceColorKey = sourceColorKey(for: item)
+        let sourceColorCacheKey = sourceColorKey ?? item.sourceAppIconPath
         let sourceIconColor = sourceIconImage.flatMap {
             Self.dominantHeaderColor(
                 for: $0,
-                cacheKey: item.sourceAppIconPath ?? sourceColorKey
+                cacheKey: sourceColorCacheKey,
+                fallbackCacheKey: item.sourceAppIconPath
             )
         }
         imageView.image = sourceIconImage
@@ -1902,11 +1904,26 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         return image
     }
 
-    private static func dominantHeaderColor(for image: NSImage, cacheKey: String?) -> NSColor? {
+    private static func dominantHeaderColor(
+        for image: NSImage,
+        cacheKey: String?,
+        fallbackCacheKey: String?
+    ) -> NSColor? {
         let resolvedCacheKey = cacheKey?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let resolvedCacheKey,
            !resolvedCacheKey.isEmpty,
            let cachedColor = sourceColorCache.object(forKey: resolvedCacheKey as NSString) {
+            return cachedColor
+        }
+
+        let resolvedFallbackCacheKey = fallbackCacheKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let resolvedFallbackCacheKey,
+           !resolvedFallbackCacheKey.isEmpty,
+           resolvedFallbackCacheKey != resolvedCacheKey,
+           let cachedColor = sourceColorCache.object(forKey: resolvedFallbackCacheKey as NSString) {
+            if let resolvedCacheKey, !resolvedCacheKey.isEmpty {
+                sourceColorCache.setObject(cachedColor, forKey: resolvedCacheKey as NSString)
+            }
             return cachedColor
         }
 
@@ -1975,6 +1992,11 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
         if let resolvedCacheKey, !resolvedCacheKey.isEmpty {
             sourceColorCache.setObject(normalizedColor, forKey: resolvedCacheKey as NSString)
+        }
+        if let resolvedFallbackCacheKey,
+           !resolvedFallbackCacheKey.isEmpty,
+           resolvedFallbackCacheKey != resolvedCacheKey {
+            sourceColorCache.setObject(normalizedColor, forKey: resolvedFallbackCacheKey as NSString)
         }
 
         return normalizedColor

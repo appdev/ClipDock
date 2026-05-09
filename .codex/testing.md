@@ -1640,3 +1640,35 @@ git diff --check: passed
 风险：
 
 - 当前自动化样例没有真实 `.app` 图标矩阵；真实 Chrome、Finder、Xcode 等图标主色仍需要真机数据继续观察。
+
+## 来源图标取色缓存键优化
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (0.32s)
+swift test: Test run with 41 tests passed after 0.093 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.25s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 同一来源 App 优先按 `sourceAppId` / `sourceAppName` 复用自动取色结果。
+- 已按图标路径缓存过的颜色会回填到来源 App 缓存键，兼容上一版缓存。
+- 新计算出的颜色同时写入来源 App key 和图标路径 key，降低后续卡片构建成本。

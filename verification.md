@@ -1118,3 +1118,20 @@ doubleClickCopy=panel-smoke-text
 风险说明：
 
 - 快照样例主要验证回归稳定性；真实系统 App 图标取色质量仍需通过实际采集的来源图标继续观察。
+
+## 来源图标取色缓存键优化
+
+变更摘要：
+
+- 自动取色缓存从“主要按图标路径”升级为“优先按来源 App”。
+- 同一 App 的多条剪贴板记录会共享 `sourceAppId` / `sourceAppName` 对应的色值，避免重复采样图标像素。
+- 图标路径缓存保留为 fallback alias，兼容旧缓存，也覆盖缺少来源信息的条目。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (0.32s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.093 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。
