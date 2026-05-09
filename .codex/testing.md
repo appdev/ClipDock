@@ -1403,3 +1403,45 @@ hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloatingDemo-0.1.0.dmg
 
 - 未提供 Apple Developer 凭证时 notarization 会跳过。
 - 当前不是 universal macOS 正式分发包。
+
+## 生产级 UI 参考还原
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --print-ui-diagnostics
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (0.37s)
+swift test: Test run with 41 tests passed after 0.105 seconds
+runtime snapshot: Build of product 'PasteFloatingDemo' complete! (0.28s); pixelWidth 960; pixelHeight 320
+panel interactions: panelInteractions=ok
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.39s)
+ui diagnostics: screenCount=2; targetScreenIndex=0
+visual regression: pixelWidth 960; pixelHeight 320
+git diff --check: passed
+```
+
+覆盖点：
+
+- Paste 风格窄卡片、完整大圆角、顶部强色块、大来源图标、居中图片/文件缩略图、footer 序号。
+- 真实主面板快照和离屏视觉夹具均重新生成。
+- 交互 smoke 覆盖单击、快捷选中、类型筛选、搜索、右键菜单、Escape 和双击复制隐藏。
+
+风险：
+
+- 顶部 chip 功能仍是类型筛选，不是 collection/tag。
+- 真机超宽屏视觉密度和真实来源 app icon 仍需继续用用户截图反馈微调。

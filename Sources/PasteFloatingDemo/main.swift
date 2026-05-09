@@ -177,6 +177,12 @@ private final class ClipboardItemCardBox: NSBox {
     private weak var timeLabel: NSTextField?
     private var unselectedHeaderColor: NSColor = .clear
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        contentView?.layer?.contentsScale = layer?.contentsScale ?? 2
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount >= 2 {
             onDoubleClick?()
@@ -207,12 +213,14 @@ private final class ClipboardItemCardBox: NSBox {
     func applySelection(_ isSelected: Bool) {
         borderColor = isSelected
             ? NSColor.controlAccentColor
-            : NSColor.separatorColor.withAlphaComponent(0.12)
+            : NSColor.separatorColor.withAlphaComponent(0.08)
+        borderWidth = isSelected ? 3 : 0.5
         selectionHeaderView?.layer?.backgroundColor = (
             isSelected ? NSColor.controlAccentColor : unselectedHeaderColor
         ).cgColor
-        typeHeaderLabel?.textColor = isSelected ? .white : .labelColor
-        timeLabel?.textColor = isSelected ? NSColor.white.withAlphaComponent(0.78) : .secondaryLabelColor
+        selectionHeaderView?.layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        typeHeaderLabel?.textColor = .white
+        timeLabel?.textColor = NSColor.white.withAlphaComponent(0.80)
         needsDisplay = true
     }
 }
@@ -545,16 +553,26 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     var onClearRequested: ((String, String?, String?) -> Void)?
 
     private enum Layout {
-        static let padding: CGFloat = 16
+        static let padding: CGFloat = 24
         static let resizeHandleHeight: CGFloat = 18
-        static let controlBarHeight: CGFloat = 54
-        static let sectionSpacing: CGFloat = 10
-        static let defaultItemWidth: CGFloat = 248
+        static let controlBarHeight: CGFloat = 48
+        static let sectionSpacing: CGFloat = 2
+        static let defaultItemWidth: CGFloat = 206
         static let defaultItemHeight: CGFloat = 220
         static let compactItemHeight: CGFloat = 160
-        static let imagePreviewMinHeight: CGFloat = 108
-        static let imagePreviewMaxHeight: CGFloat = 190
-        static let scrollEdgeInset: CGFloat = 10
+        static let imagePreviewMinHeight: CGFloat = 78
+        static let imagePreviewMaxHeight: CGFloat = 116
+        static let scrollEdgeInset: CGFloat = 6
+        static let panelCornerRadius: CGFloat = 22
+        static let cardCornerRadius: CGFloat = 14
+        static let innerCornerRadius: CGFloat = 10
+        static let chipCornerRadius: CGFloat = 15
+        static let cardHeaderHeight: CGFloat = 52
+        static let cardInset: CGFloat = 12
+        static let sourceIconSize: CGFloat = 56
+        static let linkPreviewHeight: CGFloat = 58
+        static let filePreviewHeight: CGFloat = 58
+        static let hairlineWidth: CGFloat = 1
     }
 
     private let searchField = NSSearchField()
@@ -669,10 +687,10 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         blendingMode = .behindWindow
         state = .active
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.70).cgColor
-        layer?.cornerRadius = 16
-        layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.58).cgColor
+        layer?.cornerRadius = Layout.panelCornerRadius
         layer?.masksToBounds = true
+        layer?.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
     }
 
     private func configureLayout() {
@@ -742,14 +760,35 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         typeFilterButtons = chips
         updateTypeFilterChipAppearance()
 
-        let row = NSStackView(views: [searchButton, searchField] + chips)
+        let addButton = makeToolbarIconButton(
+            symbolName: "plus",
+            accessibilityLabel: "显示全部"
+        ) { [weak self] in
+            guard let self else { return }
+            self.currentItemTypeFilter = nil
+            self.searchField.stringValue = ""
+            self.searchField.isHidden = true
+            self.updateTypeFilterChipAppearance()
+            self.emitQueryChanged()
+        }
+
+        let row = NSStackView(views: [searchButton, searchField] + chips + [addButton])
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = 8
+        row.spacing = 12
         row.userInterfaceLayoutDirection = .leftToRight
         row.translatesAutoresizingMaskIntoConstraints = false
 
+        let moreButton = makeToolbarIconButton(
+            symbolName: "ellipsis",
+            accessibilityLabel: "更多"
+        ) { [weak self] in
+            self?.showPanelOverflowMenu()
+        }
+        moreButton.translatesAutoresizingMaskIntoConstraints = false
+
         container.addSubview(row)
+        container.addSubview(moreButton)
         searchFieldWidthConstraint = searchField.widthAnchor.constraint(equalToConstant: 220)
         searchFieldWidthConstraint?.isActive = true
 
@@ -757,11 +796,27 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             row.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             row.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             row.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
-            searchField.heightAnchor.constraint(equalToConstant: 30)
+            row.trailingAnchor.constraint(lessThanOrEqualTo: moreButton.leadingAnchor, constant: -12),
+            searchField.heightAnchor.constraint(equalToConstant: 30),
+
+            moreButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
+            moreButton.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
 
         return container
+    }
+
+    private func showPanelOverflowMenu() {
+        let menu = NSMenu()
+        menu.addItem(ActionMenuItem(title: "偏好设置…", imageName: "gearshape") {
+            NSApp.sendAction(#selector(AppDelegate.showPreferences(_:)), to: nil, from: nil)
+        })
+        menu.addItem(ActionMenuItem(title: "隐藏面板", imageName: "eye.slash") { [weak self] in
+            self?.onHide?()
+        })
+
+        guard let event = NSApp.currentEvent else { return }
+        menu.popUp(positioning: nil, at: convert(event.locationInWindow, from: nil), in: self)
     }
 
     private func makeItemBand() -> NSView {
@@ -814,7 +869,11 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             return
         }
 
-        renderItemCards(currentItems.map(makeItemCard))
+        renderItemCards(
+            currentItems.enumerated().map { index, item in
+                makeItemCard(item, displayIndex: index + 1)
+            }
+        )
         scrollSelectedItemIntoView()
     }
 
@@ -1072,6 +1131,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             timeLabel: NSTextField(labelWithString: ""),
             typeText: "空态",
             summary: "复制内容后会显示在这里",
+            footnote: "",
             isSelected: true
         )
     }
@@ -1085,6 +1145,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             timeLabel: NSTextField(labelWithString: "可重试"),
             typeText: "错误",
             summary: "本地历史暂时无法读取",
+            footnote: "",
             isSelected: true
         )
     }
@@ -1098,21 +1159,33 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             timeLabel: NSTextField(labelWithString: ""),
             typeText: "空态",
             summary: "换个关键词或切回全部类型",
+            footnote: "",
             isSelected: true
         )
     }
 
-    private func makeItemCard(_ item: RustClipboardItemSummary) -> NSView {
+    private func makeItemCard(_ item: RustClipboardItemSummary, displayIndex: Int? = nil) -> NSView {
         let imageView = NSImageView()
         imageView.image = item.sourceAppIconPath.flatMap(Self.loadCachedImage(path:))
-            ?? NSImage(systemSymbolName: "app.dashed", accessibilityDescription: item.sourceAppName ?? "未知来源")
-        let previewView = item.itemType == "image"
-            ? makeImagePreview(
+            ?? NSImage(
+                systemSymbolName: symbolName(forItemType: item.itemType),
+                accessibilityDescription: item.sourceAppName ?? displayType(for: item)
+            )
+
+        let previewView: NSView?
+        switch item.itemType {
+        case "image":
+            previewView = makeImagePreview(
                 previewPath: item.previewAssetPath,
                 payloadPath: item.payloadAssetPath,
                 summary: item.summary
             )
-            : nil
+        case "file":
+            previewView = makeFilePreview(for: item)
+        default:
+            previewView = nil
+        }
+
         return makeItemCard(
             itemID: item.id,
             iconView: imageView,
@@ -1120,6 +1193,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             timeLabel: NSTextField(labelWithString: relativeTime(from: item.lastCopiedAtMs)),
             typeText: displayType(for: item),
             summary: displaySummary(for: item),
+            footnote: contentFootnote(for: item),
+            indexText: displayIndex.map(String.init),
             previewView: previewView,
             isSelected: item.id == selectedItemID,
             toolTip: "单击选中，双击复制到剪贴板，右键管理",
@@ -1162,6 +1237,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         timeLabel: NSTextField,
         typeText: String,
         summary: String,
+        footnote: String? = nil,
+        indexText: String? = nil,
         previewView: NSView? = nil,
         isSelected: Bool,
         toolTip: String? = nil,
@@ -1173,10 +1250,18 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         container.boxType = .custom
         container.borderColor = isSelected
             ? NSColor.controlAccentColor
-            : NSColor.separatorColor.withAlphaComponent(0.12)
+            : NSColor.separatorColor.withAlphaComponent(0.08)
+        container.borderWidth = isSelected ? 3 : 0.5
         container.fillColor = NSColor.textBackgroundColor.withAlphaComponent(0.95)
-        container.cornerRadius = 8
+        container.cornerRadius = Layout.cardCornerRadius
         container.contentViewMargins = .zero
+        container.wantsLayer = true
+        container.layer?.cornerRadius = Layout.cardCornerRadius
+        container.layer?.masksToBounds = true
+        container.layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        container.contentView?.wantsLayer = true
+        container.contentView?.layer?.masksToBounds = true
+        container.contentView?.layer?.contentsScale = container.layer?.contentsScale ?? 2
         container.translatesAutoresizingMaskIntoConstraints = false
         container.toolTip = toolTip
         container.itemID = itemID
@@ -1187,12 +1272,15 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         iconView.imageScaling = .scaleProportionallyUpOrDown
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.wantsLayer = true
-        iconView.layer?.cornerRadius = 8
+        iconView.layer?.cornerRadius = Layout.innerCornerRadius
         iconView.layer?.masksToBounds = true
+        iconView.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.30).cgColor
+        iconView.layer?.borderWidth = 0
+        iconView.layer?.contentsScale = container.layer?.contentsScale ?? 2
         iconView.toolTip = appNameLabel.stringValue
 
         let typeHeaderLabel = NSTextField(labelWithString: typeText)
-        typeHeaderLabel.font = .systemFont(ofSize: 13, weight: .bold)
+        typeHeaderLabel.font = .systemFont(ofSize: 14, weight: .bold)
         typeHeaderLabel.textColor = headerTextColor(isSelected: isSelected)
         typeHeaderLabel.lineBreakMode = .byTruncatingTail
         typeHeaderLabel.maximumNumberOfLines = 1
@@ -1215,6 +1303,10 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         headerView.wantsLayer = true
         let unselectedHeaderColor = headerColor(forTypeText: typeText, isSelected: false)
         headerView.layer?.backgroundColor = headerColor(forTypeText: typeText, isSelected: isSelected).cgColor
+        headerView.layer?.cornerRadius = Layout.cardCornerRadius
+        headerView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        headerView.layer?.masksToBounds = true
+        headerView.layer?.contentsScale = container.layer?.contentsScale ?? 2
         headerView.translatesAutoresizingMaskIntoConstraints = false
         headerTextStack.translatesAutoresizingMaskIntoConstraints = false
         headerView.addSubview(headerTextStack)
@@ -1233,19 +1325,21 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             summaryLabel: summaryLabel
         )
 
-        let typeLabel = NSTextField(labelWithString: typeText)
-        typeLabel.font = .systemFont(ofSize: 10, weight: .medium)
-        typeLabel.textColor = .tertiaryLabelColor
-        configureLeftToRightText(typeLabel)
-        typeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        let indexLabel = NSTextField(labelWithString: indexText ?? "")
+        indexLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        indexLabel.textColor = .tertiaryLabelColor
+        indexLabel.lineBreakMode = .byTruncatingTail
+        configureLeftToRightText(indexLabel, alignment: .right)
+        indexLabel.setContentHuggingPriority(.required, for: .horizontal)
 
         let countLabel = NSTextField(labelWithString: contentFootnote(for: summary))
+        countLabel.stringValue = footnote ?? contentFootnote(for: summary)
         countLabel.font = .systemFont(ofSize: 10, weight: .medium)
         countLabel.textColor = .tertiaryLabelColor
         countLabel.lineBreakMode = .byTruncatingTail
         configureLeftToRightText(countLabel)
 
-        let footerRow = NSStackView(views: [countLabel, NSView(), typeLabel])
+        let footerRow = NSStackView(views: [countLabel, NSView(), indexLabel])
         footerRow.orientation = .horizontal
         footerRow.alignment = .centerY
         footerRow.spacing = 6
@@ -1275,21 +1369,21 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             headerView.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor),
             headerView.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor),
             headerView.topAnchor.constraint(equalTo: container.contentView!.topAnchor),
-            headerView.heightAnchor.constraint(equalToConstant: 42),
+            headerView.heightAnchor.constraint(equalToConstant: Layout.cardHeaderHeight),
 
-            headerTextStack.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 12),
-            headerTextStack.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            headerTextStack.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: Layout.cardInset),
+            headerTextStack.centerYAnchor.constraint(equalTo: headerView.centerYAnchor, constant: -1),
             headerTextStack.trailingAnchor.constraint(lessThanOrEqualTo: iconView.leadingAnchor, constant: -8),
 
-            iconView.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -10),
-            iconView.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 30),
-            iconView.heightAnchor.constraint(equalToConstant: 30),
+            iconView.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
+            iconView.topAnchor.constraint(equalTo: headerView.topAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: Layout.sourceIconSize),
+            iconView.heightAnchor.constraint(equalToConstant: Layout.cardHeaderHeight),
 
-            bodyStack.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: 12),
-            bodyStack.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -12),
+            bodyStack.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: Layout.cardInset),
+            bodyStack.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -Layout.cardInset),
             bodyStack.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 12),
-            bodyStack.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: -12)
+            bodyStack.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: -10)
         ])
 
         return container
@@ -1331,7 +1425,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             ])
         }
 
-        container.widthAnchor.constraint(equalToConstant: Layout.defaultItemWidth - 24).isActive = true
+        container.widthAnchor.constraint(equalToConstant: Layout.defaultItemWidth - Layout.cardInset * 2).isActive = true
 
         return container
     }
@@ -1354,9 +1448,11 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private func makeImagePreview(previewPath: String?, payloadPath: String?, summary: String) -> NSView {
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.36).cgColor
-        container.layer?.cornerRadius = 8
-        container.layer?.masksToBounds = true
+        container.layer?.backgroundColor = NSColor.clear.cgColor
+        container.layer?.cornerRadius = 0
+        container.layer?.masksToBounds = false
+        container.layer?.borderWidth = 0
+        container.layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         container.translatesAutoresizingMaskIntoConstraints = false
 
         let imageView = NSImageView()
@@ -1365,6 +1461,9 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         imageView.image = resolvedImage
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 7
+        imageView.layer?.masksToBounds = true
         imageView.toolTip = [previewPath, payloadPath]
             .compactMap { $0 }
             .joined(separator: "\n")
@@ -1396,22 +1495,144 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             }
         }
 
-        let dimensionBadge = makePreviewBadge(summary)
-        dimensionBadge.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(dimensionBadge)
-
-        let heightConstraint = container.heightAnchor.constraint(equalToConstant: 104)
+        let heightConstraint = container.heightAnchor.constraint(equalToConstant: 92)
+        heightConstraint.priority = .defaultHigh
         itemPreviewHeightConstraints.append(heightConstraint)
 
         NSLayoutConstraint.activate([
             heightConstraint,
-            imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            imageView.topAnchor.constraint(equalTo: container.topAnchor),
-            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            imageView.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 18),
+            imageView.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -18),
+            imageView.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+            imageView.centerXAnchor.constraint(equalTo: container.centerXAnchor)
+        ])
 
-            dimensionBadge.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            dimensionBadge.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
+        return container
+    }
+
+    private func makeLinkPreview(for item: RustClipboardItemSummary) -> NSView {
+        let presentation = linkPresentation(for: item)
+        let container = makePreviewSurface(
+            tintColor: NSColor.systemBlue,
+            height: Layout.linkPreviewHeight
+        )
+
+        let iconContainer = makePreviewIconContainer(
+            symbolName: "link",
+            tintColor: NSColor.systemBlue,
+            accessibilityLabel: "链接"
+        )
+
+        let titleLabel = NSTextField(labelWithString: presentation.host)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        configureLeftToRightText(titleLabel)
+
+        let detailLabel = NSTextField(labelWithString: presentation.detail)
+        detailLabel.font = .systemFont(ofSize: 10, weight: .medium)
+        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.lineBreakMode = .byTruncatingMiddle
+        detailLabel.maximumNumberOfLines = 1
+        configureLeftToRightText(detailLabel)
+
+        let textStack = NSStackView(views: [titleLabel, detailLabel])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 2
+        textStack.userInterfaceLayoutDirection = .leftToRight
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(iconContainer)
+        container.addSubview(textStack)
+
+        NSLayoutConstraint.activate([
+            iconContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            iconContainer.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+
+            textStack.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 9),
+            textStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            textStack.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        return container
+    }
+
+    private func makeFilePreview(for item: RustClipboardItemSummary) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let imageView = NSImageView()
+        imageView.image = filePreviewImage(for: item)
+            ?? NSImage(systemSymbolName: "doc", accessibilityDescription: "文件")
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 8
+        imageView.layer?.masksToBounds = true
+        container.addSubview(imageView)
+
+        let heightConstraint = container.heightAnchor.constraint(equalToConstant: 92)
+        heightConstraint.priority = .defaultHigh
+        itemPreviewHeightConstraints.append(heightConstraint)
+        NSLayoutConstraint.activate([
+            heightConstraint,
+            imageView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            imageView.widthAnchor.constraint(lessThanOrEqualToConstant: Layout.defaultItemWidth - 72),
+            imageView.heightAnchor.constraint(lessThanOrEqualToConstant: 76),
+            imageView.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
+            imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 54)
+        ])
+
+        return container
+    }
+
+    private func makePreviewSurface(tintColor: NSColor, height: CGFloat) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = tintColor.withAlphaComponent(0.09).cgColor
+        container.layer?.cornerRadius = Layout.innerCornerRadius
+        container.layer?.masksToBounds = true
+        container.layer?.borderWidth = Layout.hairlineWidth
+        container.layer?.borderColor = tintColor.withAlphaComponent(0.16).cgColor
+        container.layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let heightConstraint = container.heightAnchor.constraint(equalToConstant: height)
+        heightConstraint.priority = .defaultHigh
+        NSLayoutConstraint.activate([heightConstraint])
+
+        return container
+    }
+
+    private func makePreviewIconContainer(
+        symbolName: String,
+        tintColor: NSColor,
+        accessibilityLabel: String
+    ) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = tintColor.withAlphaComponent(0.16).cgColor
+        container.layer?.cornerRadius = 9
+        container.layer?.masksToBounds = true
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let iconView = NSImageView()
+        iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)
+        iconView.contentTintColor = tintColor
+        iconView.imageScaling = .scaleProportionallyDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(iconView)
+
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: 34),
+            container.heightAnchor.constraint(equalToConstant: 34),
+            iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 18),
+            iconView.heightAnchor.constraint(equalToConstant: 18)
         ])
 
         return container
@@ -1423,7 +1644,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         visualEffectView.blendingMode = .withinWindow
         visualEffectView.state = .active
         visualEffectView.wantsLayer = true
-        visualEffectView.layer?.cornerRadius = 6
+        visualEffectView.layer?.cornerRadius = 7
         visualEffectView.layer?.masksToBounds = true
 
         let label = NSTextField(labelWithString: text)
@@ -1533,17 +1754,17 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
     private func makeBodyLabel(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: leftToRightDisplayText(text))
-        label.font = .systemFont(ofSize: 12)
+        label.font = .systemFont(ofSize: 12.5)
         label.textColor = .labelColor
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 4
-        label.preferredMaxLayoutWidth = Layout.defaultItemWidth - 28
+        label.preferredMaxLayoutWidth = Layout.defaultItemWidth - Layout.cardInset * 2 - 4
         label.cell?.wraps = true
         label.cell?.isScrollable = false
         label.cell?.lineBreakMode = .byWordWrapping
-        configureLeftToRightText(label)
+        configureLeftToRightText(label, lineSpacing: 2)
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.setContentCompressionResistancePriority(.required, for: .vertical)
+        label.setContentCompressionResistancePriority(.defaultHigh, for: .vertical)
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
     }
@@ -1554,12 +1775,14 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
     private func configureLeftToRightText(
         _ label: NSTextField,
-        alignment: NSTextAlignment = .left
+        alignment: NSTextAlignment = .left,
+        lineSpacing: CGFloat = 0
     ) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.baseWritingDirection = .leftToRight
         paragraph.lineBreakMode = label.lineBreakMode
+        paragraph.lineSpacing = lineSpacing
         let attributes: [NSAttributedString.Key: Any] = [
             .font: label.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
             .foregroundColor: label.textColor ?? NSColor.labelColor,
@@ -1591,8 +1814,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         button.toolTip = accessibilityLabel
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
-        button.layer?.cornerRadius = 15
-        button.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.46).cgColor
+        button.layer?.cornerRadius = Layout.chipCornerRadius
+        button.layer?.backgroundColor = NSColor.clear.cgColor
 
         NSLayoutConstraint.activate([
             button.widthAnchor.constraint(equalToConstant: 30),
@@ -1620,7 +1843,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         button.toolTip = itemType == nil ? "全部类型" : "仅显示\(title)"
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
-        button.layer?.cornerRadius = 15
+        button.layer?.cornerRadius = Layout.chipCornerRadius
         button.setButtonType(.momentaryChange)
         button.attributedTitle = chipTitle(title, dotColor: dotColor)
 
@@ -1636,8 +1859,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         typeFilterButtons.forEach { button in
             let isSelected = button.itemType == currentItemTypeFilter
             button.layer?.backgroundColor = isSelected
-                ? NSColor.windowBackgroundColor.withAlphaComponent(0.62).cgColor
-                : NSColor.windowBackgroundColor.withAlphaComponent(0.34).cgColor
+                ? NSColor.windowBackgroundColor.withAlphaComponent(0.48).cgColor
+                : NSColor.clear.cgColor
             button.contentTintColor = isSelected ? .controlAccentColor : .labelColor
         }
     }
@@ -1729,7 +1952,16 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private func displaySummary(for item: RustClipboardItemSummary) -> String {
         if item.itemType == "file" {
             let copyText = item.copyCount > 1 ? " · \(item.copyCount) 次复制" : ""
-            return "\(item.summary)\(copyText)"
+            return "\(firstFileDisplayPath(for: item) ?? filePreviewDetail(for: item))\(copyText)"
+        }
+
+        if item.itemType == "link" {
+            let presentation = linkPresentation(for: item)
+            if item.summary.trimmingCharacters(in: .whitespacesAndNewlines) == presentation.host {
+                return presentation.detail
+            }
+
+            return item.summary
         }
 
         guard item.itemType == "image" else {
@@ -1744,46 +1976,173 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         return "PNG · \(sizeText)\(copyText)"
     }
 
+    private func linkPresentation(for item: RustClipboardItemSummary) -> (host: String, detail: String) {
+        let rawText = item.primaryText?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = normalizedURL(from: rawText)
+        let host = url?.host?.replacingOccurrences(of: "www.", with: "") ?? rawText
+        let path = url.map { url -> String in
+            let path = url.path.isEmpty ? "/" : url.path
+            let query = url.query.map { "?\($0)" } ?? ""
+            return "\(url.scheme ?? "https")://\(url.host ?? host)\(path)\(query)"
+        }
+
+        return (
+            host: host.isEmpty ? "网页链接" : host,
+            detail: path ?? (rawText.isEmpty ? "网页链接" : rawText)
+        )
+    }
+
+    private func normalizedURL(from text: String) -> URL? {
+        guard !text.isEmpty else { return nil }
+        if let url = URL(string: text), url.host != nil {
+            return url
+        }
+
+        return URL(string: "https://\(text)").flatMap { $0.host == nil ? nil : $0 }
+    }
+
+    private func filePreviewTitle(for item: RustClipboardItemSummary) -> String {
+        let summary = item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty else { return "文件" }
+        if let separatorRange = summary.range(of: " · ") {
+            return String(summary[..<separatorRange.lowerBound])
+        }
+
+        return summary
+    }
+
+    private func filePreviewDetail(for item: RustClipboardItemSummary) -> String {
+        let summary = item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty else { return "本地文件路径" }
+        if let separatorRange = summary.range(of: " · ") {
+            let detail = String(summary[separatorRange.upperBound...])
+            return detail.isEmpty ? summary : detail
+        }
+
+        return item.copyCount > 1 ? "\(item.copyCount) 次复制" : summary
+    }
+
+    private func firstFileDisplayPath(for item: RustClipboardItemSummary) -> String? {
+        filePreviewURLs(for: item)
+            .first?
+            .path
+    }
+
+    private func filePreviewImage(for item: RustClipboardItemSummary) -> NSImage? {
+        for url in filePreviewURLs(for: item) {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            icon.size = NSSize(width: 96, height: 96)
+            return icon
+        }
+
+        return NSImage(systemSymbolName: "folder", accessibilityDescription: "文件")
+    }
+
+    private func filePreviewURLs(for item: RustClipboardItemSummary) -> [URL] {
+        if let snapshotPaths = fileSnapshotPaths(for: item), !snapshotPaths.isEmpty {
+            return snapshotPaths.map(resolvedFileURL(for:))
+        }
+
+        return item.primaryText?
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .map(resolvedFileURL(for:)) ?? []
+    }
+
+    private func fileSnapshotPaths(for item: RustClipboardItemSummary) -> [String]? {
+        for path in [item.payloadAssetPath, item.previewAssetPath]
+            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) }) where !path.isEmpty {
+            let url = resolvedFileURL(for: path)
+            guard let data = try? Data(contentsOf: url),
+                  let document = try? JSONDecoder().decode(FileSnapshotPreviewDocument.self, from: data),
+                  !document.paths.isEmpty
+            else {
+                continue
+            }
+            return document.paths
+        }
+
+        return nil
+    }
+
+    private func resolvedFileURL(for path: String) -> URL {
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+
+        if path.hasPrefix("~/") {
+            return URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+        }
+
+        if let appSupportDirectory {
+            return appSupportDirectory.appendingPathComponent(path)
+        }
+
+        return Self.resolvedImageURL(for: path)
+    }
+
+    private struct FileSnapshotPreviewDocument: Decodable {
+        let paths: [String]
+    }
+
     private func headerColor(forTypeText typeText: String, isSelected: Bool) -> NSColor {
         if isSelected {
-            return .controlAccentColor
+            return NSColor.systemBlue
         }
 
         if typeText.contains("链接") {
-            return NSColor.systemBlue.withAlphaComponent(0.16)
+            return NSColor.systemPurple
         }
 
         if typeText.contains("图片") {
-            return NSColor.systemTeal.withAlphaComponent(0.18)
+            return NSColor.systemBlue.withAlphaComponent(0.86)
         }
 
         if typeText.contains("文件") {
-            return NSColor.systemIndigo.withAlphaComponent(0.16)
+            return NSColor.systemBlue.withAlphaComponent(0.78)
         }
 
         if typeText.contains("错误") {
-            return NSColor.systemRed.withAlphaComponent(0.16)
+            return NSColor.systemRed.withAlphaComponent(0.88)
         }
 
         if typeText.contains("空态") {
-            return NSColor.systemGray.withAlphaComponent(0.14)
+            return NSColor.systemGray.withAlphaComponent(0.82)
         }
 
-        return NSColor.systemBlue.withAlphaComponent(0.14)
+        return NSColor.systemBlue.withAlphaComponent(0.92)
     }
 
     private func headerTextColor(isSelected: Bool) -> NSColor {
-        isSelected ? .white : .labelColor
+        .white
     }
 
     private func headerSecondaryTextColor(isSelected: Bool) -> NSColor {
-        isSelected ? NSColor.white.withAlphaComponent(0.78) : .secondaryLabelColor
+        NSColor.white.withAlphaComponent(0.80)
     }
 
     private func contentFootnote(for summary: String) -> String {
         let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let count = trimmed.count
         return count > 0 ? "\(count) 个字符" : ""
+    }
+
+    private func contentFootnote(for item: RustClipboardItemSummary) -> String {
+        switch item.itemType {
+        case "image":
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useKB, .useMB]
+            formatter.countStyle = .file
+            return formatter.string(fromByteCount: item.sizeBytes)
+        case "link":
+            return linkPresentation(for: item).host
+        case "file":
+            return item.copyCount > 1 ? "\(item.copyCount) 次复制" : ""
+        default:
+            return contentFootnote(for: item.summary)
+        }
     }
 
     private func relativeTime(from milliseconds: Int64) -> String {
@@ -3833,7 +4192,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshStatusText()
     }
 
-    @objc private func showPreferences(_ sender: Any?) {
+    @objc func showPreferences(_ sender: Any?) {
         refreshAccessibilityPermissionState()
         preferencesController.showPreferences()
     }
@@ -4624,10 +4983,11 @@ private enum PanelSnapshotCommand {
         let frame = NSRect(x: 0, y: 0, width: 960, height: 320)
         let view = FloatingPanelContentView(frame: frame)
         let previewURL = try makePreviewImageURL(outputDirectory: outputURL.deletingLastPathComponent())
+        let sampleItems = makeSampleItems(imagePath: previewURL.path)
         view.updateListState(
             .success(RustCoreListResult(
-                items: makeSampleItems(imagePath: previewURL.path),
-                totalCount: 4,
+                items: sampleItems,
+                totalCount: Int64(sampleItems.count),
                 hasMore: false
             )),
             isFiltered: false
@@ -4737,8 +5097,8 @@ private enum PanelSnapshotCommand {
             makeItem(
                 id: "snapshot-file",
                 itemType: "file",
-                summary: "2 个文件 · report.pdf",
-                primaryText: nil,
+                summary: "report.pdf",
+                primaryText: "/Users/evan/Downloads/report.pdf",
                 sourceAppName: "Finder",
                 timestamp: now - 240_000,
                 sizeBytes: 2048
@@ -4747,10 +5107,28 @@ private enum PanelSnapshotCommand {
                 id: "snapshot-link",
                 itemType: "link",
                 summary: "example.com",
-                primaryText: "https://example.com",
+                primaryText: "https://example.com/docs/production-ui?from=clipboard",
                 sourceAppName: "Safari",
                 timestamp: now - 360_000,
-                sizeBytes: 19
+                sizeBytes: 56
+            ),
+            makeItem(
+                id: "snapshot-terminal",
+                itemType: "text",
+                summary: "git push --set-upstream origin main",
+                primaryText: "git push --set-upstream origin main",
+                sourceAppName: "终端",
+                timestamp: now - 1_620_000,
+                sizeBytes: 35
+            ),
+            makeItem(
+                id: "snapshot-hash",
+                itemType: "text",
+                summary: "f7543c5e99",
+                primaryText: "f7543c5e99",
+                sourceAppName: "Xcode",
+                timestamp: now - 50_400_000,
+                sizeBytes: 10
             )
         ]
     }

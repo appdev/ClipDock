@@ -35,7 +35,7 @@ struct PanelVisualSnapshotTests {
             tolerance: 0.05
         )
         assertColor(
-            bitmap.colorAt(x: 40, y: 89),
+            bitmap.colorAt(x: 150, y: 89),
             isCloseTo: PanelSnapshotFixtureView.selectedHeaderColor,
             tolerance: 0.05
         )
@@ -99,7 +99,7 @@ struct PanelVisualSnapshotTests {
 
 private final class PanelSnapshotFixtureView: NSView {
     static let resizeHandleColor = NSColor(deviceRed: 0.76, green: 0.80, blue: 0.84, alpha: 1)
-    static let selectedHeaderColor = NSColor(deviceRed: 0.23, green: 0.50, blue: 0.92, alpha: 1)
+    static let selectedHeaderColor = NSColor.systemBlue
     static let cardBodyColor = NSColor(deviceRed: 0.95, green: 0.96, blue: 0.94, alpha: 1)
     static let imagePreviewColor = NSColor(deviceRed: 0.36, green: 0.68, blue: 0.74, alpha: 1)
 
@@ -168,41 +168,50 @@ private final class PanelSnapshotFixtureView: NSView {
     }
 
     private func drawCards() {
-        let cardY: CGFloat = 88
-        let cardWidth: CGFloat = 190
-        let cardHeight: CGFloat = 168
+        let cardY: CGFloat = 68
+        let cardWidth: CGFloat = 206
+        let cardHeight: CGFloat = 220
         let gap: CGFloat = 12
-        let types = ["文本", "图片", "文件", "链接"]
+        let types = ["文本", "图片", "文件", "链接", "文本"]
         let summaries = [
             "多行文本内容会在卡片中换行展示，避免只剩一行。",
             "图片 420 x 260",
-            "2 个文件 · report.pdf",
-            "example.com"
+            "/Users/evan/Downloads/report.pdf",
+            "https://example.com/docs",
+            "git push --set-upstream origin main"
         ]
 
-        for index in 0..<4 {
+        for index in 0..<5 {
             let x = 28 + CGFloat(index) * (cardWidth + gap)
             let cardRect = NSRect(x: x, y: cardY, width: cardWidth, height: cardHeight)
-            drawRoundedRect(cardRect, color: Self.cardBodyColor, radius: 8)
+            drawRoundedRect(cardRect, color: Self.cardBodyColor, radius: 14)
             let headerColor = index == 0
                 ? Self.selectedHeaderColor
-                : [NSColor.systemTeal, NSColor.systemIndigo, NSColor.systemBlue][max(0, index - 1)]
-            drawRoundedRect(NSRect(x: x, y: cardY, width: cardWidth, height: 50), color: headerColor, radius: 8)
+                : [NSColor.systemBlue, NSColor.systemBlue, NSColor.systemPurple, NSColor.systemBlue][max(0, index - 1)]
+            drawRoundedRect(NSRect(x: x, y: cardY, width: cardWidth, height: 52), color: headerColor, radius: 14)
 
             drawText(types[index], in: NSRect(x: x + 12, y: cardY + 10, width: 78, height: 16), size: 12, color: .white, weight: .bold)
             drawText("刚刚", in: NSRect(x: x + 12, y: cardY + 27, width: 60, height: 14), size: 10, color: NSColor.white.withAlphaComponent(0.78), weight: .regular)
-            drawRoundedRect(NSRect(x: x + cardWidth - 44, y: cardY + 8, width: 34, height: 34), color: NSColor.white.withAlphaComponent(0.86), radius: 9)
+            drawRoundedRect(NSRect(x: x + cardWidth - 56, y: cardY, width: 56, height: 52), color: NSColor.white.withAlphaComponent(0.34), radius: 10)
 
             if index == 1 {
                 drawRoundedRect(
-                    NSRect(x: x + 12, y: cardY + 68, width: cardWidth - 24, height: 58),
+                    NSRect(x: x + 48, y: cardY + 70, width: cardWidth - 96, height: 82),
                     color: Self.imagePreviewColor,
-                    radius: 7
+                    radius: 8
+                )
+            } else if index == 2 {
+                drawRoundedRect(
+                    NSRect(x: x + 74, y: cardY + 88, width: 58, height: 46),
+                    color: NSColor.systemIndigo.withAlphaComponent(0.12),
+                    radius: 8
                 )
             }
 
-            drawText(summaries[index], in: NSRect(x: x + 12, y: cardY + 68, width: cardWidth - 24, height: 48), size: 12, color: NSColor(deviceWhite: 0.18, alpha: 1), weight: .regular)
-            drawText("\(summaries[index].count) 个字符", in: NSRect(x: x + 12, y: cardY + 142, width: 86, height: 14), size: 10, color: NSColor(deviceWhite: 0.50, alpha: 1), weight: .medium)
+            let summaryY = index == 0 || index >= 3 ? cardY + 70 : cardY + 154
+            drawText(summaries[index], in: NSRect(x: x + 12, y: summaryY, width: cardWidth - 24, height: 32), size: 12, color: NSColor(deviceWhite: 0.18, alpha: 1), weight: .regular)
+            drawText(index == 2 ? "" : "\(summaries[index].count) 个字符", in: NSRect(x: x + 12, y: cardY + 198, width: 86, height: 14), size: 10, color: NSColor(deviceWhite: 0.50, alpha: 1), weight: .medium)
+            drawText("\(index + 1)", in: NSRect(x: x + cardWidth - 26, y: cardY + 198, width: 14, height: 14), size: 10, color: NSColor(deviceWhite: 0.50, alpha: 1), weight: .medium)
         }
     }
 

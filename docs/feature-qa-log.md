@@ -332,3 +332,12 @@
 - 人工可观察行为：`scripts/package-macos-app.sh` 已支持 `APP_VERSION`、`APP_BUILD`、`BUNDLE_IDENTIFIER`、`APP_DISPLAY_NAME` 和 `CODESIGN_IDENTITY`；`scripts/release-macos.sh` 负责版本化输出、zip、dmg、SHA256 清单、manifest，并在提供 Apple notarization 环境变量时走 `xcrun notarytool` / `stapler`。
 - QA 结论：通过。本地候选发布包已经可重复生成并校验完整性，正式发布所需的 Developer ID 签名/公证入口已预留但不会保存凭证。
 - 遗留风险：默认仍是 ad-hoc 签名；正式发布还需要真实 Developer ID 证书、公证凭证、universal macOS 架构、安装器/更新器和发布渠道元数据。
+
+### 生产级 UI 参考还原
+
+- 完成日期：2026-05-09
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过，输出 `Build complete! (0.37s)`；`swift test` 通过，41 个 Swift 测试；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，真实主面板快照为 960 x 320；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --print-ui-diagnostics` 通过，当前机器输出 2 块屏幕和每屏 panelFrame；`git diff --check` 通过。
+- 人工可观察行为：主面板参考用户截图调整为更接近 Paste 的窄卡片横向带；面板圆角增大为完整圆角，背景更轻；卡片宽度收窄、圆角增大，选中卡片使用更粗蓝色描边；卡片顶部改为高饱和色块，来源应用图标放大并贴右上角；图片和文件预览改为居中缩略图，文件正文优先展示路径；footer 改为左侧内容度量、右侧条目序号；顶部工具条保留搜索、类型 chip，并补齐加号重置筛选和右侧更多菜单。
+- QA 结论：通过。当前 UI 已以用户提供的截图为基准完成一轮生产级还原，同时保留已有搜索、类型筛选、右键管理、双击复制隐藏和设置页稳定性。
+- 遗留风险：顶部 chip 仍承载当前产品已有的类型筛选语义，而不是 Paste 的 collection/tag 数据模型；真实来源应用图标效果依赖运行时已采集到的 app icon；超宽真实屏幕上的卡片密度需继续通过真机截图观察微调。

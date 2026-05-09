@@ -228,3 +228,8 @@
 - 2026-05-09 Codex：新增 `scripts/release-macos.sh`，默认输出 `.codex/artifacts/release/0.1.0/`，生成 `.app`、`.zip`、`.dmg`、`SHA256SUMS` 和 `release-manifest.txt`；当 Apple notarization 环境变量齐全时提交公证并 staple。
 - 2026-05-09 Codex：新增 `docs/release.md`，同步更新 README、delivery workflow、feature QA、verification 和 testing，记录本地候选发布包流程、验证和遗留风险。
 - 2026-05-09 Codex：本地候选发布包验证通过：`swift build` 通过；`swift test` 41 个 Swift 测试通过；`scripts/release-macos.sh` 沙箱外通过并生成 release artifacts；包内 `--print-ui-diagnostics`、`codesign --verify --deep --strict`、`(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)` 和沙箱外 `hdiutil imageinfo` 均通过。
+- 2026-05-09 Codex：收到用户提供的 Paste 参考截图，切换 UI 工作基准为“尽可能还原截图”；确认保留现有类型筛选真实功能，同时视觉向窄卡片、顶部强色块、大来源图标、底部序号靠近。
+- 2026-05-09 Codex：主面板 UI 已调整：面板完整大圆角、轻毛玻璃背景；卡片宽度改为 206 pt，圆角 14 pt，选中态粗蓝色描边；顶部色块高度 52 pt，来源图标 56 pt 贴右上角；图片和文件预览居中；文件正文优先展示路径；footer 右侧展示条目序号。
+- 2026-05-09 Codex：顶部工具条已补齐加号和右侧更多入口；加号执行重置筛选/搜索并回到全部剪贴板，更多菜单提供偏好设置和隐藏面板。
+- 2026-05-09 Codex：`PanelSnapshotCommand` 的真实快照样例扩展为多张窄卡片，`PanelVisualSnapshotTests` 离屏视觉夹具同步到新参考风格。
+- 2026-05-09 Codex：生产级 UI 参考还原验证通过：`swift build` 输出 `Build complete! (0.37s)`；`swift test` 输出 `Test run with 41 tests passed after 0.105 seconds`；真实主面板快照和视觉回归图均为 960 x 320；`--exercise-panel-interactions` 输出 `panelInteractions=ok`；`--exercise-preferences`、`--print-ui-diagnostics` 和 `git diff --check` 通过。

@@ -969,3 +969,30 @@ doubleClickCopy=panel-smoke-text
 
 - 默认候选包仍是 ad-hoc 签名；正式发布必须使用 Developer ID 证书和 Apple notarization。
 - universal macOS、安装器、自动更新和渠道发布元数据尚未实现。
+
+## 生产级 UI 参考还原
+
+变更摘要：
+
+- 以用户提供的 Paste 风格截图为新基准，主面板改为更窄、更密的横向卡片带。
+- 面板使用完整大圆角和更轻的毛玻璃背景；卡片圆角、描边、顶部色块和右上角来源图标统一。
+- 图片预览改为居中缩略图；文件条目优先展示路径并使用文件图标/系统缩略图；文本和网站内容保持左向右、多行展示。
+- footer 改为 Paste 式右下角条目序号；顶部补齐加号重置筛选和右侧更多菜单。
+- `PanelVisualSnapshotTests` 的离屏视觉夹具同步到新视觉基准。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (0.37s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.105 seconds`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，真实主面板快照为 960 x 320。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloatingDemo --print-ui-diagnostics`：通过，当前机器输出 `screenCount=2`，并列出每屏 panelFrame。
+- `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
+- `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
+- `git diff --check`：通过。
+
+风险说明：
+
+- 当前顶部 chip 仍是已有类型筛选功能，尚未引入 Paste 式 collection/tag 数据模型。
+- 真实应用图标、文件缩略图和超宽屏卡片密度需要继续基于用户真机截图微调。
