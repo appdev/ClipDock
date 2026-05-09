@@ -1153,3 +1153,21 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## 来源图标代表色修正
+
+变更摘要：
+
+- 修正 `CIAreaAverage` 对 Chrome 等多色图标的平均色偏卡其问题。
+- 保留 Core Image 平均色作为整体色调和灰阶 fallback。
+- 新增 palette representative 逻辑：彩色像素占比足够时，按色相桶面积和平均饱和度挑代表色。
+- 低彩色占比图标不进入彩色色相桶，继续使用灰阶平均色，避免 Terminal 变橘色。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.56s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.104 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。

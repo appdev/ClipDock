@@ -1705,3 +1705,36 @@ git diff --check: passed
 - 来源图标主色优先由 Core Image `CIAreaAverage` API 计算整体色调。
 - Core Image 不可用时回退简单 bitmap 平均，避免回到高饱和色相桶逻辑。
 - 低饱和平均色保持灰阶，Terminal 等黑白图标不会被强行拉成橘色/红色。
+
+## 来源图标代表色修正
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.56s)
+swift test: Test run with 41 tests passed after 0.104 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.39s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- `CIAreaAverage` 仍用于判断整体色调和灰阶 fallback。
+- 彩色占比足够时，改用调色板代表色，避免 Chrome 被全图平均成卡其色。
+- Terminal 等低彩色占比图标继续使用平均灰阶，不参与彩色色相桶竞争。

@@ -1932,10 +1932,16 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             return cachedColor
         }
 
-        guard let averagedColor = coreImageAverageColor(for: image)
-            ?? bitmapAverageColor(for: image),
-            let normalizedColor = normalizedHeaderColor(averagedColor)
+        guard let bitmap = sampledBitmap(for: image),
+              let averagedColor = coreImageAverageColor(for: bitmap)
+                ?? bitmapAverageColor(for: bitmap)
         else {
+            return nil
+        }
+
+        let representativeColor = paletteRepresentativeColor(for: bitmap, fallbackColor: averagedColor)
+            ?? averagedColor
+        guard let normalizedColor = normalizedHeaderColor(representativeColor) else {
             return nil
         }
 
@@ -1951,9 +1957,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         return normalizedColor
     }
 
-    private static func coreImageAverageColor(for image: NSImage) -> NSColor? {
-        guard let bitmap = sampledBitmap(for: image),
-              let cgImage = bitmap.cgImage,
+    private static func coreImageAverageColor(for bitmap: NSBitmapImageRep) -> NSColor? {
+        guard let cgImage = bitmap.cgImage,
               let filter = CIFilter(name: "CIAreaAverage")
         else {
             return nil
@@ -1993,11 +1998,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         )
     }
 
-    private static func bitmapAverageColor(for image: NSImage) -> NSColor? {
-        guard let bitmap = sampledBitmap(for: image) else {
-            return nil
-        }
-
+    private static func bitmapAverageColor(for bitmap: NSBitmapImageRep) -> NSColor? {
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -2028,6 +2029,77 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             srgbRed: red / weight,
             green: green / weight,
             blue: blue / weight,
+            alpha: 1
+        )
+    }
+
+    private static func paletteRepresentativeColor(
+        for bitmap: NSBitmapImageRep,
+        fallbackColor: NSColor
+    ) -> NSColor? {
+        struct Bucket {
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var saturation: CGFloat = 0
+            var weight: CGFloat = 0
+        }
+
+        var buckets = Array(repeating: Bucket(), count: 24)
+        var totalWeight: CGFloat = 0
+        var chromaWeight: CGFloat = 0
+        let step = max(1, min(bitmap.pixelsWide, bitmap.pixelsHigh) / 80)
+
+        for x in stride(from: 0, to: bitmap.pixelsWide, by: step) {
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: step) {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+
+                let alpha = color.alphaComponent
+                guard alpha > 0.08 else { continue }
+                totalWeight += alpha
+
+                var hue: CGFloat = 0
+                var saturation: CGFloat = 0
+                var brightness: CGFloat = 0
+                var colorAlpha: CGFloat = 0
+                color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &colorAlpha)
+
+                guard saturation > 0.18,
+                      brightness > 0.18,
+                      !(brightness > 0.94 && saturation < 0.25)
+                else {
+                    continue
+                }
+
+                let bucketIndex = min(23, max(0, Int((hue * 24).rounded(.down))))
+                let weight = alpha
+                chromaWeight += weight
+                buckets[bucketIndex].red += color.redComponent * weight
+                buckets[bucketIndex].green += color.greenComponent * weight
+                buckets[bucketIndex].blue += color.blueComponent * weight
+                buckets[bucketIndex].saturation += saturation * weight
+                buckets[bucketIndex].weight += weight
+            }
+        }
+
+        guard totalWeight > 0,
+              chromaWeight / totalWeight > 0.12,
+              let selectedBucket = buckets.max(by: {
+                  let lhsScore = $0.weight * (0.65 + ($0.weight > 0 ? $0.saturation / $0.weight : 0) * 0.35)
+                  let rhsScore = $1.weight * (0.65 + ($1.weight > 0 ? $1.saturation / $1.weight : 0) * 0.35)
+                  return lhsScore < rhsScore
+              }),
+              selectedBucket.weight > 0
+        else {
+            return fallbackColor
+        }
+
+        return NSColor(
+            srgbRed: selectedBucket.red / selectedBucket.weight,
+            green: selectedBucket.green / selectedBucket.weight,
+            blue: selectedBucket.blue / selectedBucket.weight,
             alpha: 1
         )
     }
