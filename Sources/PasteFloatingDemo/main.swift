@@ -330,6 +330,10 @@ private final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelega
         popover.isShown
     }
 
+    var contentRootViewForSmoke: NSView? {
+        popover.contentViewController?.view
+    }
+
     func toggle(
         item: RustClipboardItemSummary,
         appSupportDirectory: URL,
@@ -355,6 +359,9 @@ private final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelega
             appSupportDirectory: appSupportDirectory
         )
         let viewController = ClipboardPreviewViewController(content: content)
+        viewController.onClose = { [weak self] in
+            self?.close()
+        }
         popover.contentViewController = viewController
         popover.contentSize = viewController.preferredContentSize
         shownItemID = item.id
@@ -414,12 +421,19 @@ private final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelega
 
 private final class ClipboardPreviewViewController: NSViewController {
     private enum Layout {
-        static let width: CGFloat = 420
-        static let textHeight: CGFloat = 250
-        static let imageHeight: CGFloat = 236
+        static let minWidth: CGFloat = 520
+        static let maxWidth: CGFloat = 980
+        static let minContentHeight: CGFloat = 260
+        static let maxContentHeight: CGFloat = 620
+        static let headerHeight: CGFloat = 50
+        static let footerHeight: CGFloat = 34
+        static let textHorizontalPadding: CGFloat = 20
+        static let textVerticalPadding: CGFloat = 18
+        static let chromeHeight: CGFloat = headerHeight + footerHeight
     }
 
     private let content: ClipboardPreviewContent
+    var onClose: (() -> Void)?
 
     init(content: ClipboardPreviewContent) {
         self.content = content
@@ -441,27 +455,29 @@ private final class ClipboardPreviewViewController: NSViewController {
         root.layer?.cornerRadius = 10
         root.layer?.masksToBounds = true
 
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .width
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        let header = makeHeader()
+        let preview = content.itemType == "image" ? makeImagePreview() : makeTextPreview()
+        let footer = makeFooter()
 
-        stack.addArrangedSubview(makeHeader())
-        if content.itemType == "image" {
-            stack.addArrangedSubview(makeImagePreview())
-        } else {
-            stack.addArrangedSubview(makeTextPreview())
-        }
-        stack.addArrangedSubview(makeFooter())
-
-        root.addSubview(stack)
+        root.addSubview(header)
+        root.addSubview(preview)
+        root.addSubview(footer)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: root.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            header.topAnchor.constraint(equalTo: root.topAnchor),
+            header.heightAnchor.constraint(equalToConstant: Layout.headerHeight),
+
+            preview.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            preview.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            preview.topAnchor.constraint(equalTo: header.bottomAnchor),
+            preview.bottomAnchor.constraint(equalTo: footer.topAnchor),
+
+            footer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            footer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            footer.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            footer.heightAnchor.constraint(equalToConstant: Layout.footerHeight),
+
             root.widthAnchor.constraint(equalToConstant: preferredContentSize.width),
             root.heightAnchor.constraint(equalToConstant: preferredContentSize.height)
         ])
@@ -470,95 +486,117 @@ private final class ClipboardPreviewViewController: NSViewController {
     }
 
     private static func preferredSize(for content: ClipboardPreviewContent) -> NSSize {
-        NSSize(
-            width: Layout.width,
-            height: content.itemType == "image" ? 342 : 354
+        if content.itemType == "image",
+           let image = content.imageURL.flatMap(NSImage.init(contentsOf:)) {
+            let pixelSize = imagePixelSize(for: image) ?? image.size
+            let width = bounded(
+                pixelSize.width + 2,
+                minimum: Layout.minWidth,
+                maximum: availableMaximumWidth()
+            )
+            let contentHeight = bounded(
+                pixelSize.height + 2,
+                minimum: Layout.minContentHeight,
+                maximum: availableMaximumContentHeight()
+            )
+            return NSSize(width: width, height: contentHeight + Layout.chromeHeight)
+        }
+
+        let textMetrics = estimatedTextMetrics(for: content.body)
+        let width = bounded(
+            textMetrics.preferredWidth,
+            minimum: Layout.minWidth,
+            maximum: availableMaximumWidth()
         )
+        let contentHeight = bounded(
+            textMetrics.preferredHeight,
+            minimum: Layout.minContentHeight,
+            maximum: availableMaximumContentHeight()
+        )
+        return NSSize(width: width, height: contentHeight + Layout.chromeHeight)
     }
 
     private func makeHeader() -> NSView {
-        let iconView = NSImageView()
-        iconView.image = content.sourceAppIconPath.flatMap(NSImage.init(contentsOfFile:))
-            ?? NSImage(systemSymbolName: "app.dashed", accessibilityDescription: content.sourceAppName)
-        iconView.imageScaling = .scaleProportionallyUpOrDown
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconView.wantsLayer = true
-        iconView.layer?.cornerRadius = 6
-        iconView.layer?.masksToBounds = true
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleLabel = NSTextField(labelWithString: content.title)
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        let closeButton = PanelActionButton()
+        closeButton.bezelStyle = .texturedRounded
+        closeButton.isBordered = false
+        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "关闭预览")
+        closeButton.imageScaling = .scaleProportionallyDown
+        closeButton.contentTintColor = .tertiaryLabelColor
+        closeButton.target = nil
+        closeButton.action = nil
+        closeButton.onPress = { [weak self] in
+            self?.onClose?()
+        }
+        closeButton.toolTip = "关闭预览"
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = NSTextField(labelWithString: displayTypeTitle())
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         titleLabel.textColor = .labelColor
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
 
-        let subtitleLabel = NSTextField(labelWithString: "\(content.sourceAppName) · \(content.subtitle)")
-        subtitleLabel.font = .systemFont(ofSize: 12)
-        subtitleLabel.textColor = .secondaryLabelColor
-        subtitleLabel.lineBreakMode = .byTruncatingTail
-        subtitleLabel.maximumNumberOfLines = 1
+        let separator = NSView()
+        separator.wantsLayer = true
+        separator.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.14).cgColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
 
-        let textStack = NSStackView(views: [titleLabel, subtitleLabel])
-        textStack.orientation = .vertical
-        textStack.alignment = .leading
-        textStack.spacing = 2
-
-        let row = NSStackView(views: [iconView, textStack])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 10
-        row.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(closeButton)
+        container.addSubview(titleLabel)
+        container.addSubview(separator)
 
         NSLayoutConstraint.activate([
-            iconView.widthAnchor.constraint(equalToConstant: 34),
-            iconView.heightAnchor.constraint(equalToConstant: 34)
-        ])
+            closeButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            closeButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            closeButton.widthAnchor.constraint(equalToConstant: 22),
+            closeButton.heightAnchor.constraint(equalToConstant: 22),
 
-        return row
-    }
+            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 10),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -14),
+            titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
-    private func makeImagePreview() -> NSView {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.42).cgColor
-        container.layer?.cornerRadius = 8
-        container.layer?.masksToBounds = true
-        container.translatesAutoresizingMaskIntoConstraints = false
-
-        let imageView = NSImageView()
-        imageView.image = content.imageURL.flatMap(NSImage.init(contentsOf:))
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(imageView)
-
-        if imageView.image == nil {
-            let fallbackLabel = NSTextField(labelWithString: "预览不可用")
-            fallbackLabel.font = .systemFont(ofSize: 13, weight: .medium)
-            fallbackLabel.textColor = .secondaryLabelColor
-            fallbackLabel.alignment = .center
-            fallbackLabel.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(fallbackLabel)
-
-            NSLayoutConstraint.activate([
-                fallbackLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-                fallbackLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor)
-            ])
-        }
-
-        NSLayoutConstraint.activate([
-            container.heightAnchor.constraint(equalToConstant: Layout.imageHeight),
-            imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            imageView.topAnchor.constraint(equalTo: container.topAnchor),
-            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            separator.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            separator.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1)
         ])
 
         return container
     }
 
-    private func makeTextPreview() -> NSView {
+    private func makeImagePreview() -> NSView {
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let image = content.imageURL.flatMap(NSImage.init(contentsOf:))
+        let viewportSize = NSSize(
+            width: preferredContentSize.width,
+            height: preferredContentSize.height - Layout.chromeHeight
+        )
+        let documentView = PreviewImageDocumentView(image: image, viewportSize: viewportSize)
+        scrollView.documentView = documentView
+
+        NSLayoutConstraint.activate([
+            documentView.widthAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.widthAnchor),
+            documentView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor)
+        ])
+
+        return scrollView
+    }
+
+    private func makeTextPreview() -> NSView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .textBackgroundColor
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -569,52 +607,198 @@ private final class ClipboardPreviewViewController: NSViewController {
         textView.isSelectable = true
         textView.drawsBackground = false
         textView.textColor = .labelColor
-        textView.font = .systemFont(ofSize: 13)
+        textView.font = .systemFont(ofSize: 16)
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
-        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainerInset = NSSize(
+            width: Layout.textHorizontalPadding,
+            height: Layout.textVerticalPadding
+        )
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.lineBreakMode = .byCharWrapping
         textView.textContainer?.containerSize = NSSize(
-            width: Layout.width - 28,
+            width: preferredContentSize.width - Layout.textHorizontalPadding * 2,
             height: CGFloat.greatestFiniteMagnitude
         )
         textView.string = content.body
         scrollView.documentView = textView
 
-        NSLayoutConstraint.activate([
-            scrollView.heightAnchor.constraint(equalToConstant: Layout.textHeight)
-        ])
-
         return scrollView
     }
 
     private func makeFooter() -> NSView {
-        let metadataLabel = NSTextField(labelWithString: content.metadata)
-        metadataLabel.font = .systemFont(ofSize: 11)
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let metadataLabel = NSTextField(labelWithString: footerText())
+        metadataLabel.font = .systemFont(ofSize: 13)
         metadataLabel.textColor = .secondaryLabelColor
         metadataLabel.lineBreakMode = .byTruncatingMiddle
         metadataLabel.maximumNumberOfLines = 1
 
-        let timeLabel = NSTextField(labelWithString: Self.relativeTime(from: content.copiedAtMilliseconds))
-        timeLabel.font = .systemFont(ofSize: 11)
-        timeLabel.textColor = .tertiaryLabelColor
-        timeLabel.alignment = .right
-        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
-
-        let row = NSStackView(views: [metadataLabel, NSView(), timeLabel])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 8
-        return row
+        container.addSubview(metadataLabel)
+        NSLayoutConstraint.activate([
+            metadataLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            metadataLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -14),
+            metadataLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+        return container
     }
 
-    private static func relativeTime(from milliseconds: Int64) -> String {
-        let seconds = TimeInterval(milliseconds) / 1000
-        let date = Date(timeIntervalSince1970: seconds)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
+    private func displayTypeTitle() -> String {
+        switch content.itemType {
+        case "link":
+            return "链接"
+        case "image":
+            return "图片"
+        case "file":
+            return "文件"
+        case "color":
+            return "颜色"
+        case "rich_text":
+            return "富文本"
+        default:
+            return "文本"
+        }
+    }
+
+    private func footerText() -> String {
+        if content.itemType == "image",
+           let image = content.imageURL.flatMap(NSImage.init(contentsOf:)),
+           let size = Self.imagePixelSize(for: image) {
+            return "\(Int(size.width)) × \(Int(size.height))"
+        }
+
+        if content.itemType == "text" || content.itemType == "rich_text" || content.itemType == "link" {
+            let text = content.body
+            let characterCount = text.count
+            let wordCount = text
+                .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+                .count
+            let lineCount = text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count
+            return "\(Self.decimalString(characterCount)) 个字符 · \(Self.decimalString(wordCount)) 单词 · \(Self.decimalString(lineCount)) 行"
+        }
+
+        return content.metadata
+    }
+
+    private static func estimatedTextMetrics(for text: String) -> (preferredWidth: CGFloat, preferredHeight: CGFloat) {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let longestLineLength = lines.map(\.count).max() ?? 0
+        let lineCount = max(lines.count, 1)
+        let preferredWidth = CGFloat(min(max(longestLineLength, 28), 86)) * 8.6
+            + Layout.textHorizontalPadding * 2
+        let preferredHeight = CGFloat(min(max(lineCount, 8), 30)) * 22
+            + Layout.textVerticalPadding * 2
+        return (preferredWidth, preferredHeight)
+    }
+
+    static func imagePixelSize(for image: NSImage) -> NSSize? {
+        if let bitmap = image.representations
+            .compactMap({ $0 as? NSBitmapImageRep })
+            .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) }) {
+            return NSSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
+        }
+
+        return image.size.width > 0 && image.size.height > 0 ? image.size : nil
+    }
+
+    private static func decimalString(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private static func bounded(_ value: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+        min(max(value, minimum), maximum)
+    }
+
+    private static func availableMaximumWidth() -> CGFloat {
+        min(Layout.maxWidth, (NSScreen.main?.visibleFrame.width ?? 1200) - 96)
+    }
+
+    private static func availableMaximumContentHeight() -> CGFloat {
+        min(Layout.maxContentHeight, (NSScreen.main?.visibleFrame.height ?? 820) - 156 - Layout.chromeHeight)
+    }
+}
+
+private final class PreviewImageDocumentView: NSView {
+    private let image: NSImage?
+    private let imageSize: NSSize
+    private let checkerLight = NSColor(calibratedWhite: 0.93, alpha: 1)
+    private let checkerDark = NSColor(calibratedWhite: 0.88, alpha: 1)
+
+    init(image: NSImage?, viewportSize: NSSize) {
+        self.image = image
+        self.imageSize = image.flatMap(ClipboardPreviewViewController.imagePixelSize(for:))
+            ?? NSSize(width: 320, height: 220)
+        let documentSize = NSSize(
+            width: max(viewportSize.width, imageSize.width),
+            height: max(viewportSize.height, imageSize.height)
+        )
+        super.init(frame: NSRect(origin: .zero, size: documentSize))
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        drawCheckerboard(in: dirtyRect)
+
+        guard let image else {
+            drawFallbackText()
+            return
+        }
+
+        let imageRect = NSRect(
+            x: max(0, (bounds.width - imageSize.width) / 2),
+            y: max(0, (bounds.height - imageSize.height) / 2),
+            width: imageSize.width,
+            height: imageSize.height
+        )
+        image.draw(in: imageRect)
+    }
+
+    private func drawCheckerboard(in rect: NSRect) {
+        checkerLight.setFill()
+        rect.fill()
+
+        let square: CGFloat = 12
+        checkerDark.setFill()
+        let minX = Int(floor(rect.minX / square))
+        let maxX = Int(ceil(rect.maxX / square))
+        let minY = Int(floor(rect.minY / square))
+        let maxY = Int(ceil(rect.maxY / square))
+
+        for x in minX...maxX {
+            for y in minY...maxY where (x + y).isMultiple(of: 2) {
+                NSRect(
+                    x: CGFloat(x) * square,
+                    y: CGFloat(y) * square,
+                    width: square,
+                    height: square
+                ).fill()
+            }
+        }
+    }
+
+    private func drawFallbackText() {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+        let text = NSString(string: "预览不可用")
+        let size = text.size(withAttributes: attributes)
+        text.draw(
+            at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
+            withAttributes: attributes
+        )
     }
 }
 
@@ -634,6 +818,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     var onPinRequested: ((RustClipboardItemSummary, Bool) -> Void)?
     var onDeleteRequested: ((RustClipboardItemSummary) -> Void)?
     var onClearRequested: ((String, String?, String?) -> Void)?
+    var onLoadMoreRequested: (() -> Void)?
 
     private enum Layout {
         static let padding: CGFloat = 24
@@ -677,6 +862,9 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private var currentItemTypeFilter: String?
     private var previewPopoverEnabled = true
     private var isShowingFilteredEmptyState = false
+    private var totalItemCount: Int64 = 0
+    private var hasMoreItems = false
+    private var isLoadingMoreItems = false
     private var commandHintModeEnabled = false
     private var commandHintMonitor: Any?
 
@@ -709,19 +897,13 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     func updateStorageState(_ result: Result<RustCoreOpenResult, RustCoreError>) {
         switch result {
         case .success(let openResult):
-            updateItems(openResult.items, isFiltered: false)
-        case .failure:
-            currentItems = []
-            selectedItemID = nil
-            resetItemLayoutTracking()
-            renderItemCards([makeDatabaseErrorCard()])
-        }
-    }
-
-    func updateListState(_ result: Result<RustCoreListResult, RustCoreError>, isFiltered: Bool) {
-        switch result {
-        case .success(let listResult):
-            updateItems(listResult.items, isFiltered: isFiltered)
+            updateItems(
+                openResult.items,
+                isFiltered: false,
+                totalCount: openResult.itemCount,
+                hasMore: Int64(openResult.items.count) < openResult.itemCount,
+                append: false
+            )
         case .failure:
             currentItems = []
             selectedItemID = nil
@@ -802,6 +984,32 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         return CGFloat(cardCount) * itemSide
             + CGFloat(max(cardCount - 1, 0)) * itemBandStack.spacing
             + Layout.scrollEdgeInset * 2
+    }
+
+    private func handleItemBandScrollDidChange() {
+        if commandHintModeEnabled {
+            updateCommandNumberHints()
+        }
+        requestMoreItemsIfNeeded()
+    }
+
+    private func requestMoreItemsIfNeeded() {
+        guard hasMoreItems,
+              !isLoadingMoreItems,
+              let scrollView = itemBandScrollView
+        else {
+            return
+        }
+
+        let visibleRect = scrollView.contentView.bounds
+        let documentWidth = itemBandDocumentView.frame.width
+        let threshold = max(itemSideLength(for: currentPanelHeight) * 4, visibleRect.width * 1.2)
+        guard visibleRect.maxX >= documentWidth - threshold else {
+            return
+        }
+
+        isLoadingMoreItems = true
+        onLoadMoreRequested?()
     }
 
     private func configureAppearance() {
@@ -955,8 +1163,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.usesPredominantAxisScrolling = true
         scrollView.onScrollDidChange = { [weak self] in
-            guard let self, self.commandHintModeEnabled else { return }
-            self.updateCommandNumberHints()
+            self?.handleItemBandScrollDidChange()
         }
 
         itemBandStack.orientation = .horizontal
@@ -980,17 +1187,82 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
     private func updateItems(_ items: [RustClipboardItemSummary], isFiltered: Bool) {
         previewPopoverController.close()
-        currentItems = Array(items.prefix(30))
+        updateItems(
+            items,
+            isFiltered: isFiltered,
+            totalCount: Int64(items.count),
+            hasMore: false,
+            append: false
+        )
+    }
+
+    private func updateItems(
+        _ items: [RustClipboardItemSummary],
+        isFiltered: Bool,
+        totalCount: Int64,
+        hasMore: Bool,
+        append: Bool
+    ) {
+        let appendedItems: [RustClipboardItemSummary]
+        if !append {
+            previewPopoverController.close()
+            currentItems = items
+            appendedItems = []
+        } else {
+            let existingIDs = Set(currentItems.map(\.id))
+            let newItems = items.filter { !existingIDs.contains($0.id) }
+            appendedItems = newItems
+            currentItems += newItems
+        }
+        totalItemCount = totalCount
+        hasMoreItems = hasMore
+        isLoadingMoreItems = false
         isShowingFilteredEmptyState = isFiltered
         selectedItemID = PanelInteractionPlanner.selectedIDAfterListUpdate(
             previousSelectedID: selectedItemID,
             itemIDs: currentItems.map(\.id)
         )
 
-        renderCurrentItems()
+        if append {
+            appendItemsToRenderedList(appendedItems, preserveScrollPosition: true)
+        } else {
+            renderCurrentItems(scrollSelectedItem: true, preserveScrollPosition: false)
+        }
     }
 
-    private func renderCurrentItems() {
+    func updateListState(_ result: Result<RustCoreListResult, RustCoreError>, isFiltered: Bool, append: Bool = false) {
+        switch result {
+        case .success(let listResult):
+            updateItems(
+                listResult.items,
+                isFiltered: isFiltered,
+                totalCount: listResult.totalCount,
+                hasMore: listResult.hasMore,
+                append: append
+            )
+        case .failure:
+            isLoadingMoreItems = false
+            if append {
+                updateLoadingMoreState(false)
+            } else {
+                currentItems = []
+                selectedItemID = nil
+                resetItemLayoutTracking()
+                renderItemCards([makeDatabaseErrorCard()])
+            }
+        }
+    }
+
+    func updateLoadingMoreState(_ isLoading: Bool) {
+        guard isLoadingMoreItems != isLoading else { return }
+        isLoadingMoreItems = isLoading
+    }
+
+    private func renderCurrentItems(
+        scrollSelectedItem: Bool = true,
+        preserveScrollPosition: Bool = false
+    ) {
+        let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
         resetItemLayoutTracking()
         if currentItems.isEmpty {
             renderItemCards([
@@ -1000,7 +1272,48 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         }
 
         renderItemCards(currentItems.map(makeItemCard))
-        scrollSelectedItemIntoView()
+        if preserveScrollPosition, let preservedOrigin, let scrollView = itemBandScrollView {
+            scrollView.contentView.scroll(to: preservedOrigin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        } else if scrollSelectedItem {
+            scrollSelectedItemIntoView()
+        }
+    }
+
+    private func appendItemsToRenderedList(
+        _ items: [RustClipboardItemSummary],
+        preserveScrollPosition: Bool
+    ) {
+        let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
+
+        if items.isEmpty {
+            refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
+            return
+        }
+
+        items.map(makeItemCard).forEach { itemBandStack.addArrangedSubview($0) }
+        refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
+    }
+
+    private func refreshItemBandLayout(
+        preservedOrigin: NSPoint?,
+        preserveScrollPosition: Bool
+    ) {
+        let itemSide = itemSideLength(for: currentPanelHeight)
+        itemBandDocumentView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: itemBandDocumentWidth(itemSide: itemSide),
+            height: itemSide
+        )
+        updatePanelHeight(currentPanelHeight)
+
+        if preserveScrollPosition, let preservedOrigin, let scrollView = itemBandScrollView {
+            scrollView.contentView.scroll(to: preservedOrigin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+
+        updateCommandNumberHints()
     }
 
     private func handleKeyboardCommand(_ event: NSEvent) -> Bool {
@@ -2769,6 +3082,25 @@ private extension FloatingPanelContentView {
             .first
     }
 
+    var smokeCurrentItemCount: Int {
+        currentItems.count
+    }
+
+    var smokeIsLoadingMoreActive: Bool {
+        isLoadingMoreItems
+    }
+
+    func smokeScrollToLoadMoreThreshold() {
+        guard let scrollView = itemBandScrollView else { return }
+
+        layoutSubtreeIfNeeded()
+        itemBandDocumentView.layoutSubtreeIfNeeded()
+        let maxX = max(0, itemBandDocumentView.frame.width - scrollView.contentView.bounds.width)
+        scrollView.contentView.scroll(to: NSPoint(x: maxX, y: 0))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        handleItemBandScrollDidChange()
+    }
+
     func smokeFirstCardSize(afterPanelHeight panelHeight: CGFloat) -> CGSize? {
         updatePanelHeight(panelHeight)
         layoutSubtreeIfNeeded()
@@ -2788,6 +3120,13 @@ private extension FloatingPanelContentView {
 
     var smokeIsPreviewShown: Bool {
         previewPopoverController.isShown
+    }
+
+    func smokePreviewActionButtonToolTips() -> [String] {
+        guard let rootView = previewPopoverController.contentRootViewForSmoke else { return [] }
+        return allSmokeSubviews(of: rootView)
+            .compactMap { $0 as? NSButton }
+            .compactMap(\.toolTip)
     }
 
     func smokeClosePreviewWithSpaceFromPopoverFocus() -> Bool {
@@ -2847,6 +3186,7 @@ private final class FloatingPanelController {
     var onPinRequested: ((RustClipboardItemSummary, Bool) -> Void)?
     var onDeleteRequested: ((RustClipboardItemSummary) -> Void)?
     var onClearRequested: ((String, String?, String?) -> Void)?
+    var onLoadMoreRequested: (() -> Void)?
 
     init() {
         contentView = FloatingPanelContentView(frame: .zero)
@@ -2910,8 +3250,12 @@ private final class FloatingPanelController {
         contentView.updateStorageState(result)
     }
 
-    func updateListState(_ result: Result<RustCoreListResult, RustCoreError>, isFiltered: Bool) {
-        contentView.updateListState(result, isFiltered: isFiltered)
+    func updateListState(_ result: Result<RustCoreListResult, RustCoreError>, isFiltered: Bool, append: Bool = false) {
+        contentView.updateListState(result, isFiltered: isFiltered, append: append)
+    }
+
+    func updateLoadingMoreState(_ isLoading: Bool) {
+        contentView.updateLoadingMoreState(isLoading)
     }
 
     func updateSourceApps(_ apps: [RustSourceAppSummary], selectedSourceAppID: String?) {
@@ -3027,6 +3371,9 @@ private final class FloatingPanelController {
         }
         contentView.onClearRequested = { [weak self] searchText, itemType, sourceAppID in
             self?.onClearRequested?(searchText, itemType, sourceAppID)
+        }
+        contentView.onLoadMoreRequested = { [weak self] in
+            self?.onLoadMoreRequested?()
         }
     }
 
@@ -4870,14 +5217,16 @@ private actor ClipboardDatabaseWorker {
     func listItems(
         client: RustCoreClient,
         appSupportURL: URL,
+        limit: Int64,
+        offset: Int64,
         itemType: String?,
         sourceAppID: String?,
         normalizedSearch: String
     ) -> Result<RustCoreListResult, RustCoreError> {
         client.listItems(
             appSupportDirectory: appSupportURL,
-            limit: 50,
-            offset: 0,
+            limit: limit,
+            offset: offset,
             itemType: itemType,
             sourceAppId: sourceAppID,
             searchText: normalizedSearch.isEmpty ? nil : normalizedSearch
@@ -4918,6 +5267,16 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         case failure(message: String)
     }
 
+    private enum ClipboardPagination {
+        static let pageSize: Int64 = 50
+    }
+
+    private struct ClipboardPrefetchedPage {
+        let generation: Int
+        let offset: Int64
+        let result: Result<RustCoreListResult, RustCoreError>
+    }
+
     private let panelController = FloatingPanelController()
     private let preferencesController = PreferencesWindowController()
     private let rustCoreClient = RustCoreClient()
@@ -4941,6 +5300,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentPreferences = RustPreferencesDocument()
     private var listRefreshGeneration = 0
     private var pendingListRefreshTask: Task<Void, Never>?
+    private var pendingPrefetchClipboardTask: Task<Void, Never>?
+    private var prefetchedClipboardPage: ClipboardPrefetchedPage?
+    private var prefetchingClipboardOffset: Int64?
+    private var loadedClipboardItemCount: Int64 = 0
+    private var hasMoreClipboardItems = false
+    private var isLoadingMoreClipboardItems = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -5015,6 +5380,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         panelController.onClearRequested = { [weak self] searchText, itemType, sourceAppID in
             self?.clearItems(searchText: searchText, itemType: itemType, sourceAppID: sourceAppID)
+        }
+        panelController.onLoadMoreRequested = { [weak self] in
+            self?.loadMoreClipboardItems()
         }
         preferencesController.onPreferencesChanged = { [weak self] preferences in
             self?.persistPreferences(preferences)
@@ -5099,6 +5467,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         listRefreshGeneration += 1
         pendingListRefreshTask?.cancel()
         pendingListRefreshTask = nil
+        cancelClipboardPrefetch()
+        isLoadingMoreClipboardItems = false
+        panelController.updateLoadingMoreState(false)
     }
 
     private func statusText(
@@ -5252,11 +5623,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             loadPreferences()
             let maintenanceResult = runLocalMaintenance()
             refreshSourceApps()
-            if currentSearchText.isEmpty, currentItemType == nil, currentSourceAppID == nil {
-                panelController.updateStorageState(.success(result))
-            } else {
-                refreshClipboardList()
-            }
+            refreshClipboardList()
             if let maintenanceResult, hasMaintenanceChanges(maintenanceResult) {
                 storageStatusText = maintenanceStatusText(maintenanceResult)
                 refreshStatusText()
@@ -5429,6 +5796,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         listRefreshGeneration += 1
         let generation = listRefreshGeneration
         pendingListRefreshTask?.cancel()
+        cancelClipboardPrefetch()
+        loadedClipboardItemCount = 0
+        hasMoreClipboardItems = false
+        isLoadingMoreClipboardItems = false
+        panelController.updateLoadingMoreState(false)
 
         let task = Task { [weak self, client, appSupportURL, databaseWorker, itemType, sourceAppID, normalizedSearch, isFiltered, generation] in
             if debounce {
@@ -5439,6 +5811,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = await databaseWorker.listItems(
                 client: client,
                 appSupportURL: appSupportURL,
+                limit: ClipboardPagination.pageSize,
+                offset: 0,
                 itemType: itemType,
                 sourceAppID: sourceAppID,
                 normalizedSearch: normalizedSearch
@@ -5446,23 +5820,183 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
             guard !Task.isCancelled else { return }
             guard let self, generation == self.listRefreshGeneration else { return }
-            self.applyClipboardListResult(result, isFiltered: isFiltered)
+            self.applyClipboardListResult(result, isFiltered: isFiltered, append: false)
         }
 
         pendingListRefreshTask = task
     }
 
+    private func loadMoreClipboardItems() {
+        guard let appSupportURL,
+              hasMoreClipboardItems,
+              !isLoadingMoreClipboardItems
+        else {
+            panelController.updateLoadingMoreState(false)
+            return
+        }
+
+        if consumePrefetchedClipboardPageIfAvailable() {
+            return
+        }
+
+        let normalizedSearch = currentSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let itemType = currentItemType
+        let sourceAppID = currentSourceAppID
+        let isFiltered = itemType != nil || sourceAppID != nil || !normalizedSearch.isEmpty
+        let client = rustCoreClient
+        let databaseWorker = databaseWorker
+        let generation = listRefreshGeneration
+        let offset = loadedClipboardItemCount
+        let limit = ClipboardPagination.pageSize
+
+        guard limit > 0 else {
+            panelController.updateLoadingMoreState(false)
+            return
+        }
+
+        isLoadingMoreClipboardItems = true
+
+        if prefetchingClipboardOffset == offset {
+            return
+        }
+
+        Task { [weak self, client, appSupportURL, databaseWorker, itemType, sourceAppID, normalizedSearch, isFiltered, generation, offset, limit] in
+            let result = await databaseWorker.listItems(
+                client: client,
+                appSupportURL: appSupportURL,
+                limit: limit,
+                offset: offset,
+                itemType: itemType,
+                sourceAppID: sourceAppID,
+                normalizedSearch: normalizedSearch
+            )
+
+            guard let self, generation == self.listRefreshGeneration else { return }
+            self.isLoadingMoreClipboardItems = false
+            self.applyClipboardListResult(result, isFiltered: isFiltered, append: true)
+        }
+    }
+
+    private func consumePrefetchedClipboardPageIfAvailable() -> Bool {
+        guard let prefetchedClipboardPage,
+              prefetchedClipboardPage.generation == listRefreshGeneration,
+              prefetchedClipboardPage.offset == loadedClipboardItemCount
+        else {
+            return false
+        }
+
+        self.prefetchedClipboardPage = nil
+        isLoadingMoreClipboardItems = false
+        applyClipboardListResult(
+            prefetchedClipboardPage.result,
+            isFiltered: isCurrentListFiltered(),
+            append: true
+        )
+        return true
+    }
+
+    private func prefetchNextClipboardPageIfNeeded() {
+        guard let appSupportURL,
+              hasMoreClipboardItems,
+              !isLoadingMoreClipboardItems
+        else {
+            return
+        }
+
+        let offset = loadedClipboardItemCount
+        guard prefetchedClipboardPage?.offset != offset,
+              prefetchingClipboardOffset != offset
+        else {
+            return
+        }
+
+        pendingPrefetchClipboardTask?.cancel()
+        prefetchedClipboardPage = nil
+
+        let normalizedSearch = currentSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let itemType = currentItemType
+        let sourceAppID = currentSourceAppID
+        let client = rustCoreClient
+        let databaseWorker = databaseWorker
+        let generation = listRefreshGeneration
+        let limit = ClipboardPagination.pageSize
+
+        guard limit > 0 else { return }
+
+        prefetchingClipboardOffset = offset
+        pendingPrefetchClipboardTask = Task { [weak self, client, appSupportURL, databaseWorker, itemType, sourceAppID, normalizedSearch, generation, offset, limit] in
+            let result = await databaseWorker.listItems(
+                client: client,
+                appSupportURL: appSupportURL,
+                limit: limit,
+                offset: offset,
+                itemType: itemType,
+                sourceAppID: sourceAppID,
+                normalizedSearch: normalizedSearch
+            )
+
+            guard let self,
+                  generation == self.listRefreshGeneration,
+                  !Task.isCancelled
+            else {
+                return
+            }
+
+            self.pendingPrefetchClipboardTask = nil
+            self.prefetchingClipboardOffset = nil
+
+            guard self.loadedClipboardItemCount == offset else {
+                return
+            }
+
+            if self.isLoadingMoreClipboardItems {
+                self.isLoadingMoreClipboardItems = false
+                self.applyClipboardListResult(
+                    result,
+                    isFiltered: self.isCurrentListFiltered(),
+                    append: true
+                )
+            } else {
+                self.prefetchedClipboardPage = ClipboardPrefetchedPage(
+                    generation: generation,
+                    offset: offset,
+                    result: result
+                )
+            }
+        }
+    }
+
+    private func cancelClipboardPrefetch() {
+        pendingPrefetchClipboardTask?.cancel()
+        pendingPrefetchClipboardTask = nil
+        prefetchedClipboardPage = nil
+        prefetchingClipboardOffset = nil
+    }
+
+    private func isCurrentListFiltered() -> Bool {
+        currentItemType != nil
+            || currentSourceAppID != nil
+            || !currentSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func applyClipboardListResult(
         _ result: Result<RustCoreListResult, RustCoreError>,
-        isFiltered: Bool
+        isFiltered: Bool,
+        append: Bool
     ) {
         switch result {
         case .success(let list):
             storageStatusText = "存储：已连接（\(list.totalCount) 条）"
-            panelController.updateListState(.success(list), isFiltered: isFiltered)
+            loadedClipboardItemCount = append
+                ? loadedClipboardItemCount + Int64(list.items.count)
+                : Int64(list.items.count)
+            hasMoreClipboardItems = list.hasMore
+            panelController.updateListState(.success(list), isFiltered: isFiltered, append: append)
+            prefetchNextClipboardPageIfNeeded()
         case .failure(let error):
+            isLoadingMoreClipboardItems = false
             storageStatusText = "查询：\(error.code)"
-            panelController.updateListState(.failure(error), isFiltered: false)
+            panelController.updateListState(.failure(error), isFiltered: false, append: append)
         }
 
         refreshStatusText()
@@ -5755,6 +6289,60 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshStatusText() {
         panelController.updateStatus(dockIconVisible: false, hotKeyAvailable: hotKeyAvailable)
         statusItem?.button?.toolTip = "层级：\(panelController.levelMode.title)\n\(storageStatusText)"
+    }
+}
+
+@MainActor
+private extension AppDelegate {
+    func smokePreparePrefetchedLoadMore(
+        appSupportURL: URL,
+        firstPage: [RustClipboardItemSummary],
+        prefetchedPage: [RustClipboardItemSummary],
+        totalCount: Int64
+    ) {
+        self.appSupportURL = appSupportURL
+        currentSearchText = ""
+        currentItemType = nil
+        currentSourceAppID = nil
+        listRefreshGeneration += 1
+        cancelClipboardPrefetch()
+        loadedClipboardItemCount = Int64(firstPage.count)
+        hasMoreClipboardItems = true
+        isLoadingMoreClipboardItems = false
+        panelController.setAppSupportDirectory(appSupportURL)
+        panelController.updateListState(
+            .success(RustCoreListResult(
+                items: firstPage,
+                totalCount: totalCount,
+                hasMore: true
+            )),
+            isFiltered: false
+        )
+        prefetchedClipboardPage = ClipboardPrefetchedPage(
+            generation: listRefreshGeneration,
+            offset: Int64(firstPage.count),
+            result: .success(RustCoreListResult(
+                items: prefetchedPage,
+                totalCount: totalCount,
+                hasMore: false
+            ))
+        )
+    }
+
+    func smokeConsumeLoadMore() {
+        loadMoreClipboardItems()
+    }
+
+    var smokeLoadedClipboardItemCount: Int64 {
+        loadedClipboardItemCount
+    }
+
+    var smokeIsLoadingMoreClipboardItems: Bool {
+        isLoadingMoreClipboardItems
+    }
+
+    var smokePanelItemCount: Int {
+        panelController.smokeContentView.smokeCurrentItemCount
     }
 }
 
@@ -6207,6 +6795,7 @@ private enum PanelInteractionSmokeCommand {
         var deletedItemID: String?
         var clearRequest: (searchText: String, itemType: String?, sourceAppID: String?)?
         var hideCount = 0
+        var loadMoreRequestCount = 0
 
         controller.onQueryChanged = { searchText, itemType, sourceAppID in
             queries.append((searchText, itemType, sourceAppID))
@@ -6227,6 +6816,9 @@ private enum PanelInteractionSmokeCommand {
         controller.onRequestHide = {
             hideCount += 1
             controller.hide()
+        }
+        controller.onLoadMoreRequested = {
+            loadMoreRequestCount += 1
         }
 
         controller.setAppSupportDirectory(appSupportURL)
@@ -6269,6 +6861,8 @@ private enum PanelInteractionSmokeCommand {
         sendSpace(to: contentView)
         drainMainRunLoop()
         try require(contentView.smokeIsPreviewShown, "Space 未打开当前选中条目的预览")
+        let previewButtonToolTips = contentView.smokePreviewActionButtonToolTips()
+        try require(previewButtonToolTips == ["关闭预览"], "预览浮层不应包含右侧编辑、分享或更多操作按钮")
         try require(contentView.smokeClosePreviewWithSpaceFromPopoverFocus(), "预览焦点下的 Space 未被预览控制器接管")
         drainMainRunLoop()
         try require(!contentView.smokeIsPreviewShown, "预览显示后再次 Space 未关闭预览")
@@ -6374,6 +6968,71 @@ private enum PanelInteractionSmokeCommand {
         try require(copiedItemID == "panel-smoke-file", "Command+3 未直接复制第三个完整可见条目")
         try require(!controller.isVisible, "Command+数字复制后面板未隐藏")
 
+        let pagedItems = makePagedSampleItems(count: 75)
+        let firstPage = Array(pagedItems.prefix(50))
+        let secondPage = Array(pagedItems.dropFirst(50))
+        let loadMoreCountBeforePaging = loadMoreRequestCount
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(
+                items: firstPage,
+                totalCount: Int64(pagedItems.count),
+                hasMore: true
+            )),
+            isFiltered: false
+        )
+        drainMainRunLoop()
+        try require(contentView.smokeCurrentItemCount == 50, "第一页分页条目数量不正确")
+        guard let firstPagedCardBeforeAppend = contentView.smokeCardBoxes().first else {
+            throw SmokeError(message: "第一页未渲染可检查的条目卡片")
+        }
+        contentView.smokeScrollToLoadMoreThreshold()
+        drainMainRunLoop()
+        try require(
+            loadMoreRequestCount == loadMoreCountBeforePaging + 1,
+            "横向滚动到末尾未触发加载更多请求"
+        )
+        try require(contentView.smokeIsLoadingMoreActive, "加载更多请求后未进入加载状态")
+
+        contentView.updateListState(
+            .success(RustCoreListResult(
+                items: secondPage,
+                totalCount: Int64(pagedItems.count),
+                hasMore: false
+            )),
+            isFiltered: false,
+            append: true
+        )
+        drainMainRunLoop()
+        try require(contentView.smokeCurrentItemCount == 75, "第二页追加后总条目数量不正确")
+        try require(!contentView.smokeIsLoadingMoreActive, "第二页追加完成后加载状态未清理")
+        try require(
+            contentView.smokeCardBoxes().first === firstPagedCardBeforeAppend,
+            "加载更多后不应重建第一页已有卡片"
+        )
+
+        let prefetchDelegate = AppDelegate()
+        prefetchDelegate.smokePreparePrefetchedLoadMore(
+            appSupportURL: appSupportURL,
+            firstPage: firstPage,
+            prefetchedPage: secondPage,
+            totalCount: Int64(pagedItems.count)
+        )
+        prefetchDelegate.smokeConsumeLoadMore()
+        drainMainRunLoop()
+        try require(
+            prefetchDelegate.smokeLoadedClipboardItemCount == 75,
+            "预取页命中后未立即推进已加载数量"
+        )
+        try require(
+            prefetchDelegate.smokePanelItemCount == 75,
+            "预取页命中后未立即追加到面板"
+        )
+        try require(
+            !prefetchDelegate.smokeIsLoadingMoreClipboardItems,
+            "预取页命中后不应进入等待加载状态"
+        )
+
         print("panelInteractions=ok")
         print("singleClick=panel-smoke-image")
         print("commandHints=1,2,3")
@@ -6385,6 +7044,8 @@ private enum PanelInteractionSmokeCommand {
         print("clearScope=\(clearRequest.map { "\($0.searchText)|\($0.itemType ?? "all")" } ?? "none")")
         print("escapeHide=\(hideCount)")
         print("doubleClickCopy=\(doubleClickCopiedItemID ?? "none")")
+        print("loadMore=\(loadMoreRequestCount - loadMoreCountBeforePaging)")
+        print("prefetchLoadMore=\(prefetchDelegate.smokeLoadedClipboardItemCount)")
     }
 
     @MainActor
@@ -6629,6 +7290,23 @@ private enum PanelInteractionSmokeCommand {
         }
 
         return items
+    }
+
+    private static func makePagedSampleItems(count: Int) -> [RustClipboardItemSummary] {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        return (1...count).map { index in
+            makeItem(
+                id: "panel-page-\(index)",
+                itemType: index.isMultiple(of: 5) ? "link" : "text",
+                summary: "分页历史条目 \(index)",
+                primaryText: index.isMultiple(of: 5)
+                    ? "https://example.com/page/\(index)"
+                    : "分页历史条目 \(index)",
+                sourceAppName: index.isMultiple(of: 3) ? "Safari" : "备忘录",
+                timestamp: now - Int64(index * 30_000),
+                sizeBytes: 32
+            )
+        }
     }
 
     private static func makeItem(

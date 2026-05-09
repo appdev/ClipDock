@@ -1092,6 +1092,56 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
+## 剪贴板历史加载更多
+
+变更摘要：
+
+- App 层列表刷新改为首屏 `limit = 50, offset = 0`，并记录已加载数量、是否还有下一页和预取状态。
+- 主面板横向滚动接近末尾时请求下一页；正常路径优先消费内存中的预取页，不展示 loading 卡片。
+- 下一页使用已有 Rust `limit + offset` 查询，追加时按 ID 去重；预取页命中后立刻继续预取下一页。
+- 搜索、类型筛选、来源筛选、删除、清空等会重置分页状态，避免旧分页结果污染当前列表。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.20s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.101 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`loadMore=1` 和 `prefetchLoadMore=75`。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `git diff --check`：通过。
+
+## 加载更多卡顿优化
+
+变更摘要：
+
+- 可见 UI 不再出现 loading 卡片。
+- App 层始终让内存比当前显示多保留一页；用户滚到边界时优先消费预取页。
+- 下一页命中后只追加新增条目，保留第一页已有 `ClipboardItemCardBox` 实例，并立即预取下一页。
+- 加载触发阈值从接近末尾扩展到约 4 张卡 / 1.2 屏宽，让消费预取页更早发生。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.20s)`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`loadMore=1` 和 `prefetchLoadMore=75`；新增断言确认加载第二页后第一页首张卡片没有被重建，且预取页命中不会进入可见 loading。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.101 seconds`。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `git diff --check`：通过。
+
+## 预览浮层截图参考优化
+
+变更摘要：
+
+- 预览浮层改为接近系统预览的 header / content / footer 结构。
+- Header 只保留左侧关闭按钮与类型标题，移除右侧编辑、分享、更多等入口。
+- 文本预览使用大字号可滚动正文，底部显示字符、单词和行数。
+- 图片预览使用真实尺寸可横纵滚动画布、透明棋盘背景，底部显示像素尺寸。
+
+验证结果：
+
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.118 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`；新增断言确认预览中仅有“关闭预览”按钮。
+
 风险说明：
 
 - collection/tag 尚未实现，当前“collection 色”由来源 App 色先承接；未来引入 collection 后可把 color key 从 source 替换或提升为 collection。

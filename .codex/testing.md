@@ -1936,3 +1936,97 @@ git diff --check: passed
 - 面板显示时主动激活 App 并成为 key window。
 - 显示后立即将 content view 设为 first responder。
 - 下一轮 run loop 再次确认 key window 和 first responder，覆盖全局热键回调后的焦点时序。
+
+## 预览浮层截图参考优化
+
+命令：
+
+```bash
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift test: Test run with 41 tests passed after 0.118 seconds
+panel interactions: panelInteractions=ok
+```
+
+覆盖点：
+
+- Space 打开当前选中条目的预览。
+- 预览浮层只保留“关闭预览”按钮，不包含右侧编辑、分享或更多操作入口。
+- 预览焦点下再次按 Space 关闭预览。
+- 面板单击、Command 数字取用、类型筛选、搜索、菜单、Escape 和双击复制路径仍通过。
+
+## 剪贴板历史加载更多
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.20s)
+swift test: Test run with 41 tests passed after 0.101 seconds
+panel interactions: panelInteractions=ok; loadMore=1; prefetchLoadMore=75
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.30s)
+panel snapshot: pixelWidth 960; pixelHeight 320
+git diff --check: passed
+```
+
+覆盖点：
+
+- 首屏列表按 50 条分页展示。
+- 横向滚动到末尾附近只触发一次加载更多请求。
+- 下一页追加后总条目从 50 增至 75。
+- 追加完成后加载状态清理，现有单击、双击、Command 数字取用、搜索、筛选、菜单和 Escape 路径仍通过。
+
+## 加载更多卡顿优化
+
+命令：
+
+```bash
+swift build
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift test
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.20s)
+panel interactions: panelInteractions=ok; loadMore=1; prefetchLoadMore=75
+swift test: Test run with 41 tests passed after 0.101 seconds
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.30s)
+panel snapshot: pixelWidth 960; pixelHeight 320
+git diff --check: passed
+```
+
+覆盖点：
+
+- 可见 UI 不再出现 loading 卡片。
+- App 层始终预取下一页，内存里比当前显示多保留一页。
+- 预取页命中后直接追加新条目，随后立刻预取下一页。
+- 交互 smoke 断言第一页首张卡片对象在追加后保持不变，证明已有 UI 没有被全量重建。
+- 加载触发阈值提前到约 4 张卡 / 1.2 屏宽，降低滚到底才等待查询和 UI 追加的体感卡顿。

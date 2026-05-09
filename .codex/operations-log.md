@@ -258,3 +258,11 @@
 - 2026-05-09 Codex：修正顶部 tab/chip 内容居中和卡片正文对齐；chip attributed title 改为居中段落并设置按钮居中，卡片正文区域改为 leading alignment，正文容器和 footer 宽度显式跟随 body stack。
 - 2026-05-09 Codex：修复 Command 数字提示残留；将 flagsChanged monitor 扩展为 command hint monitor，监听 flags/key/mouse，本地事件不带 Command 时自愈清理；Command+数字复制前和窗口移除时也清空提示。
 - 2026-05-09 Codex：修复全局快捷键打开面板后需要先点击才能使用键盘的问题；显示面板时主动激活 App、`makeKeyAndOrderFront`，立即和下一轮 run loop 都将 content view 设为 first responder。
+- 2026-05-09 Codex：根据用户提供的 4 张系统预览截图整理预览目标：保留左侧关闭与类型标题，去除右侧编辑、分享、更多等操作；文本预览提供大字号可滚动正文与底部字符/单词/行数统计；图片预览提供真实尺寸可横纵滚动画布、透明棋盘背景与底部像素尺寸。
+- 2026-05-09 Codex：`ClipboardPreviewViewController` 改为 Quick Look 风格三段结构（header / preview / footer）；预览尺寸按内容估算并限制在屏幕可用范围内；图片预览新增 `PreviewImageDocumentView` 绘制棋盘背景并按真实像素居中展示。
+- 2026-05-09 Codex：交互 smoke 新增预览浮层按钮断言，确认预览中仅存在“关闭预览”，不包含右侧编辑、分享或更多操作入口；同时修复当前文件里 `onLoadMoreRequested` 重复声明与控制器缺失转发属性导致的编译失败。
+- 2026-05-09 Codex：实现剪贴板历史“加载更多”：主列表首屏使用 Rust 分页读取 50 条，横向滚动接近末尾时请求下一页；追加结果时去重并保留当前横向滚动位置，筛选、搜索、删除、清空等列表刷新会重置分页状态。
+- 2026-05-09 Codex：交互 smoke 新增分页回归：构造 75 条历史，先展示 50 条，滚动到末尾断言触发 1 次加载更多请求，再追加剩余 25 条并确认加载状态清理。
+- 2026-05-09 Codex：修复加载更多时的滚动末尾等待卡顿：移除可见 loading 卡片，App 层始终预取下一页并存放在内存；用户滚到边界时优先消费预取页，随后立刻预取下一页，触发阈值提前到约 4 张卡 / 1.2 屏宽。
+- 2026-05-09 Codex：分页交互 smoke 增加对象身份断言，确认加载第二页后第一页首张卡片仍是同一个 `ClipboardItemCardBox`，证明追加路径没有重建已有 UI。
+- 2026-05-09 Codex：分页预取 smoke 增加 AppDelegate 级命中场景，确认 50 条展示页 + 25 条预取页命中后会直接推进到 75 条，不进入可见 loading 状态。
