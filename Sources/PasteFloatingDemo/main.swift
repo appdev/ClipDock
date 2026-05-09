@@ -2589,9 +2589,9 @@ private extension FloatingPanelController {
 
 private enum PreferenceSection: Int, CaseIterable {
     case general
+    case ignoreList
     case shortcuts
     case history
-    case ignoreList
     case appearance
 
     var title: String {
@@ -2599,13 +2599,28 @@ private enum PreferenceSection: Int, CaseIterable {
         case .general:
             return "通用"
         case .shortcuts:
-            return "快捷键"
+            return "键盘快捷键"
         case .history:
-            return "历史记录"
+            return "保留历史"
         case .ignoreList:
-            return "忽略列表"
+            return "隐私"
         case .appearance:
             return "外观"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general:
+            return "启动、菜单栏与底部面板"
+        case .shortcuts:
+            return "打开、搜索与快速取用"
+        case .history:
+            return "保存数量、保留时长与内容类型"
+        case .ignoreList:
+            return "来源权限、忽略规则与窗口标题"
+        case .appearance:
+            return "外观模式、密度与预览行为"
         }
     }
 
@@ -2618,7 +2633,7 @@ private enum PreferenceSection: Int, CaseIterable {
         case .history:
             return "clock.arrow.circlepath"
         case .ignoreList:
-            return "nosign"
+            return "hand.raised"
         case .appearance:
             return "circle.lefthalf.filled"
         }
@@ -2906,11 +2921,17 @@ private final class AccessibilityPermissionController {
 @MainActor
 private final class PreferencesWindowController: NSWindowController {
     private enum Layout {
-        static let defaultWindowSize = NSSize(width: 720, height: 520)
-        static let minimumWindowSize = NSSize(width: 640, height: 460)
-        static let sidebarWidth: CGFloat = 176
-        static let contentInset: CGFloat = 24
-        static let rowHeight: CGFloat = 44
+        static let defaultWindowSize = NSSize(width: 920, height: 700)
+        static let minimumWindowSize = NSSize(width: 820, height: 600)
+        static let sidebarWidth: CGFloat = 264
+        static let contentInset: CGFloat = 36
+        static let sidebarInset: CGFloat = 16
+        static let sidebarTopInset: CGFloat = 74
+        static let rowHeight: CGFloat = 62
+        static let rowHorizontalInset: CGFloat = 20
+        static let cardCornerRadius: CGFloat = 18
+        static let windowCornerRadius: CGFloat = 24
+        static let contentMaximumWidth: CGFloat = 640
     }
 
     private let rootView = NSView()
@@ -2948,6 +2969,11 @@ private final class PreferencesWindowController: NSWindowController {
         window.title = "偏好设置"
         window.minSize = Layout.minimumWindowSize
         window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.styleMask.insert(.fullSizeContentView)
+        window.backgroundColor = .clear
+        window.isOpaque = false
 
         super.init(window: window)
 
@@ -2993,36 +3019,30 @@ private final class PreferencesWindowController: NSWindowController {
 
     private func configureWindow(_ window: NSWindow) {
         rootView.translatesAutoresizingMaskIntoConstraints = false
+        rootView.wantsLayer = true
+        rootView.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.9).cgColor
+        rootView.layer?.cornerRadius = Layout.windowCornerRadius
+        rootView.layer?.masksToBounds = true
+        rootView.layer?.borderWidth = 0.5
+        rootView.layer?.borderColor = NSColor.white.withAlphaComponent(0.22).cgColor
         window.contentView = rootView
 
         let sidebar = makeSidebar()
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
-        let divider = NSBox()
-        divider.boxType = .custom
-        divider.borderColor = .clear
-        divider.fillColor = NSColor.separatorColor
-        divider.translatesAutoresizingMaskIntoConstraints = false
-
         contentView.translatesAutoresizingMaskIntoConstraints = false
 
         rootView.addSubview(sidebar)
-        rootView.addSubview(divider)
         rootView.addSubview(contentView)
 
         NSLayoutConstraint.activate([
-            sidebar.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-            sidebar.topAnchor.constraint(equalTo: rootView.topAnchor),
-            sidebar.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
+            sidebar.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 14),
+            sidebar.topAnchor.constraint(equalTo: rootView.topAnchor, constant: 14),
+            sidebar.bottomAnchor.constraint(equalTo: rootView.bottomAnchor, constant: -14),
             sidebar.widthAnchor.constraint(equalToConstant: Layout.sidebarWidth),
 
-            divider.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            divider.topAnchor.constraint(equalTo: rootView.topAnchor),
-            divider.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 1),
-
-            contentView.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
+            contentView.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 24),
+            contentView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -12),
             contentView.topAnchor.constraint(equalTo: rootView.topAnchor),
             contentView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor)
         ])
@@ -3033,11 +3053,21 @@ private final class PreferencesWindowController: NSWindowController {
         visualEffectView.material = .sidebar
         visualEffectView.blendingMode = .behindWindow
         visualEffectView.state = .active
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.cornerRadius = Layout.windowCornerRadius - 6
+        visualEffectView.layer?.masksToBounds = true
+        visualEffectView.layer?.borderWidth = 0.5
+        visualEffectView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
 
         sidebarStack.orientation = .vertical
-        sidebarStack.alignment = .leading
-        sidebarStack.spacing = 4
-        sidebarStack.edgeInsets = NSEdgeInsets(top: 18, left: 12, bottom: 12, right: 12)
+        sidebarStack.alignment = .width
+        sidebarStack.spacing = 6
+        sidebarStack.edgeInsets = NSEdgeInsets(
+            top: Layout.sidebarTopInset,
+            left: Layout.sidebarInset,
+            bottom: 22,
+            right: Layout.sidebarInset
+        )
         sidebarStack.translatesAutoresizingMaskIntoConstraints = false
 
         PreferenceSection.allCases.forEach { section in
@@ -3046,8 +3076,8 @@ private final class PreferencesWindowController: NSWindowController {
             sidebarStack.addArrangedSubview(button)
 
             NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: Layout.sidebarWidth - 24),
-                button.heightAnchor.constraint(equalToConstant: 32)
+                button.widthAnchor.constraint(equalToConstant: Layout.sidebarWidth - Layout.sidebarInset * 2),
+                button.heightAnchor.constraint(equalToConstant: 42)
             ])
         }
 
@@ -3075,6 +3105,11 @@ private final class PreferencesWindowController: NSWindowController {
         button.alignment = .left
         button.image = NSImage(systemSymbolName: section.symbolName, accessibilityDescription: section.title)
         button.imagePosition = .imageLeading
+        button.imageScaling = .scaleProportionallyDown
+        button.font = .systemFont(ofSize: 16, weight: .semibold)
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 11
+        button.contentTintColor = .labelColor
         button.tag = section.rawValue
         button.translatesAutoresizingMaskIntoConstraints = false
         button.onPress = { [weak self] in
@@ -3091,7 +3126,19 @@ private final class PreferencesWindowController: NSWindowController {
 
     private func updateNavigationSelection() {
         navigationButtons.forEach { section, button in
-            button.state = section == selectedSection ? .on : .off
+            let isSelected = section == selectedSection
+            button.state = isSelected ? .on : .off
+            button.layer?.backgroundColor = isSelected
+                ? NSColor.controlAccentColor.cgColor
+                : NSColor.clear.cgColor
+            button.contentTintColor = isSelected ? .white : .labelColor
+            button.attributedTitle = NSAttributedString(
+                string: section.title,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 16, weight: .semibold),
+                    .foregroundColor: isSelected ? NSColor.white : NSColor.labelColor
+                ]
+            )
         }
     }
 
@@ -3105,10 +3152,10 @@ private final class PreferencesWindowController: NSWindowController {
         contentView.addSubview(pageView)
 
         NSLayoutConstraint.activate([
-            pageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.contentInset),
-            pageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.contentInset),
-            pageView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Layout.contentInset),
-            pageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.contentInset)
+            pageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            pageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            pageView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            pageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
     }
 
@@ -3117,10 +3164,11 @@ private final class PreferencesWindowController: NSWindowController {
         case .general:
             return makeContentPage(
                 title: section.title,
+                subtitle: section.subtitle,
                 sections: [
-                    makeSection(title: "启动与显示", rows: [
+                    makeSection(title: "启动", rows: [
                         makeSettingRow(
-                            title: "启动时运行",
+                            title: "登录时打开",
                             detail: launchAtLoginState.detail,
                             control: makeSwitch(
                                 isOn: launchAtLoginState.isOn,
@@ -3130,8 +3178,8 @@ private final class PreferencesWindowController: NSWindowController {
                             }
                         ),
                         makeSettingRow(
-                            title: "菜单栏显示",
-                            detail: "保留菜单栏入口",
+                            title: "在菜单栏显示",
+                            detail: "保留状态栏入口与快速菜单",
                             control: makeSwitch(isOn: preferences.general.showMenuBarItem) { [weak self] isOn in
                                 self?.persist { $0.general.showMenuBarItem = isOn }
                             }
@@ -3139,8 +3187,8 @@ private final class PreferencesWindowController: NSWindowController {
                     ]),
                     makeSection(title: "底部面板", rows: [
                         makeSettingRow(
-                            title: "默认高度",
-                            detail: "打开面板时使用",
+                            title: "面板高度",
+                            detail: "当前 \(preferences.general.defaultPanelHeight) pt，宽度跟随显示器",
                             control: makeStepperField(
                                 value: Int(preferences.general.defaultPanelHeight),
                                 minimumValue: 260,
@@ -3155,22 +3203,38 @@ private final class PreferencesWindowController: NSWindowController {
         case .shortcuts:
             return makeContentPage(
                 title: section.title,
+                subtitle: section.subtitle,
                 sections: [
                     makeSection(title: "全局操作", rows: [
-                        makeShortcutRow(title: "打开面板", shortcut: "⌘⇧V"),
-                        makeShortcutRow(title: "粘贴纯文本", shortcut: "⌘⇧T"),
-                        makeShortcutRow(title: "选取条目", shortcut: "⌘1-5"),
-                        makeShortcutRow(title: "固定条目", shortcut: "⌘P")
+                        makeShortcutRow(
+                            title: "打开剪贴板",
+                            detail: "从任意应用呼出底部面板",
+                            shortcut: "⌘ ⇧ V"
+                        ),
+                        makeShortcutRow(
+                            title: "快速取用条目",
+                            detail: "按住 Command 显示编号，按对应数字复制",
+                            shortcut: "⌘ 1...9"
+                        )
                     ]),
-                    makeSection(title: "快捷键选项", rows: [
-                        makeSettingRow(title: "启用快捷键", detail: "允许键盘呼出", control: makeCheckbox(title: "启用", isOn: true)),
-                        makeSettingRow(title: "冲突提醒", detail: "快捷键被占用时提示", control: makeSwitch(isOn: true, onChange: nil))
+                    makeSection(title: "面板内操作", rows: [
+                        makeShortcutRow(
+                            title: "搜索当前内容",
+                            detail: "展开并聚焦搜索框",
+                            shortcut: "⌘ F"
+                        ),
+                        makeShortcutRow(
+                            title: "预览选中条目",
+                            detail: "展开或关闭临时预览浮层",
+                            shortcut: "Space"
+                        )
                     ])
                 ]
             )
         case .history:
             return makeContentPage(
                 title: section.title,
+                subtitle: section.subtitle,
                 sections: [
                     makeSection(title: "保存规则", rows: [
                         makeSettingRow(
@@ -3200,14 +3264,14 @@ private final class PreferencesWindowController: NSWindowController {
                         makeSettingRow(
                             title: "记录图片",
                             detail: "保存图片摘要",
-                            control: makeCheckbox(title: "记录", isOn: preferences.history.recordImages) { [weak self] isOn in
+                            control: makeSwitch(isOn: preferences.history.recordImages) { [weak self] isOn in
                                 self?.persist { $0.history.recordImages = isOn }
                             }
                         ),
                         makeSettingRow(
                             title: "记录文件",
                             detail: "保存文件路径",
-                            control: makeCheckbox(title: "记录", isOn: preferences.history.recordFiles) { [weak self] isOn in
+                            control: makeSwitch(isOn: preferences.history.recordFiles) { [weak self] isOn in
                                 self?.persist { $0.history.recordFiles = isOn }
                             }
                         )
@@ -3217,6 +3281,7 @@ private final class PreferencesWindowController: NSWindowController {
         case .ignoreList:
             return makeContentPage(
                 title: section.title,
+                subtitle: section.subtitle,
                 sections: [
                     makeSection(title: "系统权限", rows: [
                         makeSettingRow(
@@ -3268,6 +3333,7 @@ private final class PreferencesWindowController: NSWindowController {
         case .appearance:
             return makeContentPage(
                 title: section.title,
+                subtitle: section.subtitle,
                 sections: [
                     makeSection(title: "颜色模式", rows: [
                         makeSettingRow(
@@ -3305,16 +3371,28 @@ private final class PreferencesWindowController: NSWindowController {
         }
     }
 
-    private func makeContentPage(title: String, sections: [NSView]) -> NSView {
+    private func makeContentPage(title: String, subtitle: String, sections: [NSView]) -> NSView {
         let page = NSView()
+        page.translatesAutoresizingMaskIntoConstraints = false
+
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 18
+        stack.alignment = .width
+        stack.spacing = 28
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 24, weight: .semibold), color: .labelColor)
-        stack.addArrangedSubview(titleLabel)
+        let headingStack = NSStackView()
+        headingStack.orientation = .vertical
+        headingStack.alignment = .leading
+        headingStack.spacing = 4
+        headingStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 28, weight: .bold), color: .labelColor)
+        let subtitleLabel = makeLabel(subtitle, font: .systemFont(ofSize: 13, weight: .regular), color: .secondaryLabelColor)
+        headingStack.addArrangedSubview(titleLabel)
+        headingStack.addArrangedSubview(subtitleLabel)
+        stack.addArrangedSubview(headingStack)
+        headingStack.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
 
         sections.forEach { sectionView in
             stack.addArrangedSubview(sectionView)
@@ -3327,11 +3405,23 @@ private final class PreferencesWindowController: NSWindowController {
 
         page.addSubview(stack)
 
+        let availableWidthConstraint = stack.widthAnchor.constraint(
+            equalTo: page.widthAnchor,
+            constant: -Layout.contentInset * 2
+        )
+        availableWidthConstraint.priority = .defaultHigh
+        let preferredMaximumWidthConstraint = stack.widthAnchor.constraint(
+            equalToConstant: Layout.contentMaximumWidth
+        )
+        preferredMaximumWidthConstraint.priority = .defaultLow
+
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: page.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: page.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: page.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: page.bottomAnchor)
+            stack.centerXAnchor.constraint(equalTo: page.centerXAnchor),
+            stack.topAnchor.constraint(equalTo: page.topAnchor, constant: Layout.contentInset + 8),
+            stack.bottomAnchor.constraint(equalTo: page.bottomAnchor, constant: -Layout.contentInset),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: Layout.contentMaximumWidth),
+            availableWidthConstraint,
+            preferredMaximumWidthConstraint
         ])
 
         return page
@@ -3343,21 +3433,46 @@ private final class PreferencesWindowController: NSWindowController {
 
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
+        stack.alignment = .width
+        stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 13, weight: .semibold), color: .secondaryLabelColor)
+        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 12, weight: .semibold), color: .secondaryLabelColor)
         stack.addArrangedSubview(titleLabel)
 
-        rows.forEach { row in
-            stack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        let card = NSView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.82).cgColor
+        card.layer?.cornerRadius = Layout.cardCornerRadius
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderWidth = 0.5
+        card.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.36).cgColor
+
+        let rowsStack = NSStackView()
+        rowsStack.orientation = .vertical
+        rowsStack.alignment = .width
+        rowsStack.spacing = 0
+        rowsStack.translatesAutoresizingMaskIntoConstraints = false
+
+        rows.enumerated().forEach { index, row in
+            rowsStack.addArrangedSubview(row)
+            if index < rows.count - 1 {
+                rowsStack.addArrangedSubview(makeSeparator())
+            }
         }
 
+        card.addSubview(rowsStack)
+        stack.addArrangedSubview(card)
+        card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         container.addSubview(stack)
 
         NSLayoutConstraint.activate([
+            rowsStack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            rowsStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            rowsStack.topAnchor.constraint(equalTo: card.topAnchor),
+            rowsStack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+
             stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             stack.topAnchor.constraint(equalTo: container.topAnchor),
@@ -3371,14 +3486,15 @@ private final class PreferencesWindowController: NSWindowController {
         let row = NSView()
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 13, weight: .medium), color: .labelColor)
-        let detailLabel = makeLabel(detail, font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+        let titleLabel = makeLabel(title, font: .systemFont(ofSize: 15, weight: .medium), color: .labelColor)
+        let detailLabel = makeLabel(detail, font: .systemFont(ofSize: 12.5), color: .secondaryLabelColor)
 
         let textStack = NSStackView(views: [titleLabel, detailLabel])
         textStack.orientation = .vertical
         textStack.alignment = .leading
         textStack.spacing = 2
         textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let spacer = NSView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
@@ -3396,31 +3512,38 @@ private final class PreferencesWindowController: NSWindowController {
 
         NSLayoutConstraint.activate([
             row.heightAnchor.constraint(greaterThanOrEqualToConstant: Layout.rowHeight),
-            rowStack.leadingAnchor.constraint(equalTo: row.leadingAnchor),
-            rowStack.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-            rowStack.topAnchor.constraint(equalTo: row.topAnchor),
-            rowStack.bottomAnchor.constraint(equalTo: row.bottomAnchor)
+            rowStack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Layout.rowHorizontalInset),
+            rowStack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -Layout.rowHorizontalInset),
+            rowStack.topAnchor.constraint(equalTo: row.topAnchor, constant: 8),
+            rowStack.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -8)
         ])
 
         return row
     }
 
-    private func makeShortcutRow(title: String, shortcut: String) -> NSView {
+    private func makeShortcutRow(title: String, detail: String, shortcut: String) -> NSView {
+        makeSettingRow(title: title, detail: detail, control: makeShortcutPill(shortcut))
+    }
+
+    private func makeShortcutPill(_ shortcut: String) -> NSView {
         let shortcutField = NSTextField(labelWithString: shortcut)
         shortcutField.font = .monospacedSystemFont(ofSize: 13, weight: .medium)
         shortcutField.alignment = .center
         shortcutField.textColor = .labelColor
         shortcutField.wantsLayer = true
-        shortcutField.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        shortcutField.layer?.cornerRadius = 6
+        shortcutField.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.9).cgColor
+        shortcutField.layer?.cornerRadius = 9
+        shortcutField.layer?.cornerCurve = .continuous
+        shortcutField.layer?.borderWidth = 0.5
+        shortcutField.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
         shortcutField.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            shortcutField.widthAnchor.constraint(equalToConstant: 88),
-            shortcutField.heightAnchor.constraint(equalToConstant: 28)
+            shortcutField.widthAnchor.constraint(greaterThanOrEqualToConstant: 92),
+            shortcutField.heightAnchor.constraint(equalToConstant: 30)
         ])
 
-        return makeSettingRow(title: title, detail: "当前默认组合键", control: shortcutField)
+        return shortcutField
     }
 
     private func makeTextInputRow(
@@ -3433,14 +3556,16 @@ private final class PreferencesWindowController: NSWindowController {
         textField.font = .systemFont(ofSize: 13)
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.lineBreakMode = .byTruncatingTail
+        textField.bezelStyle = .roundedBezel
+        textField.focusRingType = .exterior
 
         if let onCommit {
             textInputBindings.append(TextInputBinding(textField: textField, onCommit: onCommit))
         }
 
         NSLayoutConstraint.activate([
-            textField.widthAnchor.constraint(equalToConstant: 260),
-            textField.heightAnchor.constraint(equalToConstant: 28)
+            textField.widthAnchor.constraint(equalToConstant: 300),
+            textField.heightAnchor.constraint(equalToConstant: 30)
         ])
 
         return makeSettingRow(title: title, detail: detail, control: textField)
@@ -3522,6 +3647,8 @@ private final class PreferencesWindowController: NSWindowController {
         let textField = NSTextField(string: "\(value)")
         textField.alignment = .right
         textField.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        textField.bezelStyle = .roundedBezel
+        textField.focusRingType = .exterior
         textField.translatesAutoresizingMaskIntoConstraints = false
 
         let stepper = PreferenceStepper()
@@ -3550,10 +3677,11 @@ private final class PreferencesWindowController: NSWindowController {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            textField.widthAnchor.constraint(equalToConstant: 68),
-            textField.heightAnchor.constraint(equalToConstant: 28)
+            textField.widthAnchor.constraint(equalToConstant: 72),
+            textField.heightAnchor.constraint(equalToConstant: 30)
         ])
 
         return stack
@@ -3565,11 +3693,15 @@ private final class PreferencesWindowController: NSWindowController {
         onChange: ((Int) -> Void)? = nil
     ) -> NSSegmentedControl {
         let control = PreferenceSegmentedControl(labels: labels, trackingMode: .selectOne, target: nil, action: nil)
-        control.segmentStyle = .rounded
+        control.segmentStyle = .capsule
+        control.controlSize = .regular
         control.selectedSegment = selected
         control.target = nil
         control.action = nil
         control.onChange = onChange
+        labels.indices.forEach { index in
+            control.setWidth(labels[index].count > 3 ? 86 : 64, forSegment: index)
+        }
         return control
     }
 
@@ -3619,6 +3751,29 @@ private final class PreferencesWindowController: NSWindowController {
         label.lineBreakMode = .byTruncatingTail
         label.maximumNumberOfLines = 2
         return label
+    }
+
+    private func makeSeparator() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let line = NSBox()
+        line.boxType = .custom
+        line.borderColor = .clear
+        line.fillColor = NSColor.separatorColor.withAlphaComponent(0.5)
+        line.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(line)
+
+        NSLayoutConstraint.activate([
+            container.heightAnchor.constraint(equalToConstant: 1),
+            line.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Layout.rowHorizontalInset),
+            line.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Layout.rowHorizontalInset),
+            line.topAnchor.constraint(equalTo: container.topAnchor),
+            line.heightAnchor.constraint(equalToConstant: 1)
+        ])
+
+        return container
     }
 }
 
@@ -5280,6 +5435,112 @@ private enum PanelSnapshotCommand {
     }
 }
 
+private enum PreferencesSnapshotCommand {
+    private static let flag = "--render-preferences-snapshot"
+
+    static func outputURL(arguments: [String]) -> URL? {
+        guard let flagIndex = arguments.firstIndex(of: flag) else { return nil }
+        let nextIndex = arguments.index(after: flagIndex)
+        if arguments.indices.contains(nextIndex), !arguments[nextIndex].hasPrefix("--") {
+            return URL(fileURLWithPath: arguments[nextIndex])
+        }
+
+        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("preferences-runtime-snapshot.png")
+    }
+
+    @MainActor
+    static func render(to outputURL: URL) throws {
+        let controller = PreferencesWindowController()
+        var preferences = RustPreferencesDocument()
+        preferences.general.launchAtLogin = true
+        preferences.general.defaultPanelHeight = 360
+        preferences.history.recordFiles = true
+        preferences.ignoreList.ignoredAppIdentifiers = [
+            "com.apple.Terminal",
+            "Xcode"
+        ]
+        preferences.ignoreList.windowTitleKeywords = [
+            "验证码",
+            "Private"
+        ]
+        preferences.appearance.itemDensity = "standard"
+
+        controller.updatePreferences(preferences)
+        controller.updateLaunchAtLoginState(
+            LaunchAtLoginState(
+                isOn: true,
+                canChange: true,
+                detail: "已开启"
+            )
+        )
+        controller.updateAccessibilityPermissionState(
+            AccessibilityPermissionState(
+                isTrusted: true,
+                detail: "已允许读取当前窗口标题",
+                actionTitle: "打开系统设置",
+                canOpenSettings: true
+            )
+        )
+
+        guard let window = controller.window,
+              let rootView = window.contentView
+        else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        let targetFrame = NSRect(x: 0, y: 0, width: 920, height: 700)
+        window.setFrame(targetFrame, display: false)
+        rootView.frame = NSRect(origin: .zero, size: targetFrame.size)
+        window.layoutIfNeeded()
+        rootView.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.12))
+
+        let bitmap = try bitmapImage(for: rootView)
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try pngData.write(to: outputURL, options: .atomic)
+    }
+
+    @MainActor
+    private static func bitmapImage(for view: NSView) throws -> NSBitmapImageRep {
+        let width = Int(view.bounds.width.rounded())
+        let height = Int(view.bounds.height.rounded())
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        guard let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        view.displayIgnoringOpacity(view.bounds, in: graphicsContext)
+        NSGraphicsContext.restoreGraphicsState()
+        return bitmap
+    }
+}
+
 private enum PreferencesSmokeCommand {
     private static let flag = "--exercise-preferences"
     private static let sidebarTitles = Set(PreferenceSection.allCases.map(\.title))
@@ -5898,6 +6159,16 @@ private enum ClipboardWorkbenchDemoApp {
                 try PanelSnapshotCommand.render(to: snapshotURL)
             } catch {
                 FileHandle.standardError.write(Data("panel snapshot failed: \(error)\n".utf8))
+                Darwin.exit(1)
+            }
+            return
+        }
+
+        if let preferencesSnapshotURL = PreferencesSnapshotCommand.outputURL(arguments: CommandLine.arguments) {
+            do {
+                try PreferencesSnapshotCommand.render(to: preferencesSnapshotURL)
+            } catch {
+                FileHandle.standardError.write(Data("preferences snapshot failed: \(error)\n".utf8))
                 Darwin.exit(1)
             }
             return

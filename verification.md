@@ -1022,3 +1022,29 @@ doubleClickCopy=panel-smoke-text
 
 - `--exercise-panel-interactions` 是进程内 AppKit 自动化，不等同于物理键盘端到端测试。
 - 编号刷新已接入滚轮事件；真实触控板连续惯性滚动下的视觉刷新仍需真机观察。
+
+## macOS 26 设置界面重设计
+
+变更摘要：
+
+- 设置窗口升级为 920 x 700 pt，最小 820 x 600 pt，使用透明标题栏、full-size content view、24 px 外层圆角和轻毛玻璃质感。
+- 左侧设置导航改为 264 pt 圆角侧栏，导航项更接近 macOS 26 系统设置密度，选中项使用整行蓝色胶囊。
+- 右侧页面改为标题 + 副标题 + 分组卡片结构，卡片 18 px 圆角，行高不低于 62 pt，行之间使用内缩分隔线。
+- 设置页顺序和文案调整为通用、隐私、键盘快捷键、保留历史、外观；同步、导入、导出仍不展示。
+- 新增 `swift run PasteFloatingDemo --render-preferences-snapshot <path>`，用于离屏渲染生产设置窗口快照。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.70s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.106 seconds`。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过，无 NSForwarding warning 或 crash。
+- `swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png`：通过。
+- `sips -g pixelWidth -g pixelHeight .codex/artifacts/preferences-runtime-snapshot.png`：通过，输出 `pixelWidth: 920`、`pixelHeight: 700`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过；`sips` 确认 960 x 320。
+- `git diff --check`：通过。
+
+风险说明：
+
+- 当前设置窗口视觉快照只覆盖通用页；其余页面由设置 smoke、代码复核和共享布局组件覆盖。
+- 真实 macOS 26 系统材质在用户机器上可能与离屏快照略有差异，仍需用真实运行窗口继续微调细节。

@@ -237,3 +237,8 @@
 - 2026-05-09 Codex：`ClipboardItemCardBox` 新增 Command index label 管理；`FloatingPanelContentView` 新增 Command flags 监听、完整可见卡片计算、横向滚动时刷新提示和 `copyCommandNumberedItem`；默认快照不再显示右下角序号。
 - 2026-05-09 Codex：`PanelInteractionPlanner.selectedIDForCommandNumber` 范围从 1...5 扩展到 1...9；交互 smoke 改为验证 `commandHints=1,2,3` 和 `command3Copy=panel-smoke-file`。
 - 2026-05-09 Codex：Command 临时取用序号验证通过：`swift build` 输出 `Build complete! (3.32s)`；`swift test` 输出 `Test run with 41 tests passed after 0.108 seconds`；`--exercise-panel-interactions` 通过；真实快照和视觉回归图均为 960 x 320；`--exercise-preferences` 和 `git diff --check` 通过。
+- 2026-05-09 Codex：继续处理用户“使用 macOS26 新风格重新设计设置界面”；当前会话未暴露 sequential-thinking、shrimp-task-manager、code-index MCP，已读取 arming-thought skill，并使用 `rg`、`sed`、`swift build`、设置页 smoke 和运行时快照先确认现状。
+- 2026-05-09 Codex：偏好设置窗口重设计为 920 x 700 pt、最小 820 x 600 pt，透明标题栏 + full-size content view；左侧为 264 pt 圆角毛玻璃侧栏，右侧为最大 640 pt 的 macOS 设置卡片布局。
+- 2026-05-09 Codex：偏好设置页面文案和分区重排为通用、隐私、键盘快捷键、保留历史、外观；同步/导入/导出继续不展示；快捷键页新增 `Command + 1...9` 快速取用说明，保留现有真实偏好持久化绑定。
+- 2026-05-09 Codex：新增 `swift run PasteFloatingDemo --render-preferences-snapshot <path>`，可离屏渲染生产 `PreferencesWindowController`，用于设置窗口视觉回归观察。
+- 2026-05-09 Codex：macOS 26 设置界面重设计验证通过：`swift build` 通过；`swift test` 输出 `Test run with 41 tests passed after 0.106 seconds`；`--exercise-preferences` 通过；`--render-preferences-snapshot` 生成 920 x 700 快照；`--exercise-panel-interactions` 输出 `panelInteractions=ok`；主面板快照 960 x 320；`git diff --check` 通过。

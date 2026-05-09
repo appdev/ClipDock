@@ -1485,3 +1485,45 @@ git diff --check: passed
 风险：
 
 - 未做系统级物理键盘自动化；当前覆盖为 AppKit 进程内 smoke。
+
+## macOS 26 设置界面重设计
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-preferences
+swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/preferences-runtime-snapshot.png
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.70s)
+swift test: Test run with 41 tests passed after 0.106 seconds
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.40s)
+preferences snapshot: Build of product 'PasteFloatingDemo' complete! (4.75s); pixelWidth 920; pixelHeight 700
+panel interactions: panelInteractions=ok; commandHints=1,2,3; command3Copy=panel-smoke-file
+panel snapshot: pixelWidth 960; pixelHeight 320
+git diff --check: passed
+```
+
+覆盖点：
+
+- 设置窗口 920 x 700、透明标题栏、24 px 外层圆角、圆角毛玻璃侧栏。
+- 右侧内容使用标题、副标题、分组标题、18 px 圆角卡片和内缩分隔线。
+- 设置页 smoke 覆盖导航、开关、分段控件和步进器，未复现 NSForwarding selector 崩溃。
+- 主面板交互和快照回归通过，确认设置 UI 修改未破坏剪贴板面板。
+
+风险：
+
+- 设置窗口快照只渲染通用页；其余页面通过 smoke 和代码复核覆盖，后续可扩展为多页视觉快照。
+- 视觉参考来自用户截图和本地快照观察，仍建议用户用真实 `swift run PasteFloatingDemo` 打开设置窗口做最终肉眼对齐。
