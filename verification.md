@@ -946,3 +946,26 @@ doubleClickCopy=panel-smoke-text
 风险说明：
 
 - 当前是本地开发 `.app` 和 ad-hoc 签名，不包含 Developer ID 签名、公证、自动更新、安装器或 universal macOS 架构。
+
+## 本地候选发布包
+
+变更摘要：
+
+- `scripts/package-macos-app.sh` 支持 `APP_VERSION`、`APP_BUILD`、`BUNDLE_IDENTIFIER`、`APP_DISPLAY_NAME`、`CODESIGN_IDENTITY` 和 `SKIP_CODESIGN`。
+- 新增 `scripts/release-macos.sh`，默认输出 `.codex/artifacts/release/0.1.0/`。
+- release 脚本生成 `.app`、`.zip`、`.dmg`、`SHA256SUMS` 和 `release-manifest.txt`。
+- 当 `APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_SPECIFIC_PASSWORD` 和 Developer ID `CODESIGN_IDENTITY` 齐全时，release 脚本会走 `xcrun notarytool submit` 和 `xcrun stapler staple`。
+- 新增 `docs/release.md` 记录本地候选发布、可配置参数、公证入口、验证命令和遗留风险。
+
+验证结果：
+
+- `scripts/release-macos.sh`：通过，输出 release artifacts 目录。
+- `.codex/artifacts/release/0.1.0/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics`：通过。
+- `codesign --verify --deep --strict .codex/artifacts/release/0.1.0/PasteFloatingDemo.app`：通过。
+- `(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)`：通过。
+- `hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloatingDemo-0.1.0.dmg`：通过。
+
+风险说明：
+
+- 默认候选包仍是 ad-hoc 签名；正式发布必须使用 Developer ID 证书和 Apple notarization。
+- universal macOS、安装器、自动更新和渠道发布元数据尚未实现。

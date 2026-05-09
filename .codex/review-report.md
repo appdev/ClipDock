@@ -1015,3 +1015,34 @@
 ### 结论
 
 综合评分：94/100。建议通过。当前剩余任务已经完成工程闭环：真实窗口交互有自动 smoke，本地 `.app` 打包可重复生成并验证；保留的风险属于发布工程和系统级设备矩阵，不阻塞当前阶段。
+
+## 本地候选发布包审查
+
+日期：2026-05-09
+执行者：Codex
+审查者：Codex
+
+### 原定目标
+
+继续推进发布工程，把本地 `.app` 打包扩展为候选发布包流程，并为正式 Developer ID 签名和 Apple 公证预留入口。
+
+### 完成情况
+
+- [x] 已完成：`scripts/package-macos-app.sh` 支持版本、构建号、Bundle ID、显示名和签名身份配置。
+- [x] 已完成：新增 `scripts/release-macos.sh` 生成 `.app`、`.zip`、`.dmg`、SHA256 清单和 release manifest。
+- [x] 已完成：新增 Apple notarization 环境变量入口，不在仓库保存凭证。
+- [x] 已完成：新增 `docs/release.md`。
+- [x] 已完成：README、delivery workflow、feature QA、verification、testing 和 operations log 已更新。
+
+### 发现的问题
+
+| 严重程度 | 问题描述 | 根本原因 | 改进建议 |
+| --- | --- | --- | --- |
+| 已改正 | 只有 `.app`，没有可校验的分发候选包。 | 上一版脚本只复制 release binary 到 bundle。 | 已新增 zip、dmg、SHA256 和 manifest。 |
+| 已改正 | 版本号、Bundle ID 和签名身份硬编码。 | 打包脚本还处在 demo 阶段。 | 已通过环境变量配置。 |
+| 建议改进 | 无凭证环境无法真实公证。 | Apple 公证需要开发者账号、证书和 app-specific password。 | 保留 `notarytool` 入口，正式发布环境注入凭证后执行。 |
+| 建议改进 | 当前不是 universal 架构。 | Rust bridge 和 Swift release 仍按本机架构构建。 | 后续补 arm64/x86_64 双架构 Rust staticlib 和 SwiftPM archive 策略。 |
+
+### 结论
+
+综合评分：93/100。建议通过。当前本地 release candidate 能重复生成并校验完整性；正式发布仍需 Developer ID 签名、公证、universal 架构和安装/更新方案。

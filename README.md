@@ -60,6 +60,18 @@ scripts/package-macos-app.sh
 .codex/artifacts/PasteFloatingDemo.app
 ```
 
+生成本地候选发布包：
+
+```bash
+scripts/release-macos.sh
+```
+
+默认会生成 `.app`、`.zip`、`.dmg`、SHA256 校验和和 release manifest：
+
+```text
+.codex/artifacts/release/0.1.0/
+```
+
 本地数据库路径：
 
 ```text
@@ -105,6 +117,14 @@ swift run PasteFloatingDemo --exercise-panel-interactions
 scripts/package-macos-app.sh
 .codex/artifacts/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics
 codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app
+```
+
+需要验证本地候选发布包时，使用：
+
+```bash
+scripts/release-macos.sh
+(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)
+hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloatingDemo-0.1.0.dmg
 ```
 
 ## 交互

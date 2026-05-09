@@ -224,3 +224,7 @@
 - 2026-05-08 Codex：新增 `scripts/package-macos-app.sh`，默认生成 `.codex/artifacts/PasteFloatingDemo.app`；脚本刷新 Rust bridge、执行 SwiftPM release 构建、写入 Info.plist、复制可执行文件、ad-hoc 签名并运行包内 UI diagnostics。
 - 2026-05-08 Codex：首次在沙箱内执行打包脚本失败，原因是 SwiftPM release 构建触发 macOS `sandbox-exec` / 用户缓存权限限制；已将 clang module cache 指向 `.build/clang-module-cache`，并按工具规则在沙箱外重跑打包脚本。
 - 2026-05-08 Codex：产品化打包验证通过：`scripts/package-macos-app.sh` 沙箱外最终复验输出 `Build of product 'PasteFloatingDemo' complete! (6.23s)` 和 `Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/PasteFloatingDemo.app`；包内 `--print-ui-diagnostics`、`codesign --verify --deep --strict` 和 `PlistBuddy` bundle id / `LSUIElement` 检查通过。
+- 2026-05-09 Codex：继续进入发布工程补强；`scripts/package-macos-app.sh` 新增 `APP_VERSION`、`APP_BUILD`、`BUNDLE_IDENTIFIER`、`APP_DISPLAY_NAME`、`CODESIGN_IDENTITY` 和 `SKIP_CODESIGN` 配置入口。
+- 2026-05-09 Codex：新增 `scripts/release-macos.sh`，默认输出 `.codex/artifacts/release/0.1.0/`，生成 `.app`、`.zip`、`.dmg`、`SHA256SUMS` 和 `release-manifest.txt`；当 Apple notarization 环境变量齐全时提交公证并 staple。
+- 2026-05-09 Codex：新增 `docs/release.md`，同步更新 README、delivery workflow、feature QA、verification 和 testing，记录本地候选发布包流程、验证和遗留风险。
+- 2026-05-09 Codex：本地候选发布包验证通过：`swift build` 通过；`swift test` 41 个 Swift 测试通过；`scripts/release-macos.sh` 沙箱外通过并生成 release artifacts；包内 `--print-ui-diagnostics`、`codesign --verify --deep --strict`、`(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)` 和沙箱外 `hdiutil imageinfo` 均通过。

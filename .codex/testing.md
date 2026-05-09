@@ -1376,3 +1376,30 @@ plist: dev.codex.clipboard-workbench-demo; true
 风险：
 
 - 本地 ad-hoc 开发包尚未覆盖 Developer ID 签名、公证、安装器、自动更新或 universal 架构。
+
+## 本地候选发布包
+
+命令：
+
+```bash
+scripts/release-macos.sh
+.codex/artifacts/release/0.1.0/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics
+codesign --verify --deep --strict .codex/artifacts/release/0.1.0/PasteFloatingDemo.app
+(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)
+hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloatingDemo-0.1.0.dmg
+```
+
+结果：通过。
+
+覆盖点：
+
+- `.app`、`.zip`、`.dmg`、校验和和 manifest 可重复生成。
+- 包内可执行文件仍能输出 UI diagnostics。
+- ad-hoc 签名校验通过。
+- SHA256 清单能完整校验 zip、dmg 和可执行文件。
+- DMG 结构可由 `hdiutil imageinfo` 读取。
+
+风险：
+
+- 未提供 Apple Developer 凭证时 notarization 会跳过。
+- 当前不是 universal macOS 正式分发包。

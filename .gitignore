@@ -6,3 +6,4 @@ rust/target/
 .DS_Store
 .codex/artifacts/*.app/
 .codex/artifacts/panel-interaction-smoke/
+.codex/artifacts/release/

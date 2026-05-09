@@ -22,6 +22,11 @@ app_name="$(basename "$app_path" .app)"
 contents_dir="$app_path/Contents"
 macos_dir="$contents_dir/MacOS"
 resources_dir="$contents_dir/Resources"
+bundle_identifier="${BUNDLE_IDENTIFIER:-dev.codex.clipboard-workbench-demo}"
+display_name="${APP_DISPLAY_NAME:-剪贴板工作台}"
+app_version="${APP_VERSION:-0.1.0}"
+app_build="${APP_BUILD:-1}"
+codesign_identity="${CODESIGN_IDENTITY:--}"
 
 scripts/build-rust-core.sh
 swift build -c release --product PasteFloatingDemo
@@ -47,19 +52,19 @@ cat > "$contents_dir/Info.plist" <<PLIST
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_CN</string>
     <key>CFBundleDisplayName</key>
-    <string>剪贴板工作台</string>
+    <string>${display_name}</string>
     <key>CFBundleExecutable</key>
     <string>PasteFloatingDemo</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.codex.clipboard-workbench-demo</string>
+    <string>${bundle_identifier}</string>
     <key>CFBundleName</key>
     <string>${app_name}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>${app_version}</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>${app_build}</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -70,8 +75,8 @@ cat > "$contents_dir/Info.plist" <<PLIST
 </plist>
 PLIST
 
-if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$app_path" >/dev/null
+if [[ "${SKIP_CODESIGN:-0}" != "1" ]] && command -v codesign >/dev/null 2>&1; then
+    codesign --force --deep --sign "$codesign_identity" "$app_path" >/dev/null
 fi
 
 "$macos_dir/PasteFloatingDemo" --print-ui-diagnostics >/dev/null

@@ -323,3 +323,12 @@
 - 人工可观察行为：打包脚本先刷新 Rust bridge，再执行 SwiftPM release 构建；生成的 bundle 包含 `Contents/Info.plist`、`Contents/MacOS/PasteFloatingDemo` 和 `_CodeSignature/CodeResources`；`Info.plist` 设置中文显示名、最低 macOS 版本、Retina 能力和菜单栏辅助应用形态。
 - QA 结论：通过。本地 `.app` 产品化路径已经可重复执行，Login Item 的“打包为 .app 后可用”前置条件得到满足；同步、导入和导出继续冻结。
 - 遗留风险：当前是本地 ad-hoc 签名开发包，不包含 Developer ID 签名、公证、自动更新、安装器或通用架构；这些属于发布工程后续任务。
+
+### 本地候选发布包
+
+- 完成日期：2026-05-09
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`scripts/release-macos.sh` 通过，生成 `.codex/artifacts/release/0.1.0/PasteFloatingDemo.app`、`PasteFloatingDemo-0.1.0.zip`、`PasteFloatingDemo-0.1.0.dmg`、`SHA256SUMS` 和 `release-manifest.txt`；`(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)` 通过；`hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloatingDemo-0.1.0.dmg` 通过；包内 `--print-ui-diagnostics` 和 `codesign --verify --deep --strict` 通过。
+- 人工可观察行为：`scripts/package-macos-app.sh` 已支持 `APP_VERSION`、`APP_BUILD`、`BUNDLE_IDENTIFIER`、`APP_DISPLAY_NAME` 和 `CODESIGN_IDENTITY`；`scripts/release-macos.sh` 负责版本化输出、zip、dmg、SHA256 清单、manifest，并在提供 Apple notarization 环境变量时走 `xcrun notarytool` / `stapler`。
+- QA 结论：通过。本地候选发布包已经可重复生成并校验完整性，正式发布所需的 Developer ID 签名/公证入口已预留但不会保存凭证。
+- 遗留风险：默认仍是 ad-hoc 签名；正式发布还需要真实 Developer ID 证书、公证凭证、universal macOS 架构、安装器/更新器和发布渠道元数据。
