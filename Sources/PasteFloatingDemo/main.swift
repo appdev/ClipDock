@@ -638,9 +638,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         static let resizeHandleHeight: CGFloat = 18
         static let controlBarHeight: CGFloat = 48
         static let sectionSpacing: CGFloat = 2
-        static let defaultItemWidth: CGFloat = 206
-        static let defaultItemHeight: CGFloat = 220
-        static let compactItemHeight: CGFloat = 160
+        static let defaultItemSide: CGFloat = 228
+        static let compactItemSide: CGFloat = 160
         static let imagePreviewMinHeight: CGFloat = 78
         static let imagePreviewMaxHeight: CGFloat = 116
         static let scrollEdgeInset: CGFloat = 6
@@ -661,9 +660,12 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     private let itemBandDocumentView = NSView()
     private let itemBandStack = NSStackView()
     private weak var itemBandScrollView: HorizontalWheelScrollView?
+    private var itemWidthConstraints: [NSLayoutConstraint] = []
     private var itemHeightConstraints: [NSLayoutConstraint] = []
     private var itemPreviewHeightConstraints: [NSLayoutConstraint] = []
+    private var itemPreviewWidthConstraints: [NSLayoutConstraint] = []
     private var itemImagePreviewViews: [NSImageView] = []
+    private var itemBodyLabels: [NSTextField] = []
     private var currentPanelHeight: CGFloat = 320
     private var currentItems: [RustClipboardItemSummary] = []
     private var typeFilterButtons: [TypeFilterChipButton] = []
@@ -710,6 +712,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         case .failure:
             currentItems = []
             selectedItemID = nil
+            resetItemLayoutTracking()
             renderItemCards([makeDatabaseErrorCard()])
         }
     }
@@ -721,6 +724,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         case .failure:
             currentItems = []
             selectedItemID = nil
+            resetItemLayoutTracking()
             renderItemCards([makeDatabaseErrorCard()])
         }
     }
@@ -762,25 +766,41 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
     func updatePanelHeight(_ panelHeight: CGFloat) {
         currentPanelHeight = panelHeight
-        let availableItemHeight = max(
-            Layout.compactItemHeight,
-            panelHeight - Layout.resizeHandleHeight - Layout.controlBarHeight - Layout.sectionSpacing - Layout.padding
-        )
-        let itemHeight = availableItemHeight
+        let itemSide = itemSideLength(for: panelHeight)
         let previewHeight = min(
             Layout.imagePreviewMaxHeight,
-            max(Layout.imagePreviewMinHeight, itemHeight * 0.48)
+            max(Layout.imagePreviewMinHeight, itemSide * 0.48)
         )
+        let bodyTextWidth = max(80, itemSide - Layout.cardInset * 2 - 4)
 
-        itemHeightConstraints.forEach { $0.constant = itemHeight }
+        itemWidthConstraints.forEach { $0.constant = itemSide }
+        itemHeightConstraints.forEach { $0.constant = itemSide }
         itemPreviewHeightConstraints.forEach { $0.constant = previewHeight }
+        itemPreviewWidthConstraints.forEach { $0.constant = max(54, itemSide - 72) }
+        itemBodyLabels.forEach { label in
+            label.preferredMaxLayoutWidth = bodyTextWidth
+        }
         itemImagePreviewViews.forEach { imageView in
             imageView.needsLayout = true
         }
         itemBandDocumentView.setFrameSize(
-            NSSize(width: itemBandDocumentView.frame.width, height: itemHeight)
+            NSSize(width: itemBandDocumentWidth(itemSide: itemSide), height: itemSide)
         )
         itemBandDocumentView.needsLayout = true
+    }
+
+    private func itemSideLength(for panelHeight: CGFloat) -> CGFloat {
+        max(
+            Layout.compactItemSide,
+            panelHeight - Layout.resizeHandleHeight - Layout.controlBarHeight - Layout.sectionSpacing - Layout.padding
+        )
+    }
+
+    private func itemBandDocumentWidth(itemSide: CGFloat) -> CGFloat {
+        let cardCount = max(itemBandStack.arrangedSubviews.count, 1)
+        return CGFloat(cardCount) * itemSide
+            + CGFloat(max(cardCount - 1, 0)) * itemBandStack.spacing
+            + Layout.scrollEdgeInset * 2
     }
 
     private func configureAppearance() {
@@ -829,6 +849,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             itemBand.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.padding)
         ])
 
+        resetItemLayoutTracking()
         renderItemCards([makeEmptyHistoryCard()])
         updatePanelHeight(currentPanelHeight)
     }
@@ -969,6 +990,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     }
 
     private func renderCurrentItems() {
+        resetItemLayoutTracking()
         if currentItems.isEmpty {
             renderItemCards([
                 isShowingFilteredEmptyState ? makeNoResultsCard() : makeEmptyHistoryCard()
@@ -1268,11 +1290,16 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         }
     }
 
-    private func renderItemCards(_ cards: [NSView]) {
+    private func resetItemLayoutTracking() {
+        itemWidthConstraints.removeAll()
         itemHeightConstraints.removeAll()
         itemPreviewHeightConstraints.removeAll()
+        itemPreviewWidthConstraints.removeAll()
         itemImagePreviewViews.removeAll()
+        itemBodyLabels.removeAll()
+    }
 
+    private func renderItemCards(_ cards: [NSView]) {
         itemBandStack.arrangedSubviews.forEach { view in
             itemBandStack.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -1280,14 +1307,12 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
         cards.forEach { itemBandStack.addArrangedSubview($0) }
 
-        let cardCount = max(cards.count, 1)
+        let itemSide = itemSideLength(for: currentPanelHeight)
         itemBandDocumentView.frame = NSRect(
             x: 0,
             y: 0,
-            width: CGFloat(cardCount) * Layout.defaultItemWidth
-                + CGFloat(max(cardCount - 1, 0)) * itemBandStack.spacing
-                + Layout.scrollEdgeInset * 2,
-            height: Layout.defaultItemHeight
+            width: itemBandDocumentWidth(itemSide: itemSide),
+            height: itemSide
         )
         updatePanelHeight(currentPanelHeight)
         updateCommandNumberHints()
@@ -1553,11 +1578,13 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         container.contentView?.addSubview(headerView)
         container.contentView?.addSubview(bodyStack)
 
-        let heightConstraint = container.heightAnchor.constraint(equalToConstant: Layout.defaultItemHeight)
+        let widthConstraint = container.widthAnchor.constraint(equalToConstant: Layout.defaultItemSide)
+        let heightConstraint = container.heightAnchor.constraint(equalToConstant: Layout.defaultItemSide)
+        itemWidthConstraints.append(widthConstraint)
         itemHeightConstraints.append(heightConstraint)
 
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: Layout.defaultItemWidth),
+            widthConstraint,
             heightConstraint,
 
             headerView.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor),
@@ -1618,8 +1645,6 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
                 summaryLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor)
             ])
         }
-
-        container.widthAnchor.constraint(equalToConstant: Layout.defaultItemWidth - Layout.cardInset * 2).isActive = true
 
         return container
     }
@@ -1770,11 +1795,13 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         let heightConstraint = container.heightAnchor.constraint(equalToConstant: 92)
         heightConstraint.priority = .defaultHigh
         itemPreviewHeightConstraints.append(heightConstraint)
+        let widthConstraint = imageView.widthAnchor.constraint(lessThanOrEqualToConstant: Layout.defaultItemSide - 72)
+        itemPreviewWidthConstraints.append(widthConstraint)
         NSLayoutConstraint.activate([
             heightConstraint,
             imageView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             imageView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            imageView.widthAnchor.constraint(lessThanOrEqualToConstant: Layout.defaultItemWidth - 72),
+            widthConstraint,
             imageView.heightAnchor.constraint(lessThanOrEqualToConstant: 76),
             imageView.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
             imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 54)
@@ -1855,7 +1882,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             label.trailingAnchor.constraint(equalTo: visualEffectView.trailingAnchor, constant: -7),
             label.topAnchor.constraint(equalTo: visualEffectView.topAnchor, constant: 4),
             label.bottomAnchor.constraint(equalTo: visualEffectView.bottomAnchor, constant: -4),
-            visualEffectView.widthAnchor.constraint(lessThanOrEqualToConstant: Layout.defaultItemWidth - 44)
+            visualEffectView.widthAnchor.constraint(lessThanOrEqualToConstant: Layout.defaultItemSide - 44)
         ])
 
         return visualEffectView
@@ -2212,7 +2239,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         label.textColor = .labelColor
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 4
-        label.preferredMaxLayoutWidth = Layout.defaultItemWidth - Layout.cardInset * 2 - 4
+        label.preferredMaxLayoutWidth = Layout.defaultItemSide - Layout.cardInset * 2 - 4
         label.cell?.wraps = true
         label.cell?.isScrollable = false
         label.cell?.lineBreakMode = .byWordWrapping
@@ -2220,6 +2247,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setContentCompressionResistancePriority(.defaultHigh, for: .vertical)
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        itemBodyLabels.append(label)
         return label
     }
 
@@ -2685,6 +2713,13 @@ private extension FloatingPanelContentView {
         allSmokeSubviews(of: self)
             .compactMap { $0 as? HorizontalWheelScrollView }
             .first
+    }
+
+    func smokeFirstCardSize(afterPanelHeight panelHeight: CGFloat) -> CGSize? {
+        updatePanelHeight(panelHeight)
+        layoutSubtreeIfNeeded()
+        itemBandDocumentView.layoutSubtreeIfNeeded()
+        return smokeCardBoxes().first?.frame.size
     }
 
     func smokeCommandHintTexts() -> [String] {
@@ -6134,6 +6169,20 @@ private enum PanelInteractionSmokeCommand {
         let cards = contentView.smokeCardBoxes()
         try require(cards.count >= 5, "真实面板未渲染足够的条目卡片")
         try require(contentView.smokeSelectedItemID == "panel-smoke-text", "初始选中项不正确")
+        if let resizedCardSize = contentView.smokeFirstCardSize(afterPanelHeight: 420) {
+            try require(
+                abs(resizedCardSize.width - resizedCardSize.height) < 0.5,
+                "面板高度变化后条目卡片未保持 1:1"
+            )
+            try require(
+                resizedCardSize.width > BottomPanelGeometryPlanner.defaultHeight * 0.85,
+                "面板高度变化后条目卡片宽度未跟随增长"
+            )
+            contentView.updatePanelHeight(BottomPanelGeometryPlanner.defaultHeight)
+            contentView.layoutSubtreeIfNeeded()
+        } else {
+            try require(false, "无法读取条目卡片尺寸")
+        }
 
         sendMouseDown(to: cards[1], clickCount: 1)
         drainMainRunLoop()

@@ -1771,3 +1771,36 @@ git diff --check: passed
 - 选中态强调边框保留为独立 overlay 圆角描边。
 - 卡片普通 hairline 边框保持稳定，不再随选中态加粗挤压内容。
 - 来源色条不再因选中态变成系统强调色。
+
+## 条目卡片 1:1 尺寸联动
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.70s)
+swift test: Test run with 41 tests passed after 0.086 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.26s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 卡片宽度和高度由同一个 `itemSide` 驱动，保持 1:1。
+- 面板高度变化后，横向滚动 document 宽度按新的 item side 重新计算。
+- 交互 smoke 新增高度变化后卡片宽高相等且宽度跟随增长的断言。

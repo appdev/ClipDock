@@ -1188,3 +1188,21 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## 条目卡片 1:1 尺寸联动
+
+变更摘要：
+
+- 卡片宽度和高度改为同一个 item side，始终保持 1:1。
+- item side 根据当前面板高度扣除 resize handle、控制栏、间距和 padding 后计算。
+- 面板高度变化时同步更新卡片宽高、横向 document 宽度、预览宽度和正文换行宽度。
+- 交互 smoke 新增高度变化后的 1:1 断言。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.70s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.086 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。
