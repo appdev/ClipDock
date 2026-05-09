@@ -1738,3 +1738,36 @@ git diff --check: passed
 - `CIAreaAverage` 仍用于判断整体色调和灰阶 fallback。
 - 彩色占比足够时，改用调色板代表色，避免 Chrome 被全图平均成卡其色。
 - Terminal 等低彩色占比图标继续使用平均灰阶，不参与彩色色相桶竞争。
+
+## 选中卡片边框修正
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (0.73s)
+swift test: Test run with 41 tests passed after 0.091 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.36s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 选中态强调边框保留为独立 overlay 圆角描边。
+- 卡片普通 hairline 边框保持稳定，不再随选中态加粗挤压内容。
+- 来源色条不再因选中态变成系统强调色。

@@ -252,3 +252,4 @@
 - 2026-05-09 Codex：按用户要求优化自动取色缓存键：同一来源 App 优先使用 `sourceAppId`，缺失时使用 `sourceAppName` 缓存主色；图标路径只作为 fallback alias，避免同一 App 因多条剪贴板或图标路径重复扫描像素导致卡顿。
 - 2026-05-09 Codex：根据用户反馈改为平台 API 取色路径：来源图标主色优先使用 Core Image `CIAreaAverage` 计算整体色调，Core Image 不可用时只做简单 bitmap 平均兜底；移除高饱和色相桶算法，低饱和图标保持灰阶，避免 Terminal 黑色图标被 fallback/归一化成橘色。
 - 2026-05-09 Codex：继续修正用户截图中 Chrome 色条偏卡其的问题：确认 `CIAreaAverage` 是整体平均色而非代表色，多色图标会被红绿黄蓝和白底平均成低饱和暖色；新增 palette representative 逻辑，彩色占比足够时按色相桶面积和饱和度挑代表色，低彩色占比图标仍回到平均灰阶。
+- 2026-05-09 Codex：修复用户反馈的首个选中卡片变色框：保留选中态强调边框，但从 `NSBox` 主边框和 header 变色改为独立 overlay 圆角描边；来源色条保持来源/图标色，不再因选中变成系统强调色。

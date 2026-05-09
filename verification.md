@@ -1171,3 +1171,20 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## 选中卡片边框修正
+
+变更摘要：
+
+- 保留选中态强调边框。
+- 将选中态边框从 `NSBox` 主边框切换为独立 overlay layer，避免首个卡片出现异常变色框。
+- 选中态不再改变 header/source 色条；来源色仍由来源 App 图标/来源 key 决定。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (0.73s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.091 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。

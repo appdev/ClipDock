@@ -181,11 +181,19 @@ private final class ClipboardItemCardBox: NSBox {
     private weak var timeLabel: NSTextField?
     private weak var commandIndexLabel: NSTextField?
     private var unselectedHeaderColor: NSColor = .clear
+    private let selectionBorderLayer = CALayer()
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         contentView?.layer?.contentsScale = layer?.contentsScale ?? 2
+        selectionBorderLayer.contentsScale = layer?.contentsScale ?? 2
+    }
+
+    override func layout() {
+        super.layout()
+        selectionBorderLayer.frame = bounds.insetBy(dx: 1, dy: 1)
+        selectionBorderLayer.cornerRadius = max(0, cornerRadius - 1)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -212,6 +220,7 @@ private final class ClipboardItemCardBox: NSBox {
         self.typeHeaderLabel = typeHeaderLabel
         self.timeLabel = timeLabel
         self.unselectedHeaderColor = unselectedHeaderColor
+        installSelectionBorderLayerIfNeeded()
         applySelection(isSelected)
     }
 
@@ -226,17 +235,27 @@ private final class ClipboardItemCardBox: NSBox {
     }
 
     func applySelection(_ isSelected: Bool) {
-        borderColor = isSelected
-            ? NSColor.controlAccentColor
-            : NSColor.separatorColor.withAlphaComponent(0.08)
-        borderWidth = isSelected ? 3 : 0.5
-        selectionHeaderView?.layer?.backgroundColor = (
-            isSelected ? NSColor.controlAccentColor : unselectedHeaderColor
-        ).cgColor
+        borderColor = NSColor.separatorColor.withAlphaComponent(0.08)
+        borderWidth = 0.5
+        selectionBorderLayer.isHidden = !isSelected
+        selectionBorderLayer.borderWidth = isSelected ? 2 : 0
+        selectionBorderLayer.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.82).cgColor
+        selectionHeaderView?.layer?.backgroundColor = unselectedHeaderColor.cgColor
         selectionHeaderView?.layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         typeHeaderLabel?.textColor = .white
         timeLabel?.textColor = NSColor.white.withAlphaComponent(0.80)
         needsDisplay = true
+    }
+
+    private func installSelectionBorderLayerIfNeeded() {
+        guard selectionBorderLayer.superlayer == nil else { return }
+        selectionBorderLayer.backgroundColor = NSColor.clear.cgColor
+        selectionBorderLayer.masksToBounds = false
+        selectionBorderLayer.zPosition = 100
+        selectionBorderLayer.cornerRadius = cornerRadius
+        selectionBorderLayer.frame = bounds.insetBy(dx: 1, dy: 1)
+        selectionBorderLayer.contentsScale = layer?.contentsScale ?? 2
+        layer?.addSublayer(selectionBorderLayer)
     }
 }
 
@@ -1413,10 +1432,8 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     ) -> NSView {
         let container = ClipboardItemCardBox()
         container.boxType = .custom
-        container.borderColor = isSelected
-            ? NSColor.controlAccentColor
-            : NSColor.separatorColor.withAlphaComponent(0.08)
-        container.borderWidth = isSelected ? 3 : 0.5
+        container.borderColor = NSColor.separatorColor.withAlphaComponent(0.08)
+        container.borderWidth = 0.5
         container.fillColor = NSColor.textBackgroundColor.withAlphaComponent(0.95)
         container.cornerRadius = Layout.cardCornerRadius
         container.contentViewMargins = .zero
