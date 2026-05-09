@@ -1223,3 +1223,21 @@ doubleClickCopy=panel-smoke-text
 - `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `swift run PasteFloatingDemo --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## Tab 与卡片文本对齐修正
+
+变更摘要：
+
+- 顶部 tab/chip 的 attributed title 改为居中段落。
+- `TypeFilterChipButton` 设置按钮 alignment 为 `.center`。
+- 卡片正文区域改为 leading alignment，正文 label 明确左对齐。
+- 正文容器和 footer 显式等宽于 body stack，避免内容宽度不稳定造成视觉错位。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.92s)`。
+- `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.095 seconds`。
+- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `git diff --check`：通过。

@@ -1837,3 +1837,36 @@ git diff --check: passed
 - 选中 tab/chip 增加对应类型色浅底。
 - 选中 tab/chip 增加细描边和轻微阴影。
 - 选中标题颜色随类型色变化，避免仅靠透明背景表达状态。
+
+## Tab 与卡片文本对齐修正
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloatingDemo --exercise-preferences
+sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.92s)
+swift test: Test run with 41 tests passed after 0.095 seconds
+panel interactions: panelInteractions=ok
+panel snapshot: pixelWidth 960; pixelHeight 320
+preferences smoke: Build of product 'PasteFloatingDemo' complete! (0.29s)
+git diff --check: passed
+```
+
+覆盖点：
+
+- 顶部 tab/chip attributed title 使用居中段落，按钮 alignment 同步居中。
+- 卡片正文 label 明确左对齐。
+- 正文容器和 footer 宽度显式跟随 body stack，避免 stack 内部宽度漂移。

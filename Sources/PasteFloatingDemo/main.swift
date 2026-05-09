@@ -1572,7 +1572,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
 
         let bodyStack = NSStackView(views: [contentContainer, flexibleSpacer, footerRow])
         bodyStack.orientation = .vertical
-        bodyStack.alignment = .width
+        bodyStack.alignment = .leading
         bodyStack.spacing = 8
         bodyStack.userInterfaceLayoutDirection = .leftToRight
         bodyStack.translatesAutoresizingMaskIntoConstraints = false
@@ -1606,7 +1606,9 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             bodyStack.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: Layout.cardInset),
             bodyStack.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -Layout.cardInset),
             bodyStack.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 12),
-            bodyStack.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: -10)
+            bodyStack.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: -10),
+            contentContainer.widthAnchor.constraint(equalTo: bodyStack.widthAnchor),
+            footerRow.widthAnchor.constraint(equalTo: bodyStack.widthAnchor)
         ])
 
         return container
@@ -2239,6 +2241,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
         let label = NSTextField(labelWithString: leftToRightDisplayText(text))
         label.font = .systemFont(ofSize: 12.5)
         label.textColor = .labelColor
+        label.alignment = .left
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 4
         label.preferredMaxLayoutWidth = Layout.defaultItemSide - Layout.cardInset * 2 - 4
@@ -2327,6 +2330,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
             self?.typeFilterChipPressed(button)
         }
         button.toolTip = itemType == nil ? "全部类型" : "仅显示\(title)"
+        button.alignment = .center
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
         button.layer?.cornerRadius = Layout.chipCornerRadius
@@ -2372,7 +2376,7 @@ private final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldD
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .left
+        paragraph.alignment = .center
         paragraph.baseWritingDirection = .leftToRight
         let selectedTextColor = dotColor == .clear ? NSColor.labelColor : dotColor
         let textColor = isSelected ? selectedTextColor : NSColor.labelColor
