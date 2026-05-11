@@ -3,10 +3,10 @@ import Darwin
 import Foundation
 
 @MainActor
-private func runClipboardWorkbenchDemoApp() async {
+private func runClipboardWorkbenchDemoApp() {
     if PreferencesSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
         PreferencesSmokeCommand.run()
-        return
+        Darwin.exit(0)
     }
 
     if PanelInteractionSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
@@ -16,15 +16,18 @@ private func runClipboardWorkbenchDemoApp() async {
             FileHandle.standardError.write(Data("panel interaction smoke failed: \(error.localizedDescription)\n".utf8))
             Darwin.exit(1)
         }
-        return
+        Darwin.exit(0)
     }
 
     if RealFunctionQACommand.shouldRun(arguments: CommandLine.arguments) {
-        do {
-            try await RealFunctionQACommand.run()
-        } catch {
-            FileHandle.standardError.write(Data("real function QA failed: \(error.localizedDescription)\n".utf8))
-            Darwin.exit(1)
+        Task { @MainActor in
+            do {
+                try await RealFunctionQACommand.run()
+                Darwin.exit(0)
+            } catch {
+                FileHandle.standardError.write(Data("real function QA failed: \(error.localizedDescription)\n".utf8))
+                Darwin.exit(1)
+            }
         }
         return
     }
@@ -36,7 +39,7 @@ private func runClipboardWorkbenchDemoApp() async {
             FileHandle.standardError.write(Data("context menu real QA failed: \(error.localizedDescription)\n".utf8))
             Darwin.exit(1)
         }
-        return
+        Darwin.exit(0)
     }
 
     if PreviewRealQACommand.shouldRun(arguments: CommandLine.arguments) {
@@ -46,12 +49,12 @@ private func runClipboardWorkbenchDemoApp() async {
             FileHandle.standardError.write(Data("preview real QA failed: \(error.localizedDescription)\n".utf8))
             Darwin.exit(1)
         }
-        return
+        Darwin.exit(0)
     }
 
     if UIDiagnosticsCommand.shouldRun(arguments: CommandLine.arguments) {
         UIDiagnosticsCommand.run()
-        return
+        Darwin.exit(0)
     }
 
     if let snapshotURL = PanelSnapshotCommand.outputURL(arguments: CommandLine.arguments) {
@@ -61,7 +64,7 @@ private func runClipboardWorkbenchDemoApp() async {
             FileHandle.standardError.write(Data("panel snapshot failed: \(error)\n".utf8))
             Darwin.exit(1)
         }
-        return
+        Darwin.exit(0)
     }
 
     if let preferencesSnapshotURL = PreferencesSnapshotCommand.outputURL(arguments: CommandLine.arguments) {
@@ -74,18 +77,18 @@ private func runClipboardWorkbenchDemoApp() async {
             FileHandle.standardError.write(Data("preferences snapshot failed: \(error)\n".utf8))
             Darwin.exit(1)
         }
-        return
+        Darwin.exit(0)
     }
 
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate
     app.run()
+    Darwin.exit(0)
 }
 
-Task { @MainActor in
-    await runClipboardWorkbenchDemoApp()
-    Darwin.exit(0)
+MainActor.assumeIsolated {
+    runClipboardWorkbenchDemoApp()
 }
 
 RunLoop.main.run()
