@@ -10,9 +10,22 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.toolbar.searchText == "report")
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "report", itemType: nil, sourceAppID: nil))
+            .external(.queryChanged(searchText: "report", sourceAppID: nil, pinboardID: nil))
         ])
         #expect(!result.shouldSyncToolbar)
+    }
+
+    @Test
+    func pinboardFilterEmitsPinboardQuery() {
+        let controller = makePanelInteractionController()
+
+        let result = controller.dispatch(.setPinboardFilter("default"))
+
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [
+            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: "default"))
+        ])
+        #expect(result.shouldSyncToolbar)
     }
 
     @Test
@@ -142,7 +155,6 @@ struct PanelInteractionControllerTests {
             sceneState: PanelSceneState(
                 query: PanelQueryState(
                     searchText: "report",
-                    itemType: "file",
                     isSearchVisible: true
                 )
             )
@@ -152,7 +164,7 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.toolbar.searchText.isEmpty)
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "", itemType: "file", sourceAppID: nil))
+            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: nil))
         ])
         #expect(result.shouldSyncToolbar)
     }

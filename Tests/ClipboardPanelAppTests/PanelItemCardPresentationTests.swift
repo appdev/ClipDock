@@ -4,7 +4,7 @@ import Testing
 
 struct PanelItemCardPresentationTests {
     @Test
-    func presentsPinnedTextItem() {
+    func presentsPinnedTextItemWithoutInlinePinnedLabel() {
         let presentation = PanelItemCardPresenter.presentation(
             for: makeItem(
                 itemType: "text",
@@ -15,7 +15,7 @@ struct PanelItemCardPresentationTests {
         )
 
         #expect(presentation.symbolName == "doc.text")
-        #expect(presentation.displayType == "固定 · 文本")
+        #expect(presentation.displayType == "文本")
         #expect(presentation.summaryText == "hello")
         #expect(presentation.footnoteText == "5 个字符")
     }

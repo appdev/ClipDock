@@ -9,11 +9,28 @@ pub struct Migration {
     pub sql: &'static str,
 }
 
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_clipboard_history_schema",
-    sql: INITIAL_SCHEMA,
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_clipboard_history_schema",
+        sql: INITIAL_SCHEMA,
+    },
+    Migration {
+        version: 2,
+        name: "local_pinboards_schema",
+        sql: PINBOARDS_SCHEMA,
+    },
+    Migration {
+        version: 3,
+        name: "recent_history_index_without_pin_sort",
+        sql: RECENT_HISTORY_INDEX_WITHOUT_PIN_SORT,
+    },
+    Migration {
+        version: 4,
+        name: "full_pinboard_management_schema",
+        sql: FULL_PINBOARD_MANAGEMENT_SCHEMA,
+    },
+];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
     connection
@@ -241,4 +258,86 @@ CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_items_fts USING fts5(
     content_rowid = 'rowid',
     tokenize = 'unicode61'
 );
+"#;
+
+const PINBOARDS_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS pinboards (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    system_kind TEXT NOT NULL DEFAULT 'custom'
+        CHECK (system_kind IN ('default_pins', 'custom')),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    deleted_at_ms INTEGER,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_pinboards_sort
+    ON pinboards(sort_order ASC, updated_at_ms DESC)
+    WHERE deleted_at_ms IS NULL;
+
+CREATE TABLE IF NOT EXISTS pinboard_items (
+    pinboard_id TEXT NOT NULL REFERENCES pinboards(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL REFERENCES clipboard_items(id) ON DELETE CASCADE,
+    display_order INTEGER NOT NULL DEFAULT 0,
+    pinned_at_ms INTEGER NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (pinboard_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_pinboard_items_order
+    ON pinboard_items(pinboard_id, display_order ASC, pinned_at_ms DESC);
+
+CREATE INDEX IF NOT EXISTS ix_pinboard_items_item
+    ON pinboard_items(item_id);
+
+INSERT OR IGNORE INTO pinboards (
+    id, title, system_kind, sort_order, created_at_ms, updated_at_ms
+)
+VALUES (
+    'default',
+    '固定',
+    'default_pins',
+    0,
+    CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+    CAST(strftime('%s', 'now') AS INTEGER) * 1000
+);
+
+INSERT OR IGNORE INTO pinboard_items (
+    pinboard_id,
+    item_id,
+    display_order,
+    pinned_at_ms,
+    created_at_ms,
+    updated_at_ms
+)
+SELECT
+    'default',
+    id,
+    ROW_NUMBER() OVER (ORDER BY last_copied_at_ms DESC, id DESC) - 1,
+    updated_at_ms,
+    updated_at_ms,
+    updated_at_ms
+FROM clipboard_items
+WHERE is_pinned = 1
+    AND deleted_at_ms IS NULL;
+"#;
+
+const RECENT_HISTORY_INDEX_WITHOUT_PIN_SORT: &str = r#"
+DROP INDEX IF EXISTS ix_clipboard_items_recent;
+
+CREATE INDEX IF NOT EXISTS ix_clipboard_items_recent
+    ON clipboard_items(last_copied_at_ms DESC, id DESC)
+    WHERE deleted_at_ms IS NULL;
+"#;
+
+const FULL_PINBOARD_MANAGEMENT_SCHEMA: &str = r#"
+ALTER TABLE pinboards ADD COLUMN color_code INTEGER NOT NULL DEFAULT 4293940557;
+
+DROP INDEX IF EXISTS ix_pinboards_sort;
+
+CREATE INDEX IF NOT EXISTS ix_pinboards_active_sort
+    ON pinboards(sort_order ASC, updated_at_ms DESC)
+    WHERE deleted_at_ms IS NULL;
 "#;

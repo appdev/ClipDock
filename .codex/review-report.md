@@ -1234,3 +1234,66 @@
 ### 结论
 
 综合评分：93/100。建议通过。当前色条优先反映真实来源图标，同时保留稳定回退路径；后续重点是用真实 App 图标样本继续校准取色质量。
+
+## Paste 风格本地 Pinboard 固定功能审查
+
+日期：2026-05-11
+执行者：Codex
+审查者：Codex
+
+### 原定目标
+
+参考 Paste 的固定功能修改当前应用，去掉同步和分享能力，固定内容不受保留策略主动删除，除非用户手动删除。架构要求符合 MVC，并在架构师设计、QA 和开发评审通过后实施。
+
+### 完成情况
+
+- [x] 已完成：输出 MVC 架构方案与架构师/QA/开发评审记录到 `.codex/pinboard-mvc-design.md`。
+- [x] 已完成：Rust Model 新增 `pinboards` / `pinboard_items` migration v2、默认固定板和 Pinboard 查询。
+- [x] 已完成：固定/取消固定从布尔置顶改为默认 Pinboard membership，`is_pinned` 保留为展示缓存。
+- [x] 已完成：`clear_items` 和历史保留策略跳过所有活动 Pinboard 成员。
+- [x] 已完成：Swift Controller 增加 `pinboardID` 查询状态，AppKit View 增加“固定”chip。
+- [x] 已完成：Rust、Swift、运行时 smoke 和 diff 检查均通过。
+
+### 发现的问题
+
+| 严重程度 | 问题描述 | 根本原因 | 改进建议 |
+| --- | --- | --- | --- |
+| 已改正 | schema version 升到 2 后，Swift bridge 测试仍断言版本 1。 | 测试预期未随 migration 同步更新。 | 已改为断言 schema version 2。 |
+| 建议改进 | 本轮只开放默认固定板，没有多 Pinboard 管理 UI。 | 为控制改动面，先把底层模型和当前入口迁到 Pinboard。 | 后续新增 Pinboard 管理窗口、重命名、删除和板内排序。 |
+| 建议改进 | 未做拖放固定和拖放排序。 | 当前面板交互主要是右键菜单和 chip，拖放会扩大 AppKit 事件面。 | 下一轮在稳定默认板后补拖放入口。 |
+
+### 结论
+
+综合评分：91/100。建议通过。本轮已经把固定语义从“保护并置顶历史条目”升级为“本地固定板成员”，并明确固定内容不受主动清理策略影响；保留多板管理和拖放排序作为后续迭代。
+
+## Paste 式完整 Pinboard 管理与分类删除审查
+
+日期：2026-05-11
+执行者：Codex
+审查者：Codex
+
+### 原定目标
+
+在 QA 审核并通过 `.codex/pinboard-full-mvc-architecture-2026-05-11.md` 后，由开发按 MVC 架构实施：删除用户侧分类功能，完整实现 Paste 参考中的 Pinboard 创建、重命名、上色、删除、固定到和取消固定；去掉同步/分享能力；固定内容不受主动清理策略删除。
+
+### 完成情况
+
+- [x] 已完成：Rust Model schema 升至 v4，Pinboard summary 增加 `color_code` 与 `sort_order`。
+- [x] 已完成：Rust core / FFI / Swift bridge 增加 Pinboard 创建、重命名、颜色更新、删除 API。
+- [x] 已完成：删除 Pinboard 采用事务处理，保护仍属于其他活动 Pinboard 的内容。
+- [x] 已完成：Swift 查询链路移除用户侧 `itemType` 分类过滤，内容类型模型继续服务采集、卡片、预览和粘贴。
+- [x] 已完成：AppKit View 删除文本/链接/图片/文件分类 chips，顶部改为剪贴板 + 动态 Pinboard chips。
+- [x] 已完成：更多菜单提供创建、重命名、上色、删除 Pinboard；右键固定菜单展示 Pinboard 列表。
+- [x] 已完成：Rust、Swift、真实面板交互 smoke、diff 空白检查均通过。
+
+### 发现的问题
+
+| 严重程度 | 问题描述 | 根本原因 | 改进建议 |
+| --- | --- | --- | --- |
+| 已改正 | 内部 UI 类名仍叫 `TypeFilterChipButton`。 | 从分类 chip 改造成 Pinboard chip 后遗漏命名清理。 | 已改名为 `PinboardChipButton`，并移除过时测试名。 |
+| 已改正 | 删除空 Pinboard 后状态栏显示“已删除 0 条内容”。 | 删除 API 的 `affectedCount` 表达的是随板删除的内容数量，不是 Pinboard 本身数量。 | 已改为无内容时显示“Pinboard：已删除”，有内容时再显示删除条数。 |
+| 可接受 | Rust 内部仍保留 `ItemQuery.item_type` 能力。 | 内容类型仍是剪贴板内容模型的一部分，Rust 测试也覆盖底层按类型查询。 | 当前 Swift/UI 链路已不暴露分类筛选，保留底层能力不影响本需求。 |
+
+### 结论
+
+综合评分：94/100。建议通过。实现符合本轮架构要求和用户明确范围：本地 Pinboard 管理闭环已完成，用户侧分类功能已删除，固定内容不会被主动清理；同步、分享和协作能力未接入。

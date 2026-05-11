@@ -30,7 +30,7 @@ scripts/release-macos.sh
 - `SHA256SUMS`
 - `ClipboardWorkbench-release-manifest.txt`
 
-说明：当前发布脚本默认已经切换到正式产物名 `ClipboardWorkbench*`。兼容期内保留的是源码运行和 QA 命令中的旧 executable product 名 `PasteFloatingDemo`，用于避免打断既有自动化入口。
+说明：发布脚本默认使用正式产物名 `ClipboardWorkbench*`，源码运行和 QA 命令统一使用当前 executable product `PasteFloating`。
 
 ## 可配置参数
 
@@ -77,7 +77,7 @@ codesign --verify --deep --strict .codex/artifacts/release/0.1.0/ClipboardWorkbe
 hdiutil imageinfo .codex/artifacts/release/0.1.0/ClipboardWorkbench-0.1.0.dmg
 ```
 
-说明：发布校验链路已经默认切换到 `ClipboardWorkbench` bundle 和 `ClipboardWorkbenchApp` 包内可执行文件；兼容期内保留的旧名称主要用于 `swift run PasteFloatingDemo ...` 这类源码态 QA 入口。
+说明：发布校验链路使用 `ClipboardWorkbench` bundle 和 `ClipboardWorkbenchApp` 包内可执行文件；源码态 QA 入口统一使用 `swift run PasteFloating ...`。
 
 ## 遗留风险
 

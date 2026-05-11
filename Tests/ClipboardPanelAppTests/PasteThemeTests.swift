@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import PasteFloatingDemo
+@testable import PasteFloating
 
 struct PasteThemeTests {
     @Test

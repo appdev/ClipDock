@@ -1,9 +1,9 @@
 import Foundation
 
 public enum PanelExternalAction: Equatable, Sendable {
-    case queryChanged(searchText: String, itemType: String?, sourceAppID: String?)
+    case queryChanged(searchText: String, sourceAppID: String?, pinboardID: String?)
     case copyItem(itemID: String)
-    case setPinned(itemID: String, isPinned: Bool)
+    case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
     case deleteItem(itemID: String)
     case hidePanel
     case loadMore
@@ -18,13 +18,13 @@ public enum PanelPreviewRequest: Equatable, Sendable {
 public enum PanelManagementAction: Equatable, Sendable {
     case copy
     case delete
-    case togglePinned(isCurrentlyPinned: Bool)
+    case setPinboardMembership(pinboardID: String, isMember: Bool)
     case preview
 }
 
 public enum PanelInteractionAction: Equatable, Sendable {
     case setSearchText(String)
-    case setTypeFilter(String?)
+    case setPinboardFilter(String?)
     case clearFilters
     case toggleSearch
     case focusSearch
@@ -121,8 +121,8 @@ public final class PanelInteractionController {
             contentController.setSearchText(searchText)
             return makeResult(effects: [queryChangedEffect()])
 
-        case .setTypeFilter(let itemType):
-            contentController.setTypeFilter(itemType)
+        case .setPinboardFilter(let pinboardID):
+            contentController.setPinboardFilter(pinboardID)
             return makeResult(
                 effects: [queryChangedEffect()],
                 shouldSyncToolbar: true
@@ -247,9 +247,13 @@ public final class PanelInteractionController {
                     .external(.deleteItem(itemID: itemID))
                 ])
 
-            case .togglePinned(let isCurrentlyPinned):
+            case .setPinboardMembership(let pinboardID, let isMember):
                 return makeResult(effects: [
-                    .external(.setPinned(itemID: itemID, isPinned: !isCurrentlyPinned))
+                    .external(.setPinboardMembership(
+                        itemID: itemID,
+                        pinboardID: pinboardID,
+                        isMember: isMember
+                    ))
                 ])
 
             case .preview:
@@ -281,8 +285,8 @@ public final class PanelInteractionController {
     private func queryChangedEffect() -> PanelInteractionEffect {
         .external(.queryChanged(
             searchText: viewState.toolbar.searchText,
-            itemType: viewState.toolbar.selectedItemType,
-            sourceAppID: nil
+            sourceAppID: nil,
+            pinboardID: viewState.toolbar.selectedPinboardID
         ))
     }
 

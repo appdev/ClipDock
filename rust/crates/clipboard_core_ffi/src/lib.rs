@@ -1,7 +1,7 @@
 use clipboard_core::{
     CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest, ClipboardCore, ClipboardItemType,
-    ItemManagementResult, ItemQuery, MaintenanceResult, PageRequest, PreferencesDocument,
-    SourceConfidence,
+    ItemManagementResult, ItemQuery, MaintenanceResult, PageRequest, PinboardPage,
+    PreferencesDocument, SourceConfidence,
 };
 
 #[swift_bridge::bridge]
@@ -32,6 +32,15 @@ mod ffi {
         total_count: i64,
         has_more: bool,
         apps_json: String,
+        error_code: String,
+        message_key: String,
+    }
+
+    #[swift_bridge(swift_repr = "struct")]
+    struct CorePinboardsResult {
+        ok: bool,
+        total_count: i64,
+        pinboards_json: String,
         error_code: String,
         message_key: String,
     }
@@ -90,6 +99,7 @@ mod ffi {
             offset: i64,
             item_type: String,
             source_app_id: String,
+            pinboard_id: String,
             search_text: String,
         ) -> CoreListResult;
         fn list_source_apps(
@@ -97,10 +107,31 @@ mod ffi {
             limit: i64,
             offset: i64,
         ) -> CoreSourceAppsResult;
-        fn set_item_pinned(
+        fn list_pinboards(app_support_dir: String) -> CorePinboardsResult;
+        fn create_pinboard(
+            app_support_dir: String,
+            title: String,
+            color_code: i64,
+        ) -> CoreItemManagementResult;
+        fn rename_pinboard(
+            app_support_dir: String,
+            pinboard_id: String,
+            title: String,
+        ) -> CoreItemManagementResult;
+        fn update_pinboard_color(
+            app_support_dir: String,
+            pinboard_id: String,
+            color_code: i64,
+        ) -> CoreItemManagementResult;
+        fn delete_pinboard(
+            app_support_dir: String,
+            pinboard_id: String,
+        ) -> CoreItemManagementResult;
+        fn set_item_pinboard_membership(
             app_support_dir: String,
             item_id: String,
-            is_pinned: bool,
+            pinboard_id: String,
+            is_member: bool,
         ) -> CoreItemManagementResult;
         fn delete_item(app_support_dir: String, item_id: String) -> CoreItemManagementResult;
         fn clear_items(
@@ -235,13 +266,87 @@ fn maintenance_result(result: MaintenanceResult) -> ffi::CoreMaintenanceResult {
     }
 }
 
-fn set_item_pinned(
+fn list_pinboards(app_support_dir: String) -> ffi::CorePinboardsResult {
+    match ClipboardCore::open(app_support_dir).and_then(|core| core.list_pinboards()) {
+        Ok(page) => pinboards_result(page),
+        Err(error) => ffi::CorePinboardsResult {
+            ok: false,
+            total_count: 0,
+            pinboards_json: "[]".to_string(),
+            error_code: error.code.as_str().to_string(),
+            message_key: error.message_key().to_string(),
+        },
+    }
+}
+
+fn pinboards_result(page: PinboardPage) -> ffi::CorePinboardsResult {
+    ffi::CorePinboardsResult {
+        ok: true,
+        total_count: page.total_count,
+        pinboards_json: serde_json::to_string(&page.pinboards).unwrap_or_else(|_| "[]".to_string()),
+        error_code: String::new(),
+        message_key: String::new(),
+    }
+}
+
+fn create_pinboard(
     app_support_dir: String,
-    item_id: String,
-    is_pinned: bool,
+    title: String,
+    color_code: i64,
+) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+        core.create_pinboard(title, optional_i64(color_code))
+            .map(|_| ())
+    }) {
+        Ok(()) => item_management_result(ItemManagementResult { affected_count: 1 }),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn rename_pinboard(
+    app_support_dir: String,
+    pinboard_id: String,
+    title: String,
 ) -> ffi::CoreItemManagementResult {
     match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.set_item_pinned(item_id, is_pinned))
+        .and_then(|mut core| core.rename_pinboard(pinboard_id, title).map(|_| ()))
+    {
+        Ok(()) => item_management_result(ItemManagementResult { affected_count: 1 }),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn update_pinboard_color(
+    app_support_dir: String,
+    pinboard_id: String,
+    color_code: i64,
+) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+        core.update_pinboard_color(pinboard_id, color_code)
+            .map(|_| ())
+    }) {
+        Ok(()) => item_management_result(ItemManagementResult { affected_count: 1 }),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn delete_pinboard(app_support_dir: String, pinboard_id: String) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.delete_pinboard(pinboard_id))
+    {
+        Ok(result) => item_management_result(result),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn set_item_pinboard_membership(
+    app_support_dir: String,
+    item_id: String,
+    pinboard_id: String,
+    is_member: bool,
+) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.set_item_pinboard_membership(item_id, pinboard_id, is_member))
     {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
@@ -264,6 +369,7 @@ fn clear_items(
     let query = ItemQuery {
         item_type: parse_item_type(&item_type),
         source_app_id: optional_string(source_app_id),
+        pinboard_id: None,
         search_text: optional_string(search_text),
     };
 
@@ -489,11 +595,13 @@ fn list_items(
     offset: i64,
     item_type: String,
     source_app_id: String,
+    pinboard_id: String,
     search_text: String,
 ) -> ffi::CoreListResult {
     let query = ItemQuery {
         item_type: parse_item_type(&item_type),
         source_app_id: optional_string(source_app_id),
+        pinboard_id: optional_string(pinboard_id),
         search_text: optional_string(search_text),
     };
 
@@ -548,6 +656,14 @@ fn optional_string(value: String) -> Option<String> {
         None
     } else {
         Some(value)
+    }
+}
+
+fn optional_i64(value: i64) -> Option<i64> {
+    if value > 0 {
+        Some(value)
+    } else {
+        None
     }
 }
 

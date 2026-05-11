@@ -2,12 +2,12 @@
 
 ## Project Structure & Module Organization
 
-This repository is a macOS clipboard workbench demo built from a Swift Package with a Rust storage core. Swift UI and app logic live in `Sources/ClipboardPanelApp`, while the executable entry point is `Sources/PasteFloatingDemo/main.swift`. Swift tests are in `Tests/ClipboardPanelAppTests`. Rust workspace code lives under `rust/crates`, with `clipboard_core` for domain/storage logic and `clipboard_core_ffi` for Swift bridge bindings. Generated Swift bridge and XCFramework artifacts are kept in `Generated/ClipboardCoreBridge`; regenerate them with the provided script instead of editing them by hand. Supporting architecture, release, and QA notes are in `docs/`.
+This repository is a macOS clipboard workbench demo built from a Swift Package with a Rust storage core. Swift UI and app logic live in `Sources/ClipboardPanelApp`, while the executable entry point is `Sources/PasteFloating/main.swift`. Swift tests are in `Tests/ClipboardPanelAppTests`. Rust workspace code lives under `rust/crates`, with `clipboard_core` for domain/storage logic and `clipboard_core_ffi` for Swift bridge bindings. Generated Swift bridge and XCFramework artifacts are kept in `Generated/ClipboardCoreBridge`; regenerate them with the provided script instead of editing them by hand. Supporting architecture, release, and QA notes are in `docs/`.
 
 ## Build, Test, and Development Commands
 
 - `scripts/build-rust-core.sh`: builds the Rust FFI library and refreshes `Generated/ClipboardCoreBridge`.
-- `swift run PasteFloatingDemo`: runs the macOS demo app after the bridge is built.
+- `swift run PasteFloating`: runs the macOS demo app after the bridge is built.
 - `swift build`: builds the Swift package.
 - `swift test`: runs Swift Testing suites and writes the visual regression fixture to `.codex/artifacts/panel-visual-regression.png`.
 - `cargo test --manifest-path rust/Cargo.toml`: runs Rust workspace tests.

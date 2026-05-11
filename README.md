@@ -64,10 +64,10 @@ scripts/build-rust-core.sh
 然后启动应用：
 
 ```bash
-swift run PasteFloatingDemo
+swift run PasteFloating
 ```
 
-说明：当前源码运行命令在兼容期内仍保留旧的可执行 target 名 `PasteFloatingDemo`。文档中的产品名称统一使用“剪贴板工作台（ClipboardWorkbench）”，后续当可执行 target 完成重命名后，再同步更新这里的命令示例。
+说明：`PasteFloating` 是当前源码态运行与 QA 命令使用的唯一 executable product；旧兼容入口已移除。用户可见产品名称仍统一使用“剪贴板工作台（ClipboardWorkbench）”。
 
 ## 生成可分发应用
 
@@ -83,7 +83,7 @@ scripts/package-macos-app.sh
 .codex/artifacts/ClipboardWorkbench.app
 ```
 
-说明：当前打包脚本默认已经切换到正式 bundle 名 `ClipboardWorkbench.app`。兼容期内保留的是源码运行与 QA 命令中的旧 executable product 名 `PasteFloatingDemo`，而不是发布产物名。
+说明：当前打包脚本默认使用正式 bundle 名 `ClipboardWorkbench.app`，包内可执行文件为 `ClipboardWorkbenchApp`。
 
 生成本地候选发布包：
 
@@ -120,10 +120,10 @@ swift test
 ## 项目结构
 
 - `Sources/ClipboardPanelApp`：Swift/AppKit UI、面板交互与应用逻辑
-- `Sources/PasteFloatingDemo`：当前可执行入口 target；兼容期内保留旧目录与 target 名，承载剪贴板工作台运行时壳层
+- `Sources/PasteFloating`：当前可执行入口 target 源码目录，承载剪贴板工作台运行时壳层
 - `rust/crates/clipboard_core`：剪贴板历史与偏好设置的 Rust/SQLite 核心
 - `rust/crates/clipboard_core_ffi`：Swift 桥接所需的 FFI 层
-- `Generated/ClipboardCoreBridge`：生成的 Swift bridge 与 XCFramework 产物
+- `Generated/ClipboardCoreBridge`：生成的 Swift bridge 本地包；XCFramework 编译产物由 `scripts/build-rust-core.sh` 本地生成，不提交到仓库
 - `Tests/ClipboardPanelAppTests`：Swift 测试
 - `docs/`：架构、UI、QA 和发布说明
 

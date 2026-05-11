@@ -14,11 +14,11 @@ let package = Package(
         ),
         .executable(
             name: "ClipboardWorkbenchApp",
-            targets: ["PasteFloatingDemo"]
+            targets: ["PasteFloating"]
         ),
         .executable(
-            name: "PasteFloatingDemo",
-            targets: ["PasteFloatingDemo"]
+            name: "PasteFloating",
+            targets: ["PasteFloating"]
         )
     ],
     dependencies: [
@@ -38,7 +38,7 @@ let package = Package(
                 "Generated",
                 "rust",
                 "scripts",
-                "Sources/PasteFloatingDemo",
+                "Sources/PasteFloating",
                 "Tests",
                 "README.md",
                 "AGENTS.md",
@@ -50,14 +50,18 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "PasteFloatingDemo",
-            dependencies: ["ClipboardPanelApp"]
+            name: "PasteFloating",
+            dependencies: ["ClipboardPanelApp"],
+            path: "Sources/PasteFloating",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "ClipboardPanelAppTests",
             dependencies: [
                 "ClipboardPanelApp",
-                "PasteFloatingDemo"
+                "PasteFloating"
             ]
         )
     ]

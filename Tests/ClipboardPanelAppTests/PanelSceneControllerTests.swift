@@ -13,7 +13,7 @@ struct PanelSceneControllerTests {
     @Test
     func searchToggleHidesEmptyFieldAndReturnsPanelFocus() {
         let state = PanelSceneState(
-            query: PanelQueryState(searchText: "", itemType: nil, isSearchVisible: true)
+            query: PanelQueryState(searchText: "", isSearchVisible: true)
         )
 
         let result = PanelSceneController.searchToggleResult(state)
@@ -25,7 +25,7 @@ struct PanelSceneControllerTests {
     @Test
     func searchToggleKeepsVisibleFieldWhenSearchIsNotEmpty() {
         let state = PanelSceneState(
-            query: PanelQueryState(searchText: "report", itemType: nil, isSearchVisible: true)
+            query: PanelQueryState(searchText: "report", isSearchVisible: true)
         )
 
         let result = PanelSceneController.searchToggleResult(state)
@@ -71,7 +71,7 @@ struct PanelSceneControllerTests {
     @Test
     func escapeActionUsesSceneSearchState() {
         let state = PanelSceneState(
-            query: PanelQueryState(searchText: " report ", itemType: nil, isSearchVisible: true)
+            query: PanelQueryState(searchText: " report ", isSearchVisible: true)
         )
 
         #expect(PanelSceneController.escapeAction(state, isPreviewShown: false) == .clearSearch)
@@ -79,15 +79,15 @@ struct PanelSceneControllerTests {
     }
 
     @Test
-    func clearingFiltersResetsSearchVisibilityAndType() {
+    func clearingFiltersResetsSearchVisibilityAndPinboard() {
         let state = PanelSceneState(
-            query: PanelQueryState(searchText: "report", itemType: "image", isSearchVisible: true)
+            query: PanelQueryState(searchText: "report", pinboardID: "default", isSearchVisible: true)
         )
 
         let nextState = PanelSceneController.stateByClearingFilters(state)
 
         #expect(nextState.query.searchText.isEmpty)
-        #expect(nextState.query.itemType == nil)
+        #expect(nextState.query.pinboardID == nil)
         #expect(!nextState.query.isSearchVisible)
     }
 
@@ -138,14 +138,14 @@ struct PanelSceneControllerTests {
     }
 
     @Test
-    func runtimeControllerPersistsSearchAndFilterState() {
+    func runtimeControllerPersistsSearchAndPinboardState() {
         let controller = PanelSceneRuntimeController()
 
         controller.setSearchText(" report ")
-        controller.setTypeFilter("image")
+        controller.setPinboardFilter("default")
 
         #expect(controller.state.query.searchText == "report")
-        #expect(controller.state.query.itemType == "image")
+        #expect(controller.state.query.pinboardID == "default")
     }
 
     @Test

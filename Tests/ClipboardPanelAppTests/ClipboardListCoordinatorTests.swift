@@ -25,7 +25,7 @@ struct ClipboardListCoordinatorTests {
             }
         )
 
-        coordinator.updateQuery(searchText: "report", itemType: "file", sourceAppID: nil)
+        coordinator.updateQuery(searchText: "report", sourceAppID: nil)
         await Task.yield()
         #expect(await requests.values().isEmpty)
 
@@ -34,10 +34,42 @@ struct ClipboardListCoordinatorTests {
         #expect(await requests.values()[0] == ClipboardListQuery(
             limit: 2,
             offset: 0,
-            itemType: "file",
             sourceAppID: nil,
+            pinboardID: nil,
             normalizedSearch: "report"
         ))
+    }
+
+    @Test
+    @MainActor
+    func updateQueryCarriesPinboardID() async {
+        let requests = QueryRecorder()
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                return .success(RustCoreListResult(
+                    items: [],
+                    totalCount: 0,
+                    hasMore: false
+                ))
+            },
+            mutationPerformer: { _ in
+                .success(RustItemManagementResult(affectedCount: 0))
+            }
+        )
+
+        coordinator.updateQuery(
+            searchText: "",
+            sourceAppID: nil,
+            pinboardID: "default",
+            debounce: false
+        )
+
+        #expect(await waitUntil { await requests.values().count == 1 })
+        #expect(await requests.values()[0].pinboardID == "default")
+        #expect(await requests.values()[0].isFiltered)
     }
 
     @Test
@@ -117,12 +149,12 @@ struct ClipboardListCoordinatorTests {
         )
         coordinator.onListUpdate = { updates.append($0) }
 
-        coordinator.updateQuery(searchText: "first", itemType: nil, sourceAppID: nil)
+        coordinator.updateQuery(searchText: "first", sourceAppID: nil)
         let registeredFirst = await waitUntil { await gate.registeredCount() == 1 }
         #expect(registeredFirst)
         guard registeredFirst else { return }
 
-        coordinator.updateQuery(searchText: "second", itemType: nil, sourceAppID: nil)
+        coordinator.updateQuery(searchText: "second", sourceAppID: nil)
 
         let registeredSecond = await waitUntil { await gate.registeredCount() == 2 }
         #expect(registeredSecond)
@@ -190,6 +222,25 @@ struct ClipboardListCoordinatorTests {
         })
         #expect(await requests.values().count == 1)
         #expect(await requests.values()[0].offset == 0)
+    }
+}
+
+struct PinboardCoordinatorTests {
+    @Test
+    @MainActor
+    func deleteStatusAvoidsZeroItemCountForEmptyPinboard() async {
+        var statusTexts: [String] = []
+        let coordinator = PinboardCoordinator { mutation in
+            #expect(mutation == .delete(pinboardID: "board-1"))
+            return .success(RustItemManagementResult(affectedCount: 0))
+        }
+        coordinator.onStatusTextChanged = { statusTexts.append($0) }
+
+        coordinator.performMutation(.delete(pinboardID: "board-1"))
+
+        #expect(await waitUntil {
+            statusTexts.contains("Pinboard：已删除")
+        })
     }
 }
 

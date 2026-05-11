@@ -48,6 +48,16 @@ public struct RustCoreSourceAppsResult: Equatable, Sendable {
     public let hasMore: Bool
 }
 
+public struct RustCorePinboardsResult: Equatable, Sendable {
+    public let pinboards: [RustPinboardSummary]
+    public let totalCount: Int64
+
+    public init(pinboards: [RustPinboardSummary], totalCount: Int64) {
+        self.pinboards = pinboards
+        self.totalCount = totalCount
+    }
+}
+
 public struct RustItemManagementResult: Equatable, Sendable {
     public let affectedCount: Int64
 }
@@ -61,17 +71,20 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
     public var general: RustGeneralPreferences
     public var history: RustHistoryPreferences
     public var appearance: RustAppearancePreferences
+    public var shortcuts: RustShortcutsPreferences
     public var ignoreList: RustIgnoreListPreferences
 
     public init(
         general: RustGeneralPreferences = RustGeneralPreferences(),
         history: RustHistoryPreferences = RustHistoryPreferences(),
         appearance: RustAppearancePreferences = RustAppearancePreferences(),
+        shortcuts: RustShortcutsPreferences = RustShortcutsPreferences(),
         ignoreList: RustIgnoreListPreferences = RustIgnoreListPreferences()
     ) {
         self.general = general
         self.history = history
         self.appearance = appearance
+        self.shortcuts = shortcuts
         self.ignoreList = ignoreList
     }
 
@@ -79,6 +92,7 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         case general
         case history
         case appearance
+        case shortcuts
         case ignoreList = "ignore_list"
     }
 
@@ -87,6 +101,7 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         self.general = try container.decodeIfPresent(RustGeneralPreferences.self, forKey: .general) ?? RustGeneralPreferences()
         self.history = try container.decodeIfPresent(RustHistoryPreferences.self, forKey: .history) ?? RustHistoryPreferences()
         self.appearance = try container.decodeIfPresent(RustAppearancePreferences.self, forKey: .appearance) ?? RustAppearancePreferences()
+        self.shortcuts = try container.decodeIfPresent(RustShortcutsPreferences.self, forKey: .shortcuts) ?? RustShortcutsPreferences()
         self.ignoreList = try container.decodeIfPresent(RustIgnoreListPreferences.self, forKey: .ignoreList) ?? RustIgnoreListPreferences()
     }
 }
@@ -158,6 +173,36 @@ public struct RustAppearancePreferences: Equatable, Codable, Sendable {
         case mode
         case itemDensity = "item_density"
         case previewPopoverEnabled = "preview_popover_enabled"
+    }
+}
+
+public struct RustShortcutsPreferences: Equatable, Codable, Sendable {
+    public var openPanel: RustKeyboardShortcut
+
+    public init(openPanel: RustKeyboardShortcut = RustKeyboardShortcut()) {
+        self.openPanel = openPanel
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case openPanel = "open_panel"
+    }
+}
+
+public struct RustKeyboardShortcut: Equatable, Codable, Sendable {
+    public var keyCode: Int64
+    public var modifiers: [String]
+
+    public init(
+        keyCode: Int64 = 9,
+        modifiers: [String] = ["command", "shift"]
+    ) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case keyCode = "key_code"
+        case modifiers
     }
 }
 
@@ -276,6 +321,44 @@ public struct RustSourceAppSummary: Equatable, Decodable, Sendable {
         case iconPath = "icon_path"
         case itemCount = "item_count"
         case lastCopiedAtMs = "last_copied_at_ms"
+    }
+}
+
+public struct RustPinboardSummary: Equatable, Decodable, Sendable {
+    public let id: String
+    public let title: String
+    public let colorCode: Int64
+    public let sortOrder: Int64
+    public let itemCount: Int64
+    public let createdAtMs: Int64
+    public let updatedAtMs: Int64
+
+    public init(
+        id: String,
+        title: String,
+        colorCode: Int64 = 0,
+        sortOrder: Int64 = 0,
+        itemCount: Int64,
+        createdAtMs: Int64,
+        updatedAtMs: Int64
+    ) {
+        self.id = id
+        self.title = title
+        self.colorCode = colorCode
+        self.sortOrder = sortOrder
+        self.itemCount = itemCount
+        self.createdAtMs = createdAtMs
+        self.updatedAtMs = updatedAtMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case colorCode = "color_code"
+        case sortOrder = "sort_order"
+        case itemCount = "item_count"
+        case createdAtMs = "created_at_ms"
+        case updatedAtMs = "updated_at_ms"
     }
 }
 
@@ -469,8 +552,8 @@ public struct RustCoreClient: Sendable {
         appSupportDirectory: URL,
         limit: Int64 = 50,
         offset: Int64 = 0,
-        itemType: String? = nil,
         sourceAppId: String? = nil,
+        pinboardId: String? = nil,
         searchText: String? = nil
     ) -> Result<RustCoreListResult, RustCoreError> {
         withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
@@ -478,8 +561,8 @@ public struct RustCoreClient: Sendable {
                 appSupportPath: appSupportPath,
                 limit: limit,
                 offset: offset,
-                itemType: itemType,
                 sourceAppId: sourceAppId,
+                pinboardId: pinboardId,
                 searchText: searchText
             )
         }
@@ -518,13 +601,87 @@ public struct RustCoreClient: Sendable {
         }
     }
 
-    public func setItemPinned(
+    public func listPinboards(
+        appSupportDirectory: URL
+    ) -> Result<RustCorePinboardsResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = list_pinboards(appSupportPath)
+
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+
+            switch Self.decodeBridgeJSON(
+                result.pinboards_json.toString(),
+                as: [RustPinboardSummary].self
+            ) {
+            case .success(let pinboards):
+                return .success(
+                    RustCorePinboardsResult(
+                        pinboards: pinboards,
+                        totalCount: result.total_count
+                    )
+                )
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    public func setItemPinboardMembership(
         appSupportDirectory: URL,
         itemId: String,
-        isPinned: Bool
+        pinboardId: String,
+        isMember: Bool
     ) -> Result<RustItemManagementResult, RustCoreError> {
         withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            let result = set_item_pinned(appSupportPath, itemId, isPinned)
+            let result = set_item_pinboard_membership(appSupportPath, itemId, pinboardId, isMember)
+            return decodeItemManagementResult(result)
+        }
+    }
+
+    public func createPinboard(
+        appSupportDirectory: URL,
+        title: String,
+        colorCode: Int64 = 0
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = create_pinboard(appSupportPath, title, colorCode)
+            return decodeItemManagementResult(result)
+        }
+    }
+
+    public func renamePinboard(
+        appSupportDirectory: URL,
+        pinboardId: String,
+        title: String
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = rename_pinboard(appSupportPath, pinboardId, title)
+            return decodeItemManagementResult(result)
+        }
+    }
+
+    public func updatePinboardColor(
+        appSupportDirectory: URL,
+        pinboardId: String,
+        colorCode: Int64
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = update_pinboard_color(appSupportPath, pinboardId, colorCode)
+            return decodeItemManagementResult(result)
+        }
+    }
+
+    public func deletePinboard(
+        appSupportDirectory: URL,
+        pinboardId: String
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = delete_pinboard(appSupportPath, pinboardId)
             return decodeItemManagementResult(result)
         }
     }
@@ -541,14 +698,13 @@ public struct RustCoreClient: Sendable {
 
     public func clearItems(
         appSupportDirectory: URL,
-        itemType: String? = nil,
         sourceAppId: String? = nil,
         searchText: String? = nil
     ) -> Result<RustItemManagementResult, RustCoreError> {
         withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
             let result = clear_items(
                 appSupportPath,
-                itemType ?? "",
+                "",
                 sourceAppId ?? "",
                 searchText ?? ""
             )
@@ -661,16 +817,17 @@ public struct RustCoreClient: Sendable {
         appSupportPath: String,
         limit: Int64 = 50,
         offset: Int64 = 0,
-        itemType: String? = nil,
         sourceAppId: String? = nil,
+        pinboardId: String? = nil,
         searchText: String? = nil
     ) -> Result<RustCoreListResult, RustCoreError> {
         let result = list_items(
             appSupportPath,
             limit,
             offset,
-            itemType ?? "",
+            "",
             sourceAppId ?? "",
+            pinboardId ?? "",
             searchText ?? ""
         )
 

@@ -30,6 +30,8 @@ display_name="${APP_DISPLAY_NAME:-ClipboardWorkbench}"
 app_version="${APP_VERSION:-0.1.0}"
 app_build="${APP_BUILD:-1}"
 codesign_identity="${CODESIGN_IDENTITY:--}"
+app_icon_file="${APP_ICON_FILE:-Sources/PasteFloating/Resources/AppIcon.icns}"
+status_icon_file="${STATUS_ICON_FILE:-Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png}"
 
 scripts/build-rust-core.sh
 swift build -c release --product ClipboardWorkbenchApp
@@ -47,6 +49,14 @@ mkdir -p "$macos_dir" "$resources_dir"
 cp "$executable_path" "$macos_dir/$bundle_executable_name"
 chmod 755 "$macos_dir/$bundle_executable_name"
 
+if [[ -f "$app_icon_file" ]]; then
+    cp "$app_icon_file" "$resources_dir/AppIcon.icns"
+fi
+
+if [[ -f "$status_icon_file" ]]; then
+    cp "$status_icon_file" "$resources_dir/StatusBarClipboardTemplate.png"
+fi
+
 cat > "$contents_dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -60,6 +70,8 @@ cat > "$contents_dir/Info.plist" <<PLIST
     <string>${bundle_executable_name}</string>
     <key>CFBundleIdentifier</key>
     <string>${bundle_identifier}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleName</key>
     <string>${app_name}</string>
     <key>CFBundlePackageType</key>

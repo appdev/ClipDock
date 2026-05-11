@@ -18,7 +18,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 1)
+        #expect(value.schemaVersion == 4)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -156,10 +156,7 @@ struct RustCoreClientTests {
                 pasteboardChangeCount: 9
             )
         ).get()
-        let page = try client.listItems(
-            appSupportDirectory: tempDirectory,
-            itemType: "file"
-        ).get()
+        let page = try client.listItems(appSupportDirectory: tempDirectory).get()
 
         #expect(result.inserted)
         #expect(page.totalCount == 1)
@@ -172,7 +169,7 @@ struct RustCoreClientTests {
     }
 
     @Test
-    func listsItemsWithSearchAndTypeFiltersThroughSwiftBridgeBinding() throws {
+    func listsItemsWithSearchThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let payloadDirectory = tempDirectory.appendingPathComponent("assets", isDirectory: true)
@@ -212,17 +209,14 @@ struct RustCoreClientTests {
             )
         ).get()
 
-        let imagePage = try client.listItems(
-            appSupportDirectory: tempDirectory,
-            itemType: "image"
-        ).get()
+        let allPage = try client.listItems(appSupportDirectory: tempDirectory).get()
         let searchPage = try client.listItems(
             appSupportDirectory: tempDirectory,
             searchText: "Alpha Safari"
         ).get()
 
-        #expect(imagePage.totalCount == 1)
-        #expect(imagePage.items[0].itemType == "image")
+        #expect(allPage.totalCount == 2)
+        #expect(allPage.items.contains { $0.itemType == "image" })
         #expect(searchPage.totalCount == 1)
         #expect(searchPage.items[0].sourceAppName == "Safari")
     }
@@ -245,7 +239,7 @@ struct RustCoreClientTests {
                 pasteboardChangeCount: 1
             )
         ).get()
-        Thread.sleep(forTimeInterval: 0.01)
+        Thread.sleep(forTimeInterval: 0.1)
         _ = try client.captureText(
             appSupportDirectory: tempDirectory,
             request: RustCaptureTextRequest(
@@ -293,7 +287,7 @@ struct RustCoreClientTests {
             )
         ).get()
         Thread.sleep(forTimeInterval: 0.01)
-        _ = try client.captureText(
+        let second = try client.captureText(
             appSupportDirectory: tempDirectory,
             request: RustCaptureTextRequest(
                 text: "Regular item management target",
@@ -306,24 +300,82 @@ struct RustCoreClientTests {
             )
         ).get()
 
-        let pinResult = try client.setItemPinned(
+        let pinResult = try client.setItemPinboardMembership(
             appSupportDirectory: tempDirectory,
             itemId: first.itemId,
-            isPinned: true
+            pinboardId: "default",
+            isMember: true
         ).get()
         let pinnedPage = try client.listItems(appSupportDirectory: tempDirectory).get()
+        let pinboards = try client.listPinboards(appSupportDirectory: tempDirectory).get()
+        let defaultPinboardPage = try client.listItems(
+            appSupportDirectory: tempDirectory,
+            pinboardId: "default"
+        ).get()
         let deleteResult = try client.deleteItem(
             appSupportDirectory: tempDirectory,
             itemId: first.itemId
         ).get()
         let afterDelete = try client.listItems(appSupportDirectory: tempDirectory).get()
+        let defaultPinboardAfterDelete = try client.listItems(
+            appSupportDirectory: tempDirectory,
+            pinboardId: "default"
+        ).get()
 
         #expect(pinResult.affectedCount == 1)
-        #expect(pinnedPage.items.first?.id == first.itemId)
-        #expect(pinnedPage.items.first?.isPinned == true)
+        #expect(pinboards.totalCount == 1)
+        #expect(pinboards.pinboards.first?.id == "default")
+        #expect(pinboards.pinboards.first?.title == "固定")
+        #expect(pinboards.pinboards.first?.colorCode ?? 0 > 0)
+        #expect(pinboards.pinboards.first?.itemCount == 1)
+        #expect(pinnedPage.items.first?.id == second.itemId)
+        #expect(pinnedPage.items.contains { $0.id == first.itemId && $0.isPinned })
+        #expect(defaultPinboardPage.totalCount == 1)
+        #expect(defaultPinboardPage.items.first?.id == first.itemId)
         #expect(deleteResult.affectedCount == 1)
         #expect(afterDelete.totalCount == 1)
         #expect(afterDelete.items.first?.id != first.itemId)
+        #expect(defaultPinboardAfterDelete.totalCount == 0)
+    }
+
+    @Test
+    func managesPinboardsThroughSwiftBridgeBinding() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+
+        let createResult = try client.createPinboard(
+            appSupportDirectory: tempDirectory,
+            title: "Research",
+            colorCode: 4_294_620_928
+        ).get()
+        let createdPage = try client.listPinboards(appSupportDirectory: tempDirectory).get()
+        let created = try #require(createdPage.pinboards.first { $0.title == "Research" })
+        let renameResult = try client.renamePinboard(
+            appSupportDirectory: tempDirectory,
+            pinboardId: created.id,
+            title: "AI Clips"
+        ).get()
+        let colorResult = try client.updatePinboardColor(
+            appSupportDirectory: tempDirectory,
+            pinboardId: created.id,
+            colorCode: 4_290_925_536
+        ).get()
+        let updatedPage = try client.listPinboards(appSupportDirectory: tempDirectory).get()
+        let updated = try #require(updatedPage.pinboards.first { $0.id == created.id })
+        let deleteResult = try client.deletePinboard(
+            appSupportDirectory: tempDirectory,
+            pinboardId: created.id
+        ).get()
+        let deletedPage = try client.listPinboards(appSupportDirectory: tempDirectory).get()
+
+        #expect(createResult.affectedCount == 1)
+        #expect(renameResult.affectedCount == 1)
+        #expect(colorResult.affectedCount == 1)
+        #expect(updated.title == "AI Clips")
+        #expect(updated.colorCode == 4_290_925_536)
+        #expect(deleteResult.affectedCount == 0)
+        #expect(!deletedPage.pinboards.contains { $0.id == created.id })
     }
 
     @Test
@@ -344,10 +396,11 @@ struct RustCoreClientTests {
                 pasteboardChangeCount: 1
             )
         ).get()
-        _ = try client.setItemPinned(
+        _ = try client.setItemPinboardMembership(
             appSupportDirectory: tempDirectory,
             itemId: pinned.itemId,
-            isPinned: true
+            pinboardId: "default",
+            isMember: true
         ).get()
         _ = try client.captureText(
             appSupportDirectory: tempDirectory,
@@ -376,7 +429,6 @@ struct RustCoreClientTests {
 
         let clearResult = try client.clearItems(
             appSupportDirectory: tempDirectory,
-            itemType: "text",
             searchText: "Clear bridge"
         ).get()
         let page = try client.listItems(appSupportDirectory: tempDirectory).get()
@@ -395,7 +447,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 1)
+        #expect(result.schemaVersion == 4)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.history.maxItems == 500)
@@ -405,6 +457,8 @@ struct RustCoreClientTests {
         #expect(result.preferences.appearance.mode == "system")
         #expect(result.preferences.appearance.itemDensity == "standard")
         #expect(result.preferences.appearance.previewPopoverEnabled)
+        #expect(result.preferences.shortcuts.openPanel.keyCode == 9)
+        #expect(result.preferences.shortcuts.openPanel.modifiers == ["command", "shift"])
         #expect(result.preferences.ignoreList.ignoredAppIdentifiers.isEmpty)
         #expect(result.preferences.ignoreList.windowTitleKeywords.isEmpty)
         #expect(!result.preferences.ignoreList.skipUnknownSource)
@@ -424,6 +478,10 @@ struct RustCoreClientTests {
         preferences.appearance.mode = "neon"
         preferences.appearance.itemDensity = "compact"
         preferences.appearance.previewPopoverEnabled = false
+        preferences.shortcuts.openPanel = RustKeyboardShortcut(
+            keyCode: 11,
+            modifiers: ["shift", "cmd", "alt", "command", "ignored"]
+        )
         preferences.ignoreList.ignoredAppIdentifiers = [
             "  com.apple.Terminal  ",
             "terminal",
@@ -451,6 +509,8 @@ struct RustCoreClientTests {
         #expect(saved.preferences.appearance.mode == "system")
         #expect(saved.preferences.appearance.itemDensity == "compact")
         #expect(!saved.preferences.appearance.previewPopoverEnabled)
+        #expect(saved.preferences.shortcuts.openPanel.keyCode == 11)
+        #expect(saved.preferences.shortcuts.openPanel.modifiers == ["command", "option", "shift"])
         #expect(saved.preferences.ignoreList.ignoredAppIdentifiers == ["com.apple.Terminal", "terminal"])
         #expect(saved.preferences.ignoreList.windowTitleKeywords == ["密码", "验证码"])
         #expect(saved.preferences.ignoreList.skipUnknownSource)
@@ -486,6 +546,7 @@ struct RustCoreClientTests {
         )
 
         #expect(preferences.ignoreList == RustIgnoreListPreferences())
+        #expect(preferences.shortcuts == RustShortcutsPreferences())
     }
 
     @Test

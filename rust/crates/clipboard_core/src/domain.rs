@@ -144,10 +144,28 @@ pub struct SourceAppPage {
     pub has_more: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinboardSummary {
+    pub id: String,
+    pub title: String,
+    pub color_code: i64,
+    pub sort_order: i64,
+    pub item_count: i64,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinboardPage {
+    pub pinboards: Vec<PinboardSummary>,
+    pub total_count: i64,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemQuery {
     pub item_type: Option<ClipboardItemType>,
     pub source_app_id: Option<String>,
+    pub pinboard_id: Option<String>,
     pub search_text: Option<String>,
 }
 
@@ -263,6 +281,8 @@ pub struct PreferencesDocument {
     #[serde(default)]
     pub appearance: AppearancePreferences,
     #[serde(default)]
+    pub shortcuts: ShortcutsPreferences,
+    #[serde(default)]
     pub ignore_list: IgnoreListPreferences,
 }
 
@@ -272,6 +292,7 @@ impl Default for PreferencesDocument {
             general: GeneralPreferences::default(),
             history: HistoryPreferences::default(),
             appearance: AppearancePreferences::default(),
+            shortcuts: ShortcutsPreferences::default(),
             ignore_list: IgnoreListPreferences::default(),
         }
     }
@@ -292,6 +313,7 @@ impl PreferencesDocument {
             &["compact", "standard"],
             "standard",
         );
+        self.shortcuts.open_panel = normalize_keyboard_shortcut(self.shortcuts.open_panel);
         self.ignore_list.ignored_app_identifiers =
             normalize_string_list(self.ignore_list.ignored_app_identifiers, 64, 120);
         self.ignore_list.window_title_keywords =
@@ -363,6 +385,34 @@ impl Default for AppearancePreferences {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShortcutsPreferences {
+    #[serde(default = "default_open_panel_shortcut")]
+    pub open_panel: KeyboardShortcut,
+}
+
+impl Default for ShortcutsPreferences {
+    fn default() -> Self {
+        Self {
+            open_panel: default_open_panel_shortcut(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyboardShortcut {
+    #[serde(default = "default_open_panel_key_code")]
+    pub key_code: i64,
+    #[serde(default = "default_open_panel_modifiers")]
+    pub modifiers: Vec<String>,
+}
+
+impl Default for KeyboardShortcut {
+    fn default() -> Self {
+        default_open_panel_shortcut()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct IgnoreListPreferences {
     #[serde(default)]
@@ -395,6 +445,64 @@ fn default_appearance_mode() -> String {
 
 fn default_item_density() -> String {
     "standard".to_string()
+}
+
+fn default_open_panel_shortcut() -> KeyboardShortcut {
+    KeyboardShortcut {
+        key_code: default_open_panel_key_code(),
+        modifiers: default_open_panel_modifiers(),
+    }
+}
+
+fn default_open_panel_key_code() -> i64 {
+    9
+}
+
+fn default_open_panel_modifiers() -> Vec<String> {
+    vec!["command".to_string(), "shift".to_string()]
+}
+
+fn normalize_keyboard_shortcut(shortcut: KeyboardShortcut) -> KeyboardShortcut {
+    if !(0..=127).contains(&shortcut.key_code) {
+        return default_open_panel_shortcut();
+    }
+
+    let modifiers = normalize_shortcut_modifiers(shortcut.modifiers);
+    let has_required_modifier = modifiers
+        .iter()
+        .any(|modifier| matches!(modifier.as_str(), "command" | "option" | "control"));
+    if !has_required_modifier {
+        return default_open_panel_shortcut();
+    }
+
+    KeyboardShortcut {
+        key_code: shortcut.key_code,
+        modifiers,
+    }
+}
+
+fn normalize_shortcut_modifiers(modifiers: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for canonical in ["command", "option", "control", "shift"] {
+        if modifiers
+            .iter()
+            .filter_map(|modifier| canonical_shortcut_modifier(modifier))
+            .any(|modifier| modifier == canonical)
+        {
+            normalized.push(canonical.to_string());
+        }
+    }
+    normalized
+}
+
+fn canonical_shortcut_modifier(modifier: &str) -> Option<&'static str> {
+    match modifier.trim().to_ascii_lowercase().as_str() {
+        "command" | "cmd" | "meta" => Some("command"),
+        "option" | "alt" => Some("option"),
+        "control" | "ctrl" => Some("control"),
+        "shift" => Some("shift"),
+        _ => None,
+    }
 }
 
 fn normalized_choice(value: &str, allowed: &[&str], fallback: &str) -> String {

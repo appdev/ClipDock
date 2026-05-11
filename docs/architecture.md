@@ -27,7 +27,7 @@
 - 可迁移 core：Rust 不依赖 AppKit，不感知 `NSPanel`、`NSPasteboard`、`NSImage`、`NSWorkspace` 或 `NSScreen`。
 - 可验证交付：每个功能切片同时有本地自动验证命令、人工可观察行为和 QA 记录目标。
 
-兼容说明：本文档中的 `swift run PasteFloatingDemo`、`.codex/artifacts/PasteFloatingDemo.app` 等命令与产物路径，属于当前工程与脚本兼容期内保留的历史 target / bundle 名。凡涉及产品名称、发布展示名或用户可见命名时，统一以“剪贴板工作台（ClipboardWorkbench）”为准。
+命名说明：本文档中的 `swift run PasteFloating` 属于源码态运行与 QA 入口；发布展示名、bundle 名和用户可见命名统一以“剪贴板工作台（ClipboardWorkbench）”为准。
 
 ## 3. UI 硬性契约
 
@@ -38,7 +38,7 @@
 - 可参考剪贴板管理器的通用范式和 macOS 系统质感，但不得复制 Paste 的品牌、文案、专有布局组合、卡片比例、动画曲线或可识别视觉表达。
 - 用户可见名称不得使用 `Paste`。包括菜单栏标题、窗口标题、偏好设置标题、toast、错误提示、帮助文案和用户可见日志摘要。
 - 内部 `Paste*` 命名仅允许作为当前仓库历史工程代号或迁移期 target 名称；新模块优先使用中性命名，例如 `ClipboardPanelApp`、`ClipboardCore`、`BottomPanel`。
-- 若当前原型工程中已有 `PasteFloatingDemo`、`Paste Demo` 等用户可见文本，功能化阶段必须替换为原创产品名或中性描述。
+- 若当前原型工程中已有 `PasteFloating`、`Paste Demo` 等用户可见文本，功能化阶段必须替换为原创产品名或中性描述。
 
 ### 3.2 底部全宽面板几何
 
@@ -205,7 +205,7 @@ Sources/
 Tests/
   ClipboardPanelAppTests/
 Generated/
-  ClipboardCoreBridge/        # 生成的本地 Swift Package + macOS XCFramework
+  ClipboardCoreBridge/        # 生成的本地 Swift Package；XCFramework 由脚本本地生成
 rust/
   Cargo.toml                  # workspace
   crates/
@@ -238,7 +238,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 - `#[swift_bridge::bridge]` 声明放在 `rust/crates/clipboard_core_ffi/src/lib.rs`。
 - Cargo build script 将 Swift/C bridge 原始文件输出到 `rust/target/swift-bridge/generated/`。
-- `scripts/build-rust-core.sh` 生成 `Generated/ClipboardCoreBridge` 本地 Swift Package，并用 macOS XCFramework 包装 Rust staticlib。
+- `scripts/build-rust-core.sh` 生成 `Generated/ClipboardCoreBridge` 本地 Swift Package，并用 macOS XCFramework 包装 Rust staticlib；XCFramework 属于编译产物，不提交到仓库。
 - Swift target 只依赖 `ClipboardCoreBridge` package 和一个薄封装 `RustCoreClient`，业务 UI 不直接调用生成的低层函数。
 - 生成文件必须由脚本刷新；功能切片提交前必须运行 `scripts/build-rust-core.sh` 并确保 `swift build` 可通过。
 
@@ -979,7 +979,7 @@ QA 记录目标：
 cargo test --manifest-path rust/Cargo.toml
 swift build
 swift test
-swift run PasteFloatingDemo
+swift run PasteFloating
 ```
 
 人工可观察行为：
@@ -1034,13 +1034,13 @@ QA 记录目标：
 ```bash
 swift build
 swift test
-swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
-swift run PasteFloatingDemo
+swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloating
 ```
 
 人工可观察行为：
 
-- 使用 `swift run PasteFloatingDemo` 打开偏好设置时，“启动时运行”开关为关闭且不可点击，说明文字为“打包为 .app 后可用”。
+- 使用 `swift run PasteFloating` 打开偏好设置时，“启动时运行”开关为关闭且不可点击，说明文字为“打包为 .app 后可用”。
 - 打包为 `.app` 后，打开开关会调用 `SMAppService.mainApp.register()`，关闭开关会调用 `unregister()`。
 - 如果系统要求用户在系统设置中批准，开关保持开启并显示“需要在系统设置中允许”。
 
@@ -1066,8 +1066,8 @@ cargo test --manifest-path rust/Cargo.toml
 scripts/build-rust-core.sh
 swift build
 swift test
-swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
-swift run PasteFloatingDemo
+swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloating
 ```
 
 人工可观察行为：
@@ -1096,9 +1096,9 @@ QA 记录目标：
 ```bash
 swift build
 swift test
-swift run PasteFloatingDemo --exercise-preferences
-swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
-swift run PasteFloatingDemo
+swift run PasteFloating --exercise-preferences
+swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloating
 ```
 
 人工可观察行为：
@@ -1117,14 +1117,14 @@ QA 记录目标：
 
 - 将鼠标位置到屏幕 frame 的选择逻辑抽到 `ScreenSelectionPlanner`，覆盖负坐标副屏、右侧副屏和落在屏幕外的情况。
 - 生产 `FloatingPanelController` 复用同一 planner，避免多屏定位规则只存在于 AppKit 私有方法中。
-- 增加 `swift run PasteFloatingDemo --print-ui-diagnostics`，输出当前 `NSScreen.frame`、`visibleFrame`、缩放、鼠标所在屏和每屏计划面板 frame。
+- 增加 `swift run PasteFloating --print-ui-diagnostics`，输出当前 `NSScreen.frame`、`visibleFrame`、缩放、鼠标所在屏和每屏计划面板 frame。
 - 诊断命令继续使用 `NSScreen.frame` 规划面板，便于观察是否覆盖 Dock 区域，而不是落到 `visibleFrame`。
 
 自动验证命令：
 
 ```bash
 swift test
-swift run PasteFloatingDemo --print-ui-diagnostics
+swift run PasteFloating --print-ui-diagnostics
 ```
 
 人工可观察行为：
@@ -1146,7 +1146,7 @@ swift run PasteFloatingDemo --print-ui-diagnostics
 ```bash
 swift build
 swift test
-swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
+swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png
 ```
 
 人工可观察行为：
@@ -1182,7 +1182,7 @@ swift test
 
 子任务：
 
-- 增加 `swift run PasteFloatingDemo --exercise-panel-interactions` 隐藏命令，启动真实 `FloatingPanelController` 与生产 `FloatingPanelContentView`。
+- 增加 `swift run PasteFloating --exercise-panel-interactions` 隐藏命令，启动真实 `FloatingPanelController` 与生产 `FloatingPanelContentView`。
 - 通过合成 AppKit 鼠标和键盘事件验证单击选中、`Command + 1...5` 选中、类型 chip、搜索输入、`Escape` 隐藏和双击复制隐藏。
 - 将右键菜单构建拆为可复用 `makeManagementMenu(for:)`，smoke 可触发固定、删除和预览的真实菜单 action closure；批量清空入口当前未接回运行时菜单。
 - 对横向 `NSScrollView` 注入纵向 wheel 事件，确认轴投射后能改变横向滚动位置。
@@ -1191,7 +1191,7 @@ swift test
 自动验证命令：
 
 ```bash
-swift run PasteFloatingDemo --exercise-panel-interactions
+swift run PasteFloating --exercise-panel-interactions
 ```
 
 人工可观察行为：
@@ -1208,7 +1208,7 @@ swift run PasteFloatingDemo --exercise-panel-interactions
 - 默认生成 `.codex/artifacts/ClipboardWorkbench.app`，包含 `Contents/Info.plist`、`Contents/MacOS/ClipboardWorkbenchApp` 和 `_CodeSignature`。
 - `Info.plist` 声明 `CFBundleIdentifier`、显示名、最低 macOS 版本、Retina 能力和 `LSUIElement`，让调试版以菜单栏/辅助应用形态运行。
 - 如果系统存在 `codesign`，执行 ad-hoc 签名；脚本末尾用包内可执行文件运行 `--print-ui-diagnostics` 做自检。
-- 兼容期内保留的历史工程命名主要是 `swift run PasteFloatingDemo ...` 这类源码态入口；默认 bundle 名与包内可执行文件名已经切换到正式发布命名。
+- 源码态 QA 入口统一使用 `swift run PasteFloating ...`；默认 bundle 名与包内可执行文件名使用正式发布命名。
 
 自动验证命令：
 

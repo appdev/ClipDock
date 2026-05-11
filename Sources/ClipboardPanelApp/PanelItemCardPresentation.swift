@@ -101,7 +101,7 @@ public enum PanelItemCardPresenter {
             baseType = "文本"
         }
 
-        return item.isPinned ? "固定 · \(baseType)" : baseType
+        return baseType
     }
 
     private static func summaryText(

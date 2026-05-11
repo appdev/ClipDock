@@ -11,14 +11,29 @@ public func get_preferences<GenericIntoRustString: IntoRustString>(_ app_support
 public func update_preferences<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ preferences_json: GenericIntoRustString) -> CorePreferencesResult {
     __swift_bridge__$update_preferences({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preferences_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
-public func list_items<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ limit: Int64, _ offset: Int64, _ item_type: GenericIntoRustString, _ source_app_id: GenericIntoRustString, _ search_text: GenericIntoRustString) -> CoreListResult {
-    __swift_bridge__$list_items({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), limit, offset, { let rustString = item_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = search_text.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+public func list_items<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ limit: Int64, _ offset: Int64, _ item_type: GenericIntoRustString, _ source_app_id: GenericIntoRustString, _ pinboard_id: GenericIntoRustString, _ search_text: GenericIntoRustString) -> CoreListResult {
+    __swift_bridge__$list_items({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), limit, offset, { let rustString = item_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = pinboard_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = search_text.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
 public func list_source_apps<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ limit: Int64, _ offset: Int64) -> CoreSourceAppsResult {
     __swift_bridge__$list_source_apps({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), limit, offset).intoSwiftRepr()
 }
-public func set_item_pinned<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString, _ is_pinned: Bool) -> CoreItemManagementResult {
-    __swift_bridge__$set_item_pinned({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), is_pinned).intoSwiftRepr()
+public func list_pinboards<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CorePinboardsResult {
+    __swift_bridge__$list_pinboards({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func create_pinboard<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ title: GenericIntoRustString, _ color_code: Int64) -> CoreItemManagementResult {
+    __swift_bridge__$create_pinboard({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = title.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), color_code).intoSwiftRepr()
+}
+public func rename_pinboard<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ pinboard_id: GenericIntoRustString, _ title: GenericIntoRustString) -> CoreItemManagementResult {
+    __swift_bridge__$rename_pinboard({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = pinboard_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = title.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func update_pinboard_color<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ pinboard_id: GenericIntoRustString, _ color_code: Int64) -> CoreItemManagementResult {
+    __swift_bridge__$update_pinboard_color({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = pinboard_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), color_code).intoSwiftRepr()
+}
+public func delete_pinboard<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ pinboard_id: GenericIntoRustString) -> CoreItemManagementResult {
+    __swift_bridge__$delete_pinboard({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = pinboard_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func set_item_pinboard_membership<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString, _ pinboard_id: GenericIntoRustString, _ is_member: Bool) -> CoreItemManagementResult {
+    __swift_bridge__$set_item_pinboard_membership({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = pinboard_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), is_member).intoSwiftRepr()
 }
 public func delete_item<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString) -> CoreItemManagementResult {
     __swift_bridge__$delete_item({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
@@ -173,6 +188,51 @@ extension __swift_bridge__$Option$CoreSourceAppsResult {
             return __swift_bridge__$Option$CoreSourceAppsResult(is_some: true, val: v.intoFfiRepr())
         } else {
             return __swift_bridge__$Option$CoreSourceAppsResult(is_some: false, val: __swift_bridge__$CoreSourceAppsResult())
+        }
+    }
+}
+public struct CorePinboardsResult {
+    public var ok: Bool
+    public var total_count: Int64
+    public var pinboards_json: RustString
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,total_count: Int64,pinboards_json: RustString,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.total_count = total_count
+        self.pinboards_json = pinboards_json
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CorePinboardsResult {
+        { let val = self; return __swift_bridge__$CorePinboardsResult(ok: val.ok, total_count: val.total_count, pinboards_json: { let rustString = val.pinboards_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CorePinboardsResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CorePinboardsResult {
+        { let val = self; return CorePinboardsResult(ok: val.ok, total_count: val.total_count, pinboards_json: RustString(ptr: val.pinboards_json), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CorePinboardsResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CorePinboardsResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CorePinboardsResult>) -> __swift_bridge__$Option$CorePinboardsResult {
+        if let v = val {
+            return __swift_bridge__$Option$CorePinboardsResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CorePinboardsResult(is_some: false, val: __swift_bridge__$CorePinboardsResult())
         }
     }
 }

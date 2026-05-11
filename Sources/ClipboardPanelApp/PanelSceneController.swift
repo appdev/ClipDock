@@ -7,16 +7,16 @@ public enum PanelFocusTarget: Equatable, Sendable {
 
 public struct PanelQueryState: Equatable, Sendable {
     public var searchText: String
-    public var itemType: String?
+    public var pinboardID: String?
     public var isSearchVisible: Bool
 
     public init(
         searchText: String = "",
-        itemType: String? = nil,
+        pinboardID: String? = nil,
         isSearchVisible: Bool = false
     ) {
         self.searchText = searchText
-        self.itemType = itemType
+        self.pinboardID = pinboardID
         self.isSearchVisible = isSearchVisible
     }
 }
@@ -137,8 +137,8 @@ public final class PanelSceneRuntimeController {
         state = PanelSceneController.stateBySettingSearchText(state, searchText: searchText)
     }
 
-    public func setTypeFilter(_ itemType: String?) {
-        state = PanelSceneController.stateBySettingTypeFilter(state, itemType: itemType)
+    public func setPinboardFilter(_ pinboardID: String?) {
+        state = PanelSceneController.stateBySettingPinboardFilter(state, pinboardID: pinboardID)
     }
 
     public func clearFilters() {
@@ -254,19 +254,19 @@ public enum PanelSceneController {
         return nextState
     }
 
-    public static func stateBySettingTypeFilter(
+    public static func stateBySettingPinboardFilter(
         _ state: PanelSceneState,
-        itemType: String?
+        pinboardID: String?
     ) -> PanelSceneState {
         var nextState = state
-        nextState.query.itemType = itemType
+        nextState.query.pinboardID = pinboardID
         return nextState
     }
 
     public static func stateByClearingFilters(_ state: PanelSceneState) -> PanelSceneState {
         var nextState = state
         nextState.query.searchText = ""
-        nextState.query.itemType = nil
+        nextState.query.pinboardID = nil
         nextState.query.isSearchVisible = false
         return nextState
     }

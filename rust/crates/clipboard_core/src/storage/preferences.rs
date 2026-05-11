@@ -57,7 +57,13 @@ impl ClipboardCore {
             UPDATE clipboard_items
             SET deleted_at_ms = ?1, updated_at_ms = ?1
             WHERE deleted_at_ms IS NULL
-                AND is_pinned = 0
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM pinboard_items pi_retention
+                    INNER JOIN pinboards pb_retention ON pb_retention.id = pi_retention.pinboard_id
+                    WHERE pi_retention.item_id = clipboard_items.id
+                        AND pb_retention.deleted_at_ms IS NULL
+                )
                 AND last_copied_at_ms < ?2
             "#,
             params![now, retention_cutoff],
@@ -72,7 +78,13 @@ impl ClipboardCore {
                     ) AS rank
                 FROM clipboard_items
                 WHERE deleted_at_ms IS NULL
-                    AND is_pinned = 0
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM pinboard_items pi_limit
+                        INNER JOIN pinboards pb_limit ON pb_limit.id = pi_limit.pinboard_id
+                        WHERE pi_limit.item_id = clipboard_items.id
+                            AND pb_limit.deleted_at_ms IS NULL
+                    )
             )
             UPDATE clipboard_items
             SET deleted_at_ms = ?1, updated_at_ms = ?1

@@ -84,10 +84,10 @@ swift test
 命令：
 
 ```bash
-swift run PasteFloatingDemo
+swift run PasteFloating
 ```
 
-结果：通过。demo 完成构建并进入 AppKit 事件循环；验证后由 Codex 使用 `Ctrl-C` 停止本地进程。输出摘要：`Build of product 'PasteFloatingDemo' complete! (0.28s)`。
+结果：通过。demo 完成构建并进入 AppKit 事件循环；验证后由 Codex 使用 `Ctrl-C` 停止本地进程。输出摘要：`Build of product 'PasteFloating' complete! (0.28s)`。
 
 ## 用户设置窗口 QA 复核
 
@@ -154,10 +154,10 @@ swift test
 命令：
 
 ```bash
-swift run PasteFloatingDemo
+swift run PasteFloating
 ```
 
-结果：通过。demo 完成构建并进入 AppKit 事件循环；验证后由 Codex 使用 `pkill -f PasteFloatingDemo` 停止本地进程。输出摘要：`Build of product 'PasteFloatingDemo' complete! (0.18s)`。
+结果：通过。demo 完成构建并进入 AppKit 事件循环；验证后由 Codex 使用 `pkill -f PasteFloating` 停止本地进程。输出摘要：`Build of product 'PasteFloating' complete! (0.18s)`。
 
 数据库观察：
 
@@ -205,7 +205,7 @@ swift test
 命令：
 
 ```bash
-swift run PasteFloatingDemo
+swift run PasteFloating
 printf 'Codex Slice4 Capture Test' | pbcopy
 sqlite3 "/Users/evan/Library/Application Support/ClipboardWorkbench/clipboard.sqlite" "SELECT type, summary, copy_count, source_app_name FROM clipboard_items WHERE deleted_at_ms IS NULL ORDER BY last_copied_at_ms DESC LIMIT 3; SELECT COUNT(*) FROM clipboard_captures;"
 ```
@@ -278,7 +278,7 @@ clipboard_assets count: 2
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过。
 - `swift test`：通过，7 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入事件循环后停止。
+- `swift run PasteFloating`：通过，App 进入事件循环后停止。
 
 ## 粘贴写回与自写入抑制
 
@@ -298,7 +298,7 @@ clipboard_assets count: 2
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (0.30s)`。
 - `swift test`：通过，9 个 Swift 测试；新增 `plansTextPastePayloadFromCapturedItem` 与 `plansImagePastePayloadFromCapturedItemAsset`。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.62s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloating' complete! (0.62s)`。
 
 ## 偏好设置持久化
 
@@ -318,7 +318,7 @@ clipboard_assets count: 2
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (0.24s)`。
 - `swift test`：通过，11 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.20s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloating' complete! (0.20s)`。
 
 数据库观察：
 
@@ -350,7 +350,7 @@ preference_documents:
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (4.50s)`。
 - `swift test`：通过，12 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.34s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloating' complete! (0.34s)`。
 
 数据库观察：
 
@@ -385,7 +385,7 @@ Android Studio|2
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (3.81s)`。
 - `swift test`：通过，14 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.31s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloating' complete! (0.31s)`。
 
 风险说明：
 
@@ -408,7 +408,7 @@ Android Studio|2
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (3.51s)`。
 - `swift test`：通过，14 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.25s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloating' complete! (0.25s)`。
 
 数据库观察：
 
@@ -438,7 +438,7 @@ history.retention_days = 30
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (1.54s)`。
 - `swift test`：通过，14 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.30s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloating' complete! (0.30s)`。
 
 风险说明：
 
@@ -461,7 +461,7 @@ history.retention_days = 30
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (4.84s)`。
 - `swift test`：通过，16 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.39s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后停止，输出 `Build of product 'PasteFloating' complete! (0.39s)`。
 
 风险说明：
 
@@ -485,7 +485,7 @@ history.retention_days = 30
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (3.35s)`。
 - `swift test`：通过，22 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.28s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloating' complete! (0.28s)`。
 
 风险说明：
 
@@ -509,7 +509,7 @@ history.retention_days = 30
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (3.22s)`。
 - `swift test`：通过，23 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.34s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloating' complete! (0.34s)`。
 
 风险说明：
 
@@ -534,7 +534,7 @@ history.retention_days = 30
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，最终输出 `Build complete! (2.95s)`。
 - `swift test`：通过，24 个 Swift 测试。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.30s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloating' complete! (0.30s)`。
 - 2026-05-08 收尾复验：`swift test` 通过，输出 `Test run with 24 tests passed after 0.074 seconds`。
 
 风险说明：
@@ -557,7 +557,7 @@ history.retention_days = 30
 
 - `swift test`：通过，32 个 Swift 测试，输出 `Test run with 32 tests passed after 0.070 seconds`。
 - `swift build`：通过，输出 `Build complete! (0.27s)`。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.24s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloating' complete! (0.24s)`。
 - 2026-05-08 收尾复验：`swift test` 通过，输出 `Test run with 32 tests passed after 0.063 seconds`。
 
 风险说明：
@@ -578,7 +578,7 @@ history.retention_days = 30
 
 - `swift test`：首轮失败，原因是两个像素采样点做了底部坐标换算，另一个采样点踩到文字区域；修正后通过，输出 `Test run with 33 tests passed after 0.088 seconds`。
 - `swift build`：通过，输出 `Build complete! (0.27s)`。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.23s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloating' complete! (0.23s)`。
 - `ls -l .codex/artifacts/panel-visual-regression.png`：通过，文件大小 35885 bytes。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
 - 2026-05-08 收尾复验：`swift test` 通过，输出 `Test run with 33 tests passed after 0.085 seconds`。
@@ -592,8 +592,8 @@ history.retention_days = 30
 
 变更摘要：
 
-- 修正验证口径：`.codex/artifacts/panel-visual-regression.png` 是测试手绘夹具，不是 `swift run PasteFloatingDemo` 的真实窗口截图。
-- 新增 `swift run PasteFloatingDemo --render-panel-snapshot <path>`，直接渲染生产 `FloatingPanelContentView` 到 PNG，避免再用夹具图代表真实 UI。
+- 修正验证口径：`.codex/artifacts/panel-visual-regression.png` 是测试手绘夹具，不是 `swift run PasteFloating` 的真实窗口截图。
+- 新增 `swift run PasteFloating --render-panel-snapshot <path>`，直接渲染生产 `FloatingPanelContentView` 到 PNG，避免再用夹具图代表真实 UI。
 - 主面板按参考图方向精简：顶部默认只展示搜索图标和 `剪贴板`、`文本`、`链接`、`图片`、`文件` 类型 chip。
 - 旧的常驻大搜索框、来源应用筛选图标组、关闭按钮和占位更多菜单已从主面板移除；`Command + F` 或搜索图标会临时展开搜索框。
 - 条目卡片改为白色主体 + 顶部色条结构；顶部色条展示类型、时间和来源应用图标，主体区域用于多行文本、图片预览或文件/链接摘要。
@@ -604,12 +604,12 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (0.32s)`。
 - `swift test`：通过，33 个 Swift 测试，最终输出 `Test run with 33 tests passed after 0.077 seconds`。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloatingDemo' complete! (0.27s)`。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环后由 Codex 停止，输出 `Build of product 'PasteFloating' complete! (0.27s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 32698 bytes。
 - 2026-05-08 收尾复验：`swift test` 通过，输出 `Test run with 33 tests passed after 0.124 seconds`；`swift build` 通过，输出 `Build complete! (0.39s)`。
-- 2026-05-08 真实视图快照复验：`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.25s)`；`sips` 输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 44701 bytes。
-- 2026-05-08 根据真实运行截图继续修正：顶部工具条居中，卡片宽度调整为 248 pt，隐藏底部横向滚动条，非选中卡片顶部改为浅色类型色，面板增加中性半透明底色减少桌面颜色染色；`swift build` 通过，输出 `Build complete! (3.25s)`；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.34s)`，新快照为 960 x 320、40597 bytes；`swift test` 通过，输出 `Test run with 33 tests passed after 0.098 seconds`。
-- 2026-05-08 外部点击隐藏与 selector 风险修正：主面板搜索按钮和类型 chip 改为 Swift 闭包按钮，不再依赖 ObjC selector；退出菜单项的 target 修正为 `NSApp`；面板显示时安装本地和全局鼠标事件 monitor，点击面板外部会调用 `hide()`；新增 `PanelInteractionPlanner.shouldHideForOutsideMouseDown` 单元测试。`swift test` 通过，输出 `Test run with 34 tests passed after 0.114 seconds`；`swift run PasteFloatingDemo` 真实启动 8 秒未复现 `NSForwarding` warning；真实快照复验 960 x 320、40597 bytes。
+- 2026-05-08 真实视图快照复验：`swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，输出 `Build of product 'PasteFloating' complete! (0.25s)`；`sips` 输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 44701 bytes。
+- 2026-05-08 根据真实运行截图继续修正：顶部工具条居中，卡片宽度调整为 248 pt，隐藏底部横向滚动条，非选中卡片顶部改为浅色类型色，面板增加中性半透明底色减少桌面颜色染色；`swift build` 通过，输出 `Build complete! (3.25s)`；`swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 通过，输出 `Build of product 'PasteFloating' complete! (0.34s)`，新快照为 960 x 320、40597 bytes；`swift test` 通过，输出 `Test run with 33 tests passed after 0.098 seconds`。
+- 2026-05-08 外部点击隐藏与 selector 风险修正：主面板搜索按钮和类型 chip 改为 Swift 闭包按钮，不再依赖 ObjC selector；退出菜单项的 target 修正为 `NSApp`；面板显示时安装本地和全局鼠标事件 monitor，点击面板外部会调用 `hide()`；新增 `PanelInteractionPlanner.shouldHideForOutsideMouseDown` 单元测试。`swift test` 通过，输出 `Test run with 34 tests passed after 0.114 seconds`；`swift run PasteFloating` 真实启动 8 秒未复现 `NSForwarding` warning；真实快照复验 960 x 320、40597 bytes。
 - 2026-05-08 文本方向修正：卡片标题、时间、主体摘要、footer 文案统一设置 `leftToRight` writing direction 和左对齐；主体摘要加不可见 LTR mark 处理数字开头的中英混排；卡片内容区改为显式 Auto Layout 容器并固定内容宽度，避免短文本被 `NSStackView` 推到右侧。`swift build` 通过，输出 `Build complete! (3.31s)`；真实快照复验 960 x 320、41283 bytes；`swift test` 通过，输出 `Test run with 34 tests passed after 0.101 seconds`。
 - 2026-05-08 顶部分类居中修正：顶部工具条从左右 spacer 填满改为内容组自身宽度并用 `centerX` 约束居中，搜索按钮、搜索框和类型 chip 作为一个整体居中；`swift build` 通过，输出 `Build complete! (3.34s)`；真实快照复验通过；`swift test` 通过，输出 `Test run with 34 tests passed after 0.076 seconds`。
 
@@ -631,9 +631,9 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (3.68s)`。
 - `swift test`：通过，36 个 Swift 测试，输出 `Test run with 36 tests passed after 0.125 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.38s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.38s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 8 秒无新增 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 8 秒无新增 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -657,9 +657,9 @@ history.retention_days = 30
 - `scripts/build-rust-core.sh`：通过。
 - `swift build`：通过，输出 `Build complete! (6.35s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.155 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.32s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.32s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 8 秒无新增 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 8 秒无新增 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -681,9 +681,9 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (5.31s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.112 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.36s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.36s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -703,9 +703,9 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (3.59s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.179 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.37s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.37s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -725,9 +725,9 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (3.05s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.120 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.31s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.31s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -746,9 +746,9 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (3.52s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.086 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.38s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.38s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -762,16 +762,16 @@ history.retention_days = 30
 - 新增 `PreferenceSwitch`、`PreferenceCheckboxButton`、`PreferenceSegmentedControl` 和 `PreferenceStepper`，通过控件子类直接在鼠标/键盘事件后调用 Swift 闭包。
 - 侧边栏导航改为 `PreferenceNavigationButton` 闭包按钮，不再用 `#selector(selectSection:)`。
 - 偏好保存过程中如果触发设置页重绘，会延迟到当前控件 action 返回后执行，避免正在处理事件的控件 target 被同步清理。
-- 新增隐藏验证入口 `swift run PasteFloatingDemo --exercise-preferences`，程序化切换设置页并触发设置控件，用来复现和防回归 NSForwarding selector 崩溃。
+- 新增隐藏验证入口 `swift run PasteFloating --exercise-preferences`，程序化切换设置页并触发设置控件，用来复现和防回归 NSForwarding selector 崩溃。
 
 验证结果：
 
 - `swift build`：通过，输出 `Build complete! (3.16s)`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.30s)`，无 NSForwarding warning 或 crash。
+- `swift run PasteFloating --exercise-preferences`：通过，输出 `Build of product 'PasteFloating' complete! (0.30s)`，无 NSForwarding warning 或 crash。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.101 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.37s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.37s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -790,10 +790,10 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (4.00s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.193 seconds`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.51s)`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.37s)`。
+- `swift run PasteFloating --exercise-preferences`：通过，输出 `Build of product 'PasteFloating' complete! (0.51s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.37s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -813,10 +813,10 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (3.02s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.125 seconds`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.28s)`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.33s)`。
+- `swift run PasteFloating --exercise-preferences`：通过，输出 `Build of product 'PasteFloating' complete! (0.28s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.33s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -833,9 +833,9 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (3.35s)`。
 - `swift test`：通过，38 个 Swift 测试，输出 `Test run with 38 tests passed after 0.100 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.40s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.40s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`；文件大小为 41283 bytes。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -854,10 +854,10 @@ history.retention_days = 30
 
 - `swift build`：通过，输出 `Build complete! (3.57s)`。
 - `swift test`：通过，39 个 Swift 测试，输出 `Test run with 39 tests passed after 0.143 seconds`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.37s)`，无 NSForwarding warning 或 crash。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.41s)`。
+- `swift run PasteFloating --exercise-preferences`：通过，输出 `Build of product 'PasteFloating' complete! (0.37s)`，无 NSForwarding warning 或 crash。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.41s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
-- `swift run PasteFloatingDemo`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -870,7 +870,7 @@ history.retention_days = 30
 
 - 新增 `ScreenSelectionPlanner`，把鼠标所在屏幕选择和每屏全宽 panel frame 规划抽到可测试层。
 - `FloatingPanelController` 复用 `ScreenSelectionPlanner`，多屏选择逻辑不再只藏在 AppKit 方法里。
-- 新增 `swift run PasteFloatingDemo --print-ui-diagnostics`，输出屏幕数量、鼠标位置、目标屏 index、每屏 frame、visibleFrame、缩放和 panelFrame。
+- 新增 `swift run PasteFloating --print-ui-diagnostics`，输出屏幕数量、鼠标位置、目标屏 index、每屏 frame、visibleFrame、缩放和 panelFrame。
 - 图片预览首次读取时先显示占位，把文件读取放到后台任务，完成后回 MainActor 更新图片并写入缓存。
 - Rust maintenance 扩展到 `app-icons`，保留 `source_app_icons.relative_path` 引用的图标，删除孤立图标文件。
 
@@ -881,11 +881,11 @@ history.retention_days = 30
 - `cargo test --manifest-path rust/Cargo.toml`：通过，19 个 Rust 测试。
 - `scripts/build-rust-core.sh`：通过。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.131 seconds`。
-- `swift run PasteFloatingDemo --print-ui-diagnostics`：通过，当前机器输出 `screenCount=2`，并列出每屏 frame、visibleFrame、scale 和 panelFrame。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.37s)`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.32s)`。
+- `swift run PasteFloating --print-ui-diagnostics`：通过，当前机器输出 `screenCount=2`，并列出每屏 frame、visibleFrame、scale 和 panelFrame。
+- `swift run PasteFloating --exercise-preferences`：通过，输出 `Build of product 'PasteFloating' complete! (0.37s)`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `Build of product 'PasteFloating' complete! (0.32s)`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
-- `swift run PasteFloatingDemo`：通过，输出 `Build of product 'PasteFloatingDemo' complete! (0.30s)`，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
+- `swift run PasteFloating`：通过，输出 `Build of product 'PasteFloating' complete! (0.30s)`，App 进入 AppKit 事件循环 9 秒无新增 crash 或 warning 输出，随后由 Codex 停止。
 
 风险说明：
 
@@ -897,7 +897,7 @@ history.retention_days = 30
 
 变更摘要：
 
-- 新增 `swift run PasteFloatingDemo --exercise-panel-interactions` 隐藏命令。
+- 新增 `swift run PasteFloating --exercise-panel-interactions` 隐藏命令。
 - 命令创建真实 `FloatingPanelController` 与生产 `FloatingPanelContentView`，不使用手写视觉夹具。
 - 合成 AppKit 鼠标和键盘事件，覆盖单击选中、`Command + 3` 选中、类型 chip、搜索、滚轮横向投射、右键菜单 action、`Escape` 隐藏和双击复制隐藏。
 - 右键菜单构建拆为 `makeManagementMenu(for:)`，自动化可触发固定、删除和预览的真实菜单 action closure；`clear_items` 目前仍停留在 core/client/coordinator 能力层，未接回当前运行时菜单。
@@ -905,7 +905,7 @@ history.retention_days = 30
 验证结果：
 
 - `swift build`：通过，最终复验输出 `Build complete! (4.25s)`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
 
 输出摘要：
 
@@ -930,18 +930,18 @@ doubleClickCopy=panel-smoke-text
 变更摘要：
 
 - 新增 `scripts/package-macos-app.sh`。
-- 脚本先运行 `scripts/build-rust-core.sh`，再执行 `swift build -c release --product PasteFloatingDemo`。
-- 默认生成 `.codex/artifacts/PasteFloatingDemo.app`，写入 `Info.plist`，复制 release 可执行文件，并执行 ad-hoc 签名。
+- 脚本先运行 `scripts/build-rust-core.sh`，再执行 `swift build -c release --product PasteFloating`。
+- 默认生成 `.codex/artifacts/PasteFloating.app`，写入 `Info.plist`，复制 release 可执行文件，并执行 ad-hoc 签名。
 - 脚本末尾用包内可执行文件运行 `--print-ui-diagnostics`，确认 bundle 形态仍能访问屏幕与面板几何规划。
 - `.gitignore` 忽略 `.codex/artifacts/*.app/`，避免本地打包产物进入版本控制。
 
 验证结果：
 
-- `scripts/package-macos-app.sh`：通过。沙箱内 release SwiftPM 会触发 macOS `sandbox-exec` 限制，已按工具规则在沙箱外重跑；最终复验输出 `Build of product 'PasteFloatingDemo' complete! (6.23s)` 和 `Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/PasteFloatingDemo.app`。
-- `.codex/artifacts/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics`：通过，输出 `screenCount=2`，并列出两块屏幕和每屏 panelFrame。
-- `find .codex/artifacts/PasteFloatingDemo.app -maxdepth 3 -type f`：通过，包含 `Contents/Info.plist`、`Contents/MacOS/PasteFloatingDemo`、`Contents/_CodeSignature/CodeResources`。
-- `codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app`：通过。
-- `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSUIElement' .codex/artifacts/PasteFloatingDemo.app/Contents/Info.plist`：通过，输出 `dev.codex.clipboard-workbench-demo` 和 `true`。
+- `scripts/package-macos-app.sh`：通过。沙箱内 release SwiftPM 会触发 macOS `sandbox-exec` 限制，已按工具规则在沙箱外重跑；最终复验输出 `Build of product 'PasteFloating' complete! (6.23s)` 和 `Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/PasteFloating.app`。
+- `.codex/artifacts/PasteFloating.app/Contents/MacOS/PasteFloating --print-ui-diagnostics`：通过，输出 `screenCount=2`，并列出两块屏幕和每屏 panelFrame。
+- `find .codex/artifacts/PasteFloating.app -maxdepth 3 -type f`：通过，包含 `Contents/Info.plist`、`Contents/MacOS/PasteFloating`、`Contents/_CodeSignature/CodeResources`。
+- `codesign --verify --deep --strict .codex/artifacts/PasteFloating.app`：通过。
+- `/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSUIElement' .codex/artifacts/PasteFloating.app/Contents/Info.plist`：通过，输出 `dev.codex.clipboard-workbench-demo` 和 `true`。
 
 风险说明：
 
@@ -960,10 +960,10 @@ doubleClickCopy=panel-smoke-text
 验证结果：
 
 - `scripts/release-macos.sh`：通过，输出 release artifacts 目录。
-- `.codex/artifacts/release/0.1.0/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics`：通过。
-- `codesign --verify --deep --strict .codex/artifacts/release/0.1.0/PasteFloatingDemo.app`：通过。
+- `.codex/artifacts/release/0.1.0/PasteFloating.app/Contents/MacOS/PasteFloating --print-ui-diagnostics`：通过。
+- `codesign --verify --deep --strict .codex/artifacts/release/0.1.0/PasteFloating.app`：通过。
 - `(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)`：通过。
-- `hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloatingDemo-0.1.0.dmg`：通过。
+- `hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloating-0.1.0.dmg`：通过。
 
 风险说明：
 
@@ -984,10 +984,10 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (0.37s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.105 seconds`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，真实主面板快照为 960 x 320。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
-- `swift run PasteFloatingDemo --print-ui-diagnostics`：通过，当前机器输出 `screenCount=2`，并列出每屏 panelFrame。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，真实主面板快照为 960 x 320。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --exercise-preferences`：通过。
+- `swift run PasteFloating --print-ui-diagnostics`：通过，当前机器输出 `screenCount=2`，并列出每屏 panelFrame。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
 - `git diff --check`：通过。
@@ -1011,9 +1011,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.32s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.108 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`doubleClickCopy=panel-smoke-text`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，默认真实快照不显示临时编号。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`doubleClickCopy=panel-smoke-text`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，默认真实快照不显示临时编号。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-runtime-snapshot.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/panel-visual-regression.png`：通过，输出 `pixelWidth: 960`、`pixelHeight: 320`。
 - `git diff --check`：通过。
@@ -1031,17 +1031,17 @@ doubleClickCopy=panel-smoke-text
 - 左侧设置导航改为 264 pt 圆角侧栏，导航项更接近 macOS 26 系统设置密度，选中项使用整行蓝色胶囊。
 - 右侧页面改为标题 + 副标题 + 分组卡片结构，卡片 18 px 圆角，行高不低于 62 pt，行之间使用内缩分隔线。
 - 设置页顺序和文案调整为通用、隐私、键盘快捷键、保留历史、外观；同步、导入、导出仍不展示。
-- 新增 `swift run PasteFloatingDemo --render-preferences-snapshot <path>`，用于离屏渲染生产设置窗口快照。
+- 新增 `swift run PasteFloating --render-preferences-snapshot <path>`，用于离屏渲染生产设置窗口快照。
 
 验证结果：
 
 - `swift build`：通过，输出 `Build complete! (3.70s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.106 seconds`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过，无 NSForwarding warning 或 crash。
-- `swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png`：通过。
+- `swift run PasteFloating --exercise-preferences`：通过，无 NSForwarding warning 或 crash。
+- `swift run PasteFloating --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png`：通过。
 - `sips -g pixelWidth -g pixelHeight .codex/artifacts/preferences-runtime-snapshot.png`：通过，输出 `pixelWidth: 920`、`pixelHeight: 700`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过；`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过；`sips` 确认 960 x 320。
 - `git diff --check`：通过。
 
 风险说明：
@@ -1062,11 +1062,11 @@ doubleClickCopy=panel-smoke-text
 验证结果：
 
 - `swift build`：通过，输出 `Build complete! (2.95s)`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.085 seconds`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png`：通过，`sips` 确认 920 x 700。
+- `swift run PasteFloating --exercise-preferences`：通过。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png`：通过，`sips` 确认 920 x 700。
 - `git diff --check`：通过。
 
 风险说明：
@@ -1087,9 +1087,223 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.36s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.115 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
+- `git diff --check`：通过。
+
+## 状态栏图标参考设计二次修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+变更摘要：
+
+- 参考用户提供的其他菜单栏应用图标后，重绘 `StatusBarClipboardTemplate.png`。
+- 图标从实心缩略插画改为粗描边模板图标，靠剪贴板外轮廓、顶部圆孔和一条粗横线识别。
+- 删除小尺寸下容易糊掉的多条细内容线；64 x 64 源图 alpha 有效区域为 `(7, 0, 57, 64)`。
+- `ApplicationRuntime.makeStatusBarIcon()` 保持 21 pt 显示尺寸，避免继续放大导致菜单栏拥挤。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (0.45s)`。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.875 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，输出 64 x 64 且 `hasAlpha: yes`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## 状态栏单字母圆角放大版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+变更摘要：
+
+- 按用户反馈将状态栏 `P` 标记略微放大。
+- 图标资源从 36 x 36 调整为 38 x 38，运行时显示尺寸从 18 pt 调整为 19 pt。
+- 白色圆角底块同步增大并提高圆角半径，整体更圆润。
+- 自定义 PNG 保持 `isTemplate = false`；SF Symbol fallback 同步为 19 pt。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (1.97s)`。
+- `swift test`：通过，113 个 Swift 测试，输出 `Test run with 113 tests passed after 1.035 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，包内资源为 38 x 38 且 `hasAlpha: yes`。
+- `shasum -a 256`：通过，源码、debug bundle、release bundle、`.app` 内状态栏资源均为 `1d4d3165c6f636900f93651681fbea3639b2fb58c2ba079083b91c2bd66a3efa`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## 状态栏单字母标记版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+变更摘要：
+
+- 按用户“扩大边距，内容简化为符号/字母/简单图案”的反馈，将状态栏图标简化为白色圆角底 + 深灰单字母 `P`。
+- 图标资源保持 36 x 36，运行时继续 18 pt 显示。
+- 白色底块缩至约 28 x 28，外边距增加，减少菜单栏占位感。
+- 自定义 PNG 继续 `isTemplate = false`，避免系统模板着色覆盖白底。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (0.92s)`。
+- `swift test`：通过，112 个 Swift 测试，输出 `Test run with 112 tests passed after 1.044 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，包内资源为 36 x 36 且 `hasAlpha: yes`。
+- `shasum -a 256`：通过，源码、debug bundle、release bundle、`.app` 内状态栏资源均为 `911be2cda579803d40ac0378c176648a1739dab6a0f6ecfcb999ede113aa6292`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## 状态栏图标细线版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+变更摘要：
+
+- 按用户反馈“线条太粗”调整 `StatusBarClipboardTemplate.png`。
+- 保持 42 x 42 / 21pt@2x 尺寸和参考图结构不变，继续保留顶部夹子、圆孔、外框、两条内容线和右下折角。
+- 外框、折角与内容线改为更细笔画，顶部夹子略收窄高度，降低菜单栏中的视觉重量。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (1.53s)`。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.868 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，源码与包内资源均为 42 x 42 且 `hasAlpha: yes`。
+- `shasum -a 256`：通过，源码、debug bundle、release bundle、`.app` 内状态栏资源均为 `fd585e47d8cbe17c86688b91cf025668569ba30887f296ce333cc95d2882d920`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## 状态栏图标按参考图替换
+
+日期：2026-05-11
+
+执行者：Codex
+
+变更摘要：
+
+- 根据用户提供的新剪贴板模板图替换 `StatusBarClipboardTemplate.png`。
+- 新图标为 42 x 42 alpha PNG，匹配当前 `ApplicationRuntime.makeStatusBarIcon()` 中的 `21pt` Retina 2x 显示尺寸。
+- 图形保留参考图中的实心顶部夹子、圆孔、文档外框、两条内容线和右下折角；透明区域不写入白底，由 macOS 菜单栏背景和模板着色处理。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (1.59s)`。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.789 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，源码与包内资源均为 42 x 42 且 `hasAlpha: yes`。
+- `shasum -a 256`：通过，源码、debug bundle、release bundle、`.app` 内状态栏资源均为 `79ddd56821f1394b5302bb0330cd58a7bd4fd5c4f0e2c35154b7c83d7bf44f8d`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## 状态栏图标白底线稿方向修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+变更摘要：
+
+- 按用户观察到的其他应用风格，将状态栏图标改为“菜单栏背景 + 简单线稿”的方向。
+- 白底不写入 PNG；资源继续保持透明模板图标，由 macOS 在浅色菜单栏中渲染深色线条、在深色菜单栏中渲染浅色线条。
+- `StatusBarClipboardTemplate.png` 仅用 alpha 绘制剪贴板外框、顶部夹子和两条内容线，删除实心主体和折角等缩小后不清晰的插画细节。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (1.62s)`。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.824 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，输出 64 x 64 且 `hasAlpha: yes`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## PasteFloating 源码目录与 target 收口
+
+变更摘要：
+
+- 源码目录已收口为 `Sources/PasteFloating`。
+- `Package.swift` 删除旧兼容 product / target，保留 `PasteFloating` 与 `ClipboardWorkbenchApp` 两个当前 executable product。
+- 测试 import 与 QA 命令切换到 `PasteFloating`，不再依赖旧兼容入口。
+- 更新项目说明与重构文档中直接指向旧入口的路径和命令。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (7.57s)`。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.897 seconds`。
+- `swift run PasteFloating --print-ui-diagnostics`：通过，输出 `Build of product 'PasteFloating' complete! (0.31s)`，并打印 `screenCount=2`。
+- `swift package describe`：通过，products 为 `ClipboardPanelApp`、`ClipboardWorkbenchApp`、`PasteFloating`，target 为 `PasteFloating`，旧 product / target 已移除。
+- `git diff --check`：通过。
+
+## 应用图标与状态栏图标接入
+
+变更摘要：
+
+- 新增 `Sources/PasteFloating/Resources/AppIcon.png` 和 `AppIcon.icns`，作为应用图标资源。
+- 新增 `Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png`，作为菜单栏模板图标。
+- `PasteFloating` target 增加 SwiftPM resources，源码运行时可通过 `Bundle.module` 读取状态栏图标。
+- `ApplicationRuntime.configureStatusItem()` 改为加载自定义模板图标，并保留 SF Symbol 兜底。
+- `scripts/package-macos-app.sh` 打包时复制 `AppIcon.icns` 和状态栏 PNG 到 `Contents/Resources`，并写入 `CFBundleIconFile=AppIcon`。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.24s)`。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.910 seconds`。
+- `scripts/package-macos-app.sh`：通过，输出 `Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app`。
+- `PlistBuddy`：通过，输出 `AppIcon` 和 `ClipboardWorkbenchApp`。
+- `find .codex/artifacts/ClipboardWorkbench.app/Contents/Resources`：通过，包含 `AppIcon.icns` 和 `StatusBarClipboardTemplate.png`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## 状态栏图标清晰度修正
+
+变更摘要：
+
+- 重绘 `StatusBarClipboardTemplate.png`，改为菜单栏专用粗线条模板图标。
+- 图标在 64 x 64 画布内的 alpha 有效区域扩大到 `(8, 1, 56, 61)`，减少留白。
+- `ApplicationRuntime.makeStatusBarIcon()` 的显示尺寸从 18 pt 调整到 21 pt。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (2.91s)`。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.853 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，输出 64 x 64 且 `hasAlpha: yes`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## 关于界面图标与标准 iconset 修正
+
+变更摘要：
+
+- `AboutWindowController` 的应用图标视图改为直接加载 `AppIcon.icns` / `AppIcon.png`，不再使用橙色底和 SF Symbol。
+- 新增 `Sources/PasteFloating/Resources/AppIcon.iconset`，包含 macOS 标准图标尺寸：16、16@2x、32、32@2x、128、128@2x、256、256@2x、512、512@2x。
+- `AppIcon.icns` 由 iconset 尺寸源重建，不再只依赖单张 PNG 直接作为最终图标。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.09s)`。
+- `iconutil --convert iconset --output /private/tmp/AppIconCheck.iconset Sources/PasteFloating/Resources/AppIcon.icns`：通过，可展开 `.icns`。
+- `sips -g pixelWidth -g pixelHeight Sources/PasteFloating/Resources/AppIcon.iconset/*.png`：通过，确认 iconset 尺寸完整。
+- `swift test`：通过，107 个 Swift 测试，输出 `Test run with 107 tests passed after 0.998 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
 - `git diff --check`：通过。
 
 ## 剪贴板历史加载更多
@@ -1105,9 +1319,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.20s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.101 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`loadMore=1` 和 `prefetchLoadMore=75`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`loadMore=1` 和 `prefetchLoadMore=75`。
+- `swift run PasteFloating --exercise-preferences`：通过。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `git diff --check`：通过。
 
 ## 加载更多卡顿优化
@@ -1122,10 +1336,10 @@ doubleClickCopy=panel-smoke-text
 验证结果：
 
 - `swift build`：通过，输出 `Build complete! (3.20s)`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`loadMore=1` 和 `prefetchLoadMore=75`；新增断言确认加载第二页后第一页首张卡片没有被重建，且预取页命中不会进入可见 loading。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`loadMore=1` 和 `prefetchLoadMore=75`；新增断言确认加载第二页后第一页首张卡片没有被重建，且预取页命中不会进入可见 loading。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.101 seconds`。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
 - `git diff --check`：通过。
 
 ## 预览浮层截图参考优化
@@ -1140,7 +1354,7 @@ doubleClickCopy=panel-smoke-text
 验证结果：
 
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.118 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`；新增断言确认预览中仅有“关闭预览”按钮。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`；新增断言确认预览中仅有“关闭预览”按钮。
 
 风险说明：
 
@@ -1160,9 +1374,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.48s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.083 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 风险说明：
@@ -1181,9 +1395,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (0.32s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.093 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## 来源图标 API 取色
@@ -1199,9 +1413,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.15s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.113 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## 来源图标代表色修正
@@ -1217,9 +1431,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.56s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.104 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## 选中卡片边框修正
@@ -1234,9 +1448,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (0.73s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.091 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## 条目卡片 1:1 尺寸联动
@@ -1252,9 +1466,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.70s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.086 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## 顶部类型 Tab 选中态增强
@@ -1269,9 +1483,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (4.25s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.113 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## Tab 与卡片文本对齐修正
@@ -1287,9 +1501,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.92s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.095 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## Command 数字提示残留修复
@@ -1306,9 +1520,9 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.54s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.113 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
 
 ## 快捷键打开后键盘焦点修复
@@ -1324,7 +1538,388 @@ doubleClickCopy=panel-smoke-text
 
 - `swift build`：通过，输出 `Build complete! (3.92s)`。
 - `swift test`：通过，41 个 Swift 测试，输出 `Test run with 41 tests passed after 0.135 seconds`。
-- `swift run PasteFloatingDemo --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
-- `swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
-- `swift run PasteFloatingDemo --exercise-preferences`：通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png`：通过，`sips` 确认 960 x 320。
+- `swift run PasteFloating --exercise-preferences`：通过。
 - `git diff --check`：通过。
+
+## 快捷键录入与修改修复
+
+变更摘要：
+
+- 偏好文档新增 `shortcuts.open_panel`，默认值为 `Command + Shift + V`。
+- 设置页“打开剪贴板”从静态 pill 改为可录入按钮，录入后持久化到 Rust preferences。
+- AppDelegate 应用偏好时重新注册 Carbon 全局热键，并同步主菜单快捷键显示。
+- 面板内固定快捷键继续展示，不伪造未接入的编辑能力。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.76s)`。
+- `cargo fmt --all --manifest-path rust/Cargo.toml`：通过。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，24 个 Rust 测试通过。
+- `scripts/build-rust-core.sh`：通过，刷新 `Generated/ClipboardCoreBridge` 静态库。
+- `swift test`：通过，110 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-preferences`：通过。
+- `swift run PasteFloating --render-preferences-snapshot .codex/artifacts/preferences-shortcuts-snapshot.png --preferences-section shortcuts`：通过，快捷键页快照可渲染。
+- `git diff --check`：通过。
+
+## 面板隐藏焦点归还
+
+变更摘要：
+
+- `FloatingPanelController` 展示面板前记录当前前台应用，隐藏面板后调用该应用激活接口，把焦点还回去。
+- 恢复目标会排除自身应用和已退出应用，避免无效或自我激活。
+- 外部鼠标点击隐藏与 `applicationDidResignActive` 不恢复旧焦点，避免用户点击另一个 App 时又被拉回原 App。
+- 新增回归测试覆盖普通隐藏恢复焦点、外部点击隐藏不抢焦点。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.65s)`。
+- `swift test`：通过，112 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `git diff --check -- Sources/PasteFloating/FloatingPanelController.swift Sources/PasteFloating/ApplicationRuntime.swift Tests/ClipboardPanelAppTests/PanelRuntimeSeamTests.swift`：通过。
+
+## 应用启动默认隐藏面板
+
+变更摘要：
+
+- `applicationDidFinishLaunching` 不再在普通启动时调用 `panelController.show()`。
+- 启动展示逻辑收口到 `applyInitialPresentation(arguments:)`，仅 `--show-about` 和 `--show-preferences` 显式入口会打开窗口。
+- 移除普通启动后的无条件 `NSApp.activate`，避免应用启动时抢焦点。
+- 新增回归测试确认默认启动参数保持面板隐藏。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (2.90s)`。
+- `swift test`：通过，113 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `git diff --check -- Sources/PasteFloating/ApplicationRuntime.swift Tests/ClipboardPanelAppTests/PanelRuntimeSeamTests.swift`：通过。
+
+## 状态栏图标紧凑清晰版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+变更摘要：
+
+- 根据用户对比菜单栏其他图标的反馈，将状态栏图标从 42 x 42 调整为 36 x 36。
+- `ApplicationRuntime.makeStatusBarIcon()` 的自定义图标显示尺寸从 21 pt 调整为 18 pt，SF Symbol fallback 同步为 18 pt。
+- 白色底块缩小，内部剪贴板由透明镂空改为深灰细线，避免在灰色菜单栏上不明显。
+- 自定义 PNG 保持 `isTemplate = false`，只让 fallback SF Symbol 继续 template 渲染。
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (2.80s)`。
+- `swift test`：通过，110 个 Swift 测试，输出 `Test run with 110 tests passed after 0.970 seconds`。
+- `scripts/package-macos-app.sh`：通过。
+- `sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png`：通过，包内资源为 36 x 36 且 `hasAlpha: yes`。
+- `shasum -a 256`：通过，源码、debug bundle、release bundle、`.app` 内状态栏资源均为 `b84abc54b69e44c2eab7b22f1ba04d710ad6d2e90cbec16ed333528a05a2626a`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics`：通过，输出 `screenCount=2`。
+- `git diff --check`：通过。
+
+## Paste 固定功能差异调研
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `/usr/libexec/PlistBuddy` 读取 `/Applications/Paste.app/Contents/Info.plist`：通过，确认 `CFBundleIdentifier=com.wiheads.paste`、版本 `6.2.0`、build `14547`。
+- `rg` 检索 Paste 本地化资源：通过，确认固定到 Pinboards、清空历史保护、跨设备访问、共享 Pinboards、Pinboard 管理/选择/快捷键等文案。
+- `sqlite3 ~/Library/Containers/com.wiheads.paste/Data/Library/Application Support/Paste/db.sqlite`：通过，确认 `ZLISTENTITY` / `ZITEMENTITY` schema、3 个 Pinboard 以及 Pinboard 内排序字段。
+- `rg` / `sed` 检查当前项目实现：通过，确认我们使用 `is_pinned`、右键菜单固定/取消固定、`is_pinned DESC` 排序和清空跳过固定项。
+- `screencapture -x` 静态截图：失败，返回 `could not create image from display`。
+- `screencapture -x -v -V 8 .codex/artifacts/paste-research/paste-open-hide-manual.mov`：通过，录屏文件已生成。
+- `ffmpeg` / `ffprobe`：失败，本机缺失 `/opt/homebrew/opt/x265/lib/libx265.215.dylib`。
+- `swift -e` + AVFoundation 抽帧：通过，生成 `.codex/artifacts/paste-research/manual-frame-01.png` 至 `manual-frame-12.png`。
+- 动画证据结论：未通过。抽帧中未出现 Paste 面板，说明本次录屏没有捕获到真实打开/隐藏动画；合成 `Shift+Command+X` 也未能触发 Paste 全局快捷键。
+
+## 面板打开/隐藏简单动画
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.77s)`。
+- `swift test --filter PanelRuntimeSeamTests`：通过，9 个面板运行时测试通过。
+- `swift test`：通过，114 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`command3Copy=panel-smoke-file`。
+
+结论：
+
+- 简单打开/隐藏动画已接入当前应用面板控制器。
+- 动画不会改变固定、复制、预览、外部点击或焦点归还的业务语义。
+
+## 面板纯滑动动画
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.25s)`。
+- `swift test --filter PanelRuntimeSeamTests`：通过，9 个面板运行时测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`command3Copy=panel-smoke-file`。
+- `swift test`：通过，114 个 Swift 测试通过。
+
+结论：
+
+- 面板打开/隐藏已去掉淡入淡出，只保留滑动位移动画。
+- 回归测试已覆盖打开和隐藏期间 `panel.alphaValue == 1`。
+
+## 面板完整滑出修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (2.50s)`。
+- `swift test --filter PanelRuntimeSeamTests`：通过，9 个面板运行时测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`command3Copy=panel-smoke-file`。
+- `swift test`：通过，114 个 Swift 测试通过。
+
+结论：
+
+- 隐藏动画不再使用打开时的短距离偏移。
+- 退出目标已改为整块面板完全滑到展示底边以下后再 `orderOut`。
+
+## 面板完整滑入修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (2.76s)`。
+- `swift test --filter PanelRuntimeSeamTests`：通过，9 个面板运行时测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`command3Copy=panel-smoke-file`。
+- `swift test`：通过，114 个 Swift 测试通过。
+
+结论：
+
+- 滑入动画不再从短距离偏移开始。
+- 打开入口帧已改为整块面板完全位于展示底边以下，再滑入最终位置。
+
+## 面板快速隐藏/显示动画修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.47s)`。
+- `swift test --filter PanelRuntimeSeamTests`：通过，10 个面板运行时测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`command3Copy=panel-smoke-file`。
+- `swift test`：通过，115 个 Swift 测试通过。
+
+结论：
+
+- 快速快捷键隐藏/显示不再叠加 AppKit window animator。
+- 新显示动作会取消旧隐藏动画，从当前 frame 接续滑入，避免动画变快或旧隐藏 completion 导致面板弹不出来。
+
+## 面板快捷键快速切换防抖修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (2.44s)`。
+- `swift test --filter PanelRuntimeSeamTests`：通过，11 个面板运行时测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`command3Copy=panel-smoke-file`。
+- `swift test`：通过，116 个 Swift 测试通过。
+
+结论：
+
+- AppDelegate 的面板快捷键防抖从 120ms 缩短为 40ms。
+- 仍过滤立即重复事件，但 60ms 级别的用户快速隐藏/显示会被接受，不会再因防抖直接丢掉显示请求。
+
+## 面板非激活聚焦策略验证
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (0.37s)`。
+- `swift test`：通过，116 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`escapeHide=1`、`command3Copy=panel-smoke-file`、`doubleClickCopy=panel-smoke-text`。
+- `git diff --check -- Sources/PasteFloating/FloatingPanelController.swift Sources/PasteFloating/ApplicationRuntime.swift Tests/ClipboardPanelAppTests/PanelRuntimeSeamTests.swift .codex/operations-log.md .codex/testing.md verification.md`：通过，无输出。
+
+结论：
+
+- 面板显示和聚焦路径已避免主动 `NSApp.activate`，更接近 Paste 的非抢焦点交互。
+- 面板仍通过 `.nonactivatingPanel` + key window / first responder 接收 Esc、Command+数字和点击等交互。
+- 偏好设置和关于窗口仍然主动激活应用，这是普通窗口行为，未纳入面板非激活策略。
+
+## Paste 风格本地 Pinboard 固定功能
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `cargo fmt --all --manifest-path rust/Cargo.toml`：通过。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，26 个 Rust 测试通过。
+- `scripts/build-rust-core.sh`：通过，已刷新 Swift bridge 和 FFI 静态库。
+- `swift build`：通过，输出 `Build complete! (4.18s)`。
+- `swift test`：通过，119 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:true`、`typeFilter=image`、`escapeHide=1`。
+- `git diff --check`：通过，无输出。
+
+结论：
+
+- 固定功能已从单条历史布尔置顶升级为本地默认 Pinboard membership。
+- 同步、分享、协作权限未接入。
+- 固定内容不会被保留天数、最大历史条数或清空历史主动删除；只有手动删除条目才会移除固定内容。
+- 面板 MVC 分层保持清晰：Rust core 负责 Model，Swift coordinator/interaction controller 负责 Controller，AppKit view 只渲染“固定”chip 和菜单入口。
+
+## 固定排序与右键菜单完整展示
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `cargo fmt --all --manifest-path rust/Cargo.toml`：通过。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，26 个 Rust 测试通过。
+- `scripts/build-rust-core.sh`：通过，已刷新 Swift bridge 使用的 Rust FFI 静态库。
+- `swift test`：通过，119 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:true`。
+- `git diff --check`：通过，无输出。
+
+结论：
+
+- 普通剪贴板历史已取消固定内容置顶逻辑，固定内容不会自动排到最前。
+- “固定”chip 进入的 Pinboard 视图仍按固定板顺序展示。
+- 条目右键菜单不再用分隔折叠式分组，始终完整展示复制、删除、固定、取消固定、预览。
+
+## Paste 式 Pinboard 菜单替换固定逻辑
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `cargo fmt --all --manifest-path rust/Cargo.toml`：通过。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，26 个 Rust 测试通过。
+- `scripts/build-rust-core.sh`：通过，已刷新 Swift bridge 和 FFI 静态库。
+- `swift build`：通过，输出 `Build complete! (4.52s)`。
+- `swift test`：通过，119 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:default:true`、`typeFilter=image`、`escapeHide=1`。
+- `scripts/package-macos-app.sh`：通过，生成 `.codex/artifacts/ClipboardWorkbench.app`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过，无输出。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:default:true`。
+- `git diff --check`：通过，无输出。
+
+结论：
+
+- 已废弃 UI/Controller 层旧的并列“固定/取消固定”逻辑，改为 Paste 截图中的“固定”父菜单 + Pinboard 子菜单。
+- 固定操作现在表达为 Pinboard membership：`itemID + pinboardID + isMember`，而不是单条历史布尔置顶。
+- 普通卡片不再展示“固定 · 类型”，固定归属通过 Pinboard 入口和子菜单表达。
+- 新增迁移 v3 重建最近历史索引，去掉旧 `is_pinned DESC` 索引方向。
+
+## Paste Pinboard 管理调研与 MVC 架构
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `plutil -p /Applications/Paste.app/Contents/Info.plist`：通过，确认 Paste 版本 `6.2.0 (14547)`。
+- `rg` 检索 Paste 英文/中文本地化：通过，确认创建、管理、重命名、颜色、删除、固定到、清理保护文案。
+- `sqlite3` 检查 Paste 本地数据库：通过，确认 Pinboard 存储在 `ZLISTENTITY`，颜色在 `ZRAWATTRIBUTES.colorCode`，板内顺序在 `ZDISPLAYORDERINPINBOARD`。
+- `rg` 检索当前项目分类和 Pinboard 链路：通过，确认类型分类是 UI/查询功能，现有 Pinboard 缺少 CRUD 和颜色。
+
+结论：
+
+- 已输出完整调研文档：`.codex/paste-pinboard-management-research-2026-05-11.md`。
+- 已输出 MVC 架构设计和架构师/QA/开发评审：`.codex/pinboard-full-mvc-architecture-2026-05-11.md`。
+- 本轮仅调研和设计，未修改业务代码，因此未运行构建/测试。
+
+## Paste 式完整 Pinboard 管理实现
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `cargo test --manifest-path rust/Cargo.toml`：通过，27 个 Rust 测试通过。
+- `swift test`：通过，121 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`categoryFilter=removed`、`menuPin=panel-smoke-file:default:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`。
+- `scripts/package-macos-app.sh`：通过，生成 `.codex/artifacts/ClipboardWorkbench.app`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过，无输出。
+- `.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`categoryFilter=removed`、`menuPin=panel-smoke-file:default:true`。
+- `git diff --check`：通过，无输出。
+- 遗留类型筛选命名搜索：通过，`TypeFilterChipButton`、`setTypeFilter`、`selectedItemType`、`stateBySettingTypeFilter` 等用户侧分类链路无残留。
+
+结论：
+
+- QA 已审核并通过完整 MVC 架构后完成代码实现。
+- Paste 式 Pinboard 管理已覆盖创建、重命名、上色、删除、固定到 Pinboard、取消固定和 Pinboard 查询。
+- 同步、分享、协作功能未接入；固定内容不受保留策略、最大历史条数或清空历史主动删除。
+- 用户侧分类功能已删除，内容类型模型作为底层剪贴板数据能力继续保留。
+
+## Pinboard 管理入口显性化
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过。
+- `swift test`：通过，121 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`categoryFilter=removed`、`menuPin=panel-smoke-file:default:true`。
+- `scripts/package-macos-app.sh`：通过，生成 `.codex/artifacts/ClipboardWorkbench.app`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过，无输出。
+- 包内 `ClipboardWorkbenchApp --exercise-panel-interactions`：通过。
+- `git diff --check`：通过，无输出。
+
+结论：
+
+- 用户反馈属实：上一版入口过深，不容易发现。
+- 已将工具栏 `+` 改为直接创建 Pinboard，右侧菜单提示改为“管理 Pinboard”。
+- 已给 Pinboard chip 增加右键管理菜单，重命名、上色、删除可从 Pinboard 本身进入。
+
+## Pinboard 删除卡顿优化
+
+日期：2026-05-11
+
+执行者：Codex
+
+验证结果：
+
+- `cargo fmt --all --manifest-path rust/Cargo.toml`：通过。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，28 个 Rust 测试通过。
+- `scripts/build-rust-core.sh`：通过，已刷新 Swift 使用的 Rust FFI 静态库。
+- `swift build`：通过。
+- `swift test`：通过，121 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+- `scripts/package-macos-app.sh`：通过，生成 `.codex/artifacts/ClipboardWorkbench.app`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过，无输出。
+- 包内 `ClipboardWorkbenchApp --exercise-panel-interactions`：通过。
+- `git diff --check`：通过，无输出。
+
+结论：
+
+- Pinboard 删除卡顿根因是 Rust 删除事务逐条处理板内内容，外加 UI 预先触发一次列表查询。
+- 已改为数据库批量删除/保留逻辑，并取消删除前的额外查询。
+- 新增 120 条内容的批量删除回归测试，覆盖共享 Pinboard 内容不被误删。

@@ -139,8 +139,8 @@ public final class PanelContentController {
         sceneStore.setSearchText(searchText)
     }
 
-    public func setTypeFilter(_ itemType: String?) {
-        sceneStore.setTypeFilter(itemType)
+    public func setPinboardFilter(_ pinboardID: String?) {
+        sceneStore.setPinboardFilter(pinboardID)
     }
 
     public func clearFilters() {

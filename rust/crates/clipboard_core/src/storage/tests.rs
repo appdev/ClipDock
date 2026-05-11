@@ -32,7 +32,7 @@ fn open_creates_database_schema_and_asset_directories() {
             row.get(0)
         })
         .unwrap();
-    assert_eq!(migration_count, 1);
+    assert_eq!(migration_count, CURRENT_SCHEMA_VERSION);
 }
 
 #[test]
@@ -432,26 +432,32 @@ fn item_management_pins_and_soft_deletes_single_item() {
         })
         .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(2));
-    core.capture_text(CaptureTextRequest {
-        text: "Regular management sample".to_string(),
-        source_bundle_id: Some("com.apple.Safari".to_string()),
-        source_app_name: Some("Safari".to_string()),
-        source_bundle_path: None,
-        source_icon_relative_path: None,
-        source_confidence: SourceConfidence::High,
-        pasteboard_change_count: 2,
-        self_write_token: None,
-    })
-    .unwrap();
+    let regular = core
+        .capture_text(CaptureTextRequest {
+            text: "Regular management sample".to_string(),
+            source_bundle_id: Some("com.apple.Safari".to_string()),
+            source_app_name: Some("Safari".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 2,
+            self_write_token: None,
+        })
+        .unwrap();
 
-    let pin_result = core.set_item_pinned(&pinned.item_id, true).unwrap();
+    let pin_result = core
+        .set_item_pinboard_membership(&pinned.item_id, DEFAULT_PINBOARD_ID, true)
+        .unwrap();
     let page = core
         .list_items(ItemQuery::default(), PageRequest::default())
         .unwrap();
 
     assert_eq!(pin_result.affected_count, 1);
-    assert_eq!(page.items[0].id, pinned.item_id);
-    assert!(page.items[0].is_pinned);
+    assert_eq!(page.items[0].id, regular.item_id);
+    assert!(page
+        .items
+        .iter()
+        .any(|item| item.id == pinned.item_id && item.is_pinned));
 
     let delete_result = core.delete_item(&pinned.item_id).unwrap();
     let page_after_delete = core
@@ -472,6 +478,302 @@ fn item_management_pins_and_soft_deletes_single_item() {
 }
 
 #[test]
+fn pinned_items_enter_default_pinboard_and_leave_on_unpin() {
+    let (_, mut core) = open_temp_core();
+    let pinned = core
+        .capture_text(CaptureTextRequest {
+            text: "Pinboard membership sample".to_string(),
+            source_bundle_id: Some("com.apple.TextEdit".to_string()),
+            source_app_name: Some("TextEdit".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 1,
+            self_write_token: None,
+        })
+        .unwrap();
+
+    let pin_result = core
+        .set_item_pinboard_membership(&pinned.item_id, DEFAULT_PINBOARD_ID, true)
+        .unwrap();
+    let pinboards = core.list_pinboards().unwrap();
+    let pinned_page = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(DEFAULT_PINBOARD_ID.to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    let membership_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM pinboard_items WHERE pinboard_id = ?1 AND item_id = ?2",
+            params![DEFAULT_PINBOARD_ID, pinned.item_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(pin_result.affected_count, 1);
+    assert_eq!(pinboards.total_count, 1);
+    assert_eq!(pinboards.pinboards[0].title, "固定");
+    assert_eq!(pinboards.pinboards[0].item_count, 1);
+    assert_eq!(pinned_page.total_count, 1);
+    assert_eq!(pinned_page.items[0].id, pinned.item_id);
+    assert!(pinned_page.items[0].is_pinned);
+    assert_eq!(membership_count, 1);
+
+    let unpin_result = core
+        .set_item_pinboard_membership(&pinned.item_id, DEFAULT_PINBOARD_ID, false)
+        .unwrap();
+    let pinned_page_after_unpin = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(DEFAULT_PINBOARD_ID.to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+
+    assert_eq!(unpin_result.affected_count, 1);
+    assert_eq!(pinned_page_after_unpin.total_count, 0);
+}
+
+#[test]
+fn pinboard_crud_updates_title_color_and_deletes_owned_items() {
+    let (_, mut core) = open_temp_core();
+    let first = core
+        .capture_text(CaptureTextRequest {
+            text: "Pinboard CRUD owned item".to_string(),
+            source_bundle_id: Some("com.apple.TextEdit".to_string()),
+            source_app_name: Some("TextEdit".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 1,
+            self_write_token: None,
+        })
+        .unwrap();
+    let second = core
+        .capture_text(CaptureTextRequest {
+            text: "Pinboard CRUD shared item".to_string(),
+            source_bundle_id: Some("com.apple.Notes".to_string()),
+            source_app_name: Some("Notes".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 2,
+            self_write_token: None,
+        })
+        .unwrap();
+
+    let board = core
+        .create_pinboard("  Research  ", Some(4_294_620_928))
+        .unwrap();
+    let renamed = core.rename_pinboard(&board.id, "  AI Clips  ").unwrap();
+    let recolored = core
+        .update_pinboard_color(&board.id, 4_290_925_536)
+        .unwrap();
+    core.set_item_pinboard_membership(&first.item_id, &board.id, true)
+        .unwrap();
+    core.set_item_pinboard_membership(&second.item_id, &board.id, true)
+        .unwrap();
+    core.set_item_pinboard_membership(&second.item_id, DEFAULT_PINBOARD_ID, true)
+        .unwrap();
+
+    let before_delete = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(board.id.clone()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    let delete_result = core.delete_pinboard(&board.id).unwrap();
+    let active_page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let deleted_board_page = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(board.id.clone()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    let default_board_page = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(DEFAULT_PINBOARD_ID.to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+
+    assert_eq!(board.title, "Research");
+    assert_eq!(board.color_code, 4_294_620_928);
+    assert_eq!(renamed.title, "AI Clips");
+    assert_eq!(recolored.color_code, 4_290_925_536);
+    assert_eq!(before_delete.total_count, 2);
+    assert_eq!(delete_result.affected_count, 1);
+    assert!(!active_page
+        .items
+        .iter()
+        .any(|item| item.id == first.item_id));
+    assert!(active_page
+        .items
+        .iter()
+        .any(|item| item.id == second.item_id));
+    assert_eq!(deleted_board_page.total_count, 0);
+    assert_eq!(default_board_page.total_count, 1);
+    assert_eq!(default_board_page.items[0].id, second.item_id);
+}
+
+#[test]
+fn delete_pinboard_cleans_many_items_in_bulk_and_keeps_shared_members() {
+    let (_, mut core) = open_temp_core();
+    let board = core
+        .create_pinboard("Bulk delete", Some(4_294_620_928))
+        .unwrap();
+    let shared_board = core
+        .create_pinboard("Shared survivors", Some(4_283_973_119))
+        .unwrap();
+
+    let mut shared_ids = Vec::new();
+    for index in 0..120 {
+        let captured = core
+            .capture_text(CaptureTextRequest {
+                text: format!("Bulk Pinboard item {index}"),
+                source_bundle_id: Some("com.apple.TextEdit".to_string()),
+                source_app_name: Some("TextEdit".to_string()),
+                source_bundle_path: None,
+                source_icon_relative_path: None,
+                source_confidence: SourceConfidence::High,
+                pasteboard_change_count: index + 10,
+                self_write_token: None,
+            })
+            .unwrap();
+        core.set_item_pinboard_membership(&captured.item_id, &board.id, true)
+            .unwrap();
+        if index % 12 == 0 {
+            core.set_item_pinboard_membership(&captured.item_id, &shared_board.id, true)
+                .unwrap();
+            shared_ids.push(captured.item_id);
+        }
+    }
+
+    let delete_result = core.delete_pinboard(&board.id).unwrap();
+    let deleted_board_page = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(board.id.clone()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    let shared_page = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(shared_board.id.clone()),
+                ..ItemQuery::default()
+            },
+            PageRequest {
+                limit: 200,
+                offset: 0,
+            },
+        )
+        .unwrap();
+    let active_page = core
+        .list_items(
+            ItemQuery::default(),
+            PageRequest {
+                limit: 200,
+                offset: 0,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(delete_result.affected_count, 110);
+    assert_eq!(deleted_board_page.total_count, 0);
+    assert_eq!(shared_page.total_count, shared_ids.len() as i64);
+    assert_eq!(active_page.total_count, shared_ids.len() as i64);
+    for shared_id in shared_ids {
+        assert!(active_page.items.iter().any(|item| item.id == shared_id));
+    }
+}
+
+#[test]
+fn pinned_items_survive_history_retention_and_max_item_pruning() {
+    let (_, mut core) = open_temp_core();
+    let pinned = core
+        .capture_text(CaptureTextRequest {
+            text: "Protected pinboard item".to_string(),
+            source_bundle_id: Some("com.apple.TextEdit".to_string()),
+            source_app_name: Some("TextEdit".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 1,
+            self_write_token: None,
+        })
+        .unwrap();
+    core.set_item_pinboard_membership(&pinned.item_id, DEFAULT_PINBOARD_ID, true)
+        .unwrap();
+    core.capture_text(CaptureTextRequest {
+        text: "Removable old item".to_string(),
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 2,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let old_timestamp = now_ms() - 400 * 24 * 60 * 60 * 1000;
+    core.connection
+        .execute(
+            "UPDATE clipboard_items SET last_copied_at_ms = ?1 WHERE summary IN (?2, ?3)",
+            params![
+                old_timestamp,
+                "Protected pinboard item",
+                "Removable old item"
+            ],
+        )
+        .unwrap();
+
+    let mut preferences = core.get_preferences().unwrap();
+    preferences.history.retention_days = 1;
+    preferences.history.max_items = 1;
+    core.update_preferences(preferences).unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let pinned_page = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(DEFAULT_PINBOARD_ID.to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+
+    assert_eq!(page.total_count, 1);
+    assert_eq!(page.items[0].id, pinned.item_id);
+    assert_eq!(pinned_page.total_count, 1);
+    assert_eq!(pinned_page.items[0].id, pinned.item_id);
+}
+
+#[test]
 fn clear_items_soft_deletes_matching_unpinned_items_only() {
     let (_, mut core) = open_temp_core();
     let pinned = core
@@ -486,7 +788,8 @@ fn clear_items_soft_deletes_matching_unpinned_items_only() {
             self_write_token: None,
         })
         .unwrap();
-    core.set_item_pinned(&pinned.item_id, true).unwrap();
+    core.set_item_pinboard_membership(&pinned.item_id, DEFAULT_PINBOARD_ID, true)
+        .unwrap();
     core.capture_text(CaptureTextRequest {
         text: "Clear scope removable text".to_string(),
         source_bundle_id: Some("com.apple.Safari".to_string()),
@@ -549,6 +852,11 @@ fn default_preferences_document_is_seeded() {
     assert_eq!(preferences.general.default_panel_height, 320);
     assert_eq!(preferences.history.max_items, 500);
     assert_eq!(preferences.appearance.mode, "system");
+    assert_eq!(preferences.shortcuts.open_panel.key_code, 9);
+    assert_eq!(
+        preferences.shortcuts.open_panel.modifiers,
+        vec!["command".to_string(), "shift".to_string()]
+    );
     assert!(preferences.ignore_list.ignored_app_identifiers.is_empty());
     assert!(preferences.ignore_list.window_title_keywords.is_empty());
     assert!(!preferences.ignore_list.skip_unknown_source);
@@ -565,6 +873,14 @@ fn preferences_update_persists_normalized_document() {
     preferences.history.record_files = true;
     preferences.appearance.mode = "neon".to_string();
     preferences.appearance.item_density = "compact".to_string();
+    preferences.shortcuts.open_panel.key_code = 11;
+    preferences.shortcuts.open_panel.modifiers = vec![
+        "shift".to_string(),
+        "cmd".to_string(),
+        "alt".to_string(),
+        "command".to_string(),
+        "ignored".to_string(),
+    ];
     preferences.ignore_list.ignored_app_identifiers = vec![
         "  com.apple.Terminal  ".to_string(),
         "terminal".to_string(),
@@ -588,6 +904,15 @@ fn preferences_update_persists_normalized_document() {
     assert!(saved.history.record_files);
     assert_eq!(saved.appearance.mode, "system");
     assert_eq!(saved.appearance.item_density, "compact");
+    assert_eq!(saved.shortcuts.open_panel.key_code, 11);
+    assert_eq!(
+        saved.shortcuts.open_panel.modifiers,
+        vec![
+            "command".to_string(),
+            "option".to_string(),
+            "shift".to_string()
+        ]
+    );
     assert_eq!(
         saved.ignore_list.ignored_app_identifiers,
         vec!["com.apple.Terminal".to_string(), "terminal".to_string()]
@@ -598,6 +923,22 @@ fn preferences_update_persists_normalized_document() {
     );
     assert!(saved.ignore_list.skip_unknown_source);
     assert_eq!(reloaded, saved);
+}
+
+#[test]
+fn preferences_update_falls_back_when_shortcut_is_not_recordable() {
+    let (_, mut core) = open_temp_core();
+    let mut preferences = core.get_preferences().unwrap();
+    preferences.shortcuts.open_panel.key_code = 999;
+    preferences.shortcuts.open_panel.modifiers = vec!["shift".to_string()];
+
+    let saved = core.update_preferences(preferences).unwrap();
+
+    assert_eq!(saved.shortcuts.open_panel.key_code, 9);
+    assert_eq!(
+        saved.shortcuts.open_panel.modifiers,
+        vec!["command".to_string(), "shift".to_string()]
+    );
 }
 
 #[test]

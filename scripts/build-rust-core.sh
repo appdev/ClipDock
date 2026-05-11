@@ -5,14 +5,14 @@ cd "$(dirname "$0")/.."
 
 export MACOSX_DEPLOYMENT_TARGET=13.0
 
-cargo build --manifest-path rust/Cargo.toml -p clipboard_core_ffi
+cargo build --manifest-path rust/Cargo.toml -p clipboard_core_ffi --release
 
 package_name="ClipboardCoreBridge"
 bridge_raw_dir="rust/target/swift-bridge/generated"
 bridge_crate_dir="$bridge_raw_dir/clipboard_core_ffi"
 package_dir="Generated/$package_name"
 headers_dir=".build/swift-bridge-headers"
-static_lib="rust/target/debug/libclipboard_core_ffi.a"
+static_lib="rust/target/release/libclipboard_core_ffi.a"
 
 mkdir -p "$package_dir/Sources/$package_name" "$headers_dir"
 
@@ -74,5 +74,5 @@ xcodebuild -create-xcframework \
     -headers "$headers_dir" \
     -output "$package_dir/RustXcframework.xcframework" >/dev/null
 
-mkdir -p .build/rust/debug
-cp rust/target/debug/libclipboard_core_ffi.a .build/rust/debug/
+mkdir -p .build/rust/release
+cp rust/target/release/libclipboard_core_ffi.a .build/rust/release/

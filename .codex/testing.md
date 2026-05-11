@@ -2030,3 +2030,958 @@ git diff --check: passed
 - 预取页命中后直接追加新条目，随后立刻预取下一页。
 - 交互 smoke 断言第一页首张卡片对象在追加后保持不变，证明已有 UI 没有被全量重建。
 - 加载触发阈值提前到约 4 张卡 / 1.2 屏宽，降低滚到底才等待查询和 UI 追加的体感卡顿。
+
+## PasteFloating 源码目录与 target 收口
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloating --print-ui-diagnostics
+swift package describe
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (7.57s)
+swift test: Test run with 107 tests passed after 0.897 seconds
+swift run PasteFloating --print-ui-diagnostics: Build of product 'PasteFloating' complete! (0.31s); screenCount=2
+swift package describe: products ClipboardPanelApp, ClipboardWorkbenchApp, PasteFloating; target PasteFloating
+git diff --check: passed
+```
+
+覆盖点：
+
+- 源码目录已收口为 `Sources/PasteFloating`。
+- `Package.swift` 删除旧兼容 product / target，保留 `PasteFloating` 与 `ClipboardWorkbenchApp` 两个当前 executable product。
+- 测试 import 与 QA 命令切换到 `PasteFloating`，不再依赖旧兼容入口。
+
+## 应用图标与状态栏图标接入
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' -c 'Print :CFBundleExecutable' .codex/artifacts/ClipboardWorkbench.app/Contents/Info.plist
+find .codex/artifacts/ClipboardWorkbench.app/Contents/Resources -maxdepth 1 -type f -print -exec file {} \;
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.24s)
+swift test: Test run with 107 tests passed after 0.910 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+plist: CFBundleIconFile=AppIcon; CFBundleExecutable=ClipboardWorkbenchApp
+resources: AppIcon.icns; StatusBarClipboardTemplate.png
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- `.app` 图标资源写入 `Contents/Resources/AppIcon.icns`，`Info.plist` 指向 `AppIcon`。
+- 状态栏模板图标写入 `Contents/Resources/StatusBarClipboardTemplate.png`，源码运行时通过 SwiftPM resources 读取。
+- 打包产物通过 codesign 校验，包内诊断命令可运行。
+- `AppIcon.iconset` 保留标准 macOS 多尺寸 PNG 源：16、16@2x、32、32@2x、128、128@2x、256、256@2x、512、512@2x。
+- 关于窗口直接加载应用图标资源，不再显示临时 SF Symbol 图标。
+- 状态栏模板图标改为更大更粗的菜单栏专用图形，alpha 有效区域为 `(8, 1, 56, 61)`，运行时显示尺寸从 18 pt 调整为 21 pt。
+
+## 状态栏图标参考设计二次修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (0.45s)
+swift test: Test run with 107 tests passed after 0.875 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+sips: pixelWidth 64; pixelHeight 64; hasAlpha yes
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- 参考其他菜单栏应用图标后，状态栏图标从实心小插画改为粗描边模板图标。
+- 保留剪贴板轮廓、顶部圆孔和一条粗横线，删除影响 21 pt 识别的细碎内容线。
+- `StatusBarClipboardTemplate.png` 仍为 64 x 64 alpha PNG，alpha 有效区域为 `(7, 0, 57, 64)`。
+- 打包产物继续包含新的 `StatusBarClipboardTemplate.png`，签名和包内诊断通过。
+
+## 状态栏图标白底线稿方向修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (1.62s)
+swift test: Test run with 107 tests passed after 0.824 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+sips: pixelWidth 64; pixelHeight 64; hasAlpha yes
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- 白底不写入图标资源，由 macOS 菜单栏背景提供，避免模板图标在深色模式下出现方块背景。
+- `StatusBarClipboardTemplate.png` 改为透明背景线稿模板，仅用 alpha 绘制剪贴板外框、顶部夹子和两条内容线。
+- 线稿在 21 pt 下保留粗线条和简单语义，浅色菜单栏显示为深色线条，深色菜单栏显示为浅色线条。
+- 打包产物继续包含新的状态栏模板图标，签名和包内诊断通过。
+
+## 状态栏图标按参考图替换
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+sips -g pixelWidth -g pixelHeight -g hasAlpha Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png
+shasum -a 256 Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/debug/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/release/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (1.59s)
+swift test: Test run with 107 tests passed after 0.789 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+sips: pixelWidth 42; pixelHeight 42; hasAlpha yes
+sha256: 79ddd56821f1394b5302bb0330cd58a7bd4fd5c4f0e2c35154b7c83d7bf44f8d
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- `StatusBarClipboardTemplate.png` 按用户参考图重绘，包含实心顶部夹子、圆孔、文档外框、两条内容线和右下折角。
+- 资源裁切为 42 x 42 alpha PNG，匹配当前 `image.size = 21pt` 的 Retina 2x 菜单栏显示尺寸。
+- 源码资源、SwiftPM debug bundle、SwiftPM release bundle、最终 `.app` 资源 SHA-256 完全一致，排除打包未同步问题。
+
+## 快捷键录入与修改修复
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+cargo fmt --all --manifest-path rust/Cargo.toml
+cargo test --manifest-path rust/Cargo.toml
+scripts/build-rust-core.sh
+swift test
+swift run PasteFloating --exercise-preferences
+swift run PasteFloating --render-preferences-snapshot .codex/artifacts/preferences-shortcuts-snapshot.png --preferences-section shortcuts
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.76s)
+cargo test: 24 passed
+scripts/build-rust-core.sh: Finished dev profile
+swift test: Test run with 110 tests passed after 0.757 seconds
+swift run PasteFloating --exercise-preferences: exit 0
+preferences shortcuts snapshot: .codex/artifacts/preferences-shortcuts-snapshot.png
+git diff --check: passed
+```
+
+覆盖点：
+
+- Swift 偏好 Codable 默认值、旧 JSON 解码和桥接读写包含 `shortcuts.open_panel`。
+- Rust preferences seed/update 会持久化并归一化快捷键，非法 keyCode 或仅 Shift 的组合回退默认值。
+- 设置页 smoke 通过 `ShortcutRecorderButton.triggerForSmoke()` 模拟录入 `Command+Option+B`。
+- 快捷键页快照确认“打开剪贴板”行渲染为可录入按钮，面板内快捷键仍为固定展示。
+
+## 状态栏图标细线版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+sips -g pixelWidth -g pixelHeight -g hasAlpha Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png
+shasum -a 256 Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/debug/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/release/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (1.53s)
+swift test: Test run with 107 tests passed after 0.868 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+sips: pixelWidth 42; pixelHeight 42; hasAlpha yes
+sha256: fd585e47d8cbe17c86688b91cf025668569ba30887f296ce333cc95d2882d920
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- 保持参考图结构和 42 x 42 / 21pt@2x 尺寸不变。
+- 外框、折角和内容线改为更细的笔画，降低菜单栏中的视觉重量。
+- 源码资源、SwiftPM debug bundle、SwiftPM release bundle、最终 `.app` 资源 SHA-256 完全一致。
+
+## 面板隐藏焦点归还
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+git diff --check -- Sources/PasteFloating/FloatingPanelController.swift Sources/PasteFloating/ApplicationRuntime.swift Tests/ClipboardPanelAppTests/PanelRuntimeSeamTests.swift
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.65s)
+swift test: Test run with 112 tests passed after 0.891 seconds
+panel interactions: panelInteractions=ok
+git diff --check: passed
+```
+
+覆盖点：
+
+- 面板展示前记录前台应用，普通隐藏后恢复该应用焦点。
+- 重复 `show()` 不会把可恢复目标覆盖成面板自身或后续前台应用。
+- 外部鼠标点击隐藏不激活旧应用，避免抢走用户点击的新目标。
+
+## 应用启动默认隐藏面板
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+git diff --check -- Sources/PasteFloating/ApplicationRuntime.swift Tests/ClipboardPanelAppTests/PanelRuntimeSeamTests.swift
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (2.90s)
+swift test: Test run with 113 tests passed after 1.026 seconds
+panel interactions: panelInteractions=ok
+git diff --check: passed
+```
+
+覆盖点：
+
+- 普通启动参数不会展示面板。
+- 启动时不再无条件激活 App。
+- 面板仍可通过现有快捷键、菜单和交互 smoke 手动展示。
+
+## 状态栏图标紧凑清晰版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png
+shasum -a 256 Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/debug/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/release/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (2.80s)
+swift test: Test run with 110 tests passed after 0.970 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+sips: pixelWidth 36; pixelHeight 36; hasAlpha yes
+sha256: b84abc54b69e44c2eab7b22f1ba04d710ad6d2e90cbec16ed333528a05a2626a
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- 状态栏图标资源改为 36 x 36，运行时显示尺寸从 21 pt 调整为 18 pt，对齐菜单栏其他图标的视觉占位。
+- 白色底块缩小，内部剪贴板改为深灰细线，提升灰色菜单栏背景上的识别度。
+- 自定义 PNG 保持 `isTemplate = false`，避免系统模板着色覆盖白底；SF Symbol fallback 仍为 template。
+- 源码资源、SwiftPM debug bundle、SwiftPM release bundle、最终 `.app` 资源 SHA-256 完全一致。
+
+## 状态栏单字母标记版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png
+shasum -a 256 Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/debug/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/release/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (0.92s)
+swift test: Test run with 112 tests passed after 1.044 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+sips: pixelWidth 36; pixelHeight 36; hasAlpha yes
+sha256: 911be2cda579803d40ac0378c176648a1739dab6a0f6ecfcb999ede113aa6292
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- 状态栏图标从剪贴板细节图形简化为单字母 `P` 标记。
+- 白色圆角底缩至约 28 x 28，外边距增加，内部符号更简单。
+- 运行时继续以 18 pt 显示，自定义 PNG 保持 `isTemplate = false`。
+- 源码资源、SwiftPM debug bundle、SwiftPM release bundle、最终 `.app` 资源 SHA-256 完全一致。
+
+## 状态栏单字母圆角放大版修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+sips -g pixelWidth -g pixelHeight -g hasAlpha .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png
+shasum -a 256 Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png .codex/artifacts/ClipboardWorkbench.app/Contents/Resources/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/debug/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png .build/arm64-apple-macosx/release/ClipboardWorkbench_PasteFloating.bundle/StatusBarClipboardTemplate.png
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (1.97s)
+swift test: Test run with 113 tests passed after 1.035 seconds
+package: Packaged app: /Users/evan/IdeaProjects/Paste/.codex/artifacts/ClipboardWorkbench.app
+sips: pixelWidth 38; pixelHeight 38; hasAlpha yes
+sha256: 1d4d3165c6f636900f93651681fbea3639b2fb58c2ba079083b91c2bd66a3efa
+packaged diagnostics: screenCount=2
+git diff --check: passed
+```
+
+覆盖点：
+
+- 状态栏 `P` 标记从 36 x 36 调整为 38 x 38，运行时显示尺寸从 18 pt 调整为 19 pt。
+- 白色底块随图标放大，圆角半径增大，整体更圆润。
+- 自定义 PNG 继续 `isTemplate = false`，SF Symbol fallback 同步为 19 pt。
+- 源码资源、SwiftPM debug bundle、SwiftPM release bundle、最终 `.app` 资源 SHA-256 完全一致。
+
+## 面板打开/隐藏简单动画
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test --filter PanelRuntimeSeamTests
+swift test
+swift run PasteFloating --exercise-panel-interactions
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.77s)
+PanelRuntimeSeamTests: 9 tests passed
+swift test: Test run with 114 tests passed after 0.778 seconds
+panel smoke: panelInteractions=ok
+```
+
+覆盖点：
+
+- 打开面板从目标位置下方偏移帧上滑淡入。
+- 隐藏面板先进入逻辑隐藏，再下滑淡出并在动画完成后真实移出窗口。
+- 快速切换通过动画代次忽略旧 completion。
+- Escape、双击复制、Command+数字复制后的隐藏路径由交互 smoke 覆盖。
+
+## 面板纯滑动动画
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test --filter PanelRuntimeSeamTests
+swift run PasteFloating --exercise-panel-interactions
+swift test
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.25s)
+PanelRuntimeSeamTests: 9 tests passed
+panel smoke: panelInteractions=ok
+swift test: Test run with 114 tests passed after 1.095 seconds
+```
+
+覆盖点：
+
+- 移除打开和隐藏动画中的 alpha animator，面板只做位置滑动。
+- 打开和隐藏期间 `panel.alphaValue` 保持 1。
+- Escape、双击复制、Command+数字复制后的隐藏路径继续通过交互 smoke。
+
+## 面板完整滑出修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test --filter PanelRuntimeSeamTests
+swift run PasteFloating --exercise-panel-interactions
+swift test
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (2.50s)
+PanelRuntimeSeamTests: 9 tests passed
+panel smoke: panelInteractions=ok
+swift test: Test run with 114 tests passed after 0.879 seconds
+```
+
+覆盖点：
+
+- 打开起始帧和隐藏退出帧拆分，避免用短距离打开偏移作为隐藏终点。
+- 隐藏退出帧下移 `panel.height + 12pt`，确保 `orderOut` 前整块面板已经低于展示帧底边。
+- 回归测试要求隐藏帧 `maxY < shownFrame.minY`。
+
+## 面板完整滑入修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test --filter PanelRuntimeSeamTests
+swift run PasteFloating --exercise-panel-interactions
+swift test
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (2.76s)
+PanelRuntimeSeamTests: 9 tests passed
+panel smoke: panelInteractions=ok
+swift test: Test run with 114 tests passed after 0.794 seconds
+```
+
+覆盖点：
+
+- 打开入口帧从短距离偏移改为完整离屏帧。
+- 入口帧和退出帧统一为 `panel.height + 12pt` 的底部离屏位置。
+- 回归测试要求入口帧 `maxY < shownFrame.minY`，防止打开时先露出大半块面板。
+
+## 面板快速隐藏/显示动画修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test --filter PanelRuntimeSeamTests
+swift run PasteFloating --exercise-panel-interactions
+swift test
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.47s)
+PanelRuntimeSeamTests: 10 tests passed
+panel smoke: panelInteractions=ok
+swift test: Test run with 115 tests passed after 1.034 seconds
+```
+
+覆盖点：
+
+- 替换 `NSAnimationContext` window animator，避免不可取消的 AppKit frame 动画叠加。
+- 新增单一 `Task` 驱动的 frame 动画，新动作会取消旧动画。
+- 快速 hide/show 从当前 frame 继续滑向新目标，不重置速度，不执行旧隐藏 completion。
+- 新增回归测试覆盖 hide 动画中再次 show 后面板仍真实可见、监听仍存在、动画任务结束。
+
+## 面板快捷键快速切换防抖修正
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test --filter PanelRuntimeSeamTests
+swift run PasteFloating --exercise-panel-interactions
+swift test
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (2.44s)
+PanelRuntimeSeamTests: 11 tests passed
+panel smoke: panelInteractions=ok
+swift test: Test run with 116 tests passed after 1.494 seconds
+```
+
+覆盖点：
+
+- 面板快捷键防抖从 120ms 缩短为 40ms。
+- 继续过滤同一快捷键事件抖动和立即重复触发。
+- 新增 AppDelegate 级回归测试，覆盖 60ms 间隔的隐藏再显示，最终面板真实可见且动画任务结束。
+
+## 面板非激活聚焦策略验证
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+git diff --check -- Sources/PasteFloating/FloatingPanelController.swift Sources/PasteFloating/ApplicationRuntime.swift Tests/ClipboardPanelAppTests/PanelRuntimeSeamTests.swift .codex/operations-log.md .codex/testing.md verification.md
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (0.37s)
+swift test: Test run with 116 tests passed after 1.300 seconds
+panel smoke: panelInteractions=ok
+panel smoke: escapeHide=1
+panel smoke: command3Copy=panel-smoke-file
+git diff --check: no output
+```
+
+覆盖点：
+
+- `FloatingPanelController` 面板显示和聚焦路径不再调用 `NSApp.activate(ignoringOtherApps:)`。
+- 保留 `.nonactivatingPanel` 的 key window / first responder 设置，验证 Esc、Command+数字、双击复制等面板交互仍可工作。
+- `PreferencesUI` 中偏好设置和关于窗口仍保留主动激活，避免把普通配置窗口误改成非激活面板。
+
+## Paste 风格本地 Pinboard 固定功能
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+cargo fmt --all --manifest-path rust/Cargo.toml
+cargo test --manifest-path rust/Cargo.toml
+scripts/build-rust-core.sh
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+git diff --check -- rust/crates/clipboard_core/src/lib.rs rust/crates/clipboard_core/src/domain.rs rust/crates/clipboard_core/src/migrations.rs rust/crates/clipboard_core/src/storage.rs rust/crates/clipboard_core/src/storage/queries.rs rust/crates/clipboard_core/src/storage/preferences.rs rust/crates/clipboard_core/src/storage/tests.rs rust/crates/clipboard_core_ffi/src/lib.rs Sources/ClipboardPanelApp/RustCoreClient.swift Sources/ClipboardPanelApp/ClipboardListCoordinator.swift Sources/ClipboardPanelApp/PanelSceneController.swift Sources/ClipboardPanelApp/PanelViewState.swift Sources/ClipboardPanelApp/PanelContentController.swift Sources/ClipboardPanelApp/PanelInteractionController.swift Sources/PasteFloating/AppRuntime.swift Sources/PasteFloating/ApplicationRuntime.swift Sources/PasteFloating/PanelRuntimeAction.swift Sources/PasteFloating/PanelUIPrimitives.swift Sources/PasteFloating/QASupport.swift Tests/ClipboardPanelAppTests/RustCoreClientTests.swift Tests/ClipboardPanelAppTests/ClipboardListCoordinatorTests.swift Tests/ClipboardPanelAppTests/PanelInteractionControllerTests.swift Tests/ClipboardPanelAppTests/PanelViewStateTests.swift .codex/pinboard-mvc-design.md
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+cargo test: 26 passed
+scripts/build-rust-core.sh: Finished dev profile
+swift build: Build complete! (4.18s)
+swift test: Test run with 119 tests passed after 1.524 seconds
+panel smoke: panelInteractions=ok
+panel smoke: menuPin=panel-smoke-file:true
+panel smoke: typeFilter=image
+git diff --check: no output
+```
+
+覆盖点：
+
+- Rust migration v2 新增本地 Pinboard schema，并保留默认固定板 `default`。
+- 固定/取消固定语义从布尔置顶改为默认 Pinboard membership，`is_pinned` 继续作为展示缓存。
+- `clear_items` 与历史保留策略不会主动删除仍在 Pinboard 中的固定内容。
+- 手动删除会移除 Pinboard membership 并软删除条目。
+- Swift MVC 查询状态支持 `pinboardID`，面板顶部“固定”chip 可进入默认固定板。
+
+## 固定排序与右键菜单完整展示
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+cargo fmt --all --manifest-path rust/Cargo.toml
+cargo test --manifest-path rust/Cargo.toml
+scripts/build-rust-core.sh
+swift test
+swift run PasteFloating --exercise-panel-interactions
+git diff --check -- rust/crates/clipboard_core/src/storage/queries.rs rust/crates/clipboard_core/src/storage/tests.rs Sources/PasteFloating/AppRuntime.swift Sources/PasteFloating/QASupport.swift Tests/ClipboardPanelAppTests/RustCoreClientTests.swift Generated/ClipboardCoreBridge/RustXcframework.xcframework/macos-arm64/libclipboard_core_ffi.a .codex/operations-log.md .codex/testing.md verification.md
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+cargo test: 26 passed
+scripts/build-rust-core.sh: Finished dev profile
+swift test: Test run with 119 tests passed after 1.483 seconds
+panel smoke: panelInteractions=ok
+panel smoke: menuPin=panel-smoke-file:true
+git diff --check: no output
+```
+
+覆盖点：
+
+- 普通历史不再把固定内容放到最前，只按最近复制时间排序。
+- 默认 Pinboard 视图仍保留板内 `display_order` 排序。
+- 右键菜单始终完整展示“复制、删除、固定、取消固定、预览”。
+- 未固定条目启用“固定”、禁用“取消固定”；固定条目反向启用。
+
+## Paste 式 Pinboard 菜单替换固定逻辑
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+cargo fmt --all --manifest-path rust/Cargo.toml
+cargo test --manifest-path rust/Cargo.toml
+scripts/build-rust-core.sh
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+scripts/package-macos-app.sh
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+cargo test: 26 passed
+scripts/build-rust-core.sh: Finished dev profile
+swift build: Build complete! (4.52s)
+swift test: Test run with 119 tests passed after 1.355 seconds
+panel smoke: panelInteractions=ok
+panel smoke: menuPin=panel-smoke-file:default:true
+package: Packaged app: .codex/artifacts/ClipboardWorkbench.app
+packaged smoke: panelInteractions=ok, menuPin=panel-smoke-file:default:true
+git diff --check: no output
+```
+
+覆盖点：
+
+- 右键菜单从并列“固定/取消固定”改为 Paste 式“固定”父菜单，子菜单展示 Pinboard 列表。
+- 菜单 action 不再走旧 `setPinned` / `togglePinned`，改为 `setPinboardMembership(itemID:pinboardID:isMember:)`。
+- Rust FFI 移除旧 `set_item_pinned`，新增 `set_item_pinboard_membership`。
+- 卡片类型文案不再显示“固定 · 类型”，固定归属只通过 Pinboard 集合表达。
+- 顶部 Pinboard chip 从 Rust `listPinboards` 动态刷新，默认固定板仍使用 `default`。
+
+## Paste Pinboard 管理调研与 MVC 设计
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+plutil -p /Applications/Paste.app/Contents/Info.plist
+rg -n "pinboard|Pinboard|rename|color|delete|erase-history|reduce-history-limit|pin-to|manage-pinboards|create-pinboard" /Applications/Paste.app/Contents/Resources/en.lproj/Localizable.strings
+rg -n "Pinboard|pinboard|重命名|颜色|删除|固定|创建|管理" /Applications/Paste.app/Contents/Resources/zh-Hans.lproj/Localizable.strings
+sqlite3 "$HOME/Library/Containers/com.wiheads.paste/Data/Library/Application Support/Paste/db.sqlite" ".schema ZLISTENTITY"
+sqlite3 "$HOME/Library/Containers/com.wiheads.paste/Data/Library/Application Support/Paste/db.sqlite" ".schema ZITEMENTITY"
+rg -n "itemType|setTypeFilter|typeFilter|ClipboardItemType|selectedItemType|makeTypeFilterChip" Sources Tests rust/crates
+rg -n "pinboard|Pinboard|setItemPinned|listPinboards|pinboardID|pinboard_items|pinboards" Sources Tests rust/crates docs .codex
+```
+
+结果：通过，完成调研和架构设计；本轮未执行构建/测试，因为没有修改业务代码。
+
+产物：
+
+- `.codex/paste-pinboard-management-research-2026-05-11.md`
+- `.codex/pinboard-full-mvc-architecture-2026-05-11.md`
+
+结论：
+
+- Paste 的 Pinboard 管理包含创建、重命名、颜色、删除、固定到、清理保护和删除确认。
+- 当前应用需要删除的是类型筛选功能链路，不是内容类型模型。
+- 后续实施需新增 Pinboard CRUD、颜色字段、删除事务，并删除 `itemType` 查询链路和顶部类型 chip。
+
+## Paste 式完整 Pinboard 管理实现
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+cargo test --manifest-path rust/Cargo.toml
+swift test
+swift run PasteFloating --exercise-panel-interactions
+scripts/package-macos-app.sh
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions
+git diff --check
+rg "TypeFilterChipButton|listsItemsWithSearchAndTypeFiltersThroughSwiftBridgeBinding|selectedItemType|setTypeFilter|stateBySettingTypeFilter" Sources/ClipboardPanelApp Sources/PasteFloating Tests/ClipboardPanelAppTests
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+cargo test: 27 passed
+swift test: Test run with 121 tests passed after 1.459 seconds
+panel smoke: panelInteractions=ok
+panel smoke: categoryFilter=removed
+panel smoke: menuPin=panel-smoke-file:default:true
+package: Packaged app: .codex/artifacts/ClipboardWorkbench.app
+packaged smoke: panelInteractions=ok, categoryFilter=removed, menuPin=panel-smoke-file:default:true
+git diff --check: no output
+rg legacy type filter names: no output
+```
+
+覆盖点：
+
+- Pinboard CRUD：创建、重命名、上色、删除均通过 Rust core / FFI / Swift bridge 链路。
+- 删除 Pinboard：删除板内 membership，软删除不再属于任何活动 Pinboard 的内容，保留仍属于其他 Pinboard 的内容。
+- 固定保护：保留天数、最大历史条数、清空历史不会主动删除 Pinboard 内容。
+- 分类删除：顶部类型分类 chip 和 Swift `itemType` 查询链路已移除；内容类型模型仍用于采集、卡片、预览和粘贴。
+- UI 管理入口：更多菜单展示创建、重命名、颜色、删除；右键“固定”菜单展示 Pinboard 列表。
+
+## Pinboard 管理入口显性化
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+scripts/package-macos-app.sh
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete!
+swift test: Test run with 121 tests passed
+panel smoke: panelInteractions=ok
+panel smoke: categoryFilter=removed
+panel smoke: menuPin=panel-smoke-file:default:true
+package: Packaged app: .codex/artifacts/ClipboardWorkbench.app
+codesign: no output
+packaged smoke: panelInteractions=ok
+```
+
+覆盖点：
+
+- 工具栏 `+` 直接作为“创建 Pinboard”入口。
+- 右侧 ellipsis tooltip 改为“管理 Pinboard”。
+- Pinboard chip 右键菜单展示“重命名 Pinboard… / 颜色 / 删除 Pinboard…”。
+- 面板交互 smoke 新增断言，防止这些入口再次被隐藏到不可发现的位置。
+
+## Pinboard 删除卡顿优化
+
+日期：2026-05-11
+
+执行者：Codex
+
+命令：
+
+```bash
+cargo fmt --all --manifest-path rust/Cargo.toml
+cargo test --manifest-path rust/Cargo.toml
+scripts/build-rust-core.sh
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+scripts/package-macos-app.sh
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+cargo test: 28 passed
+bulk delete regression: 120 item Pinboard delete passed
+swift build: Build complete
+swift test: Test run with 121 tests passed
+panel smoke: panelInteractions=ok
+package: Packaged app: .codex/artifacts/ClipboardWorkbench.app
+codesign: no output
+packaged smoke: panelInteractions=ok
+git diff --check: no output
+```
+
+覆盖点：
+
+- Rust 删除 Pinboard 不再按 item 循环执行删除判断，改为批量 SQL。
+- 仅属于被删除 Pinboard 的内容会被软删除；仍属于其他活动 Pinboard 的内容会保留。
+- 删除当前选中 Pinboard 时，不再先触发一次完整历史查询，避免删除任务排队。
+- Pinboard mutation 开始时立即显示进行中状态，降低用户感知卡顿。

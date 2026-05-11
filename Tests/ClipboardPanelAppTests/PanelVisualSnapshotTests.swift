@@ -143,14 +143,13 @@ private final class PanelSnapshotFixtureView: NSView {
 
         let chips: [(String, NSColor?)] = [
             ("剪贴板", nil),
-            ("文本", NSColor(deviceRed: 0.23, green: 0.50, blue: 0.92, alpha: 1)),
-            ("链接", NSColor(deviceRed: 0.58, green: 0.27, blue: 0.88, alpha: 1)),
-            ("图片", NSColor(deviceRed: 0.18, green: 0.65, blue: 0.36, alpha: 1)),
-            ("文件", NSColor(deviceRed: 0.95, green: 0.58, blue: 0.16, alpha: 1))
+            ("固定", NSColor(deviceRed: 0.94, green: 0.33, blue: 0.30, alpha: 1)),
+            ("AI", NSColor(deviceRed: 0.98, green: 0.72, blue: 0.00, alpha: 1)),
+            ("资料", NSColor(deviceRed: 0.71, green: 0.39, blue: 0.88, alpha: 1))
         ]
         var x: CGFloat = 432
         for (index, chip) in chips.enumerated() {
-            let width: CGFloat = index == 0 ? 76 : 62
+            let width: CGFloat = index == 0 ? 76 : 66
             drawRoundedRect(
                 NSRect(x: x, y: 30, width: width, height: 30),
                 color: index == 0 ? NSColor(deviceWhite: 1, alpha: 0.42) : NSColor(deviceWhite: 1, alpha: 0.26),

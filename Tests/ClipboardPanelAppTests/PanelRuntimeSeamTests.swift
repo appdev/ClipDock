@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import Testing
-@testable import PasteFloatingDemo
+@testable import PasteFloating
 @testable import ClipboardPanelApp
 
 struct PanelRuntimeSeamTests {
@@ -33,6 +33,116 @@ struct PanelRuntimeSeamTests {
             mouseLocation: CGPoint(x: controller.smokePanelFrame.maxX + 40, y: controller.smokePanelFrame.midY)
         )
         #expect(await waitForMainActor { !controller.isVisible && !controller.smokeHasOutsideClickMonitoring })
+    }
+
+    @Test
+    @MainActor
+    func floatingPanelControllerUsesBottomEdgeAnimationGeometry() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        controller.show()
+
+        #expect(await waitForMainActor { controller.isVisible })
+        #expect(controller.smokePanelAlphaValue == 1)
+        let shownFrame = controller.smokePanelFrame
+        let entranceFrame = controller.smokeEntranceAnimationFrame
+        let hiddenFrame = controller.smokeHiddenAnimationFrame
+
+        #expect(entranceFrame.minY < shownFrame.minY)
+        #expect(entranceFrame.maxY < shownFrame.minY)
+        #expect(entranceFrame.width == shownFrame.width)
+        #expect(entranceFrame.height == shownFrame.height)
+        #expect(hiddenFrame.minY < shownFrame.minY)
+        #expect(hiddenFrame.maxY < shownFrame.minY)
+        #expect(hiddenFrame.width == shownFrame.width)
+        #expect(hiddenFrame.height == shownFrame.height)
+
+        controller.hide()
+        #expect(!controller.isVisible)
+        #expect(controller.smokePanelAlphaValue == 1)
+    }
+
+    @Test
+    @MainActor
+    func floatingPanelControllerSurvivesRapidHideShowToggleDuringAnimation() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        controller.show()
+        try? await Task.sleep(nanoseconds: 40_000_000)
+
+        controller.hide()
+        try? await Task.sleep(nanoseconds: 40_000_000)
+
+        controller.show()
+        try? await Task.sleep(nanoseconds: 260_000_000)
+
+        #expect(controller.isVisible)
+        #expect(controller.smokePanelIsActuallyVisible)
+        #expect(!controller.smokeHasActivePanelAnimation)
+        #expect(controller.smokeHasOutsideClickMonitoring)
+        #expect(controller.smokePanelAlphaValue == 1)
+    }
+
+    @Test
+    @MainActor
+    func hidingPanelRestoresPreviouslyFocusedApplication() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let previousApplication = StubFocusApplication(
+            processIdentifier: 42_001,
+            bundleIdentifier: "com.example.editor"
+        )
+        let provider = StubFocusApplicationProvider(frontmostApplication: previousApplication)
+        let controller = FloatingPanelController(
+            focusApplicationProvider: provider,
+            mainBundleIdentifier: "com.example.paste"
+        )
+
+        controller.show()
+        provider.frontmostApplication = StubFocusApplication(
+            processIdentifier: 42_002,
+            bundleIdentifier: "com.example.browser"
+        )
+
+        controller.hide()
+
+        #expect(!controller.isVisible)
+        #expect(previousApplication.activateCount == 1)
+        #expect(provider.frontmostApplication?.activateCount == 0)
+    }
+
+    @Test
+    @MainActor
+    func outsideClickHideDoesNotStealFocusBackFromClickedApplication() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let previousApplication = StubFocusApplication(
+            processIdentifier: 42_101,
+            bundleIdentifier: "com.example.editor"
+        )
+        let controller = FloatingPanelController(
+            focusApplicationProvider: StubFocusApplicationProvider(frontmostApplication: previousApplication),
+            mainBundleIdentifier: "com.example.paste"
+        )
+
+        controller.show()
+        controller.smokeHandleOutsideMouseDown(
+            eventWindowIsPanel: false,
+            mouseLocation: CGPoint(x: controller.smokePanelFrame.maxX + 40, y: controller.smokePanelFrame.midY)
+        )
+
+        #expect(!controller.isVisible)
+        #expect(previousApplication.activateCount == 0)
     }
 
     @Test
@@ -97,6 +207,40 @@ struct PanelRuntimeSeamTests {
 
         delegate.smokeResignActiveForRealFunctionQA()
         #expect(await waitForMainActor { !delegate.smokePanelIsVisibleForRealFunctionQA })
+    }
+
+    @Test
+    @MainActor
+    func appRuntimeAcceptsFastIntentionalHideShowToggles() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let delegate = AppDelegate()
+        delegate.smokeTogglePanelForRealFunctionQA()
+        #expect(await waitForMainActor { delegate.smokePanelIsVisibleForRealFunctionQA })
+
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        delegate.smokeTogglePanelForRealFunctionQA()
+        #expect(await waitForMainActor { !delegate.smokePanelIsVisibleForRealFunctionQA })
+
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        delegate.smokeTogglePanelForRealFunctionQA()
+        try? await Task.sleep(nanoseconds: 260_000_000)
+
+        #expect(delegate.smokePanelIsVisibleForRealFunctionQA)
+        #expect(delegate.smokePanelControllerForRealFunctionQA.smokePanelIsActuallyVisible)
+        #expect(!delegate.smokePanelControllerForRealFunctionQA.smokeHasActivePanelAnimation)
+    }
+
+    @Test
+    @MainActor
+    func appRuntimeKeepsPanelHiddenForDefaultInitialPresentation() async throws {
+        let delegate = AppDelegate()
+
+        delegate.smokeApplyInitialPresentationForRealFunctionQA(arguments: ["PasteFloating"])
+
+        #expect(!delegate.smokePanelIsVisibleForRealFunctionQA)
     }
 
     @Test
@@ -200,4 +344,35 @@ private func waitForMainActor(
         try? await Task.sleep(nanoseconds: 5_000_000)
     }
     return condition()
+}
+
+@MainActor
+private final class StubFocusApplication: PanelFocusApplication {
+    let processIdentifier: pid_t
+    let bundleIdentifier: String?
+    var isTerminated = false
+    private(set) var activateCount = 0
+
+    init(processIdentifier: pid_t, bundleIdentifier: String?) {
+        self.processIdentifier = processIdentifier
+        self.bundleIdentifier = bundleIdentifier
+    }
+
+    func activateForPanelFocusRestore() -> Bool {
+        activateCount += 1
+        return true
+    }
+}
+
+@MainActor
+private final class StubFocusApplicationProvider: PanelFocusApplicationProviding {
+    var frontmostApplication: StubFocusApplication?
+
+    init(frontmostApplication: StubFocusApplication?) {
+        self.frontmostApplication = frontmostApplication
+    }
+
+    func frontmostPanelFocusApplication() -> PanelFocusApplication? {
+        frontmostApplication
+    }
 }

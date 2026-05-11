@@ -3,6 +3,7 @@
 DerivedData/
 *.xcuserstate
 rust/target/
+Generated/ClipboardCoreBridge/RustXcframework.xcframework/
 .DS_Store
 .codex/artifacts/*.app/
 .codex/artifacts/panel-interaction-smoke/

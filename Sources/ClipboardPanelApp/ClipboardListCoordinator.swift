@@ -3,26 +3,26 @@ import Foundation
 public struct ClipboardListQuery: Equatable, Sendable {
     public let limit: Int64
     public let offset: Int64
-    public let itemType: String?
     public let sourceAppID: String?
+    public let pinboardID: String?
     public let normalizedSearch: String
 
     public init(
         limit: Int64,
         offset: Int64,
-        itemType: String?,
         sourceAppID: String?,
+        pinboardID: String?,
         normalizedSearch: String
     ) {
         self.limit = limit
         self.offset = offset
-        self.itemType = itemType
         self.sourceAppID = sourceAppID
+        self.pinboardID = pinboardID
         self.normalizedSearch = normalizedSearch
     }
 
     public var isFiltered: Bool {
-        itemType != nil || sourceAppID != nil || !normalizedSearch.isEmpty
+        sourceAppID != nil || pinboardID != nil || !normalizedSearch.isEmpty
     }
 }
 
@@ -43,15 +43,24 @@ public struct ClipboardListUpdate: Sendable {
 }
 
 public enum ClipboardItemMutationRequest: Sendable, Equatable {
-    case setPinned(itemID: String, isPinned: Bool)
+    case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
     case delete(itemID: String)
-    case clear(itemType: String?, sourceAppID: String?, normalizedSearch: String)
+    case clear(sourceAppID: String?, normalizedSearch: String)
+}
+
+public enum ClipboardPinboardMutationRequest: Sendable, Equatable {
+    case create(title: String, colorCode: Int64)
+    case rename(pinboardID: String, title: String)
+    case updateColor(pinboardID: String, colorCode: Int64)
+    case delete(pinboardID: String)
 }
 
 public typealias ClipboardListPageLoader =
     @Sendable (ClipboardListQuery) async -> Result<RustCoreListResult, RustCoreError>
 public typealias ClipboardItemMutationPerformer =
     @Sendable (ClipboardItemMutationRequest) async -> Result<RustItemManagementResult, RustCoreError>
+public typealias ClipboardPinboardMutationPerformer =
+    @Sendable (ClipboardPinboardMutationRequest) async -> Result<RustItemManagementResult, RustCoreError>
 
 public actor ClipboardCoreDatabaseWorker {
     public init() {}
@@ -65,8 +74,8 @@ public actor ClipboardCoreDatabaseWorker {
             appSupportDirectory: appSupportURL,
             limit: query.limit,
             offset: query.offset,
-            itemType: query.itemType,
             sourceAppId: query.sourceAppID,
+            pinboardId: query.pinboardID,
             searchText: query.normalizedSearch.isEmpty ? nil : query.normalizedSearch
         )
     }
@@ -77,22 +86,57 @@ public actor ClipboardCoreDatabaseWorker {
         mutation: ClipboardItemMutationRequest
     ) -> Result<RustItemManagementResult, RustCoreError> {
         switch mutation {
-        case .setPinned(let itemID, let isPinned):
-            client.setItemPinned(
+        case .setPinboardMembership(let itemID, let pinboardID, let isMember):
+            client.setItemPinboardMembership(
                 appSupportDirectory: appSupportURL,
                 itemId: itemID,
-                isPinned: isPinned
+                pinboardId: pinboardID,
+                isMember: isMember
             )
 
         case .delete(let itemID):
             client.deleteItem(appSupportDirectory: appSupportURL, itemId: itemID)
 
-        case .clear(let itemType, let sourceAppID, let normalizedSearch):
+        case .clear(let sourceAppID, let normalizedSearch):
             client.clearItems(
                 appSupportDirectory: appSupportURL,
-                itemType: itemType,
                 sourceAppId: sourceAppID,
                 searchText: normalizedSearch.isEmpty ? nil : normalizedSearch
+            )
+        }
+    }
+
+    public func performPinboardMutation(
+        client: RustCoreClient,
+        appSupportURL: URL,
+        mutation: ClipboardPinboardMutationRequest
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        switch mutation {
+        case .create(let title, let colorCode):
+            client.createPinboard(
+                appSupportDirectory: appSupportURL,
+                title: title,
+                colorCode: colorCode
+            )
+
+        case .rename(let pinboardID, let title):
+            client.renamePinboard(
+                appSupportDirectory: appSupportURL,
+                pinboardId: pinboardID,
+                title: title
+            )
+
+        case .updateColor(let pinboardID, let colorCode):
+            client.updatePinboardColor(
+                appSupportDirectory: appSupportURL,
+                pinboardId: pinboardID,
+                colorCode: colorCode
+            )
+
+        case .delete(let pinboardID):
+            client.deletePinboard(
+                appSupportDirectory: appSupportURL,
+                pinboardId: pinboardID
             )
         }
     }
@@ -109,6 +153,7 @@ public final class ClipboardListCoordinator {
     public var onListUpdate: ((ClipboardListUpdate) -> Void)?
     public var onLoadingMoreChanged: ((Bool) -> Void)?
     public var onStatusTextChanged: ((String) -> Void)?
+    public var onMutationCompleted: ((ClipboardItemMutationRequest, RustItemManagementResult) -> Void)?
 
     private let pageSize: Int64
     private let debounceNanoseconds: UInt64
@@ -117,8 +162,8 @@ public final class ClipboardListCoordinator {
     private let mutationPerformer: ClipboardItemMutationPerformer
 
     private var currentSearchText = ""
-    private var currentItemType: String?
     private var currentSourceAppID: String?
+    private var currentPinboardID: String?
     private var listRefreshGeneration = 0
     private var pendingListRefreshTask: Task<Void, Never>?
     private var pendingPrefetchTask: Task<Void, Never>?
@@ -154,13 +199,13 @@ public final class ClipboardListCoordinator {
 
     public func updateQuery(
         searchText: String,
-        itemType: String?,
         sourceAppID: String?,
+        pinboardID: String? = nil,
         debounce: Bool = true
     ) {
         currentSearchText = searchText
-        currentItemType = itemType
         currentSourceAppID = sourceAppID
+        currentPinboardID = pinboardID
         refresh(debounce: debounce)
     }
 
@@ -259,6 +304,7 @@ public final class ClipboardListCoordinator {
             switch result {
             case .success(let mutationResult):
                 self.onStatusTextChanged?(self.statusText(for: mutation, result: mutationResult))
+                self.onMutationCompleted?(mutation, mutationResult)
                 self.refresh()
 
             case .failure(let error):
@@ -273,8 +319,8 @@ public final class ClipboardListCoordinator {
         totalCount: Int64
     ) {
         currentSearchText = ""
-        currentItemType = nil
         currentSourceAppID = nil
+        currentPinboardID = nil
         listRefreshGeneration += 1
         pendingListRefreshTask?.cancel()
         pendingListRefreshTask = nil
@@ -314,8 +360,8 @@ public final class ClipboardListCoordinator {
         ClipboardListQuery(
             limit: limit,
             offset: offset,
-            itemType: currentItemType,
             sourceAppID: currentSourceAppID,
+            pinboardID: currentPinboardID,
             normalizedSearch: currentSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
@@ -400,8 +446,8 @@ public final class ClipboardListCoordinator {
     }
 
     private func isCurrentListFiltered() -> Bool {
-        currentItemType != nil
-            || currentSourceAppID != nil
+        currentSourceAppID != nil
+            || currentPinboardID != nil
             || !currentSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -445,9 +491,9 @@ public final class ClipboardListCoordinator {
         result: RustItemManagementResult
     ) -> String {
         switch mutation {
-        case .setPinned(_, let isPinned):
+        case .setPinboardMembership(_, _, let isMember):
             return result.affectedCount > 0
-                ? (isPinned ? "条目：已固定" : "条目：已取消固定")
+                ? (isMember ? "Pinboard：已加入" : "Pinboard：已移除")
                 : "条目：未找到"
 
         case .delete:

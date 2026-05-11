@@ -107,4 +107,15 @@ impl ClipboardCore {
         }
         app
     }
+
+    fn normalize_pinboard_id(pinboard_id: impl AsRef<str>) -> String {
+        let trimmed = pinboard_id.as_ref().trim();
+        if trimmed.is_empty() {
+            DEFAULT_PINBOARD_ID.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
 }
+
+pub(crate) const DEFAULT_PINBOARD_ID: &str = "default";
