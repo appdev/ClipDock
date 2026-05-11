@@ -5,27 +5,29 @@ cd "$(dirname "$0")/.."
 
 version="${APP_VERSION:-0.1.0}"
 build="${APP_BUILD:-1}"
+app_bundle_name="${APP_BUNDLE_NAME:-ClipboardWorkbench}"
+bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipboardWorkbenchApp}"
 artifact_root="${RELEASE_DIR:-.codex/artifacts/release/$version}"
-app_path="$artifact_root/PasteFloatingDemo.app"
-zip_path="$artifact_root/PasteFloatingDemo-$version.zip"
-dmg_path="$artifact_root/PasteFloatingDemo-$version.dmg"
+app_path="$artifact_root/${app_bundle_name}.app"
+zip_path="$artifact_root/${app_bundle_name}-$version.zip"
+dmg_path="$artifact_root/${app_bundle_name}-$version.dmg"
 checksums_path="$artifact_root/SHA256SUMS"
-manifest_path="$artifact_root/release-manifest.txt"
+manifest_path="$artifact_root/${app_bundle_name}-release-manifest.txt"
 
 case "$artifact_root" in
     /*) ;;
     *) artifact_root="$(pwd)/$artifact_root" ;;
 esac
 
-app_path="$artifact_root/PasteFloatingDemo.app"
-zip_path="$artifact_root/PasteFloatingDemo-$version.zip"
-dmg_path="$artifact_root/PasteFloatingDemo-$version.dmg"
+app_path="$artifact_root/${app_bundle_name}.app"
+zip_path="$artifact_root/${app_bundle_name}-$version.zip"
+dmg_path="$artifact_root/${app_bundle_name}-$version.dmg"
 checksums_path="$artifact_root/SHA256SUMS"
-manifest_path="$artifact_root/release-manifest.txt"
+manifest_path="$artifact_root/${app_bundle_name}-release-manifest.txt"
 
 mkdir -p "$artifact_root"
 
-APP_VERSION="$version" APP_BUILD="$build" scripts/package-macos-app.sh "$app_path"
+APP_VERSION="$version" APP_BUILD="$build" APP_BUNDLE_NAME="$app_bundle_name" APP_EXECUTABLE_NAME="$bundle_executable_name" scripts/package-macos-app.sh "$app_path"
 
 rm -f "$zip_path" "$dmg_path" "$checksums_path" "$manifest_path"
 
@@ -77,16 +79,17 @@ fi
 
 (
     cd "$artifact_root"
-    shasum -a 256 "PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo" "PasteFloatingDemo-$version.zip" > "$checksums_path"
-    if [[ -f "PasteFloatingDemo-$version.dmg" ]]; then
-        shasum -a 256 "PasteFloatingDemo-$version.dmg" >> "$checksums_path"
+    shasum -a 256 "${app_bundle_name}.app/Contents/MacOS/${bundle_executable_name}" "${app_bundle_name}-$version.zip" > "$checksums_path"
+    if [[ -f "${app_bundle_name}-$version.dmg" ]]; then
+        shasum -a 256 "${app_bundle_name}-$version.dmg" >> "$checksums_path"
     fi
 )
 
 {
-    printf 'name=PasteFloatingDemo\n'
+    printf 'name=%s\n' "$app_bundle_name"
     printf 'version=%s\n' "$version"
     printf 'build=%s\n' "$build"
+    printf 'bundle_executable=%s\n' "$bundle_executable_name"
     printf 'bundle=%s\n' "$app_path"
     printf 'zip=%s\n' "$zip_path"
     if [[ -f "$dmg_path" ]]; then

@@ -4,6 +4,12 @@ import Testing
 
 struct RustCoreClientTests {
     @Test
+    func rustCoreClientIsSendable() {
+        func requireSendable<T: Sendable>(_: T.Type) {}
+        requireSendable(RustCoreClient.self)
+    }
+
+    @Test
     func opensRustCoreThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -659,6 +665,38 @@ struct RustCoreClientTests {
         #expect(preview.sourceAppName == "TextEdit")
         #expect(preview.body.contains("Preview body second line"))
         #expect(preview.imageURL == nil)
+    }
+
+    @Test
+    func plansTextPreviewContentFromPrimaryTextWhenSummaryIsTruncated() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+        let longText = Array(repeating: "Preview body should use the complete primary text instead of the truncated summary.", count: 12)
+            .joined(separator: "\n")
+
+        _ = try client.captureText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureTextRequest(
+                text: longText,
+                sourceBundleId: "com.apple.TextEdit",
+                sourceAppName: "TextEdit",
+                sourceBundlePath: "/System/Applications/TextEdit.app",
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 7
+            )
+        ).get()
+        let item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+
+        let preview = ClipboardPreviewContentPlanner.preview(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(item.summary.count < longText.count)
+        #expect(item.primaryText == longText)
+        #expect(preview.body == longText)
     }
 
     @Test

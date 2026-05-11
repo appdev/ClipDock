@@ -1,0 +1,193 @@
+import Testing
+@testable import ClipboardPanelApp
+
+struct PanelInteractionControllerTests {
+    @Test
+    func setSearchTextEmitsTrimmedQueryAction() {
+        let controller = PanelInteractionController()
+
+        let result = controller.dispatch(.setSearchText("  report  "))
+
+        #expect(result.viewState.toolbar.searchText == "report")
+        #expect(result.effects == [
+            .external(.queryChanged(searchText: "report", itemType: nil, sourceAppID: nil))
+        ])
+        #expect(!result.shouldSyncToolbar)
+    }
+
+    @Test
+    func selectionActionClosesPreviewAndRequestsSelectionRefresh() {
+        let items = [makePanelInteractionItem(id: "a"), makePanelInteractionItem(id: "b")]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(selectedItemID: "a")
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 2,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.selectOffset(1))
+
+        #expect(result.viewState.selectedItemID == "b")
+        #expect(result.effects == [
+            .preview(.close),
+            .selectionChanged(scrollIntoView: true)
+        ])
+    }
+
+    @Test
+    func scrollActionUpdatesCommandHintsAndRequestsLoadMore() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(
+                    selectedItemID: "a",
+                    isCommandHintModeEnabled: true
+                )
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 6,
+                hasMoreItems: true,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.didScroll(
+            visibleCommandItemIDs: ["a", "b", "c"],
+            reachedLoadMoreThreshold: true
+        ))
+
+        #expect(result.effects == [
+            .commandHints(["a": "1", "b": "2", "c": "3"]),
+            .external(.loadMore)
+        ])
+        #expect(controller.isLoadingMoreItems)
+    }
+
+    @Test
+    func commandCopyClearsHintsAndEmitsCopyAction() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(
+                    selectedItemID: "a",
+                    isCommandHintModeEnabled: true
+                )
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 3,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.copyCommandItem(
+            number: 2,
+            visibleItemIDs: ["a", "b", "c"]
+        ))
+
+        #expect(result.viewState.selectedItemID == "b")
+        #expect(!result.viewState.isCommandHintModeEnabled)
+        #expect(result.effects == [
+            .commandHints([:]),
+            .preview(.close),
+            .external(.copyItem(itemID: "b"))
+        ])
+    }
+
+    @Test
+    func managementPreviewUsesActionBoundaryInsteadOfExternalMutation() {
+        let items = [makePanelInteractionItem(id: "a"), makePanelInteractionItem(id: "b")]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(selectedItemID: "a")
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 2,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.management(
+            itemID: "b",
+            action: .preview
+        ))
+
+        #expect(result.viewState.selectedItemID == "b")
+        #expect(result.effects == [
+            .selectionChanged(scrollIntoView: false),
+            .preview(.show(itemID: "b"))
+        ])
+    }
+
+    @Test
+    func escapeClearsSearchAndEmitsUpdatedQuery() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "report",
+                    itemType: "file",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.escape(isPreviewShown: false))
+
+        #expect(result.viewState.toolbar.searchText.isEmpty)
+        #expect(result.effects == [
+            .external(.queryChanged(searchText: "", itemType: "file", sourceAppID: nil))
+        ])
+        #expect(result.shouldSyncToolbar)
+    }
+}
+
+private func makePanelInteractionController(
+    sceneState: PanelSceneState = PanelSceneState(),
+    listViewState: PanelListViewState = PanelListViewState()
+) -> PanelInteractionController {
+    PanelInteractionController(
+        contentController: PanelContentController(
+            sceneStore: PanelSceneRuntimeController(state: sceneState),
+            listViewState: listViewState
+        )
+    )
+}
+
+private func makePanelInteractionItem(id: String) -> RustClipboardItemSummary {
+    RustClipboardItemSummary(
+        id: id,
+        itemType: "text",
+        summary: id,
+        primaryText: id,
+        contentHash: id,
+        sourceAppId: nil,
+        sourceAppName: nil,
+        sourceAppIconPath: nil,
+        previewAssetPath: nil,
+        payloadAssetPath: nil,
+        sourceConfidence: "high",
+        firstCopiedAtMs: 1,
+        lastCopiedAtMs: 1,
+        copyCount: 1,
+        isPinned: false,
+        sizeBytes: 1,
+        previewState: "ready"
+    )
+}

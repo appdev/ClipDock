@@ -7,3 +7,4 @@ rust/target/
 .codex/artifacts/*.app/
 .codex/artifacts/panel-interaction-smoke/
 .codex/artifacts/release/
+.codex/telegram.env

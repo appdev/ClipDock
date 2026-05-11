@@ -107,27 +107,11 @@ public enum ClipboardPreviewContentPlanner {
     ) -> URL? {
         guard item.itemType == "image" else { return nil }
 
-        for path in [item.previewAssetPath, item.payloadAssetPath]
-            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) }) where !path.isEmpty {
-            let url = resolvedURL(for: path, appSupportDirectory: appSupportDirectory)
-            if fileManager.fileExists(atPath: url.path) {
-                return url
-            }
-        }
-
-        return nil
-    }
-
-    private static func resolvedURL(for path: String, appSupportDirectory: URL) -> URL {
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-
-        if path.hasPrefix("~/") {
-            return URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
-        }
-
-        return appSupportDirectory.appendingPathComponent(path)
+        return ClipboardAssetPathResolver.firstExistingURL(
+            for: [item.previewAssetPath, item.payloadAssetPath],
+            appSupportDirectory: appSupportDirectory,
+            fileManager: fileManager
+        )
     }
 
     private static func hostName(from text: String) -> String? {

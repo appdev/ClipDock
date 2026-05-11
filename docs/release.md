@@ -6,7 +6,7 @@
 
 ## 目标
 
-本文件记录当前 macOS 本地发布流程。它用于把已验证的 SwiftPM/AppKit demo 打成可分发候选产物，并为后续 Developer ID 签名、公证、安装器和自动更新留出清晰入口。
+本文件记录当前 macOS 本地发布流程。它用于把已验证的 SwiftPM/AppKit 剪贴板工作台构建打成可分发候选产物，并为后续 Developer ID 签名、公证、安装器和自动更新留出清晰入口。
 
 ## 本地候选发布
 
@@ -24,19 +24,21 @@ scripts/release-macos.sh
 
 默认产物：
 
-- `PasteFloatingDemo.app`
-- `PasteFloatingDemo-0.1.0.zip`
-- `PasteFloatingDemo-0.1.0.dmg`
+- `ClipboardWorkbench.app`
+- `ClipboardWorkbench-0.1.0.zip`
+- `ClipboardWorkbench-0.1.0.dmg`
 - `SHA256SUMS`
-- `release-manifest.txt`
+- `ClipboardWorkbench-release-manifest.txt`
+
+说明：当前发布脚本默认已经切换到正式产物名 `ClipboardWorkbench*`。兼容期内保留的是源码运行和 QA 命令中的旧 executable product 名 `PasteFloatingDemo`，用于避免打断既有自动化入口。
 
 ## 可配置参数
 
 ```bash
 APP_VERSION=0.1.0 \
 APP_BUILD=1 \
-BUNDLE_IDENTIFIER=dev.codex.clipboard-workbench-demo \
-APP_DISPLAY_NAME=剪贴板工作台 \
+BUNDLE_IDENTIFIER=dev.codex.clipboard-workbench \
+APP_DISPLAY_NAME=ClipboardWorkbench \
 CODESIGN_IDENTITY=- \
 scripts/release-macos.sh
 ```
@@ -46,6 +48,8 @@ scripts/release-macos.sh
 - `CODESIGN_IDENTITY=-` 表示 ad-hoc 签名，适合本地开发候选包。
 - 正式发布应设置为 `Developer ID Application: ...`。
 - `RELEASE_DIR` 可覆盖输出目录。
+- `APP_BUNDLE_NAME` 与 `APP_EXECUTABLE_NAME` 可覆盖默认 bundle 名和包内可执行文件名。
+- `BUNDLE_IDENTIFIER` 默认已切换到 `dev.codex.clipboard-workbench`。
 
 ## 公证入口
 
@@ -67,11 +71,13 @@ scripts/release-macos.sh
 
 ```bash
 scripts/release-macos.sh
-.codex/artifacts/release/0.1.0/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics
-codesign --verify --deep --strict .codex/artifacts/release/0.1.0/PasteFloatingDemo.app
+.codex/artifacts/release/0.1.0/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+codesign --verify --deep --strict .codex/artifacts/release/0.1.0/ClipboardWorkbench.app
 (cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)
-hdiutil imageinfo .codex/artifacts/release/0.1.0/PasteFloatingDemo-0.1.0.dmg
+hdiutil imageinfo .codex/artifacts/release/0.1.0/ClipboardWorkbench-0.1.0.dmg
 ```
+
+说明：发布校验链路已经默认切换到 `ClipboardWorkbench` bundle 和 `ClipboardWorkbenchApp` 包内可执行文件；兼容期内保留的旧名称主要用于 `swift run PasteFloatingDemo ...` 这类源码态 QA 入口。
 
 ## 遗留风险
 

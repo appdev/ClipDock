@@ -47,15 +47,11 @@ public enum ClipboardPastePayloadPlanner {
         appSupportDirectory: URL,
         fileManager: FileManager
     ) -> URL? {
-        for path in [item.payloadAssetPath, item.previewAssetPath]
-            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) }) where !path.isEmpty {
-            let url = resolvedURL(for: path, appSupportDirectory: appSupportDirectory)
-            if fileManager.fileExists(atPath: url.path) {
-                return url
-            }
-        }
-
-        return nil
+        ClipboardAssetPathResolver.firstExistingURL(
+            for: [item.payloadAssetPath, item.previewAssetPath],
+            appSupportDirectory: appSupportDirectory,
+            fileManager: fileManager
+        )
     }
 
     private static func fileURLs(
@@ -71,7 +67,12 @@ public enum ClipboardPastePayloadPlanner {
             .map(String.init) ?? []
 
         return paths
-            .map { resolvedURL(for: $0, appSupportDirectory: appSupportDirectory) }
+            .map {
+                ClipboardAssetPathResolver.resolvedURL(
+                    for: $0,
+                    appSupportDirectory: appSupportDirectory
+                )
+            }
             .filter { fileManager.fileExists(atPath: $0.path) }
     }
 
@@ -79,9 +80,13 @@ public enum ClipboardPastePayloadPlanner {
         for item: RustClipboardItemSummary,
         appSupportDirectory: URL
     ) -> [String]? {
-        for path in [item.payloadAssetPath, item.previewAssetPath]
-            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) }) where !path.isEmpty {
-            let url = resolvedURL(for: path, appSupportDirectory: appSupportDirectory)
+        for path in ClipboardAssetPathResolver.normalizedPaths(
+            from: [item.payloadAssetPath, item.previewAssetPath]
+        ) {
+            let url = ClipboardAssetPathResolver.resolvedURL(
+                for: path,
+                appSupportDirectory: appSupportDirectory
+            )
             guard let data = try? Data(contentsOf: url),
                   let document = try? JSONDecoder().decode(FileSnapshotDocument.self, from: data),
                   !document.paths.isEmpty
@@ -92,18 +97,6 @@ public enum ClipboardPastePayloadPlanner {
         }
 
         return nil
-    }
-
-    private static func resolvedURL(for path: String, appSupportDirectory: URL) -> URL {
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-
-        if path.hasPrefix("~/") {
-            return URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
-        }
-
-        return appSupportDirectory.appendingPathComponent(path)
     }
 }
 

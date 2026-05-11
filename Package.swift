@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "PasteFloatingDemo",
+    name: "ClipboardWorkbench",
     platforms: [
         .macOS(.v13)
     ],
@@ -11,6 +11,10 @@ let package = Package(
         .library(
             name: "ClipboardPanelApp",
             targets: ["ClipboardPanelApp"]
+        ),
+        .executable(
+            name: "ClipboardWorkbenchApp",
+            targets: ["PasteFloatingDemo"]
         ),
         .executable(
             name: "PasteFloatingDemo",
@@ -37,6 +41,7 @@ let package = Package(
                 "Sources/PasteFloatingDemo",
                 "Tests",
                 "README.md",
+                "AGENTS.md",
                 "verification.md",
                 "Package.swift"
             ],
@@ -50,7 +55,10 @@ let package = Package(
         ),
         .testTarget(
             name: "ClipboardPanelAppTests",
-            dependencies: ["ClipboardPanelApp"]
+            dependencies: [
+                "ClipboardPanelApp",
+                "PasteFloatingDemo"
+            ]
         )
     ]
 )

@@ -6,6 +6,10 @@
 
 ## 验收记录
 
+命名说明：本日志保留各阶段实际执行时的历史命令、target 名与产物名，例如 `swift run PasteFloatingDemo`、`PasteFloatingDemo.app`。这些记录用于还原当时的真实验证上下文；面向用户和发布的正式命名统一应使用“剪贴板工作台（ClipboardWorkbench）”。
+
+阶段映射说明：当前日志同时保留两套阶段编号。`Phase 3A/3B/3C/3D` 来自早期的实施细化稿，适合作为具体落地子切片；`Phase 5A/5B/6/7/8` 来自当前生效的 MVC 路线图，适合作为正式监督与验收编号。除非特别说明，后续应优先以 [docs/mvc-refactor-roadmap-2026-05-10.md](docs/mvc-refactor-roadmap-2026-05-10.md) 为准，并在日志中同时注明旧编号映射。
+
 ### 面板视觉与基础布局
 
 - 完成日期：2026-05-07
@@ -386,3 +390,138 @@
 - 人工可观察行为：真实来源 App 图标存在时，顶部色条优先从图标像素中提取主色；取色过程会过滤透明、过白、过暗和低饱和像素，按色相桶选择主色并做亮度/饱和度归一化；若没有图标或取色失败，则回退来源 App 稳定哈希色，再回退内容类型色。
 - QA 结论：通过。当前实现让来源色更贴近真实 App 图标，同时保留稳定回退，避免颜色随机或空白。
 - 遗留风险：自动化没有覆盖真实系统 `.app` 图标矩阵；后续应基于用户真实剪贴板数据观察 Safari、Chrome、Finder、Xcode 等常见来源图标的取色质量。
+
+### 架构重构 Phase 1：Bridge 与共享基础设施收敛
+
+- 完成日期：2026-05-10
+- 执行者：Codex（架构方案与开发）；QA：Codex
+- 自动验证命令：`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`swift build` 通过，输出 `Build complete! (0.13s)`；`swift test` 通过，45 个 Swift 测试；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.phase1.png` 通过；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.phase1.png` 通过；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`；`git diff --check` 通过。
+- 人工可观察行为：`RustCoreClient` 去除了 `@unchecked Sendable` 和共享编解码状态，统一了 app support 目录准备、bridge JSON 编解码与错误映射；`ClipboardPastePayloadPlanner` 与 `ClipboardPreviewContentPlanner` 改为复用共享 `ClipboardAssetPathResolver`；`Package.swift` 已排除 `AGENTS.md`，SwiftPM 不再报 unhandled file warning；panel interaction smoke 的焦点断言已收敛为“命令态 harness 下 content view 可交互”，不再把当前进程是否成为系统 key app 当作同一层级的验证目标；重构方案文档已补充 Phase 3 命令迁移前需要先稳定真实 QA seam 的约束。
+- QA 结论：通过。当前阶段实现保持 bridge API 与运行时行为不变，Swift/Rust 测试、运行时 snapshot、偏好 smoke 和 panel interaction smoke 均通过；QA 已确认 Phase 1 可以作为后续 coordinator 拆分前的基础层收敛版本。
+- 遗留风险：`Sources/PasteFloatingDemo/main.swift` 仍然体量很大，`AppDelegate` 与命令/QA harness 仍强耦合；当前 panel interaction smoke 仍是进程内命令式 QA，不等同于真实系统级 key-window / 热键端到端验证；进入 Phase 2 前应继续保持“先收敛 seam、再拆编排层”的节奏，避免把 smoke 依赖打散。
+
+### 架构重构 Phase 2：应用编排协调器拆分
+
+- 完成日期：2026-05-10
+- 执行者：Codex（架构方案与开发）；QA：Codex
+- 自动验证命令：`swift test` 通过，56 个 Swift 测试；`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.phase2.png` 通过；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.phase2.png` 通过；`git diff --check` 通过。
+- 人工可观察行为：`ClipboardListCoordinator` 已接管列表查询参数、搜索防抖、分页预取、load more、generation cancellation 和条目 mutation 后刷新；`ClipboardCaptureCoordinator` 已接管文本/图片/文件捕获请求组装、忽略规则判断、来源元数据和状态文案；`PreferencesCoordinator` 已接管偏好加载保存、login item 状态归一化和辅助功能权限状态同步；`StorageMaintenanceCoordinator` 已接管 open core、运行维护和维护状态摘要。`AppDelegate` 仍保留 AppKit 生命周期、窗口/菜单/系统集成与命令入口，但核心业务编排已改为委托给 coordinator。
+- QA 结论：通过。当前阶段已把最重的运行时编排从 `AppDelegate` 中拆出，并为分页/预取、捕获组装、偏好归一化建立独立 Swift 测试入口；运行时 smoke、snapshot 和 Rust/Swift 测试矩阵均通过，允许进入 Phase 3 的 UI/命令文件拆分。
+- 遗留风险：`Sources/PasteFloatingDemo/main.swift` 体量依然很大，命令入口、UI 组件与 AppKit 壳层尚未拆文件；panel/preference smoke 仍是进程内命令式验证，不等同于真实系统级事件注入；Phase 3 需要先稳住现有命令矩阵，再把 snapshot/smoke/diagnostics 从主入口中迁出。
+
+### 架构重构 Phase 4：用户可见 / 发布可见去 demo 收口
+
+- 完成日期：2026-05-10
+- 执行者：Codex（集成 Worker 1 / Worker 2 输出）；QA：Codex
+- 自动验证命令：`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`scripts/build-rust-core.sh` 通过；`swift build` 通过，并同时链接 `PasteFloatingDemo` 与 `ClipboardWorkbenchApp`；`swift test` 通过，56 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`scripts/package-macos-app.sh` 通过，生成 `.codex/artifacts/ClipboardWorkbench.app`；`.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics` 通过；`codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app` 通过；`PlistBuddy` 确认 `CFBundleIdentifier=dev.codex.clipboard-workbench`、`LSUIElement=true`、`CFBundleDisplayName=ClipboardWorkbench`、`CFBundleExecutable=ClipboardWorkbenchApp`；`scripts/release-macos.sh` 通过，生成 `.codex/artifacts/release/0.1.0/ClipboardWorkbench.app`、`ClipboardWorkbench-0.1.0.zip`、`ClipboardWorkbench-0.1.0.dmg`、`SHA256SUMS` 和 `ClipboardWorkbench-release-manifest.txt`；`(cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)` 通过；`hdiutil imageinfo .codex/artifacts/release/0.1.0/ClipboardWorkbench-0.1.0.dmg` 通过；`git diff --check` 通过。
+- 人工可观察行为：README、发布文档和架构文档中的正式产品命名统一收口到“剪贴板工作台（ClipboardWorkbench）”；默认 `.app` / `.zip` / `.dmg` / manifest 输出名已切换到 `ClipboardWorkbench*`；`Package.swift` 同时提供 `ClipboardWorkbenchApp` 与 `PasteFloatingDemo` 两个 executable product，前者服务发布与打包，后者保留 `swift run PasteFloatingDemo ...` 兼容入口；打包后的 `Info.plist` 已去除 `-demo` bundle identifier，包内可执行文件名与发布文档保持一致。
+- QA 结论：通过。当前阶段已经完成用户可见和发布可见层的去 demo 收口，同时保住现有源码态 QA 命令和运行入口；构建、测试、`.app` 打包、release 产物、签名校验、manifest 和 DMG 检查矩阵均通过，可以进入下一阶段的结构化拆分工作。
+- 遗留风险：后续若继续推进 target、目录和 QA tool 独立拆分，需要同步清理 `PasteFloatingDemo` 兼容别名，避免长期保留双命名入口。
+
+### 架构重构 Phase 3B（子切片）：收敛命令层 QA support
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.phase3b.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.phase3b.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`git diff --check` 通过。
+- 人工可观察行为：`ViewSnapshotRenderer` 已收口快照渲染与 PNG 落盘逻辑，移除 `AppCommands.swift` 中重复的 `bitmapImage` 实现；`PreferencesQAHarness` 已接管偏好设置 smoke 的导航遍历与控件触发逻辑，命令层不再自己递归扫描控件树；本次收口后 `AppCommands.swift` 从 793 行下降到 660 行，命令文件更接近“参数解析 + 高层流程”，而 QA seam 进一步集中到独立 support 文件。
+- QA 结论：通过。当前子切片没有改变现有 snapshot、preferences smoke 和 panel interaction smoke 的对外行为，但显著降低了命令层对渲染与控件细节的直接持有，符合 Phase 3B “先收敛 QA seam、再继续拆壳层”的目标。
+- 遗留风险：`PanelInteractionSmokeCommand` 仍然承载大量真实窗口交互断言和样本编排；后续应继续把 panel smoke 场景搭建与结果断言抽到更小的 support 单元，再进入 Phase 3C 的系统壳层拆分。
+
+### 架构重构 Phase 3C / Phase 5A（子切片）：panel scene 状态所有权外移
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`swift build` 通过，输出 `Build complete! (3.10s)`；`swift test --filter PanelSceneControllerTests` 通过，14 个相关测试通过；`swift test` 通过，73 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`git diff --check` 通过。
+- 人工可观察行为：`PanelSceneController` 补齐了清空选中、预览开关、搜索聚焦等纯状态迁移；新增 `PanelSceneRuntimeController` 持有 `PanelSceneState`，把 query / selection / preview 的状态所有权从 `FloatingPanelContentView` 的裸属性收口为实例型 controller；`FloatingPanelContentView` 继续负责 AppKit 渲染与事件转发，但不再直接保有 scene state 真相；panel interaction smoke、preferences smoke 和运行时快照对外行为保持不变。
+- QA 结论：通过。当前子切片符合 MVC 路线图的 `Phase 5A` 方向，在不触碰分页预取、pasteboard 写回、命令层契约和系统壳层的前提下，先把 panel scene 的状态所有权移出 view，并补齐了 headless controller tests。
+- 遗留风险：`FloatingPanelContentView` 仍然承担较多 render-state 组织和 UI effect 编排，下一步应优先继续抽 `PanelListViewState / render adapter`，而不是扩张 `smoke*` seam、分页链路或 AppDelegate 系统集成改动；`--show-context-menu` 和 `--show-preview*` 仍缺少更强的自动断言型测试。
+
+### 架构重构 Phase 5A（子切片）：panel list render state 收口
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift test --filter PanelListViewStateTests` 通过，5 个相关测试通过；`swift test` 通过，78 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`git diff --check` 通过。
+- 人工可观察行为：新增 [PanelListViewState.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipboardPanelApp/PanelListViewState.swift) 统一表达面板列表的 `items / emptyHistory / filteredEmpty / databaseError / hasMore / isLoadingMore` 渲染真相；`FloatingPanelContentView` 不再同时裸持有 `currentItems`、过滤空态和 loading 标记，而是通过 render adapter 消费统一列表状态；append 去重、load-more loading 关闭、数据库错误态和过滤空态都改为由纯 Swift adapter 决定，现有面板交互 smoke 和快照输出保持不变。
+- QA 结论：通过。当前子切片继续符合 `Phase 5A` “先建立可测的 scene/controller/render seam，再继续拆 view”的顺序，没有越界到分页预取契约、系统壳层或命令协议。
+- 遗留风险：`FloatingPanelContentView` 仍然负责把 `RustClipboardItemSummary` 组装成具体 AppKit 卡片与预览视图，下一步应优先继续抽 `PanelItemCardViewState / render adapter` 或更小的卡片 presenter，而不是直接开始 target 拆分或大规模 view 物理拆文件。
+
+### 架构重构 Phase 5A（子切片）：panel item card presenter 收口
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift test --filter PanelItemCardPresentationTests` 通过，4 个相关测试通过；`swift test` 通过，82 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`。
+- 人工可观察行为：新增 [PanelItemCardPresentation.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipboardPanelApp/PanelItemCardPresentation.swift) 统一承接卡片图标、类型文案、摘要、脚注、链接 host/detail 与文件 title/detail 的纯展示映射；[AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/AppRuntime.swift) 不再自己维护 `displayType`、`displaySummary`、`linkPresentation`、`contentFootnote(for item:)` 等纯展示 helper，而是只保留 AppKit 卡片装配、文件图标读取、预览视图构造和颜色/布局逻辑；现有卡片交互、右键菜单、预览入口与 smoke 输出保持不变。
+- QA 结论：通过。当前子切片继续沿着 `Phase 5A` 把 view 中的纯展示决策迁到可测试的 presenter 层，且没有扩张 `smoke*` seam，也没有打断 panel interaction smoke 的关键契约。
+- 遗留风险：`FloatingPanelContentView` 仍然承担较重的 AppKit 视图拼装和 preview/file/link 子视图装配；下一步应优先继续抽更稳定的 `PanelViewState` 装配层或卡片/preview 子视图 state，而不是跳到分页链路、系统服务或 target 拆分。
+
+### 架构重构 Phase 5A（子切片）：panel view state 装配层收口
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift test --filter PanelViewStateTests` 通过，2 个相关测试通过；`swift test` 通过，84 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`。
+- 人工可观察行为：新增 [PanelViewState.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipboardPanelApp/PanelViewState.swift) 统一装配 toolbar search text、搜索显隐、当前类型筛选、清空按钮文案、selected item、preview enabled 和 command hint mode；[AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/AppRuntime.swift) 不再零散直接读取 `sceneController.state.query/selection/preview` 去驱动搜索框、chip 选中态、清空标题和选中态同步，而是通过 `PanelViewStateAdapter` 统一消费 view state。
+- QA 结论：通过。当前子切片继续把 panel view 的展示输入收敛成纯 Swift state，没有触碰分页预取契约、命令协议、系统集成或新增 QA seam。
+- 遗留风险：`FloatingPanelContentView` 仍然承担较重的 AppKit 组件拼装和 preview/file/link 子视图构建；后续更适合继续抽 preview/card 子视图状态或更细粒度的 AppKit render adapter，而不是在现阶段跳去 target 拆分或系统壳层重构。
+
+### 架构重构 Phase 5A（子切片）：AppRuntime 死代码清理
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift test` 通过，84 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`git diff --check` 通过。
+- 人工可观察行为：`AppRuntime.swift` 移除了当前无入口的 `onClearRequested -> clearItems` UI 回调链、空实现的 `updateSourceApps` 传递链、启动期空操作 `refreshSourceApps()`，以及多组未被引用的私有卡片/预览 helper；`FloatingPanelController` 的状态刷新也收口为更直接的 panel content layout 同步。当前真实运行时的条目右键菜单仍保持“复制 / 删除 / 固定 / 预览”四类动作，`clear_items` 批量清理能力继续保留在 Rust core、Swift bridge、`RustCoreClient` 和 coordinator 层，但未暴露为当前 panel runtime 菜单入口。
+- QA 结论：通过。此次清理只删除确认无运行时入口、无 smoke 入口、无 AppKit selector/override/monitor 依赖的残留代码；Swift 测试、panel interaction smoke、preferences smoke 与 diff 检查均未出现回归。
+- 遗留风险：`verification.md` 中较早阶段关于“右键菜单可直接清空当前结果”的历史记录已不再代表当前运行时代码真相；若后续要恢复该入口，应优先把动作定义迁入明确的 MVC seam，并补上真实 smoke 断言后再重新接线。
+
+### 架构重构 Phase 5B（子切片）：AppRuntime 按功能域物理分文件
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift test` 通过，84 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`git diff --check` 通过。
+- 人工可观察行为：`Sources/PasteFloatingDemo/AppRuntime.swift` 从 4255 行下降到 2159 行，不再承担整个运行时总装；新增 [PanelUIPrimitives.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/PanelUIPrimitives.swift) 收口 panel 基础 AppKit 组件与 `PanelLevelMode`，新增 [PanelPreviewUI.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/PanelPreviewUI.swift) 独立 preview popover / preview view controller / image preview document view，新增 [FloatingPanelController.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/FloatingPanelController.swift) 承担窗口层与 outside-click / panel geometry / focus shell，新增 [ApplicationRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/ApplicationRuntime.swift) 承担 `AppDelegate`、菜单、热键、coordinator 装配、剪贴板采集与应用生命周期。当前 [AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/AppRuntime.swift) 已收敛为 `FloatingPanelContentView` 的实现文件，主要保留面板内容视图装配、面板内交互、卡片渲染与 smoke seam。
+- QA 结论：通过。此次拆分是按功能域重组运行时代码，而不是纯物理搬文件；`AppDelegate -> FloatingPanelController -> FloatingPanelContentView` 的分层已经清晰化，且现有构建、测试、snapshot 与 panel/preferences smoke 契约均保持不变。
+- 遗留风险：当前最重的剩余混杂点已从“总运行时文件”收缩为 `FloatingPanelContentView` 内的“卡片渲染 + 资源解析 + 交互状态机”；下一步应优先继续拆 `makeItemCard` 之后的卡片渲染与资产加载逻辑，而不是再次扩张 app shell、system integration 或 smoke seam。
+
+### 架构重构 Phase 5B（子切片）：panel card asset/style support 收口
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift test` 通过，84 个 Swift 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png` 通过；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png` 通过；`git diff --check` 通过。
+- 人工可观察行为：新增 [PanelCardSupport.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/PanelCardSupport.swift) 收口卡片来源图标、来源色、相对时间、内容脚注、预览图片加载与文件预览图标逻辑；`FloatingPanelContentView` 改为通过 `PanelCardAssetResolver` 读取 `PanelCardResolvedItem` / `PanelCardPreviewImageState`，不再自己混写资源路径判断、图片缓存和主色提取细节；[AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/AppRuntime.swift) 从 2159 行进一步下降到 1649 行。
+- QA 结论：通过。当前子切片把最容易继续膨胀的“卡片资源解析 + 样式决策”从内容视图中剥离出去，同时保持 panel smoke、偏好 smoke、运行时快照和现有 stdout 契约完全不变。
+- 遗留风险：`FloatingPanelContentView` 仍然同时承担卡片 AppKit 拼装、列表渲染编排和交互状态机；下一步更适合继续抽 controller / render-plan seam，而不是回头做零碎清理。
+
+### 架构重构 Phase 5A（子切片）：panel content controller 收口
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Codex
+- 自动验证命令：`swift build` 通过；`swift test --filter PanelContentControllerTests` 通过，5 个相关测试通过；`swift test` 通过，89 个 Swift 测试；`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --print-ui-diagnostics` 通过；`git diff --check` 通过。
+- 人工可观察行为：新增 [PanelContentController.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipboardPanelApp/PanelContentController.swift) 统一持有 `PanelSceneRuntimeController` 与 `PanelListViewState`，并向 AppKit view 输出 `PanelContentRenderPlan`；[AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/AppRuntime.swift) 不再直接持有列表状态和 scene store，也不再自己决定 open/list update 后应“整表重绘、append 追加还是无视觉变更”，而是消费 controller 给出的渲染计划；新增 [PanelContentControllerTests.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Tests/ClipboardPanelAppTests/PanelContentControllerTests.swift) 覆盖 storage open、append、append failure、replace list 和数据库错误路径，`AppRuntime.swift` 从 1649 行继续下降到 1592 行。
+- QA 结论：通过。当前子切片开始把 `FloatingPanelContentView` 从“View + Store + 部分 Controller”的混合体往被动 View 收拢，且关键 panel smoke 契约、分页追加行为和 preview/搜索交互输出均保持不变。
+- 遗留风险：smoke 仍然较依赖 view tree 结构探测，`FloatingPanelController` 的焦点/显示时序也仍缺少更小粒度的集成测试；下一步建议优先补 controller/window 级组合测试，并继续把卡片 AppKit 组装与交互副作用从内容视图里拆开。
+
+### 最终重构计划 Phase A：卡片渲染边界拆分
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Darwin
+- 自动验证命令：`swift build` 通过；`swift test --filter PanelItemCardViewStateTests` 通过，5 个相关测试通过；`swift test` 通过，94 个 Swift 测试；`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png` 通过，快照文件实际落盘；`swift run PasteFloatingDemo --exercise-preferences` 通过；`git diff --check` 通过。
+- 人工可观察行为：新增 [PanelItemCardViewState.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipboardPanelApp/PanelItemCardViewState.swift) 收口 `text / link / image / file` 四类卡片的稳定展示输入，并把 `header / summary / footnote / selected / command index / preview state` 统一收敛到可测试 state；新增 [PanelItemCardRenderer.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/PanelItemCardRenderer.swift) 承接 AppKit 卡片与 preview 子视图拼装；[PanelCardSupport.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/PanelCardSupport.swift) 改为消费 `PanelCardAssetRequest`，不再直接从原始 `RustClipboardItemSummary` 读取资源；[AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/AppRuntime.swift) 不再直接从 raw item 完整组装卡片，也通过 `renderedCardStatesByID` 与 `commandIndexText` 状态更新 command hint，文件长度从 1592 行继续下降到 1179 行。
+- QA 结论：通过。当前阶段切走的是完整职责块，而不是 helper 搬家；`RustClipboardItemSummary -> card/preview AppKit view` 这条链路已被 `PanelItemCardViewStateAdapter + PanelItemCardRenderer` 替代，且上轮阻塞的 `command index` 已纳入稳定 state 边界。`PanelItemCardViewStateTests` 直接覆盖了 text/link/image/file 路径以及 command index 映射与状态更新，满足本轮最终重构计划 Phase A 的“可测、可维护、行为不变”门槛。
+- 遗留风险：`FloatingPanelContentView` 仍承载搜索、键盘命令、右键菜单、load-more 和局部副作用编排；若继续执行最终重构计划，下一阶段应严格限定在 Phase B 的“面板动作边界拆分”，不得回退为零碎小修或扩张到新的开放式重构。
+
+### 最终重构计划 Phase B：面板动作边界拆分
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Darwin
+- 自动验证命令：`swift build` 通过；`swift test --filter PanelInteractionControllerTests` 通过，6 个相关测试通过；`swift test` 通过，100 个 Swift 测试；`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --print-ui-diagnostics` 通过，输出 `screenCount=1`、`targetScreenIndex=0` 与当前屏幕 frame / panelFrame 诊断信息；`git diff --check` 通过。
+- 人工可观察行为：新增 [PanelInteractionController.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipboardPanelApp/PanelInteractionController.swift) 统一定义 `PanelInteractionAction / PanelInteractionEffect / PanelInteractionResult / PanelExternalAction`，把搜索、键盘命令、chip 切换、右键菜单、command hint 和 load-more 触发统一收口到显式 action 面；新增 [PanelRuntimeAction.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/PanelRuntimeAction.swift) 后，[AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/AppRuntime.swift) 与 [FloatingPanelController.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/FloatingPanelController.swift) 对外不再暴露多组 `on*Requested`，而是收口为单一 `onRuntimeAction`；[ApplicationRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/ApplicationRuntime.swift) 和 [QASupport.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/QASupport.swift) 改为消费统一 runtime action；新增 [PanelInteractionControllerTests.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Tests/ClipboardPanelAppTests/PanelInteractionControllerTests.swift) 直接覆盖 query、selection、preview、command hint、load-more 和 escape 行为边界，`AppRuntime.swift` 从 1179 行继续下降到 1147 行。
+- QA 结论：通过。当前阶段已经形成统一 action/controller 边界，而不是把 `switch keyCode` 或若干 callback 搬到别处继续一对一转发；`FloatingPanelContentView` 主要退回到“事件转发 + render + effect 执行 + 少量纯 UI 行为”，callback 面也实质缩小为单一 `onRuntimeAction`。现有 smoke、preferences 和 diagnostics 契约未被打断，满足本轮最终重构计划 Phase B 的通过条件。
+- 遗留风险：当前本轮结构性重构已基本收口，最后剩余高收益工作应只限于 Phase C 的运行时高风险接缝测试补强，重点保护 `FloatingPanelController` 焦点/显示、load-more append，以及 prefetch 命中后的追加行为；不得再回到新的开放式结构拆分。
+
+### 最终重构计划 Phase C：高风险运行时接缝测试补强
+
+- 完成日期：2026-05-10
+- 执行者：Codex；QA：Darwin
+- 自动验证命令：`swift build` 通过；`swift test --filter PanelRuntimeSeamTests` 通过，3 个相关测试通过；`swift test` 通过，103 个 Swift 测试；`cargo test --manifest-path rust/Cargo.toml` 通过，23 个 Rust 测试；`swift run PasteFloatingDemo --exercise-panel-interactions` 通过，输出 `panelInteractions=ok`、`singleClick=panel-smoke-image`、`commandHints=1,2,3`、`command3Copy=panel-smoke-file`、`typeFilter=image`、`search=report`、`menuPin=panel-smoke-file:true`、`menuDelete=panel-smoke-file`、`menuPreview=shown`、`escapeHide=1`、`doubleClickCopy=panel-smoke-text`、`loadMore=1`、`prefetchLoadMore=75`；`swift run PasteFloatingDemo --exercise-preferences` 通过；`swift run PasteFloatingDemo --print-ui-diagnostics` 通过，输出 `screenCount=1`、`targetScreenIndex=0` 与当前屏幕 frame / panelFrame 诊断信息；`git diff --check` 通过。
+- 人工可观察行为：为了让测试 target 直接保护运行时壳层，[Package.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Package.swift) 让 `ClipboardPanelAppTests` 依赖 `PasteFloatingDemo`，但没有新增 target、并行 CLI 或独立 QA tool；[FloatingPanelController.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloatingDemo/FloatingPanelController.swift) 只新增了最小 smoke seam：`smokePanelFrame`、`smokeHasOutsideClickMonitoring` 与 `smokeHandleOutsideMouseDown(...)`；新增 [PanelRuntimeSeamTests.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Tests/ClipboardPanelAppTests/PanelRuntimeSeamTests.swift) 直接覆盖三类高风险运行时点：`show / focus / hide / outside-click`、`load-more request -> append UI`（并断言第一页卡片实例不重建、loading 状态被清理）以及 `prefetch hit -> immediate append without loading`。
+- QA 结论：通过。当前阶段没有继续拆结构，而是把改动限定在最小测试接缝与组合层测试上；计划要求的 3 类高风险运行时点都获得了直接保护，而且现有 smoke / preferences / diagnostics 契约保持兼容，满足本轮最终重构计划的收尾条件。
+- 遗留风险：本轮锁定重构到此结束，后续不应再以“继续优化结构”为名新增 Phase 4 或重开大规模拆分；团队重心应切回功能开发、真机运行时验证、打包发布与真实用户反馈。

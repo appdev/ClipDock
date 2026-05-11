@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 public enum BottomPanelGeometryPlanner {
-    public static let defaultHeight: CGFloat = 320
+    public static let defaultHeight: CGFloat = 302
     public static let minimumHeight: CGFloat = 260
     public static let maximumHeight: CGFloat = 560
     public static let maximumHeightRatio: CGFloat = 0.62

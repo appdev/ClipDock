@@ -99,7 +99,7 @@ public struct RustGeneralPreferences: Equatable, Codable, Sendable {
     public init(
         launchAtLogin: Bool = false,
         showMenuBarItem: Bool = true,
-        defaultPanelHeight: Int64 = 320
+        defaultPanelHeight: Int64 = 302
     ) {
         self.launchAtLogin = launchAtLogin
         self.showMenuBarItem = showMenuBarItem
@@ -411,91 +411,58 @@ public struct RustCoreError: Error, Equatable, Sendable {
     public let message: String
 }
 
-public final class RustCoreClient: @unchecked Sendable {
-    private let fileManager: FileManager
-    private let decoder: JSONDecoder
-    private let encoder: JSONEncoder
-
-    public init(
-        fileManager: FileManager = .default,
-        decoder: JSONDecoder = JSONDecoder(),
-        encoder: JSONEncoder = JSONEncoder()
-    ) {
-        self.fileManager = fileManager
-        self.decoder = decoder
-        self.encoder = encoder
-    }
+public struct RustCoreClient: Sendable {
+    public init() {}
 
     public func open(appSupportDirectory: URL) -> Result<RustCoreOpenResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "io_failed",
-                    messageKey: "clipboard.error.io_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = open_core(appSupportPath)
+
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+
+            switch listItemsBridge(appSupportPath: appSupportPath) {
+            case .success(let list):
+                return .success(
+                    RustCoreOpenResult(
+                        databasePath: result.database_path.toString(),
+                        schemaVersion: result.schema_version,
+                        itemCount: result.item_count,
+                        items: list.items
+                    )
                 )
-            )
-        }
-
-        let result = open_core(appSupportDirectory.path)
-
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-
-        switch listItems(appSupportDirectory: appSupportDirectory) {
-        case .success(let list):
-            return .success(
-                RustCoreOpenResult(
-                    databasePath: result.database_path.toString(),
-                    schemaVersion: result.schema_version,
-                    itemCount: result.item_count,
-                    items: list.items
-                )
-            )
-        case .failure(let error):
-            return .failure(error)
+            case .failure(let error):
+                return .failure(error)
+            }
         }
     }
 
     public func runMaintenance(
         appSupportDirectory: URL
     ) -> Result<RustMaintenanceResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(Self.makeIOError(error))
-        }
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = run_maintenance(appSupportPath)
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
 
-        let result = run_maintenance(appSupportDirectory.path)
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-
-        return .success(
-            RustMaintenanceResult(
-                purgedItemCount: result.purged_item_count,
-                deletedAssetRowCount: result.deleted_asset_row_count,
-                deletedAssetFileCount: result.deleted_asset_file_count,
-                deletedOrphanFileCount: result.deleted_orphan_file_count,
-                reclaimedBytes: result.reclaimed_bytes
+            return .success(
+                RustMaintenanceResult(
+                    purgedItemCount: result.purged_item_count,
+                    deletedAssetRowCount: result.deleted_asset_row_count,
+                    deletedAssetFileCount: result.deleted_asset_file_count,
+                    deletedOrphanFileCount: result.deleted_orphan_file_count,
+                    reclaimedBytes: result.reclaimed_bytes
+                )
             )
-        )
+        }
     }
 
     public func listItems(
@@ -506,54 +473,14 @@ public final class RustCoreClient: @unchecked Sendable {
         sourceAppId: String? = nil,
         searchText: String? = nil
     ) -> Result<RustCoreListResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "io_failed",
-                    messageKey: "clipboard.error.io_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
-                )
-            )
-        }
-
-        let result = list_items(
-            appSupportDirectory.path,
-            limit,
-            offset,
-            itemType ?? "",
-            sourceAppId ?? "",
-            searchText ?? ""
-        )
-
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-
-        do {
-            return .success(
-                RustCoreListResult(
-                    items: try Self.decodeItemsJSON(result.items_json.toString(), decoder: decoder),
-                    totalCount: result.total_count,
-                    hasMore: result.has_more
-                )
-            )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "bridge_decode_failed",
-                    messageKey: "clipboard.error.bridge_decode_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
-                )
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            listItemsBridge(
+                appSupportPath: appSupportPath,
+                limit: limit,
+                offset: offset,
+                itemType: itemType,
+                sourceAppId: sourceAppId,
+                searchText: searchText
             )
         }
     }
@@ -563,41 +490,31 @@ public final class RustCoreClient: @unchecked Sendable {
         limit: Int64 = 12,
         offset: Int64 = 0
     ) -> Result<RustCoreSourceAppsResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(Self.makeIOError(error))
-        }
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = list_source_apps(appSupportPath, limit, offset)
 
-        let result = list_source_apps(appSupportDirectory.path, limit, offset)
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
 
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-
-        do {
-            return .success(
-                RustCoreSourceAppsResult(
-                    apps: try Self.decodeSourceAppsJSON(result.apps_json.toString(), decoder: decoder),
-                    totalCount: result.total_count,
-                    hasMore: result.has_more
+            switch Self.decodeBridgeJSON(
+                result.apps_json.toString(),
+                as: [RustSourceAppSummary].self
+            ) {
+            case .success(let apps):
+                return .success(
+                    RustCoreSourceAppsResult(
+                        apps: apps,
+                        totalCount: result.total_count,
+                        hasMore: result.has_more
+                    )
                 )
-            )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "bridge_decode_failed",
-                    messageKey: "clipboard.error.bridge_decode_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
-                )
-            )
+            case .failure(let error):
+                return .failure(error)
+            }
         }
     }
 
@@ -606,34 +523,20 @@ public final class RustCoreClient: @unchecked Sendable {
         itemId: String,
         isPinned: Bool
     ) -> Result<RustItemManagementResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(Self.makeIOError(error))
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = set_item_pinned(appSupportPath, itemId, isPinned)
+            return decodeItemManagementResult(result)
         }
-
-        let result = set_item_pinned(appSupportDirectory.path, itemId, isPinned)
-        return decodeItemManagementResult(result)
     }
 
     public func deleteItem(
         appSupportDirectory: URL,
         itemId: String
     ) -> Result<RustItemManagementResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(Self.makeIOError(error))
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = delete_item(appSupportPath, itemId)
+            return decodeItemManagementResult(result)
         }
-
-        let result = delete_item(appSupportDirectory.path, itemId)
-        return decodeItemManagementResult(result)
     }
 
     public func clearItems(
@@ -642,84 +545,39 @@ public final class RustCoreClient: @unchecked Sendable {
         sourceAppId: String? = nil,
         searchText: String? = nil
     ) -> Result<RustItemManagementResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = clear_items(
+                appSupportPath,
+                itemType ?? "",
+                sourceAppId ?? "",
+                searchText ?? ""
             )
-        } catch {
-            return .failure(Self.makeIOError(error))
+            return decodeItemManagementResult(result)
         }
-
-        let result = clear_items(
-            appSupportDirectory.path,
-            itemType ?? "",
-            sourceAppId ?? "",
-            searchText ?? ""
-        )
-        return decodeItemManagementResult(result)
     }
 
     public func getPreferences(
         appSupportDirectory: URL
     ) -> Result<RustPreferencesResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(Self.makeIOError(error))
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = get_preferences(appSupportPath)
+            return decodePreferencesResult(result)
         }
-
-        let result = get_preferences(appSupportDirectory.path)
-        return decodePreferencesResult(result)
     }
 
     public func updatePreferences(
         appSupportDirectory: URL,
         preferences: RustPreferencesDocument
     ) -> Result<RustPreferencesResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(Self.makeIOError(error))
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(preferences) {
+            case .success(let json):
+                let result = update_preferences(appSupportPath, json)
+                return decodePreferencesResult(result)
+            case .failure(let error):
+                return .failure(error)
+            }
         }
-
-        do {
-            let data = try encoder.encode(preferences)
-            let json = String(data: data, encoding: .utf8) ?? "{}"
-            let result = update_preferences(appSupportDirectory.path, json)
-            return decodePreferencesResult(result)
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "bridge_encode_failed",
-                    messageKey: "clipboard.error.bridge_encode_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
-                )
-            )
-        }
-    }
-
-    private static func decodeItemsJSON(_ value: String, decoder: JSONDecoder) throws -> [RustClipboardItemSummary] {
-        guard let data = value.data(using: .utf8) else {
-            return []
-        }
-
-        return try decoder.decode([RustClipboardItemSummary].self, from: data)
-    }
-
-    private static func decodeSourceAppsJSON(_ value: String, decoder: JSONDecoder) throws -> [RustSourceAppSummary] {
-        guard let data = value.data(using: .utf8) else {
-            return []
-        }
-
-        return try decoder.decode([RustSourceAppSummary].self, from: data)
     }
 
     private func decodePreferencesResult(
@@ -732,24 +590,19 @@ public final class RustCoreClient: @unchecked Sendable {
             ))
         }
 
-        do {
-            let json = result.preferences_json.toString()
-            let data = Data(json.utf8)
+        switch Self.decodeBridgeJSON(
+            result.preferences_json.toString(),
+            as: RustPreferencesDocument.self
+        ) {
+        case .success(let preferences):
             return .success(
                 RustPreferencesResult(
                     schemaVersion: result.schema_version,
-                    preferences: try decoder.decode(RustPreferencesDocument.self, from: data)
+                    preferences: preferences
                 )
             )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "bridge_decode_failed",
-                    messageKey: "clipboard.error.bridge_decode_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
-                )
-            )
+        case .failure(let error):
+            return .failure(error)
         }
     }
 
@@ -771,6 +624,110 @@ public final class RustCoreClient: @unchecked Sendable {
         )
     }
 
+    private static func makeBridgeDecodeError(_ error: Error) -> RustCoreError {
+        RustCoreError(
+            code: "bridge_decode_failed",
+            messageKey: "clipboard.error.bridge_decode_failed",
+            recoverable: true,
+            message: error.localizedDescription
+        )
+    }
+
+    private static func makeBridgeEncodeError(_ error: Error) -> RustCoreError {
+        RustCoreError(
+            code: "bridge_encode_failed",
+            messageKey: "clipboard.error.bridge_encode_failed",
+            recoverable: true,
+            message: error.localizedDescription
+        )
+    }
+
+    private func withPreparedAppSupportDirectory<T>(
+        _ appSupportDirectory: URL,
+        perform: (String) -> Result<T, RustCoreError>
+    ) -> Result<T, RustCoreError> {
+        do {
+            try FileManager.default.createDirectory(
+                at: appSupportDirectory,
+                withIntermediateDirectories: true
+            )
+            return perform(appSupportDirectory.path)
+        } catch {
+            return .failure(Self.makeIOError(error))
+        }
+    }
+
+    private func listItemsBridge(
+        appSupportPath: String,
+        limit: Int64 = 50,
+        offset: Int64 = 0,
+        itemType: String? = nil,
+        sourceAppId: String? = nil,
+        searchText: String? = nil
+    ) -> Result<RustCoreListResult, RustCoreError> {
+        let result = list_items(
+            appSupportPath,
+            limit,
+            offset,
+            itemType ?? "",
+            sourceAppId ?? "",
+            searchText ?? ""
+        )
+
+        guard result.ok else {
+            return .failure(Self.makeError(
+                code: result.error_code.toString(),
+                messageKey: result.message_key.toString()
+            ))
+        }
+
+        switch Self.decodeBridgeJSON(
+            result.items_json.toString(),
+            as: [RustClipboardItemSummary].self
+        ) {
+        case .success(let items):
+            return .success(
+                RustCoreListResult(
+                    items: items,
+                    totalCount: result.total_count,
+                    hasMore: result.has_more
+                )
+            )
+        case .failure(let error):
+            return .failure(error)
+        }
+    }
+
+    private static func decodeBridgeJSON<T: Decodable>(
+        _ value: String,
+        as type: T.Type
+    ) -> Result<T, RustCoreError> {
+        do {
+            guard let data = value.data(using: .utf8) else {
+                return .failure(makeBridgeDecodeError(BridgePayloadEncodingError.invalidUTF8))
+            }
+            let decoder = JSONDecoder()
+            return .success(try decoder.decode(T.self, from: data))
+        } catch {
+            return .failure(makeBridgeDecodeError(error))
+        }
+    }
+
+    private static func encodeBridgeJSON<T: Encodable>(
+        _ value: T
+    ) -> Result<String, RustCoreError> {
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(value)
+            guard let json = String(data: data, encoding: .utf8) else {
+                return .failure(makeBridgeEncodeError(BridgePayloadEncodingError.invalidUTF8))
+            }
+            return .success(json)
+        } catch {
+            return .failure(makeBridgeEncodeError(error))
+        }
+    }
+
     private func decodeItemManagementResult(
         _ result: CoreItemManagementResult
     ) -> Result<RustItemManagementResult, RustCoreError> {
@@ -788,126 +745,10 @@ public final class RustCoreClient: @unchecked Sendable {
         appSupportDirectory: URL,
         request: RustCaptureTextRequest
     ) -> Result<RustCaptureTextResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "io_failed",
-                    messageKey: "clipboard.error.io_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
-                )
-            )
-        }
-
-        let result = capture_text(
-            appSupportDirectory.path,
-            request.text,
-            request.sourceBundleId ?? "",
-            request.sourceAppName ?? "",
-            request.sourceBundlePath ?? "",
-            request.sourceIconRelativePath ?? "",
-            request.sourceConfidence,
-            request.pasteboardChangeCount,
-            request.selfWriteToken ?? ""
-        )
-
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-
-        return .success(
-            RustCaptureTextResult(
-                itemId: result.item_id.toString(),
-                contentHash: result.content_hash.toString(),
-                copyCount: result.copy_count,
-                inserted: result.inserted
-            )
-        )
-    }
-
-    public func captureImage(
-        appSupportDirectory: URL,
-        request: RustCaptureImageRequest
-    ) -> Result<RustCaptureImageResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "io_failed",
-                    messageKey: "clipboard.error.io_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
-                )
-            )
-        }
-
-        let result = capture_image(
-            appSupportDirectory.path,
-            request.payloadRelativePath,
-            request.previewRelativePath ?? "",
-            request.mimeType ?? "",
-            request.width,
-            request.height,
-            request.byteCount,
-            request.sourceBundleId ?? "",
-            request.sourceAppName ?? "",
-            request.sourceBundlePath ?? "",
-            request.sourceIconRelativePath ?? "",
-            request.sourceConfidence,
-            request.pasteboardChangeCount,
-            request.selfWriteToken ?? ""
-        )
-
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-
-        return .success(
-            RustCaptureImageResult(
-                itemId: result.item_id.toString(),
-                contentHash: result.content_hash.toString(),
-                copyCount: result.copy_count,
-                inserted: result.inserted
-            )
-        )
-    }
-
-    public func captureFiles(
-        appSupportDirectory: URL,
-        request: RustCaptureFilesRequest
-    ) -> Result<RustCaptureFilesResult, RustCoreError> {
-        do {
-            try fileManager.createDirectory(
-                at: appSupportDirectory,
-                withIntermediateDirectories: true
-            )
-        } catch {
-            return .failure(Self.makeIOError(error))
-        }
-
-        do {
-            let data = try encoder.encode(request.filePaths)
-            let filesJSON = String(data: data, encoding: .utf8) ?? "[]"
-            let result = capture_files(
-                appSupportDirectory.path,
-                filesJSON,
-                request.snapshotRelativePath ?? "",
-                request.snapshotByteCount,
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = capture_text(
+                appSupportPath,
+                request.text,
                 request.sourceBundleId ?? "",
                 request.sourceAppName ?? "",
                 request.sourceBundlePath ?? "",
@@ -925,22 +766,106 @@ public final class RustCoreClient: @unchecked Sendable {
             }
 
             return .success(
-                RustCaptureFilesResult(
+                RustCaptureTextResult(
                     itemId: result.item_id.toString(),
                     contentHash: result.content_hash.toString(),
                     copyCount: result.copy_count,
                     inserted: result.inserted
                 )
             )
-        } catch {
-            return .failure(
-                RustCoreError(
-                    code: "bridge_encode_failed",
-                    messageKey: "clipboard.error.bridge_encode_failed",
-                    recoverable: true,
-                    message: error.localizedDescription
+        }
+    }
+
+    public func captureImage(
+        appSupportDirectory: URL,
+        request: RustCaptureImageRequest
+    ) -> Result<RustCaptureImageResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = capture_image(
+                appSupportPath,
+                request.payloadRelativePath,
+                request.previewRelativePath ?? "",
+                request.mimeType ?? "",
+                request.width,
+                request.height,
+                request.byteCount,
+                request.sourceBundleId ?? "",
+                request.sourceAppName ?? "",
+                request.sourceBundlePath ?? "",
+                request.sourceIconRelativePath ?? "",
+                request.sourceConfidence,
+                request.pasteboardChangeCount,
+                request.selfWriteToken ?? ""
+            )
+
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+
+            return .success(
+                RustCaptureImageResult(
+                    itemId: result.item_id.toString(),
+                    contentHash: result.content_hash.toString(),
+                    copyCount: result.copy_count,
+                    inserted: result.inserted
                 )
             )
+        }
+    }
+
+    public func captureFiles(
+        appSupportDirectory: URL,
+        request: RustCaptureFilesRequest
+    ) -> Result<RustCaptureFilesResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request.filePaths) {
+            case .success(let filesJSON):
+                let result = capture_files(
+                    appSupportPath,
+                    filesJSON,
+                    request.snapshotRelativePath ?? "",
+                    request.snapshotByteCount,
+                    request.sourceBundleId ?? "",
+                    request.sourceAppName ?? "",
+                    request.sourceBundlePath ?? "",
+                    request.sourceIconRelativePath ?? "",
+                    request.sourceConfidence,
+                    request.pasteboardChangeCount,
+                    request.selfWriteToken ?? ""
+                )
+
+                guard result.ok else {
+                    return .failure(Self.makeError(
+                        code: result.error_code.toString(),
+                        messageKey: result.message_key.toString()
+                    ))
+                }
+
+                return .success(
+                    RustCaptureFilesResult(
+                        itemId: result.item_id.toString(),
+                        contentHash: result.content_hash.toString(),
+                        copyCount: result.copy_count,
+                        inserted: result.inserted
+                    )
+                )
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+}
+
+private enum BridgePayloadEncodingError: LocalizedError {
+    case invalidUTF8
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidUTF8:
+            return "bridge payload is not valid UTF-8"
         }
     }
 }

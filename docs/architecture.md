@@ -9,7 +9,7 @@
 
 结论如下：
 
-- 主应用第一阶段继续从当前 SwiftPM AppKit demo 演进，但必须拆成 library + executable + tests，不能继续把窗口、菜单、粘贴板、状态和业务逻辑堆在单个入口文件。
+- 主应用第一阶段继续从当前 SwiftPM AppKit 原型工程演进，但必须拆成 library + executable + tests，不能继续把窗口、菜单、粘贴板、状态和业务逻辑堆在单个入口文件。
 - UI 以 `docs/ui-design.md` 和 `docs/ui-qa-review.md` 为硬性契约：底部全宽、覆盖 Dock、只调高度、轻量顶部工具条、横向固定条目带、临时预览浮层和标准偏好窗口都不得在开发阶段改成其他信息架构。
 - Rust core 只暴露结构化 DTO、reason code、message key 和错误对象，不输出用户可见文案。Swift/AppKit 负责全部本地化文案、toast、空态、错误态和菜单文字。
 - FFI 使用 `swift-bridge`。小文本和小二进制 inline 传输；大图片、RTF、文件列表和缩略图走 staged asset path，Rust core 接管入库和索引。
@@ -27,6 +27,8 @@
 - 可迁移 core：Rust 不依赖 AppKit，不感知 `NSPanel`、`NSPasteboard`、`NSImage`、`NSWorkspace` 或 `NSScreen`。
 - 可验证交付：每个功能切片同时有本地自动验证命令、人工可观察行为和 QA 记录目标。
 
+兼容说明：本文档中的 `swift run PasteFloatingDemo`、`.codex/artifacts/PasteFloatingDemo.app` 等命令与产物路径，属于当前工程与脚本兼容期内保留的历史 target / bundle 名。凡涉及产品名称、发布展示名或用户可见命名时，统一以“剪贴板工作台（ClipboardWorkbench）”为准。
+
 ## 3. UI 硬性契约
 
 本章节是开发约束，不是建议。任何实现若违反本节，应视为架构回归。
@@ -36,7 +38,7 @@
 - 可参考剪贴板管理器的通用范式和 macOS 系统质感，但不得复制 Paste 的品牌、文案、专有布局组合、卡片比例、动画曲线或可识别视觉表达。
 - 用户可见名称不得使用 `Paste`。包括菜单栏标题、窗口标题、偏好设置标题、toast、错误提示、帮助文案和用户可见日志摘要。
 - 内部 `Paste*` 命名仅允许作为当前仓库历史工程代号或迁移期 target 名称；新模块优先使用中性命名，例如 `ClipboardPanelApp`、`ClipboardCore`、`BottomPanel`。
-- 若当前 demo 中已有 `PasteFloatingDemo`、`Paste Demo` 等用户可见文本，功能化阶段必须替换为原创产品名或中性描述。
+- 若当前原型工程中已有 `PasteFloatingDemo`、`Paste Demo` 等用户可见文本，功能化阶段必须替换为原创产品名或中性描述。
 
 ### 3.2 底部全宽面板几何
 
@@ -158,7 +160,7 @@ height = clamp(preferredHeight, 260, min(560, screen.frame.height * 0.62))
 
 ### 5.1 Swift/AppKit 模块
 
-Swift 侧从当前 executable demo 演进为 `ClipboardPanelApp` library，再由 executable target 启动。
+Swift 侧从当前 executable 原型 target 演进为 `ClipboardPanelApp` library，再由 executable target 启动。
 
 | 模块 | 职责 |
 | --- | --- |
@@ -829,7 +831,7 @@ AppKit render
 
 子任务：
 
-- 将当前 executable demo 拆为 SwiftPM library + executable + tests。
+- 将当前 executable 原型 target 拆为 SwiftPM library + executable + tests。
 - 实现底部全宽 `NSPanel` 几何公式、顶部高度横条、覆盖 Dock、多屏定位。
 - 实现轻量顶部工具条、横向固定条目带、骨架屏、空态、基础错误态。
 - 清理用户可见 `Paste` 文案，保留内部历史 target 名仅作为迁移期工程代号。
@@ -1054,7 +1056,7 @@ QA 记录目标：
 - Rust core 提供 `set_item_pinned`、`delete_item` 和 `clear_items`；删除和清空均为软删除。
 - `clear_items` 复用现有 `ItemQuery`，按当前类型、来源和搜索关键词清理匹配项，但跳过固定条目。
 - Swift bridge 和 `RustCoreClient` 暴露条目管理 API，并提供 contract tests。
-- 主面板条目右键菜单提供固定/取消固定、复制、删除条目和清空当前结果；固定条目在列表中排在普通条目前面。
+- 主面板条目右键菜单当前提供固定/取消固定、复制、删除条目和预览；`clear_items` 能力已在 Rust core、Swift bridge 和 client/coordinator 层就绪，但尚未重新接入当前 panel runtime 的管理菜单。
 
 自动验证命令：
 
@@ -1073,7 +1075,7 @@ swift run PasteFloatingDemo
 - 右键任意真实条目会出现管理菜单。
 - 固定后条目显示“固定 · 类型”，并排在普通条目前面。
 - 删除条目后该条目从当前列表消失。
-- 清空当前结果只清理当前筛选范围内未固定条目，固定条目保留。
+- 当后续重新接入批量清空入口时，它只清理当前筛选范围内未固定条目，固定条目保留。
 
 QA 记录目标：
 
@@ -1182,7 +1184,7 @@ swift test
 
 - 增加 `swift run PasteFloatingDemo --exercise-panel-interactions` 隐藏命令，启动真实 `FloatingPanelController` 与生产 `FloatingPanelContentView`。
 - 通过合成 AppKit 鼠标和键盘事件验证单击选中、`Command + 1...5` 选中、类型 chip、搜索输入、`Escape` 隐藏和双击复制隐藏。
-- 将右键菜单构建拆为可复用 `makeManagementMenu(for:)`，smoke 可触发固定、删除和清空当前结果的真实菜单 action closure。
+- 将右键菜单构建拆为可复用 `makeManagementMenu(for:)`，smoke 可触发固定、删除和预览的真实菜单 action closure；批量清空入口当前未接回运行时菜单。
 - 对横向 `NSScrollView` 注入纵向 wheel 事件，确认轴投射后能改变横向滚动位置。
 - 该命令不依赖系统辅助功能授权，不使用外部 UI scripting；它验证 AppKit 窗口内的生产视图和事件处理链路。
 
@@ -1203,17 +1205,18 @@ swift run PasteFloatingDemo --exercise-panel-interactions
 子任务：
 
 - 增加 `scripts/package-macos-app.sh`，先刷新 Rust/Swift bridge，再执行 release 构建。
-- 默认生成 `.codex/artifacts/PasteFloatingDemo.app`，包含 `Contents/Info.plist`、`Contents/MacOS/PasteFloatingDemo` 和 `_CodeSignature`。
+- 默认生成 `.codex/artifacts/ClipboardWorkbench.app`，包含 `Contents/Info.plist`、`Contents/MacOS/ClipboardWorkbenchApp` 和 `_CodeSignature`。
 - `Info.plist` 声明 `CFBundleIdentifier`、显示名、最低 macOS 版本、Retina 能力和 `LSUIElement`，让调试版以菜单栏/辅助应用形态运行。
 - 如果系统存在 `codesign`，执行 ad-hoc 签名；脚本末尾用包内可执行文件运行 `--print-ui-diagnostics` 做自检。
+- 兼容期内保留的历史工程命名主要是 `swift run PasteFloatingDemo ...` 这类源码态入口；默认 bundle 名与包内可执行文件名已经切换到正式发布命名。
 
 自动验证命令：
 
 ```bash
 scripts/package-macos-app.sh
-.codex/artifacts/PasteFloatingDemo.app/Contents/MacOS/PasteFloatingDemo --print-ui-diagnostics
-codesign --verify --deep --strict .codex/artifacts/PasteFloatingDemo.app
-/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSUIElement' .codex/artifacts/PasteFloatingDemo.app/Contents/Info.plist
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :LSUIElement' .codex/artifacts/ClipboardWorkbench.app/Contents/Info.plist
 ```
 
 人工可观察行为：

@@ -900,7 +900,7 @@ history.retention_days = 30
 - 新增 `swift run PasteFloatingDemo --exercise-panel-interactions` 隐藏命令。
 - 命令创建真实 `FloatingPanelController` 与生产 `FloatingPanelContentView`，不使用手写视觉夹具。
 - 合成 AppKit 鼠标和键盘事件，覆盖单击选中、`Command + 3` 选中、类型 chip、搜索、滚轮横向投射、右键菜单 action、`Escape` 隐藏和双击复制隐藏。
-- 右键菜单构建拆为 `makeManagementMenu(for:)`，自动化可触发固定、删除和清空当前结果的真实菜单 action closure。
+- 右键菜单构建拆为 `makeManagementMenu(for:)`，自动化可触发固定、删除和预览的真实菜单 action closure；`clear_items` 目前仍停留在 core/client/coordinator 能力层，未接回当前运行时菜单。
 
 验证结果：
 
