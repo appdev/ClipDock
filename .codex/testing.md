@@ -2985,3 +2985,159 @@ git diff --check: no output
 - 仅属于被删除 Pinboard 的内容会被软删除；仍属于其他活动 Pinboard 的内容会保留。
 - 删除当前选中 Pinboard 时，不再先触发一次完整历史查询，避免删除任务排队。
 - Pinboard mutation 开始时立即显示进行中状态，降低用户感知卡顿。
+
+## Paste 风格 Pinboard 创建删除菜单
+
+日期：2026-05-12
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+cargo test --manifest-path rust/Cargo.toml
+git diff --check
+scripts/package-macos-app.sh
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.48s)
+swift test: Test run with 121 tests passed
+source panel smoke: panelInteractions=ok, menuPin=panel-smoke-file:default:true
+cargo test: 28 passed
+git diff --check: no output
+package: Packaged app: .codex/artifacts/ClipboardWorkbench.app
+codesign: no output
+packaged smoke: panelInteractions=ok, menuPin=panel-smoke-file:default:true
+```
+
+覆盖点：
+
+- 更多菜单对齐 Paste 的创建、重命名、共享、删除和颜色色点布局。
+- Pinboard chip 右键菜单展示同样的重命名、共享、删除和同层颜色色点。
+- 固定子菜单末尾展示“创建 Pinboard...”入口。
+- 颜色选项顺序和文案按 Paste 风格校验：红色、橙色、黄色、绿色、蓝色、紫色、粉色、灰色。
+
+## 顶部 Pinboard UI 与删除确认修正
+
+日期：2026-05-12
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+swift run PasteFloating --exercise-panel-interactions
+cargo test --manifest-path rust/Cargo.toml
+git diff --check
+scripts/package-macos-app.sh
+codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app
+.codex/artifacts/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --exercise-panel-interactions
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.48s)
+swift test: Test run with 121 tests passed
+source panel smoke: panelInteractions=ok, menuPin=panel-smoke-file:default:true
+cargo test: 28 passed
+git diff --check: no output
+package: Packaged app: .codex/artifacts/ClipboardWorkbench.app
+codesign: no output
+packaged smoke: panelInteractions=ok, menuPin=panel-smoke-file:default:true
+```
+
+覆盖点：
+
+- 顶部 `+` 是创建 Pinboard 的直接入口，顶部不再显示独立 ellipsis 管理按钮。
+- 固定父菜单在没有任何 Pinboard 时仍可展开，并只展示“创建 Pinboard...”。
+- 空 Pinboard 删除不二次确认，存在内容的 Pinboard 删除才弹确认。
+- 顶部 chip 按截图放大字体、历史图标、圆形色块和横向间距。
+- 打包后截图验证已生成：
+  - `.codex/artifacts/panel-runtime-snapshot-clipboard.png`
+  - `.codex/artifacts/panel-runtime-snapshot-pinboard.png`
+
+## 面板背景语义纠偏
+
+日期：2026-05-12
+
+执行者：Codex
+
+命令：
+
+```bash
+swift test
+swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot-clipboard.png
+swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot-pinboard.png --snapshot-selected-pinboard untitled
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift test: Test run with 121 tests passed
+clipboard snapshot: Build of product 'PasteFloating' complete
+pinboard snapshot: Build of product 'PasteFloating' complete
+git diff --check: no output
+```
+
+覆盖点：
+
+- 运行时面板保持毛玻璃：`NSVisualEffectView`、`.popover`、`.behindWindow`。
+- 面板主题背景保持 `NSColor.clear`。
+- 暖色仅存在于截图背板模拟和静态 fixture 的编辑器背板命名中。
+
+## 真实运行截图与顶部布局复核
+
+日期：2026-05-12
+
+执行者：Codex
+
+命令：
+
+```bash
+swift build
+swift test
+scripts/package-macos-app.sh
+open .codex/artifacts/ClipboardWorkbench.app
+osascript -e 'delay 0.5' -e 'tell application "System Events" to tell process "ClipboardWorkbenchApp" to click menu item "显示面板" of menu 1 of menu bar item 1 of menu bar 2'
+swift -module-cache-path .codex/module-cache -e 'import CoreGraphics; ... CGWindowListCopyWindowInfo ...'
+screencapture -x -l 14181 .codex/artifacts/ours-real-window-after-layout.png
+magick .codex/artifacts/paste-panel-crop.png .codex/artifacts/ours-real-window-after-layout.png -resize 4096x -append .codex/artifacts/paste-vs-ours-real-window-after-layout.png
+git diff --check
+```
+
+结果：通过。
+
+输出摘要：
+
+```text
+swift build: Build complete! (3.26s)
+swift test: Test run with 121 tests passed
+package: Packaged app: .codex/artifacts/ClipboardWorkbench.app
+full-screen screencapture: black output, discarded
+window capture: .codex/artifacts/ours-real-window-after-layout.png
+git diff --check: no output
+```
+
+覆盖点：
+
+- 不再把 `--render-panel-snapshot` 离屏渲染图当成真实运行截图。
+- 使用窗口 id 捕获 packaged app 的真实面板窗口。
+- 顶部 resize 区域不再占用布局高度，工具栏和卡片区的垂直比例按 Paste 真实截图校正。

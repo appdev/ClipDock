@@ -124,7 +124,7 @@ final class HeightResizeHandleView: NSView {
     }
 
     private func applyTheme() {
-        let alpha: CGFloat = isHovering ? 0.34 : 0.18
+        let alpha: CGFloat = isHovering ? 0.28 : 0
         indicatorLayer.backgroundColor = PasteTheme.current(for: self)
             .panel
             .resizeHandleColor
@@ -335,11 +335,132 @@ class PanelActionButton: NSButton {
 
 final class PinboardChipButton: PanelActionButton {
     var pinboardID: String?
-    var chipTitleText = ""
-    var chipDotColor: NSColor = .clear
+    var chipTitleText = "" {
+        didSet {
+            title = chipTitleText
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+    var chipDotColor: NSColor = .clear {
+        didSet { needsDisplay = true }
+    }
+    var chipSymbolName: String? {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+    var chipIsSelected = false {
+        didSet { needsDisplay = true }
+    }
+    var chipDrawsSelectionPill = false {
+        didSet { needsDisplay = true }
+    }
+    var chipTextColor: NSColor = .labelColor {
+        didSet { needsDisplay = true }
+    }
+    var chipSelectedTextColor: NSColor = .labelColor {
+        didSet { needsDisplay = true }
+    }
+    var chipSelectedBackgroundColor: NSColor = .controlBackgroundColor {
+        didSet { needsDisplay = true }
+    }
+    var chipHeight: CGFloat = 34 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+    var chipFontSize: CGFloat = 16 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+    var chipDotDiameter: CGFloat = 13 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+    var chipIconSide: CGFloat = 19 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+    var chipMarkerTextSpacing: CGFloat = 8 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+    var chipHorizontalPadding: CGFloat = 12 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
     var onContextMenu: ((NSEvent) -> Void)?
+
+    override var intrinsicContentSize: NSSize {
+        let font = chipFont()
+        let textWidth = ceil((chipTitleText as NSString).size(withAttributes: [.font: font]).width)
+        let markerWidth = chipSymbolName == nil ? chipDotDiameter : chipIconSide
+        let contentWidth = markerWidth + chipMarkerTextSpacing + textWidth
+        return NSSize(width: ceil(contentWidth + chipHorizontalPadding * 2), height: chipHeight)
+    }
 
     override func rightMouseDown(with event: NSEvent) {
         onContextMenu?(event)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let selectedTextColor = chipDrawsSelectionPill && chipIsSelected
+            ? chipSelectedTextColor
+            : chipTextColor
+        let textAttributes: [NSAttributedString.Key: Any] = [
+            .font: chipFont(),
+            .foregroundColor: selectedTextColor
+        ]
+        let titleSize = (chipTitleText as NSString).size(withAttributes: textAttributes)
+        let markerWidth = chipSymbolName == nil ? chipDotDiameter : chipIconSide
+        let contentWidth = markerWidth + chipMarkerTextSpacing + titleSize.width
+
+        if chipDrawsSelectionPill && chipIsSelected {
+            chipSelectedBackgroundColor.setFill()
+            NSBezierPath(
+                roundedRect: bounds.insetBy(dx: 0, dy: 1),
+                xRadius: (bounds.height - 2) / 2,
+                yRadius: (bounds.height - 2) / 2
+            ).fill()
+        }
+
+        let originX = max(chipHorizontalPadding, (bounds.width - contentWidth) / 2)
+        let centerY = bounds.midY
+
+        if let chipSymbolName,
+           let symbol = NSImage(systemSymbolName: chipSymbolName, accessibilityDescription: chipTitleText)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: chipIconSide, weight: .regular)) {
+            symbol.draw(
+                in: NSRect(
+                    x: originX,
+                    y: centerY - chipIconSide / 2,
+                    width: chipIconSide,
+                    height: chipIconSide
+                ),
+                from: NSRect.zero,
+                operation: NSCompositingOperation.sourceOver,
+                fraction: 1
+            )
+        } else {
+            let dotRect = NSRect(
+                x: originX,
+                y: centerY - chipDotDiameter / 2,
+                width: chipDotDiameter,
+                height: chipDotDiameter
+            )
+            chipDotColor.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+            NSColor.black.withAlphaComponent(0.16).setStroke()
+            let dotStroke = NSBezierPath(ovalIn: dotRect.insetBy(dx: 0.5, dy: 0.5))
+            dotStroke.lineWidth = 1
+            dotStroke.stroke()
+        }
+
+        (chipTitleText as NSString).draw(
+            at: NSPoint(
+                x: originX + markerWidth + chipMarkerTextSpacing,
+                y: centerY - titleSize.height / 2
+            ),
+            withAttributes: textAttributes
+        )
+    }
+
+    private func chipFont() -> NSFont {
+        NSFont.systemFont(ofSize: chipFontSize, weight: chipIsSelected ? .medium : .regular)
     }
 }

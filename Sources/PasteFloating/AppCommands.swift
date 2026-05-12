@@ -4,6 +4,7 @@ import ClipboardPanelApp
 
 enum PanelSnapshotCommand {
     private static let flag = "--render-panel-snapshot"
+    private static let selectedPinboardFlag = "--snapshot-selected-pinboard"
 
     static func outputURL(arguments: [String]) -> URL? {
         guard let flagIndex = arguments.firstIndex(of: flag) else { return nil }
@@ -19,9 +20,16 @@ enum PanelSnapshotCommand {
     }
 
     @MainActor
-    static func render(to outputURL: URL) throws {
+    static func render(to outputURL: URL, arguments: [String] = CommandLine.arguments) throws {
         let frame = NSRect(x: 0, y: 0, width: 960, height: 320)
         let view = FloatingPanelContentView(frame: frame)
+        // 截图命令只模拟面板背后的编辑器颜色；运行时面板仍使用 behindWindow 毛玻璃。
+        view.blendingMode = .withinWindow
+        view.updatePinboards(snapshotPinboards)
+        if let selectedPinboardID = selectedPinboardID(arguments: arguments),
+           let pinboardButton = view.smokePinboardFilterButton(pinboardID: selectedPinboardID) {
+            pinboardButton.onPress?()
+        }
         let previewURL = try PanelQASamples.makePanelSnapshotPreviewImageURL(outputDirectory: outputURL.deletingLastPathComponent())
         let sampleItems = PanelQASamples.makePanelSnapshotItems(imagePath: previewURL.path)
         view.updateListState(
@@ -41,10 +49,83 @@ enum PanelSnapshotCommand {
             backing: .buffered,
             defer: false
         )
-        window.contentView = view
+        let backdropView = PanelSnapshotBackdropView(frame: frame)
+        backdropView.addSubview(view)
+        window.contentView = backdropView
         window.layoutIfNeeded()
+        backdropView.layoutSubtreeIfNeeded()
         view.layoutSubtreeIfNeeded()
-        try ViewSnapshotRenderer.render(view: view, to: outputURL)
+        try ViewSnapshotRenderer.render(view: backdropView, to: outputURL)
+    }
+
+    private static func selectedPinboardID(arguments: [String]) -> String? {
+        guard let flagIndex = arguments.firstIndex(of: selectedPinboardFlag) else { return nil }
+        let nextIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(nextIndex), !arguments[nextIndex].hasPrefix("--") else {
+            return nil
+        }
+        return arguments[nextIndex]
+    }
+
+    private static var snapshotPinboards: [RustPinboardSummary] {
+        [
+            RustPinboardSummary(
+                id: "ai",
+                title: "AI",
+                colorCode: 4_293_940_557,
+                sortOrder: 1,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "untitled",
+                title: "未命名",
+                colorCode: 4_293_088_528,
+                sortOrder: 2,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "name",
+                title: "Name",
+                colorCode: 4_290_925_536,
+                sortOrder: 3,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "blue-name",
+                title: "a's'd'sa",
+                colorCode: 4_283_973_119,
+                sortOrder: 4,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ]
+    }
+}
+
+private final class PanelSnapshotBackdropView: NSView {
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        // 模拟 Paste 面板背后的编辑器底色，不能作为产品面板背景使用。
+        NSColor(calibratedRed: 0.96, green: 0.94, blue: 0.88, alpha: 1).setFill()
+        NSBezierPath(rect: bounds).fill()
+
+        NSColor(calibratedWhite: 1, alpha: 0.30).setFill()
+        NSBezierPath(rect: NSRect(x: 0, y: 0, width: bounds.width, height: 1)).fill()
+
+        NSColor(calibratedWhite: 0.74, alpha: 0.14).setFill()
+        for row in 0..<6 {
+            let y = 34 + CGFloat(row) * 24
+            NSBezierPath(rect: NSRect(x: 80, y: y, width: bounds.width - 160, height: 1)).fill()
+        }
     }
 }
 

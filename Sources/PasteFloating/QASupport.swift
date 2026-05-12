@@ -603,12 +603,13 @@ enum ViewSnapshotRenderer {
 
     @MainActor
     private static func bitmapImage(for view: NSView) throws -> NSBitmapImageRep {
+        let scale = NSScreen.main?.backingScaleFactor ?? 2
         let width = Int(view.bounds.width.rounded())
         let height = Int(view.bounds.height.rounded())
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: width,
-            pixelsHigh: height,
+            pixelsWide: Int((CGFloat(width) * scale).rounded()),
+            pixelsHigh: Int((CGFloat(height) * scale).rounded()),
             bitsPerSample: 8,
             samplesPerPixel: 4,
             hasAlpha: true,
@@ -619,6 +620,7 @@ enum ViewSnapshotRenderer {
         ) else {
             throw CocoaError(.fileWriteUnknown)
         }
+        bitmap.size = view.bounds.size
 
         guard let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmap) else {
             throw CocoaError(.fileWriteUnknown)
@@ -1001,29 +1003,36 @@ enum PanelInteractionSmokeScenario {
         let overflowItems = contentView.smokePanelOverflowMenuItems()
         try PanelQAHarness.require(
             Array(overflowItems.prefix(4).map(\.title)) == [
-                "创建 Pinboard…",
-                "重命名 Pinboard…",
-                "颜色",
-                "删除 Pinboard…"
+                "重命名",
+                "共享 Pinboard",
+                "删除...",
+                "颜色"
             ],
-            "更多菜单未完整展示 Pinboard 创建、重命名、上色、删除入口"
+            "更多菜单未按 Paste 样式展示 Pinboard 重命名、共享、删除和颜色入口"
         )
         try PanelQAHarness.require(
-            overflowItems.first(where: { $0.title == "重命名 Pinboard…" })?.isEnabled == true
-                && overflowItems.first(where: { $0.title == "颜色" })?.hasSubmenu == true
-                && overflowItems.first(where: { $0.title == "删除 Pinboard…" })?.isEnabled == true,
+            overflowItems.first(where: { $0.title == "重命名" })?.isEnabled == true
+                && overflowItems.first(where: { $0.title == "共享 Pinboard" })?.isEnabled == true
+                && overflowItems.first(where: { $0.title == "删除..." })?.isEnabled == true
+                && overflowItems.first(where: { $0.title == "颜色" })?.hasCustomView == true,
             "选择 Pinboard 后更多菜单中的管理项应可用"
         )
 
         let pinboardMenuItems = contentView.smokePinboardChipMenuItems(pinboardID: "default")
         try PanelQAHarness.require(
-            pinboardMenuItems.map(\.title) == ["重命名 Pinboard…", "颜色", "删除 Pinboard…"],
-            "Pinboard chip 右键菜单未展示重命名、上色、删除入口"
+            pinboardMenuItems.map(\.title) == ["重命名", "共享 Pinboard", "删除...", "颜色"],
+            "Pinboard chip 右键菜单未按 Paste 样式展示重命名、共享、删除和颜色入口"
         )
         try PanelQAHarness.require(
-            pinboardMenuItems.first(where: { $0.title == "颜色" })?.hasSubmenu == true
-                && !contentView.smokePinboardChipColorMenuItems(pinboardID: "default").isEmpty,
-            "Pinboard chip 右键颜色菜单缺少颜色选项"
+            pinboardMenuItems.first(where: { $0.title == "颜色" })?.hasCustomView == true
+                && contentView.smokePinboardChipColorMenuItems(pinboardID: "default").map(\.title)
+                    == ["红色", "橙色", "黄色", "绿色", "蓝色", "紫色", "粉色", "灰色"],
+            "Pinboard chip 右键颜色行缺少 Paste 风格颜色选项"
+        )
+        try PanelQAHarness.require(
+            contentView.smokePinboardDeleteRequiresConfirmation(pinboardID: "default") == false
+                && contentView.smokeNonEmptyPinboardDeleteRequiresConfirmation() == true,
+            "只有存在内容的 Pinboard 删除时才应二次确认"
         )
     }
 
@@ -1070,8 +1079,14 @@ enum PanelInteractionSmokeScenario {
         )
         try PanelQAHarness.require(
             contentView.smokeManagementSubmenuItems(itemID: "panel-smoke-file", title: "固定")
-                .map(\.title) == ["固定"],
-            "固定子菜单应展示默认 Pinboard"
+                .map(\.title) == ["固定", "创建 Pinboard..."],
+            "固定子菜单应展示默认 Pinboard 和创建入口"
+        )
+        let emptyPinboardMenu = contentView.smokeManagementPinboardMenuWithNoPinboards(itemID: "panel-smoke-file")
+        try PanelQAHarness.require(
+            emptyPinboardMenu?.isEnabled == true
+                && emptyPinboardMenu?.titles == ["创建 Pinboard..."],
+            "不存在任何 Pinboard 时固定子菜单仍应可点击并展示创建入口"
         )
         try PanelQAHarness.require(
             managementMenuItems.first(where: { $0.title == "复制" })?.keyEquivalent == "c",

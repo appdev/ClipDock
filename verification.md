@@ -1923,3 +1923,93 @@ doubleClickCopy=panel-smoke-text
 - Pinboard 删除卡顿根因是 Rust 删除事务逐条处理板内内容，外加 UI 预先触发一次列表查询。
 - 已改为数据库批量删除/保留逻辑，并取消删除前的额外查询。
 - 新增 120 条内容的批量删除回归测试，覆盖共享 Pinboard 内容不被误删。
+
+## Paste 风格 Pinboard 创建删除菜单
+
+日期：2026-05-12
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.48s)`。
+- `swift test`：通过，121 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:default:true`。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，28 个 Rust 测试通过。
+- `git diff --check`：通过，无输出。
+- `scripts/package-macos-app.sh`：通过，生成 `.codex/artifacts/ClipboardWorkbench.app`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过，无输出。
+- 包内 `ClipboardWorkbenchApp --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:default:true`。
+
+结论：
+
+- 已按 Paste 的 Pinboard 管理样式调整更多菜单、Pinboard chip 右键菜单和固定子菜单。
+- 创建入口使用 `创建 Pinboard...`，删除入口使用 `删除...`，颜色入口改为同层横向色点。
+- 打包产物位于 `.codex/artifacts/ClipboardWorkbench.app`。
+
+## 顶部 Pinboard UI 与删除确认修正
+
+日期：2026-05-12
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.48s)`。
+- `swift test`：通过，121 个 Swift 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:default:true`。
+- `cargo test --manifest-path rust/Cargo.toml`：通过，28 个 Rust 测试通过。
+- `git diff --check`：通过，无输出。
+- `scripts/package-macos-app.sh`：通过，生成 `.codex/artifacts/ClipboardWorkbench.app`。
+- `codesign --verify --deep --strict .codex/artifacts/ClipboardWorkbench.app`：通过，无输出。
+- 包内 `ClipboardWorkbenchApp --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`。
+
+结论：
+
+- 顶部 `+` 已作为创建 Pinboard 直接入口，顶部独立 ellipsis 管理按钮已移除。
+- 固定子菜单在无 Pinboard 时不再置灰，可展开并展示“创建 Pinboard...”。
+- 删除空 Pinboard 不再二次确认，只有存在内容的 Pinboard 才弹删除确认。
+- 顶部 chip 的字体、历史图标、圆形色块和间距已按用户截图方向放大和重排。
+- 已使用打包后的 `.app` 生成并检查截图：
+  - `.codex/artifacts/panel-runtime-snapshot-clipboard.png`
+  - `.codex/artifacts/panel-runtime-snapshot-pinboard.png`
+
+## 面板背景语义纠偏
+
+日期：2026-05-12
+
+执行者：Codex
+
+验证结果：
+
+- `swift test`：通过，121 个 Swift 测试通过。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot-clipboard.png`：通过，重新生成剪贴板选中态截图。
+- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot-pinboard.png --snapshot-selected-pinboard untitled`：通过，重新生成 Pinboard 选中态截图。
+- `git diff --check`：通过，无输出。
+
+结论：
+
+- 生产面板没有新增暖白实色背景，仍使用 `.popover` / `.behindWindow` 毛玻璃和 `NSColor.clear` 背景。
+- 截图里的暖色只模拟 Paste 面板背后的编辑器颜色；它不是产品面板填充色。
+- 静态截图 fixture 已将命名从面板背景改为编辑器背板，避免后续误读。
+
+## 真实运行截图与顶部布局复核
+
+日期：2026-05-12
+
+执行者：Codex
+
+验证结果：
+
+- `swift build`：通过，输出 `Build complete! (3.26s)`。
+- `swift test`：通过，121 个 Swift 测试通过。
+- `scripts/package-macos-app.sh`：通过，生成 `.codex/artifacts/ClipboardWorkbench.app`。
+- `git diff --check`：通过，无输出。
+- 全屏 `screencapture -x`：失败，输出图像为黑屏，未用于视觉判断。
+- `CGWindowListCopyWindowInfo` + `screencapture -x -l 14181`：通过，真实 packaged app 窗口截图输出到 `.codex/artifacts/ours-real-window-after-layout.png`。
+
+结论：
+
+- 已停止使用离屏 `--render-panel-snapshot` 作为“我们应用”的运行截图。
+- 顶部工具栏改为真实窗口截图验证口径；对比图为 `.codex/artifacts/paste-vs-ours-real-window-after-layout.png`。
+- 布局修正后，工具栏贴近面板顶部，卡片尺寸和间距更接近 Paste。

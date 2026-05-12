@@ -59,7 +59,7 @@ private func runClipboardWorkbenchDemoApp() {
 
     if let snapshotURL = PanelSnapshotCommand.outputURL(arguments: CommandLine.arguments) {
         do {
-            try PanelSnapshotCommand.render(to: snapshotURL)
+            try PanelSnapshotCommand.render(to: snapshotURL, arguments: CommandLine.arguments)
         } catch {
             FileHandle.standardError.write(Data("panel snapshot failed: \(error)\n".utf8))
             Darwin.exit(1)

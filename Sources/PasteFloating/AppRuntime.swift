@@ -13,8 +13,8 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private enum Layout {
         static let padding: CGFloat = 22
         static let resizeHandleHeight: CGFloat = 16
-        static let controlBarHeight: CGFloat = 44
-        static let sectionSpacing: CGFloat = 0
+        static let controlBarHeight: CGFloat = 34
+        static let sectionSpacing: CGFloat = 28
         static let defaultItemSide: CGFloat = 218
         static let compactItemSide: CGFloat = 156
         static let imagePreviewMinHeight: CGFloat = 78
@@ -23,7 +23,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         static let panelCornerRadius: CGFloat = 18
         static let cardCornerRadius: CGFloat = 10
         static let innerCornerRadius: CGFloat = 8
-        static let chipCornerRadius: CGFloat = 6
+        static let chipCornerRadius: CGFloat = 17
         static let cardHeaderHeight: CGFloat = 48
         static let cardInset: CGFloat = 12
         static let cardFooterHeight: CGFloat = 17
@@ -45,12 +45,13 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
 
     private static let pinboardColorOptions: [PinboardColorOption] = [
         PinboardColorOption(title: "红色", colorCode: 4_293_940_557),
+        PinboardColorOption(title: "橙色", colorCode: 4_293_088_528),
         PinboardColorOption(title: "黄色", colorCode: 4_294_620_928),
-        PinboardColorOption(title: "紫色", colorCode: 4_290_925_536),
         PinboardColorOption(title: "绿色", colorCode: 4_279_606_035),
         PinboardColorOption(title: "蓝色", colorCode: 4_283_973_119),
-        PinboardColorOption(title: "橙色", colorCode: 4_293_088_528),
-        PinboardColorOption(title: "灰色", colorCode: 4_284_242_835)
+        PinboardColorOption(title: "紫色", colorCode: 4_290_925_536),
+        PinboardColorOption(title: "粉色", colorCode: 4_294_913_365),
+        PinboardColorOption(title: "灰色", colorCode: 9_408_403)
     ]
 
     private struct PinboardFilterEntry: Equatable {
@@ -58,6 +59,110 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         let title: String
         let colorCode: Int64
         let itemCount: Int64
+    }
+
+    private final class PinboardColorSwatchButton: NSButton {
+        let colorCode: Int64
+        private let swatchColor: NSColor
+        let selectedSwatch: Bool
+
+        init(colorCode: Int64, color: NSColor, selected: Bool) {
+            self.colorCode = colorCode
+            self.swatchColor = color
+            self.selectedSwatch = selected
+            super.init(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+            isBordered = false
+            imagePosition = .noImage
+            title = ""
+            setButtonType(.momentaryChange)
+            focusRingType = .none
+        }
+
+        required init?(coder: NSCoder) {
+            nil
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.clear.setFill()
+            NSBezierPath(rect: bounds).fill()
+
+            let outerRect = bounds.insetBy(dx: 1, dy: 1)
+            if selectedSwatch {
+                NSColor.white.setFill()
+                NSBezierPath(ovalIn: outerRect).fill()
+                NSColor.separatorColor.withAlphaComponent(0.6).setStroke()
+                let ring = NSBezierPath(ovalIn: outerRect.insetBy(dx: 0.5, dy: 0.5))
+                ring.lineWidth = 1
+                ring.stroke()
+            }
+
+            let colorInset: CGFloat = selectedSwatch ? 5 : 3
+            swatchColor.setFill()
+            NSBezierPath(ovalIn: bounds.insetBy(dx: colorInset, dy: colorInset)).fill()
+        }
+    }
+
+    private final class PinboardColorSwatchRowView: NSView {
+        private let onSelect: (Int64) -> Void
+        private var buttons: [PinboardColorSwatchButton] = []
+        private var titlesByColorCode: [Int64: String] = [:]
+
+        init(
+            options: [PinboardColorOption],
+            selectedColorCode: Int64,
+            colorProvider: (Int64) -> NSColor,
+            onSelect: @escaping (Int64) -> Void
+        ) {
+            self.onSelect = onSelect
+            super.init(frame: NSRect(x: 0, y: 0, width: 252, height: 38))
+            titlesByColorCode = Dictionary(uniqueKeysWithValues: options.map { ($0.colorCode, $0.title) })
+            buttons = options.map { option in
+                PinboardColorSwatchButton(
+                    colorCode: option.colorCode,
+                    color: colorProvider(option.colorCode),
+                    selected: option.colorCode == selectedColorCode
+                )
+            }
+            for button in buttons {
+                button.target = self
+                button.action = #selector(colorPressed(_:))
+                addSubview(button)
+            }
+        }
+
+        required init?(coder: NSCoder) {
+            nil
+        }
+
+        override var intrinsicContentSize: NSSize {
+            NSSize(width: 252, height: 38)
+        }
+
+        override func layout() {
+            super.layout()
+            let buttonSide: CGFloat = 24
+            let spacing: CGFloat = 7
+            var x = (bounds.width - CGFloat(buttons.count) * buttonSide - CGFloat(max(buttons.count - 1, 0)) * spacing) / 2
+            let y = (bounds.height - buttonSide) / 2
+            for button in buttons {
+                button.frame = NSRect(x: x, y: y, width: buttonSide, height: buttonSide)
+                x += buttonSide + spacing
+            }
+        }
+
+        @objc private func colorPressed(_ sender: PinboardColorSwatchButton) {
+            onSelect(sender.colorCode)
+            enclosingMenuItem?.menu?.cancelTracking()
+        }
+
+        func smokeColorItems() -> [(title: String, isSelected: Bool)] {
+            buttons.map { button in
+                (
+                    title: titlesByColorCode[button.colorCode] ?? "",
+                    isSelected: button.selectedSwatch
+                )
+            }
+        }
     }
 
     private let searchField = NSSearchField()
@@ -243,7 +348,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private func itemSideLength(for panelHeight: CGFloat) -> CGFloat {
         max(
             Layout.compactItemSide,
-            panelHeight - Layout.resizeHandleHeight - Layout.controlBarHeight - Layout.sectionSpacing - Layout.padding
+            panelHeight - Layout.controlBarHeight - Layout.sectionSpacing - Layout.padding
         )
     }
 
@@ -307,7 +412,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
 
             controlBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.padding),
             controlBar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.padding),
-            controlBar.topAnchor.constraint(equalTo: resizeHandle.bottomAnchor),
+            controlBar.topAnchor.constraint(equalTo: topAnchor),
             controlBar.heightAnchor.constraint(equalToConstant: Layout.controlBarHeight),
 
             itemBand.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.padding),
@@ -354,21 +459,12 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         let row = NSStackView(views: [searchButton, searchField] + chips + [addButton])
         row.orientation = NSUserInterfaceLayoutOrientation.horizontal
         row.alignment = NSLayoutConstraint.Attribute.centerY
-        row.spacing = 13
+        row.spacing = 22
         row.userInterfaceLayoutDirection = NSUserInterfaceLayoutDirection.leftToRight
         row.translatesAutoresizingMaskIntoConstraints = false
         filterRow = row
 
-        let moreButton = makeToolbarIconButton(
-            symbolName: "ellipsis",
-            accessibilityLabel: "管理 Pinboard"
-        ) { [weak self] in
-            self?.showPanelOverflowMenu()
-        }
-        moreButton.translatesAutoresizingMaskIntoConstraints = false
-
         container.addSubview(row)
-        container.addSubview(moreButton)
         searchFieldWidthConstraint = searchField.widthAnchor.constraint(equalToConstant: 220)
         searchFieldWidthConstraint?.isActive = true
 
@@ -376,11 +472,8 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             row.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             row.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             row.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: moreButton.leadingAnchor, constant: -12),
-            searchField.heightAnchor.constraint(equalToConstant: 28),
-
-            moreButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
-            moreButton.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+            row.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            searchField.heightAnchor.constraint(equalToConstant: 32)
         ])
 
         return container
@@ -434,28 +527,29 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private func makePanelOverflowMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(ActionMenuItem(title: "创建 Pinboard…", imageName: "plus") { [weak self] in
-            self?.showCreatePinboardDialog()
-        })
 
         let selectedPinboard = selectedPinboardEntry()
-        let renameItem = ActionMenuItem(title: "重命名 Pinboard…", imageName: "pencil") { [weak self] in
+        let renameItem = ActionMenuItem(title: "重命名", imageName: "pencil") { [weak self] in
             self?.showRenamePinboardDialog()
         }
         renameItem.isEnabled = selectedPinboard != nil
         menu.addItem(renameItem)
 
-        let colorItem = NSMenuItem(title: "颜色", action: nil, keyEquivalent: "")
-        colorItem.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "颜色")
-        colorItem.submenu = makePinboardColorMenu(for: selectedPinboard)
-        colorItem.isEnabled = selectedPinboard != nil
-        menu.addItem(colorItem)
+        let shareItem = ActionMenuItem(title: "共享 Pinboard", imageName: "square.and.arrow.up") { [weak self] in
+            self?.showShareUnavailableAlert()
+        }
+        shareItem.isEnabled = selectedPinboard != nil
+        menu.addItem(shareItem)
 
-        let deleteItem = ActionMenuItem(title: "删除 Pinboard…", imageName: "trash") { [weak self] in
+        let deleteItem = ActionMenuItem(title: "删除...", imageName: "trash") { [weak self] in
             self?.confirmDeleteSelectedPinboard()
         }
         deleteItem.isEnabled = selectedPinboard != nil
         menu.addItem(deleteItem)
+        if let selectedPinboard {
+            menu.addItem(.separator())
+            menu.addItem(makePinboardColorRowMenuItem(for: selectedPinboard))
+        }
         menu.addItem(.separator())
         menu.addItem(ActionMenuItem(title: "偏好设置…", imageName: "gearshape") { [weak self] in
             self?.onRuntimeAction?(.showPreferences)
@@ -472,40 +566,40 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         return pinboardFilters.first { $0.id == selectedPinboardID }
     }
 
-    private func makePinboardColorMenu(for pinboard: PinboardFilterEntry?) -> NSMenu {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        for option in Self.pinboardColorOptions {
-            let item = ActionMenuItem(title: option.title) { [weak self] in
-                guard let pinboard else { return }
+    private func makePinboardColorRowMenuItem(for pinboard: PinboardFilterEntry) -> NSMenuItem {
+        let item = NSMenuItem(title: "颜色", action: nil, keyEquivalent: "")
+        item.view = PinboardColorSwatchRowView(
+            options: Self.pinboardColorOptions,
+            selectedColorCode: pinboard.colorCode,
+            colorProvider: { [weak self] colorCode in
+                self?.pinboardDotColor(colorCode: colorCode) ?? .systemRed
+            },
+            onSelect: { [weak self] colorCode in
                 self?.onRuntimeAction?(.updatePinboardColor(
                     pinboardID: pinboard.id,
-                    colorCode: option.colorCode
+                    colorCode: colorCode
                 ))
             }
-            item.image = pinboardMenuDotImage(colorCode: option.colorCode)
-            item.state = pinboard?.colorCode == option.colorCode ? .on : .off
-            item.isEnabled = pinboard != nil
-            menu.addItem(item)
-        }
-        return menu
+        )
+        return item
     }
 
     private func makePinboardChipManagementMenu(for pinboard: PinboardFilterEntry) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(ActionMenuItem(title: "重命名 Pinboard…", imageName: "pencil") { [weak self] in
+        menu.addItem(ActionMenuItem(title: "重命名", imageName: "pencil") { [weak self] in
             self?.showRenamePinboardDialog(for: pinboard)
         })
 
-        let colorItem = NSMenuItem(title: "颜色", action: nil, keyEquivalent: "")
-        colorItem.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: "颜色")
-        colorItem.submenu = makePinboardColorMenu(for: pinboard)
-        menu.addItem(colorItem)
+        menu.addItem(ActionMenuItem(title: "共享 Pinboard", imageName: "square.and.arrow.up") { [weak self] in
+            self?.showShareUnavailableAlert()
+        })
 
-        menu.addItem(ActionMenuItem(title: "删除 Pinboard…", imageName: "trash") { [weak self] in
+        menu.addItem(ActionMenuItem(title: "删除...", imageName: "trash") { [weak self] in
             self?.confirmDeletePinboard(pinboard)
         })
+        menu.addItem(.separator())
+        menu.addItem(makePinboardColorRowMenuItem(for: pinboard))
         return menu
     }
 
@@ -516,7 +610,8 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             title: "创建 Pinboard",
             informativeText: "输入新 Pinboard 名称。",
             placeholder: "未命名",
-            initialValue: ""
+            initialValue: "",
+            confirmButtonTitle: "创建"
         ) { [weak self] title in
             self?.onRuntimeAction?(.createPinboard(title: title, colorCode: colorOption.colorCode))
         }
@@ -531,7 +626,8 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             title: "重命名 Pinboard",
             informativeText: "输入新的 Pinboard 名称。",
             placeholder: "未命名",
-            initialValue: pinboard.title
+            initialValue: pinboard.title,
+            confirmButtonTitle: "重命名"
         ) { [weak self] title in
             self?.onRuntimeAction?(.renamePinboard(pinboardID: pinboard.id, title: title))
         }
@@ -543,12 +639,13 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         informativeText: String,
         placeholder: String,
         initialValue: String,
+        confirmButtonTitle: String,
         onConfirm: @escaping (String) -> Void
     ) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = informativeText
-        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: confirmButtonTitle)
         alert.addButton(withTitle: "取消")
 
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
@@ -562,12 +659,25 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         onConfirm(normalizedTitle.isEmpty ? placeholder : normalizedTitle)
     }
 
+    private func showShareUnavailableAlert() {
+        let alert = NSAlert()
+        alert.messageText = "共享 Pinboard"
+        alert.informativeText = "共享 Pinboard 尚未接入。"
+        alert.addButton(withTitle: "确定")
+        alert.runModal()
+    }
+
     private func confirmDeleteSelectedPinboard() {
         guard let pinboard = selectedPinboardEntry() else { return }
         confirmDeletePinboard(pinboard)
     }
 
     private func confirmDeletePinboard(_ pinboard: PinboardFilterEntry) {
+        guard pinboardDeletionRequiresConfirmation(pinboard) else {
+            onRuntimeAction?(.deletePinboard(pinboardID: pinboard.id))
+            return
+        }
+
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "删除“\(pinboard.title)”？"
@@ -577,6 +687,10 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         onRuntimeAction?(.deletePinboard(pinboardID: pinboard.id))
+    }
+
+    private func pinboardDeletionRequiresConfirmation(_ pinboard: PinboardFilterEntry) -> Bool {
+        pinboard.itemCount > 0
     }
 
     private func makeItemBand() -> NSView {
@@ -596,7 +710,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
 
         itemBandStack.orientation = .horizontal
         itemBandStack.alignment = .top
-        itemBandStack.spacing = 13
+        itemBandStack.spacing = 22
         itemBandStack.userInterfaceLayoutDirection = .leftToRight
         itemBandStack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -912,9 +1026,15 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             pinboardItem.image = pinboardMenuDotImage(colorCode: pinboard.colorCode)
             submenu.addItem(pinboardItem)
         }
+        if !pinboardFilters.isEmpty {
+            submenu.addItem(.separator())
+        }
+        submenu.addItem(ActionMenuItem(title: "创建 Pinboard...") { [weak self] in
+            self?.showCreatePinboardDialog()
+        })
 
         menuItem.submenu = submenu
-        menuItem.isEnabled = !pinboardFilters.isEmpty
+        menuItem.isEnabled = true
         return menuItem
     }
 
@@ -1240,7 +1360,11 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         let button = PanelActionButton()
         button.bezelStyle = .texturedRounded
         button.isBordered = false
-        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(
+                pointSize: symbolName == "plus" ? 22 : 20,
+                weight: .regular
+            ))
         button.imageScaling = .scaleProportionallyDown
         button.target = nil
         button.action = nil
@@ -1249,13 +1373,13 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
         button.contentTintColor = theme.panel.toolbarIconColor
-        button.layer?.cornerRadius = 14
+        button.layer?.cornerRadius = 16
         button.layer?.backgroundColor = NSColor.clear.cgColor
         toolbarIconButtons.append(button)
 
         NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 25),
-            button.heightAnchor.constraint(equalToConstant: 25)
+            button.widthAnchor.constraint(equalToConstant: 32),
+            button.heightAnchor.constraint(equalToConstant: 32)
         ])
 
         return button
@@ -1274,6 +1398,14 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.pinboardID = pinboardID
         button.chipTitleText = title
         button.chipDotColor = dotColor
+        button.chipSymbolName = pinboardID == nil ? "clock.arrow.circlepath" : nil
+        button.chipDrawsSelectionPill = true
+        button.chipHeight = 30
+        button.chipFontSize = 15
+        button.chipDotDiameter = 12
+        button.chipIconSide = 18
+        button.chipMarkerTextSpacing = 7
+        button.chipHorizontalPadding = pinboardID == nil ? 12 : 10
         button.onPress = { [weak self, weak button] in
             guard let button else { return }
             self?.pinboardChipPressed(button)
@@ -1300,11 +1432,11 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.layer?.cornerRadius = Layout.chipCornerRadius
         button.layer?.borderWidth = 0
         button.setButtonType(.momentaryChange)
-        button.attributedTitle = chipTitle(title, dotColor: dotColor)
+        button.attributedTitle = NSAttributedString(string: "")
 
         NSLayoutConstraint.activate([
-            button.heightAnchor.constraint(equalToConstant: pinboardID == nil ? 28 : 24),
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: pinboardID == nil ? 70 : 45)
+            button.heightAnchor.constraint(equalToConstant: 34),
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: pinboardID == nil ? 96 : 44)
         ])
 
         return button
@@ -1316,51 +1448,15 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             let isSelected = button.pinboardID != nil
                 ? button.pinboardID == selectedPinboardID
                 : selectedPinboardID == nil
-            button.layer?.backgroundColor = isSelected && button.pinboardID == nil
-                ? theme.panel.toolbarSelectedBackgroundColor.cgColor
-                : NSColor.clear.cgColor
+            button.layer?.backgroundColor = NSColor.clear.cgColor
             button.layer?.borderWidth = 0
             button.layer?.shadowOpacity = 0
-            button.attributedTitle = chipTitle(
-                button.chipTitleText,
-                dotColor: button.chipDotColor,
-                isSelected: isSelected
-            )
+            button.chipIsSelected = isSelected
+            button.chipTextColor = theme.panel.toolbarTextColor
+            button.chipSelectedTextColor = theme.panel.toolbarSelectedTextColor
+            button.chipSelectedBackgroundColor = theme.panel.toolbarSelectedBackgroundColor
+            button.needsDisplay = true
         }
-    }
-
-    private func chipTitle(
-        _ title: String,
-        dotColor: NSColor,
-        isSelected: Bool = false
-    ) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.baseWritingDirection = .leftToRight
-        let selectedTextColor = dotColor == .clear
-            ? theme.panel.toolbarSelectedTextColor
-            : theme.panel.toolbarTextColor.withAlphaComponent(0.92)
-        let textColor = isSelected ? selectedTextColor : theme.panel.toolbarTextColor
-        if dotColor != .clear {
-            result.append(NSAttributedString(
-                string: "● ",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 8.5, weight: .semibold),
-                    .foregroundColor: dotColor,
-                    .paragraphStyle: paragraph
-                ]
-            ))
-        }
-        result.append(NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: isSelected ? .semibold : .regular),
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraph
-            ]
-        ))
-        return result
     }
 
 }
@@ -1505,50 +1601,85 @@ extension FloatingPanelContentView {
         }
     }
 
+    func smokeManagementPinboardMenuWithNoPinboards(itemID: String) -> (isEnabled: Bool, titles: [String])? {
+        guard let item = currentItems().first(where: { $0.id == itemID }) else { return nil }
+        let previousPinboards = pinboardFilters
+        pinboardFilters = []
+        defer { pinboardFilters = previousPinboards }
+
+        guard let pinboardMenuItem = makeManagementMenu(for: item)
+            .items
+            .first(where: { $0.title == "固定" })
+        else {
+            return nil
+        }
+
+        let titles = pinboardMenuItem.submenu?.items.compactMap { item in
+            item.isSeparatorItem ? nil : item.title
+        } ?? []
+        return (isEnabled: pinboardMenuItem.isEnabled, titles: titles)
+    }
+
+    func smokePinboardDeleteRequiresConfirmation(pinboardID: String) -> Bool? {
+        pinboardFilters
+            .first { $0.id == pinboardID }
+            .map(pinboardDeletionRequiresConfirmation)
+    }
+
+    func smokeNonEmptyPinboardDeleteRequiresConfirmation() -> Bool {
+        pinboardDeletionRequiresConfirmation(PinboardFilterEntry(
+            id: "smoke-non-empty",
+            title: "非空",
+            colorCode: 4_293_940_557,
+            itemCount: 1
+        ))
+    }
+
     func smokeToolbarButtonToolTips() -> [String] {
         allSmokeSubviews(of: self)
             .compactMap { ($0 as? PanelActionButton)?.toolTip }
     }
 
-    func smokePanelOverflowMenuItems() -> [(title: String, isEnabled: Bool, hasSubmenu: Bool)] {
+    func smokePanelOverflowMenuItems() -> [(title: String, isEnabled: Bool, hasSubmenu: Bool, hasCustomView: Bool)] {
         makePanelOverflowMenu().items.compactMap { menuItem in
             guard !menuItem.isSeparatorItem else { return nil }
             return (
                 title: menuItem.title,
                 isEnabled: menuItem.isEnabled,
-                hasSubmenu: menuItem.submenu != nil
+                hasSubmenu: menuItem.submenu != nil,
+                hasCustomView: menuItem.view != nil
             )
         }
     }
 
-    func smokePinboardChipMenuItems(pinboardID: String) -> [(title: String, isEnabled: Bool, hasSubmenu: Bool)] {
+    func smokePinboardChipMenuItems(pinboardID: String) -> [(title: String, isEnabled: Bool, hasSubmenu: Bool, hasCustomView: Bool)] {
         guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }) else { return [] }
         return makePinboardChipManagementMenu(for: pinboard).items.compactMap { menuItem in
             guard !menuItem.isSeparatorItem else { return nil }
             return (
                 title: menuItem.title,
                 isEnabled: menuItem.isEnabled,
-                hasSubmenu: menuItem.submenu != nil
+                hasSubmenu: menuItem.submenu != nil,
+                hasCustomView: menuItem.view != nil
             )
         }
     }
 
     func smokePinboardChipColorMenuItems(pinboardID: String) -> [(title: String, isEnabled: Bool, isSelected: Bool)] {
         guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }),
-              let submenu = makePinboardChipManagementMenu(for: pinboard)
+              let colorRow = makePinboardChipManagementMenu(for: pinboard)
                 .items
                 .first(where: { $0.title == "颜色" })?
-                .submenu
+                .view as? PinboardColorSwatchRowView
         else {
             return []
         }
 
-        return submenu.items.compactMap { menuItem in
-            guard !menuItem.isSeparatorItem else { return nil }
+        return colorRow.smokeColorItems().map { item in
             return (
-                title: menuItem.title,
-                isEnabled: menuItem.isEnabled,
-                isSelected: menuItem.state == .on
+                title: item.title,
+                isEnabled: true,
+                isSelected: item.isSelected
             )
         }
     }

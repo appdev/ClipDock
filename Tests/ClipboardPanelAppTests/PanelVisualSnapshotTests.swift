@@ -31,7 +31,7 @@ struct PanelVisualSnapshotTests {
         #expect(FileManager.default.fileExists(atPath: outputURL.path))
         assertColor(
             bitmap.colorAt(x: 480, y: 10),
-            isCloseTo: PanelSnapshotFixtureView.resizeHandleColor,
+            isCloseTo: PanelSnapshotFixtureView.editorBackdropColor,
             tolerance: 0.05
         )
         assertColor(
@@ -98,7 +98,7 @@ struct PanelVisualSnapshotTests {
 }
 
 private final class PanelSnapshotFixtureView: NSView {
-    static let resizeHandleColor = NSColor(deviceRed: 0.76, green: 0.80, blue: 0.84, alpha: 1)
+    static let editorBackdropColor = NSColor(deviceRed: 0.96, green: 0.94, blue: 0.88, alpha: 1)
     static let selectedHeaderColor = NSColor.systemBlue
     static let cardBodyColor = NSColor(deviceRed: 0.95, green: 0.96, blue: 0.94, alpha: 1)
     static let imagePreviewColor = NSColor(deviceRed: 0.36, green: 0.68, blue: 0.74, alpha: 1)
@@ -108,16 +108,16 @@ private final class PanelSnapshotFixtureView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawPanelBackground()
-        drawResizeHandle()
         drawControlBar()
         drawCards()
     }
 
     private func drawPanelBackground() {
-        NSColor(deviceRed: 0.88, green: 0.92, blue: 0.88, alpha: 1).setFill()
+        // 该 fixture 是静态锚点图，暖色只代表面板背后的编辑器背景。
+        Self.editorBackdropColor.setFill()
         NSBezierPath(rect: bounds).fill()
 
-        NSColor(deviceRed: 0.88, green: 0.92, blue: 0.88, alpha: 0.86).setFill()
+        Self.editorBackdropColor.withAlphaComponent(0.96).setFill()
         NSBezierPath(
             roundedRect: bounds.insetBy(dx: 0, dy: 0),
             xRadius: 16,
@@ -128,18 +128,10 @@ private final class PanelSnapshotFixtureView: NSView {
         NSBezierPath(rect: NSRect(x: 0, y: 0, width: bounds.width, height: 1)).fill()
     }
 
-    private func drawResizeHandle() {
-        Self.resizeHandleColor.setFill()
-        NSBezierPath(
-            roundedRect: NSRect(x: bounds.midX - 36, y: 8, width: 72, height: 4),
-            xRadius: 2,
-            yRadius: 2
-        ).fill()
-    }
-
     private func drawControlBar() {
-        drawRoundedRect(NSRect(x: 390, y: 30, width: 30, height: 30), color: NSColor(deviceWhite: 1, alpha: 0.36), radius: 15)
-        drawText("⌕", in: NSRect(x: 400, y: 35, width: 12, height: 16), size: 14, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .semibold)
+        var x: CGFloat = 116
+        drawText("⌕", in: NSRect(x: x, y: 26, width: 34, height: 34), size: 31, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .regular)
+        x += 76
 
         let chips: [(String, NSColor?)] = [
             ("剪贴板", nil),
@@ -147,23 +139,26 @@ private final class PanelSnapshotFixtureView: NSView {
             ("AI", NSColor(deviceRed: 0.98, green: 0.72, blue: 0.00, alpha: 1)),
             ("资料", NSColor(deviceRed: 0.71, green: 0.39, blue: 0.88, alpha: 1))
         ]
-        var x: CGFloat = 432
         for (index, chip) in chips.enumerated() {
-            let width: CGFloat = index == 0 ? 76 : 66
-            drawRoundedRect(
-                NSRect(x: x, y: 30, width: width, height: 30),
-                color: index == 0 ? NSColor(deviceWhite: 1, alpha: 0.42) : NSColor(deviceWhite: 1, alpha: 0.26),
-                radius: 15
-            )
-            if let dot = chip.1 {
+            if index == 0 {
+                let width: CGFloat = 118
+                drawRoundedRect(
+                    NSRect(x: x, y: 25, width: width, height: 36),
+                    color: NSColor(deviceWhite: 1, alpha: 0.52),
+                    radius: 18
+                )
+                drawText("↶", in: NSRect(x: x + 18, y: 31, width: 18, height: 20), size: 19, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .regular)
+                drawText(chip.0, in: NSRect(x: x + 46, y: 32, width: width - 58, height: 20), size: 16, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .semibold)
+                x += width + 36
+            } else if let dot = chip.1 {
                 dot.setFill()
-                NSBezierPath(ovalIn: NSRect(x: x + 10, y: 42, width: 7, height: 7)).fill()
-                drawText(chip.0, in: NSRect(x: x + 22, y: 38, width: width - 28, height: 14), size: 11, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .semibold)
-            } else {
-                drawText(chip.0, in: NSRect(x: x + 12, y: 38, width: width - 20, height: 14), size: 11, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .semibold)
+                NSBezierPath(ovalIn: NSRect(x: x, y: 37, width: 13, height: 13)).fill()
+                let width = max(42, ceil((chip.0 as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 16)]).width))
+                drawText(chip.0, in: NSRect(x: x + 25, y: 32, width: width, height: 22), size: 16, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .regular)
+                x += 25 + width + 40
             }
-            x += width + 8
         }
+        drawText("+", in: NSRect(x: x + 4, y: 24, width: 34, height: 38), size: 31, color: NSColor(deviceWhite: 0.16, alpha: 1), weight: .light)
     }
 
     private func drawCards() {

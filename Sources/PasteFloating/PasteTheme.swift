@@ -95,11 +95,11 @@ enum PasteTheme {
     private static let lightPalette = PasteThemePalette(
         scheme: .light,
         panel: PastePanelTheme(
-            backgroundColor: NSColor(calibratedWhite: 0.88, alpha: 0.96),
-            toolbarIconColor: NSColor(calibratedWhite: 0.18, alpha: 0.72),
-            toolbarTextColor: NSColor(calibratedWhite: 0.15, alpha: 0.78),
-            toolbarSelectedBackgroundColor: NSColor(calibratedWhite: 0.74, alpha: 0.52),
-            toolbarSelectedTextColor: NSColor(calibratedWhite: 0.10, alpha: 0.90),
+            backgroundColor: NSColor.clear,
+            toolbarIconColor: NSColor(calibratedWhite: 0.10, alpha: 0.94),
+            toolbarTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
+            toolbarSelectedBackgroundColor: NSColor.white.withAlphaComponent(0.38),
+            toolbarSelectedTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
             resizeHandleColor: NSColor(calibratedWhite: 0.26, alpha: 0.22)
         ),
         card: PasteCardTheme(
