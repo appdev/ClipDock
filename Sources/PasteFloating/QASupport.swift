@@ -999,6 +999,10 @@ enum PanelInteractionSmokeScenario {
             contentView.smokeToolbarButtonToolTips().contains("创建 Pinboard"),
             "工具栏加号应直接暴露创建 Pinboard 入口"
         )
+        try PanelQAHarness.require(
+            contentView.smokeCreatePinboardAction()?.title == "未命名",
+            "工具栏加号应按 Paste 实拍直接创建未命名 Pinboard，而不是打开命名弹窗"
+        )
 
         let overflowItems = contentView.smokePanelOverflowMenuItems()
         try PanelQAHarness.require(
@@ -1024,15 +1028,19 @@ enum PanelInteractionSmokeScenario {
             "Pinboard chip 右键菜单未按 Paste 样式展示重命名、共享、删除和颜色入口"
         )
         try PanelQAHarness.require(
+            contentView.smokePinboardRenameUsesInlineEditor(pinboardID: "default"),
+            "Pinboard 重命名应使用 Paste 式 chip 内联编辑态"
+        )
+        try PanelQAHarness.require(
             pinboardMenuItems.first(where: { $0.title == "颜色" })?.hasCustomView == true
                 && contentView.smokePinboardChipColorMenuItems(pinboardID: "default").map(\.title)
                     == ["红色", "橙色", "黄色", "绿色", "蓝色", "紫色", "粉色", "灰色"],
             "Pinboard chip 右键颜色行缺少 Paste 风格颜色选项"
         )
         try PanelQAHarness.require(
-            contentView.smokePinboardDeleteRequiresConfirmation(pinboardID: "default") == false
+            contentView.smokePinboardDeleteRequiresConfirmation(pinboardID: "default") == true
                 && contentView.smokeNonEmptyPinboardDeleteRequiresConfirmation() == true,
-            "只有存在内容的 Pinboard 删除时才应二次确认"
+            "Pinboard 删除应按 Paste 实拍总是二次确认"
         )
     }
 

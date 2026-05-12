@@ -363,6 +363,141 @@ enum ContextMenuRealQACommand {
     }
 }
 
+enum PinboardRealQACommand {
+    private static let flag = "--show-pinboard-ui"
+
+    static func shouldRun(arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
+
+    @MainActor
+    static func run(arguments: [String]) throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+        app.activate(ignoringOtherApps: true)
+
+        let appSupportURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("pinboard-real-qa", isDirectory: true)
+        try FileManager.default.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
+
+        let imageURL = try PanelQASamples.makePanelInteractionSmokeImageURL(outputDirectory: appSupportURL)
+        let sampleItems = PanelQASamples.makePanelInteractionItems(imagePath: imageURL.path)
+        let frame = NSRect(x: 46, y: 120, width: 1840, height: 330)
+        let contentView = FloatingPanelContentView(frame: frame)
+        contentView.updatePinboards(samplePinboards)
+        contentView.updateListState(
+            .success(RustCoreListResult(
+                items: sampleItems,
+                totalCount: Int64(sampleItems.count),
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        contentView.updatePanelHeight(frame.height)
+
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.level = .floating
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = contentView
+        window.makeKeyAndOrderFront(nil)
+        contentView.layoutSubtreeIfNeeded()
+
+        let mode = mode(arguments: arguments)
+        let targetPinboardID = "untitled-new"
+        contentView.smokePinboardFilterButton(pinboardID: targetPinboardID)?.onPress?()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            switch mode {
+            case "menu":
+                _ = contentView.smokeShowPinboardChipMenu(pinboardID: targetPinboardID)
+            case "rename":
+                _ = contentView.smokeBeginPinboardRenameForScreenshot(pinboardID: targetPinboardID)
+            case "delete":
+                _ = contentView.smokeShowPinboardDeleteConfirmationForScreenshot(pinboardID: targetPinboardID)
+            default:
+                break
+            }
+        }
+
+        RunLoop.main.run()
+    }
+
+    private static func mode(arguments: [String]) -> String {
+        guard let flagIndex = arguments.firstIndex(of: flag) else { return "toolbar" }
+        let nextIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(nextIndex), !arguments[nextIndex].hasPrefix("--") else {
+            return "toolbar"
+        }
+        return arguments[nextIndex]
+    }
+
+    private static var samplePinboards: [RustPinboardSummary] {
+        [
+            RustPinboardSummary(
+                id: "ai",
+                title: "AI",
+                colorCode: 4_293_940_557,
+                sortOrder: 1,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "untitled",
+                title: "未命名",
+                colorCode: 4_294_620_928,
+                sortOrder: 2,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "name",
+                title: "Name",
+                colorCode: 4_290_925_536,
+                sortOrder: 3,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "blue-name",
+                title: "a's'd'sa",
+                colorCode: 4_283_973_119,
+                sortOrder: 4,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "untitled-new",
+                title: "未命名",
+                colorCode: 4_279_606_035,
+                sortOrder: 5,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ]
+    }
+
+    private struct QAError: LocalizedError {
+        let message: String
+
+        var errorDescription: String? {
+            message
+        }
+    }
+}
+
 enum PreviewRealQACommand {
     private static let flag = "--show-preview"
     private static let longTextFlag = "--show-preview-long"

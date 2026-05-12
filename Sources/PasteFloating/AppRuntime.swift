@@ -188,6 +188,11 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             itemCount: 0
         )
     ]
+    private var pendingCreatedPinboardSourceIDs: Set<String>?
+    private weak var activeRenameField: NSTextField?
+    private weak var activeRenameButton: PinboardChipButton?
+    private var activeRenamePinboardID: String?
+    private var isInstallingRenameField = false
     private var searchFieldWidthConstraint: NSLayoutConstraint?
     private weak var filterRow: NSStackView?
     private var appSupportDirectory: URL?
@@ -248,10 +253,22 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
                 itemCount: pinboard.itemCount
             )
         }
-        guard nextFilters != pinboardFilters else { return }
 
+        let previousPinboardIDs = pendingCreatedPinboardSourceIDs
+        let didChangeFilters = nextFilters != pinboardFilters
         pinboardFilters = nextFilters
-        rebuildFilterChips()
+        if didChangeFilters {
+            rebuildFilterChips()
+        }
+
+        if let previousPinboardIDs {
+            pendingCreatedPinboardSourceIDs = nil
+            let createdPinboardID = nextFilters.first { !previousPinboardIDs.contains($0.id) }?.id
+                ?? (nextFilters.count > previousPinboardIDs.count ? nextFilters.last?.id : nil)
+            if let createdPinboardID {
+                selectPinboardAfterCreation(pinboardID: createdPinboardID)
+            }
+        }
     }
 
     func setPreviewPopoverEnabled(_ enabled: Bool) {
@@ -294,6 +311,11 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             effects: localEffects,
             shouldSyncToolbar: result.shouldSyncToolbar
         ))
+    }
+
+    private func selectPinboardAfterCreation(pinboardID: String) {
+        guard panelViewState().toolbar.selectedPinboardID != pinboardID else { return }
+        applyInteractionAction(.setPinboardFilter(pinboardID))
     }
 
     func containsPreviewSurface(eventWindow: NSWindow?, mouseLocation: CGPoint) -> Bool {
@@ -493,6 +515,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private func rebuildFilterChips() {
         guard let filterRow else { return }
 
+        cancelInlinePinboardRename()
         let oldButtons = pinboardButtons
         let newButtons = makeFilterChips()
         for oldButton in oldButtons {
@@ -604,59 +627,90 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     private func showCreatePinboardDialog() {
-        guard let window else { return }
+        createPinboardDirectly()
+    }
+
+    private func createPinboardDirectly() {
         let colorOption = Self.pinboardColorOptions[pinboardFilters.count % Self.pinboardColorOptions.count]
-        showPinboardTextDialog(
-            title: "创建 Pinboard",
-            informativeText: "输入新 Pinboard 名称。",
-            placeholder: "未命名",
-            initialValue: "",
-            confirmButtonTitle: "创建"
-        ) { [weak self] title in
-            self?.onRuntimeAction?(.createPinboard(title: title, colorCode: colorOption.colorCode))
-        }
-        window.makeFirstResponder(self)
+        pendingCreatedPinboardSourceIDs = Set(pinboardFilters.map(\.id))
+        onRuntimeAction?(.createPinboard(title: "未命名", colorCode: colorOption.colorCode))
     }
 
     private func showRenamePinboardDialog(for explicitPinboard: PinboardFilterEntry? = nil) {
         guard let pinboard = explicitPinboard ?? selectedPinboardEntry(),
-              let window
+              let button = pinboardButtons.first(where: { $0.pinboardID == pinboard.id })
         else { return }
-        showPinboardTextDialog(
-            title: "重命名 Pinboard",
-            informativeText: "输入新的 Pinboard 名称。",
-            placeholder: "未命名",
-            initialValue: pinboard.title,
-            confirmButtonTitle: "重命名"
-        ) { [weak self] title in
-            self?.onRuntimeAction?(.renamePinboard(pinboardID: pinboard.id, title: title))
-        }
-        window.makeFirstResponder(self)
+        beginInlinePinboardRename(pinboard, in: button)
     }
 
-    private func showPinboardTextDialog(
-        title: String,
-        informativeText: String,
-        placeholder: String,
-        initialValue: String,
-        confirmButtonTitle: String,
-        onConfirm: @escaping (String) -> Void
+    private func beginInlinePinboardRename(
+        _ pinboard: PinboardFilterEntry,
+        in button: PinboardChipButton
     ) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = informativeText
-        alert.addButton(withTitle: confirmButtonTitle)
-        alert.addButton(withTitle: "取消")
+        cancelInlinePinboardRename()
 
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        let textField = NSTextField(frame: inlineRenameFieldFrame(in: button))
         textField.placeholderString = placeholder
-        textField.stringValue = initialValue
-        alert.accessoryView = textField
+        textField.stringValue = pinboard.title
+        textField.font = .systemFont(ofSize: button.chipFontSize, weight: .medium)
+        textField.textColor = theme.panel.toolbarSelectedTextColor
+        textField.backgroundColor = .clear
+        textField.drawsBackground = false
+        textField.isBordered = false
+        textField.focusRingType = .none
+        textField.lineBreakMode = .byTruncatingTail
+        textField.delegate = self
 
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
-        let normalizedTitle = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        onConfirm(normalizedTitle.isEmpty ? placeholder : normalizedTitle)
+        button.chipIsRenaming = true
+        button.addSubview(textField)
+        activeRenameField = textField
+        activeRenameButton = button
+        activeRenamePinboardID = pinboard.id
+        isInstallingRenameField = true
+        window?.makeFirstResponder(textField)
+        textField.selectText(nil)
+        isInstallingRenameField = false
+    }
+
+    private var placeholder: String {
+        "未命名"
+    }
+
+    private func inlineRenameFieldFrame(in button: PinboardChipButton) -> NSRect {
+        button.layoutSubtreeIfNeeded()
+        let markerWidth = button.chipSymbolName == nil ? button.chipDotDiameter : button.chipIconSide
+        let x = button.chipHorizontalPadding + markerWidth + button.chipMarkerTextSpacing - 2
+        let fieldHeight: CGFloat = 22
+        let width = max(44, button.bounds.width - x - button.chipHorizontalPadding + 4)
+        return NSRect(
+            x: x,
+            y: (button.bounds.height - fieldHeight) / 2,
+            width: width,
+            height: fieldHeight
+        )
+    }
+
+    private func finishInlinePinboardRename(commit: Bool) {
+        guard let textField = activeRenameField else { return }
+        let pinboardID = activeRenamePinboardID
+        let nextTitle = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedTitle = nextTitle.isEmpty ? placeholder : nextTitle
+
+        textField.delegate = nil
+        textField.removeFromSuperview()
+        activeRenameField = nil
+        activeRenameButton?.chipIsRenaming = false
+        activeRenameButton = nil
+        activeRenamePinboardID = nil
+        window?.makeFirstResponder(self)
+
+        if commit, let pinboardID {
+            onRuntimeAction?(.renamePinboard(pinboardID: pinboardID, title: normalizedTitle))
+        }
+    }
+
+    private func cancelInlinePinboardRename() {
+        finishInlinePinboardRename(commit: false)
     }
 
     private func showShareUnavailableAlert() {
@@ -673,11 +727,6 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     private func confirmDeletePinboard(_ pinboard: PinboardFilterEntry) {
-        guard pinboardDeletionRequiresConfirmation(pinboard) else {
-            onRuntimeAction?(.deletePinboard(pinboardID: pinboard.id))
-            return
-        }
-
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "删除“\(pinboard.title)”？"
@@ -690,7 +739,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     private func pinboardDeletionRequiresConfirmation(_ pinboard: PinboardFilterEntry) -> Bool {
-        pinboard.itemCount > 0
+        true
     }
 
     private func makeItemBand() -> NSView {
@@ -1188,7 +1237,33 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     func controlTextDidChange(_ obj: Notification) {
+        guard obj.object as? NSSearchField === searchField else { return }
         applyInteractionAction(.setSearchText(searchField.stringValue))
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard obj.object as? NSTextField === activeRenameField else { return }
+        guard !isInstallingRenameField else { return }
+        finishInlinePinboardRename(commit: true)
+    }
+
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        guard control === activeRenameField else { return false }
+
+        switch commandSelector {
+        case #selector(NSResponder.insertNewline(_:)):
+            finishInlinePinboardRename(commit: true)
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            cancelInlinePinboardRename()
+            return true
+        default:
+            return false
+        }
     }
 
     private func pinboardChipPressed(_ sender: PinboardChipButton) {
@@ -1633,6 +1708,59 @@ extension FloatingPanelContentView {
             colorCode: 4_293_940_557,
             itemCount: 1
         ))
+    }
+
+    func smokeCreatePinboardAction() -> (title: String, colorCode: Int64)? {
+        let previousAction = onRuntimeAction
+        let previousPendingIDs = pendingCreatedPinboardSourceIDs
+        var capturedAction: PanelRuntimeAction?
+        onRuntimeAction = { action in
+            capturedAction = action
+        }
+        showCreatePinboardDialog()
+        onRuntimeAction = previousAction
+        pendingCreatedPinboardSourceIDs = previousPendingIDs
+
+        guard case .createPinboard(let title, let colorCode) = capturedAction else {
+            return nil
+        }
+        return (title, colorCode)
+    }
+
+    func smokePinboardRenameUsesInlineEditor(pinboardID: String) -> Bool {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }) else { return false }
+        showRenamePinboardDialog(for: pinboard)
+        let chipContainsEditor = pinboardButtons
+            .first { $0.pinboardID == pinboardID }?
+            .subviews
+            .contains { $0 is NSTextField } == true
+        let isInline = activeRenamePinboardID == pinboardID
+            && (activeRenameField?.superview != nil || chipContainsEditor)
+        cancelInlinePinboardRename()
+        return isInline
+    }
+
+    func smokeShowPinboardChipMenu(pinboardID: String) -> Bool {
+        guard let button = pinboardButtons.first(where: { $0.pinboardID == pinboardID }),
+              let pinboard = pinboardFilters.first(where: { $0.id == pinboardID })
+        else { return false }
+
+        makePinboardChipManagementMenu(for: pinboard)
+            .popUp(positioning: nil, at: NSPoint(x: button.bounds.midX, y: button.bounds.midY), in: button)
+        return true
+    }
+
+    func smokeBeginPinboardRenameForScreenshot(pinboardID: String) -> Bool {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }) else { return false }
+        showRenamePinboardDialog(for: pinboard)
+        return activeRenamePinboardID == pinboardID
+            && activeRenameField?.superview != nil
+    }
+
+    func smokeShowPinboardDeleteConfirmationForScreenshot(pinboardID: String) -> Bool {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }) else { return false }
+        confirmDeletePinboard(pinboard)
+        return true
     }
 
     func smokeToolbarButtonToolTips() -> [String] {

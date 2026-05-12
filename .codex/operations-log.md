@@ -347,3 +347,8 @@
 - 2026-05-12 Codex：按用户纠正恢复并确认面板背景语义：生产运行时 `FloatingPanelContentView` 仍是 `NSVisualEffectView` 的 `.popover` / `.behindWindow` 毛玻璃，`PasteTheme.panel.backgroundColor` 保持 `NSColor.clear`；截图命令中的暖色只模拟面板背后的编辑器背景，并已在代码注释和测试 fixture 命名中标明。
 - 2026-05-12 Codex：按用户反馈纠正截图口径：停止使用 `--render-panel-snapshot` 作为“我们应用”的运行截图；全屏 `screencapture` 当前返回黑屏，改用 `CGWindowListCopyWindowInfo` 定位真实运行窗口并执行 `screencapture -x -l <window-id>`。真实 packaged app 窗口截图为 `.codex/artifacts/ours-real-window-after-layout.png`，对比图为 `.codex/artifacts/paste-vs-ours-real-window-after-layout.png`。
 - 2026-05-12 Codex：基于真实窗口截图修正顶部栏布局；resize 拖拽区改为覆盖在顶部，不再挤压正常排版；顶部栏高度收敛到 34pt，卡片区和顶部栏间距调整为 28pt，卡片间距调整为 22pt，chip 与工具栏图标缩小到更接近 Paste 的比例。验证 `swift build`、`swift test`、`scripts/package-macos-app.sh` 和 `git diff --check` 均通过。
+- 2026-05-12 Codex：重新收集本机已安装 Paste 6.2.0 的 Pinboard 固定与管理 UI；复核官方帮助页、本机 Localizable 文案、SQLite `ZLISTENTITY` / `ZITEMENTITY` 和历史截图，确认创建、固定到、重命名、颜色、拖放排序、编辑、删除、清理保护和快捷键语义。调研文档写入 `.codex/paste-pinboard-ui-research-2026-05-12.md`，本轮未改业务代码。
+- 2026-05-12 Codex：按用户纠正，将 Pinboard 添加、删除、重命名补充内容从数据执行链路改为 UI 处理流程，明确创建弹窗、重命名弹窗、删除确认、成功/失败状态、chip 刷新、当前视图切换和固定子菜单交互。
+
+- 2026-05-12 Codex：按用户要求改为收集 Paste 操作 UI 截图；本机 live 截图因 Paste 窗口截图保护失败，已下载官方帮助页原始 UI 截图到 `.codex/artifacts/paste-ui-ops-2026-05-12/official/`，并记录缺口到 README。
+- 2026-05-12 Codex：用户调整权限后重试采集 Paste 6.2.0 实机 UI；通过整屏 `screencapture -x` 捕获工具栏 `+` 创建、条目右键菜单、`固定` 子菜单、`创建 Pinboard...`、Pinboard chip 右键管理菜单、内联重命名态和删除确认框，截图写入 `.codex/artifacts/paste-ui-ops-2026-05-12/retry/`。本轮只取消删除确认，未点击破坏性删除；右键文字标签触发 macOS 文本菜单的负例也已保留。

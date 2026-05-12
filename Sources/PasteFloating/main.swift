@@ -42,6 +42,16 @@ private func runClipboardWorkbenchDemoApp() {
         Darwin.exit(0)
     }
 
+    if PinboardRealQACommand.shouldRun(arguments: CommandLine.arguments) {
+        do {
+            try PinboardRealQACommand.run(arguments: CommandLine.arguments)
+        } catch {
+            FileHandle.standardError.write(Data("pinboard real QA failed: \(error.localizedDescription)\n".utf8))
+            Darwin.exit(1)
+        }
+        Darwin.exit(0)
+    }
+
     if PreviewRealQACommand.shouldRun(arguments: CommandLine.arguments) {
         do {
             try PreviewRealQACommand.run()

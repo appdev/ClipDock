@@ -357,6 +357,9 @@ final class PinboardChipButton: PanelActionButton {
     var chipDrawsSelectionPill = false {
         didSet { needsDisplay = true }
     }
+    var chipIsRenaming = false {
+        didSet { needsDisplay = true }
+    }
     var chipTextColor: NSColor = .labelColor {
         didSet { needsDisplay = true }
     }
@@ -419,6 +422,17 @@ final class PinboardChipButton: PanelActionButton {
             ).fill()
         }
 
+        if chipIsRenaming {
+            let focusPath = NSBezierPath(
+                roundedRect: bounds.insetBy(dx: 1, dy: 2),
+                xRadius: (bounds.height - 4) / 2,
+                yRadius: (bounds.height - 4) / 2
+            )
+            NSColor.systemBlue.setStroke()
+            focusPath.lineWidth = 2
+            focusPath.stroke()
+        }
+
         let originX = max(chipHorizontalPadding, (bounds.width - contentWidth) / 2)
         let centerY = bounds.midY
 
@@ -451,13 +465,15 @@ final class PinboardChipButton: PanelActionButton {
             dotStroke.stroke()
         }
 
-        (chipTitleText as NSString).draw(
-            at: NSPoint(
-                x: originX + markerWidth + chipMarkerTextSpacing,
-                y: centerY - titleSize.height / 2
-            ),
-            withAttributes: textAttributes
-        )
+        if !chipIsRenaming {
+            (chipTitleText as NSString).draw(
+                at: NSPoint(
+                    x: originX + markerWidth + chipMarkerTextSpacing,
+                    y: centerY - titleSize.height / 2
+                ),
+                withAttributes: textAttributes
+            )
+        }
     }
 
     private func chipFont() -> NSFont {
