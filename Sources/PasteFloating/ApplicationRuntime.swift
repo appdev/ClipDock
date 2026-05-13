@@ -563,6 +563,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updatePreferencesController: Bool
     ) {
         currentPreferences = result.preferences
+        PasteTheme.applyAppearanceMode(result.preferences.appearance.mode)
         panelController.setPreferredHeight(CGFloat(result.preferences.general.defaultPanelHeight))
         panelController.setPreviewPopoverEnabled(result.preferences.appearance.previewPopoverEnabled)
         statusItem?.isVisible = result.preferences.general.showMenuBarItem

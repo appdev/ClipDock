@@ -10,17 +10,16 @@ func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView 
     let tintColor = PasteTheme.current(for: contentView).panel.backgroundColor
     let hostView: NSView
 
-    if #available(macOS 26.0, *) {
-        let glassView = NSGlassEffectView(frame: contentView.frame)
-        glassView.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
-        glassView.tintColor = tintColor
-        glassView.style = .regular
-        glassView.contentView = contentView
+    if #available(macOS 26.0, *),
+       let glassViewClass = NSClassFromString("NSGlassEffectView") as? NSView.Type {
+        let glassView = glassViewClass.init(frame: contentView.frame)
+        glassView.setValue(FloatingPanelContentView.panelBackgroundCornerRadius, forKey: "cornerRadius")
+        glassView.setValue(tintColor, forKey: "tintColor")
+        glassView.setValue(contentView, forKey: "contentView")
         hostView = glassView
         contentView.updateBackgroundHostState(.systemGlass(tintAlpha: tintColor.alphaComponent))
     } else {
         let effectView = NSVisualEffectView(frame: contentView.frame)
-        effectView.appearance = NSAppearance(named: .aqua)
         effectView.material = .menu
         effectView.blendingMode = .behindWindow
         effectView.state = .active
@@ -449,7 +448,6 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func configureAppearance() {
         userInterfaceLayoutDirection = .leftToRight
-        appearance = NSAppearance(named: .aqua)
         wantsLayer = true
         layer?.cornerRadius = 0
         layer?.masksToBounds = false

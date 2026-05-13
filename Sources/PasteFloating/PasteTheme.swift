@@ -68,6 +68,17 @@ enum PasteTheme {
         case dark
     }
 
+    static func applyAppearanceMode(_ mode: String) {
+        switch mode {
+        case "light":
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark":
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        default:
+            NSApp.appearance = nil
+        }
+    }
+
     static func current(for view: NSView?) -> PasteThemePalette {
         current(for: view?.effectiveAppearance)
     }

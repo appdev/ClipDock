@@ -815,6 +815,13 @@ final class PreferencesWindowController: NSWindowController {
                             }
                         ),
                         makeSettingRow(
+                            title: "外观",
+                            detail: "控制面板、设置与预览的显示模式",
+                            control: makeAppearanceModeControl(selectedMode: preferences.appearance.mode) { [weak self] mode in
+                                self?.persist { $0.appearance.mode = mode }
+                            }
+                        ),
+                        makeSettingRow(
                             title: "预览浮层",
                             detail: "按空格预览选中项目",
                             control: makeSwitch(isOn: preferences.appearance.previewPopoverEnabled) { [weak self] isOn in
@@ -1256,6 +1263,7 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     private func persist(_ update: (inout RustPreferencesDocument) -> Void) {
+        let previousAppearanceMode = sceneController.state.preferences.appearance.mode
         let nextPreferences = sceneController.makeUpdatedPreferences(update)
         sceneController.beginPreferencePersistence()
         if let savedPreferences = onPreferencesChanged?(nextPreferences) {
@@ -1268,6 +1276,12 @@ final class PreferencesWindowController: NSWindowController {
                 persistedPreferences: nil,
                 fallbackPreferences: nextPreferences
             )
+        }
+
+        if previousAppearanceMode != sceneController.state.preferences.appearance.mode {
+            applyTheme()
+            renderSelectedSection()
+            updateNavigationSelection()
         }
     }
 
@@ -1407,6 +1421,40 @@ final class PreferencesWindowController: NSWindowController {
             control.setWidth(labels[index].count > 3 ? 76 : 54, forSegment: index)
         }
         return control
+    }
+
+    private func makeAppearanceModeControl(
+        selectedMode: String,
+        onChange: @escaping (String) -> Void
+    ) -> NSSegmentedControl {
+        makeSegmentedControl(
+            labels: ["跟随系统", "浅色", "深色"],
+            selected: appearanceModeIndex(for: selectedMode)
+        ) { selected in
+            onChange(self.appearanceMode(for: selected))
+        }
+    }
+
+    private func appearanceModeIndex(for mode: String) -> Int {
+        switch mode {
+        case "light":
+            return 1
+        case "dark":
+            return 2
+        default:
+            return 0
+        }
+    }
+
+    private func appearanceMode(for index: Int) -> String {
+        switch index {
+        case 1:
+            return "light"
+        case 2:
+            return "dark"
+        default:
+            return "system"
+        }
     }
 
     private func makeActionButton(

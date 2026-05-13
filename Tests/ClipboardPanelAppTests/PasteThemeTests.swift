@@ -18,6 +18,22 @@ struct PasteThemeTests {
 
     @Test
     @MainActor
+    func appliesStoredAppearanceModeToApplicationAppearance() throws {
+        let originalAppearance = NSApp.appearance
+        defer { NSApp.appearance = originalAppearance }
+
+        PasteTheme.applyAppearanceMode("dark")
+        #expect(NSApp.appearance?.name == .darkAqua)
+
+        PasteTheme.applyAppearanceMode("light")
+        #expect(NSApp.appearance?.name == .aqua)
+
+        PasteTheme.applyAppearanceMode("system")
+        #expect(NSApp.appearance == nil)
+    }
+
+    @Test
+    @MainActor
     func coreSurfacesKeepReadableContrastInBothSchemes() throws {
         let palettes = [
             PasteTheme.current(for: NSAppearance(named: .aqua)),
