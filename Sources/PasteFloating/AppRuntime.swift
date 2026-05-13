@@ -5,7 +5,49 @@ import ClipboardPanelApp
 import Darwin
 import ServiceManagement
 
-final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate {
+@MainActor
+func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView {
+    let tintColor = PasteTheme.current(for: contentView).panel.backgroundColor
+    let hostView: NSView
+
+    if #available(macOS 26.0, *) {
+        let glassView = NSGlassEffectView(frame: contentView.frame)
+        glassView.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
+        glassView.tintColor = tintColor
+        glassView.style = .regular
+        glassView.contentView = contentView
+        hostView = glassView
+        contentView.updateBackgroundHostState(.systemGlass(tintAlpha: tintColor.alphaComponent))
+    } else {
+        let effectView = NSVisualEffectView(frame: contentView.frame)
+        effectView.appearance = NSAppearance(named: .aqua)
+        effectView.material = .menu
+        effectView.blendingMode = .behindWindow
+        effectView.state = .active
+        effectView.wantsLayer = true
+        effectView.layer?.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
+        effectView.layer?.masksToBounds = true
+        effectView.layer?.backgroundColor = tintColor.cgColor
+        effectView.addSubview(contentView)
+        hostView = effectView
+        contentView.updateBackgroundHostState(.legacyVisualEffect(tintAlpha: tintColor.alphaComponent))
+    }
+
+    hostView.wantsLayer = true
+    contentView.frame = hostView.bounds
+    contentView.autoresizingMask = [.width, .height]
+    return hostView
+}
+
+final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
+    static let panelBackgroundCornerRadius: CGFloat = 18
+
+    enum BackgroundHostState {
+        case none
+        case systemGlass(tintAlpha: CGFloat)
+        case legacyVisualEffect(tintAlpha: CGFloat)
+    }
+
     var onRuntimeAction: ((PanelRuntimeAction) -> Void)?
     var onHeightResizeBegan: (() -> Void)?
     var onHeightResizeChanged: ((CGFloat) -> Void)?
@@ -196,6 +238,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private var appSupportDirectory: URL?
     private let interactionController = PanelInteractionController()
     private var commandHintMonitor: Any?
+    private var backgroundHostState: BackgroundHostState = .none
     private var cardAssetResolver: PanelCardAssetResolver {
         PanelCardAssetResolver(appSupportDirectory: appSupportDirectory)
     }
@@ -230,6 +273,10 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         super.viewDidChangeEffectiveAppearance()
         applyTheme()
         renderCurrentItems(scrollSelectedItem: false, preserveScrollPosition: true)
+    }
+
+    func updateBackgroundHostState(_ state: BackgroundHostState) {
+        backgroundHostState = state
     }
 
     func updateStorageState(_ result: Result<RustCoreOpenResult, RustCoreError>) {
@@ -403,19 +450,16 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private func configureAppearance() {
         userInterfaceLayoutDirection = .leftToRight
         appearance = NSAppearance(named: .aqua)
-        material = .menu
-        blendingMode = .behindWindow
-        state = .active
         wantsLayer = true
-        layer?.cornerRadius = Layout.panelCornerRadius
-        layer?.masksToBounds = true
+        layer?.cornerRadius = 0
+        layer?.masksToBounds = false
         layer?.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
         applyTheme()
     }
 
     private func applyTheme() {
         let theme = theme
-        layer?.backgroundColor = theme.panel.backgroundColor.cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
         toolbarIconButtons.forEach { button in
             button.contentTintColor = theme.panel.toolbarIconColor
         }
@@ -1617,11 +1661,22 @@ extension FloatingPanelContentView {
     }
 
     func smokePanelUsesLightBlurredBackground() -> Bool {
-        let backgroundAlpha = theme.panel.backgroundColor
-            .usingColorSpace(.sRGB)?
-            .alphaComponent ?? 0
+        switch backgroundHostState {
+        case .systemGlass(let tintAlpha), .legacyVisualEffect(let tintAlpha):
+            return tintAlpha >= 0.30
+        case .none:
+            return false
+        }
+    }
 
-        return backgroundAlpha >= 0.30
+    func smokePanelUsesSystemGlassWhenAvailable() -> Bool {
+        if #available(macOS 26.0, *) {
+            if case .systemGlass = backgroundHostState {
+                return true
+            }
+            return false
+        }
+        return true
     }
 
     var smokeSearchField: NSSearchField {

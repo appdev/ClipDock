@@ -1023,6 +1023,10 @@ enum PanelInteractionSmokeScenario {
             "面板根背景应使用 Paste 式浅色毛玻璃承载面，不能完全裸露桌面"
         )
         try PanelQAHarness.require(
+            contentView.smokePanelUsesSystemGlassWhenAvailable(),
+            "macOS 26 及以上应使用系统 NSGlassEffectView，而不是旧 NSVisualEffectView 近似方案"
+        )
+        try PanelQAHarness.require(
             contentView.smokePinboardChipAllowsLongIntrinsicWidth(),
             "Pinboard chip 应只保留最小宽度，不能限制长文本的最大显示长度"
         )

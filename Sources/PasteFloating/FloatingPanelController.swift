@@ -439,7 +439,7 @@ final class FloatingPanelController {
     }
 
     private func configurePanel() {
-        panel.contentView = contentView
+        panel.contentView = makeFloatingPanelHostView(contentView: contentView)
         panel.isOpaque = false
         panel.alphaValue = 1
         panel.backgroundColor = .clear

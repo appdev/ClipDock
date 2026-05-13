@@ -324,7 +324,7 @@ enum ContextMenuRealQACommand {
         window.level = .floating
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.contentView = contentView
+        window.contentView = makeFloatingPanelHostView(contentView: contentView)
         window.makeKeyAndOrderFront(nil)
         contentView.layoutSubtreeIfNeeded()
         guard let card = contentView.smokeCardBoxes().first else {
@@ -408,7 +408,7 @@ enum PinboardRealQACommand {
         window.level = .floating
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.contentView = contentView
+        window.contentView = makeFloatingPanelHostView(contentView: contentView)
         qaWindow = window
         qaContentView = contentView
         window.makeKeyAndOrderFront(nil)
