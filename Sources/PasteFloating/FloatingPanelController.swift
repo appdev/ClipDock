@@ -443,7 +443,7 @@ final class FloatingPanelController {
         panel.isOpaque = false
         panel.alphaValue = 1
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [

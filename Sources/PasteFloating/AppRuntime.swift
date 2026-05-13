@@ -13,8 +13,8 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private enum Layout {
         static let padding: CGFloat = 22
         static let resizeHandleHeight: CGFloat = 16
-        static let controlBarHeight: CGFloat = 34
-        static let sectionSpacing: CGFloat = 28
+        static let controlBarHeight: CGFloat = 52
+        static let sectionSpacing: CGFloat = 12
         static let defaultItemSide: CGFloat = 218
         static let compactItemSide: CGFloat = 156
         static let imagePreviewMinHeight: CGFloat = 78
@@ -23,7 +23,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         static let panelCornerRadius: CGFloat = 18
         static let cardCornerRadius: CGFloat = 10
         static let innerCornerRadius: CGFloat = 8
-        static let chipCornerRadius: CGFloat = 17
+        static let chipCornerRadius: CGFloat = 15
         static let cardHeaderHeight: CGFloat = 48
         static let cardInset: CGFloat = 12
         static let cardFooterHeight: CGFloat = 17
@@ -192,6 +192,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private weak var activeRenameField: NSTextField?
     private weak var activeRenameButton: PinboardChipButton?
     private var activeRenamePinboardID: String?
+    private var activeRenameOriginalTitle: String?
     private var isInstallingRenameField = false
     private var searchFieldWidthConstraint: NSLayoutConstraint?
     private weak var filterRow: NSStackView?
@@ -314,8 +315,19 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     private func selectPinboardAfterCreation(pinboardID: String) {
-        guard panelViewState().toolbar.selectedPinboardID != pinboardID else { return }
-        applyInteractionAction(.setPinboardFilter(pinboardID))
+        if panelViewState().toolbar.selectedPinboardID != pinboardID {
+            applyInteractionAction(.setPinboardFilter(pinboardID))
+        }
+        beginInlinePinboardRenameAfterCreation(pinboardID: pinboardID)
+    }
+
+    private func beginInlinePinboardRenameAfterCreation(pinboardID: String) {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }),
+              let button = pinboardButtons.first(where: { $0.pinboardID == pinboardID })
+        else { return }
+
+        layoutSubtreeIfNeeded()
+        beginInlinePinboardRename(pinboard, in: button)
     }
 
     func containsPreviewSurface(eventWindow: NSWindow?, mouseLocation: CGPoint) -> Bool {
@@ -390,7 +402,8 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
 
     private func configureAppearance() {
         userInterfaceLayoutDirection = .leftToRight
-        material = .popover
+        appearance = NSAppearance(named: .aqua)
+        material = .menu
         blendingMode = .behindWindow
         state = .active
         wantsLayer = true
@@ -481,7 +494,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         let row = NSStackView(views: [searchButton, searchField] + chips + [addButton])
         row.orientation = NSUserInterfaceLayoutOrientation.horizontal
         row.alignment = NSLayoutConstraint.Attribute.centerY
-        row.spacing = 22
+        row.spacing = 18
         row.userInterfaceLayoutDirection = NSUserInterfaceLayoutDirection.leftToRight
         row.translatesAutoresizingMaskIntoConstraints = false
         filterRow = row
@@ -490,12 +503,17 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         searchFieldWidthConstraint = searchField.widthAnchor.constraint(equalToConstant: 220)
         searchFieldWidthConstraint?.isActive = true
 
+        let leadingConstraint = row.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor)
+        leadingConstraint.priority = .defaultLow
+        let trailingConstraint = row.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor)
+        trailingConstraint.priority = .defaultLow
+
         NSLayoutConstraint.activate([
             row.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             row.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            row.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
-            searchField.heightAnchor.constraint(equalToConstant: 32)
+            leadingConstraint,
+            trailingConstraint,
+            searchField.heightAnchor.constraint(equalToConstant: 28)
         ])
 
         return container
@@ -657,6 +675,8 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         textField.backgroundColor = .clear
         textField.drawsBackground = false
         textField.isBordered = false
+        textField.isEditable = true
+        textField.isSelectable = true
         textField.focusRingType = .none
         textField.lineBreakMode = .byTruncatingTail
         textField.delegate = self
@@ -666,10 +686,18 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         activeRenameField = textField
         activeRenameButton = button
         activeRenamePinboardID = pinboard.id
+        activeRenameOriginalTitle = pinboard.title
+        updateInlinePinboardRenameLayout()
         isInstallingRenameField = true
         window?.makeFirstResponder(textField)
         textField.selectText(nil)
-        isInstallingRenameField = false
+        DispatchQueue.main.async { [weak self, weak textField] in
+            guard let self else { return }
+            defer { self.isInstallingRenameField = false }
+            guard let textField else { return }
+            textField.selectText(nil)
+            textField.currentEditor()?.selectedRange = NSRange(location: 0, length: textField.stringValue.utf16.count)
+        }
     }
 
     private var placeholder: String {
@@ -680,7 +708,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.layoutSubtreeIfNeeded()
         let markerWidth = button.chipSymbolName == nil ? button.chipDotDiameter : button.chipIconSide
         let x = button.chipHorizontalPadding + markerWidth + button.chipMarkerTextSpacing - 2
-        let fieldHeight: CGFloat = 22
+        let fieldHeight: CGFloat = 20
         let width = max(44, button.bounds.width - x - button.chipHorizontalPadding + 4)
         return NSRect(
             x: x,
@@ -690,8 +718,25 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         )
     }
 
+    private func updateInlinePinboardRenameLayout() {
+        guard let textField = activeRenameField,
+              let button = activeRenameButton
+        else { return }
+
+        let sizingTitle = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? placeholder
+            : textField.stringValue
+        button.chipTitleText = sizingTitle
+        button.invalidateIntrinsicContentSize()
+        button.superview?.needsLayout = true
+        button.superview?.layoutSubtreeIfNeeded()
+        button.layoutSubtreeIfNeeded()
+        textField.frame = inlineRenameFieldFrame(in: button)
+    }
+
     private func finishInlinePinboardRename(commit: Bool) {
         guard let textField = activeRenameField else { return }
+        let button = activeRenameButton
         let pinboardID = activeRenamePinboardID
         let nextTitle = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedTitle = nextTitle.isEmpty ? placeholder : nextTitle
@@ -699,9 +744,14 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         textField.delegate = nil
         textField.removeFromSuperview()
         activeRenameField = nil
-        activeRenameButton?.chipIsRenaming = false
+        button?.chipIsRenaming = false
+        button?.chipTitleText = commit ? normalizedTitle : (activeRenameOriginalTitle ?? normalizedTitle)
+        button?.invalidateIntrinsicContentSize()
+        button?.superview?.needsLayout = true
+        button?.superview?.layoutSubtreeIfNeeded()
         activeRenameButton = nil
         activeRenamePinboardID = nil
+        activeRenameOriginalTitle = nil
         window?.makeFirstResponder(self)
 
         if commit, let pinboardID {
@@ -1237,8 +1287,13 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        guard obj.object as? NSSearchField === searchField else { return }
-        applyInteractionAction(.setSearchText(searchField.stringValue))
+        if obj.object as? NSSearchField === searchField {
+            applyInteractionAction(.setSearchText(searchField.stringValue))
+            return
+        }
+
+        guard obj.object as? NSTextField === activeRenameField else { return }
+        updateInlinePinboardRenameLayout()
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
@@ -1437,7 +1492,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.isBordered = false
         button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(
-                pointSize: symbolName == "plus" ? 22 : 20,
+                pointSize: symbolName == "plus" ? 18 : 16,
                 weight: .regular
             ))
         button.imageScaling = .scaleProportionallyDown
@@ -1448,13 +1503,13 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
         button.contentTintColor = theme.panel.toolbarIconColor
-        button.layer?.cornerRadius = 16
+        button.layer?.cornerRadius = 14
         button.layer?.backgroundColor = NSColor.clear.cgColor
         toolbarIconButtons.append(button)
 
         NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 32),
-            button.heightAnchor.constraint(equalToConstant: 32)
+            button.widthAnchor.constraint(equalToConstant: 28),
+            button.heightAnchor.constraint(equalToConstant: 28)
         ])
 
         return button
@@ -1475,12 +1530,12 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.chipDotColor = dotColor
         button.chipSymbolName = pinboardID == nil ? "clock.arrow.circlepath" : nil
         button.chipDrawsSelectionPill = true
-        button.chipHeight = 30
-        button.chipFontSize = 15
-        button.chipDotDiameter = 12
-        button.chipIconSide = 18
-        button.chipMarkerTextSpacing = 7
-        button.chipHorizontalPadding = pinboardID == nil ? 12 : 10
+        button.chipHeight = 28
+        button.chipFontSize = 14
+        button.chipDotDiameter = 11
+        button.chipIconSide = 16
+        button.chipMarkerTextSpacing = 6
+        button.chipHorizontalPadding = pinboardID == nil ? 11 : 9
         button.onPress = { [weak self, weak button] in
             guard let button else { return }
             self?.pinboardChipPressed(button)
@@ -1508,10 +1563,12 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         button.layer?.borderWidth = 0
         button.setButtonType(.momentaryChange)
         button.attributedTitle = NSAttributedString(string: "")
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.setContentHuggingPriority(.required, for: .horizontal)
 
         NSLayoutConstraint.activate([
-            button.heightAnchor.constraint(equalToConstant: 34),
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: pinboardID == nil ? 96 : 44)
+            button.heightAnchor.constraint(equalToConstant: 30),
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: pinboardID == nil ? 88 : 40)
         ])
 
         return button
@@ -1542,6 +1599,14 @@ extension FloatingPanelContentView {
         panelViewState().selectedItemID
     }
 
+    func smokePanelUsesLightBlurredBackground() -> Bool {
+        let backgroundAlpha = theme.panel.backgroundColor
+            .usingColorSpace(.sRGB)?
+            .alphaComponent ?? 0
+
+        return backgroundAlpha >= 0.30
+    }
+
     var smokeSearchField: NSSearchField {
         searchField
     }
@@ -1554,6 +1619,21 @@ extension FloatingPanelContentView {
 
     func smokePinboardFilterButton(pinboardID: String) -> PinboardChipButton? {
         pinboardButtons.first { $0.pinboardID == pinboardID }
+    }
+
+    func smokePinboardChipAllowsLongIntrinsicWidth() -> Bool {
+        let shortButton = makePinboardChip(title: "AI", pinboardID: "smoke-short-chip", dotColor: .systemRed)
+        let longButton = makePinboardChip(
+            title: "一个很长的 Pinboard 名称用于验证 chip 不截断",
+            pinboardID: "smoke-long-chip",
+            dotColor: .systemBlue
+        )
+        let widthConstraints = longButton.constraints.filter { constraint in
+            constraint.firstAttribute == .width || constraint.secondAttribute == .width
+        }
+
+        return longButton.intrinsicContentSize.width > shortButton.intrinsicContentSize.width * 3
+            && widthConstraints.allSatisfy { $0.relation == .greaterThanOrEqual }
     }
 
     func smokeHorizontalScrollView() -> HorizontalWheelScrollView? {
@@ -1727,6 +1807,50 @@ extension FloatingPanelContentView {
         return (title, colorCode)
     }
 
+    func smokeCreatedPinboardStartsInlineRename() -> Bool {
+        let previousAction = onRuntimeAction
+        let previousPendingIDs = pendingCreatedPinboardSourceIDs
+        let previousSelectedPinboardID = panelViewState().toolbar.selectedPinboardID
+        let previousSummaries = pinboardFilters.enumerated().map { index, pinboard in
+            RustPinboardSummary(
+                id: pinboard.id,
+                title: pinboard.title,
+                colorCode: pinboard.colorCode,
+                sortOrder: Int64(index + 1),
+                itemCount: pinboard.itemCount,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        }
+
+        let createdPinboardID = "smoke-created-pinboard"
+        var nextSummaries = previousSummaries
+        nextSummaries.append(RustPinboardSummary(
+            id: createdPinboardID,
+            title: "未命名",
+            colorCode: 4_279_606_035,
+            sortOrder: Int64(nextSummaries.count + 1),
+            itemCount: 0,
+            createdAtMs: 0,
+            updatedAtMs: 0
+        ))
+
+        onRuntimeAction = { _ in }
+        cancelInlinePinboardRename()
+        pendingCreatedPinboardSourceIDs = Set(pinboardFilters.map(\.id))
+        updatePinboards(nextSummaries)
+
+        let isInline = activeRenamePinboardID == createdPinboardID
+            && activeRenameField?.superview != nil
+
+        cancelInlinePinboardRename()
+        updatePinboards(previousSummaries)
+        pendingCreatedPinboardSourceIDs = previousPendingIDs
+        applyInteractionAction(.setPinboardFilter(previousSelectedPinboardID))
+        onRuntimeAction = previousAction
+        return isInline
+    }
+
     func smokePinboardRenameUsesInlineEditor(pinboardID: String) -> Bool {
         guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }) else { return false }
         showRenamePinboardDialog(for: pinboard)
@@ -1738,6 +1862,61 @@ extension FloatingPanelContentView {
             && (activeRenameField?.superview != nil || chipContainsEditor)
         cancelInlinePinboardRename()
         return isInline
+    }
+
+    func smokePinboardRenameCommitsOnFocusLoss(pinboardID: String) -> Bool {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }),
+              let button = pinboardButtons.first(where: { $0.pinboardID == pinboardID })
+        else { return false }
+
+        let previousAction = onRuntimeAction
+        let previousTitle = button.chipTitleText
+        let nextTitle = "失焦自动保存"
+        var capturedRename: (pinboardID: String, title: String)?
+        onRuntimeAction = { action in
+            if case .renamePinboard(let capturedPinboardID, let capturedTitle) = action {
+                capturedRename = (capturedPinboardID, capturedTitle)
+            }
+        }
+        defer {
+            cancelInlinePinboardRename()
+            button.chipTitleText = previousTitle
+            button.invalidateIntrinsicContentSize()
+            onRuntimeAction = previousAction
+        }
+
+        showRenamePinboardDialog(for: pinboard)
+        guard let field = activeRenameField else { return false }
+        isInstallingRenameField = false
+        field.stringValue = nextTitle
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+
+        return capturedRename?.pinboardID == pinboardID
+            && capturedRename?.title == nextTitle
+            && activeRenameField == nil
+    }
+
+    func smokePinboardRenameResizesWhileTyping(pinboardID: String) -> Bool {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }),
+              let button = pinboardButtons.first(where: { $0.pinboardID == pinboardID })
+        else { return false }
+
+        showRenamePinboardDialog(for: pinboard)
+        guard let field = activeRenameField else { return false }
+        isInstallingRenameField = false
+
+        field.stringValue = "一个很长的 Pinboard 输入中实时扩展"
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        let longWidth = button.intrinsicContentSize.width
+
+        field.stringValue = "短"
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        let shortWidth = button.intrinsicContentSize.width
+
+        cancelInlinePinboardRename()
+        return longWidth > shortWidth + 120
+            && shortWidth >= 40
     }
 
     func smokeShowPinboardChipMenu(pinboardID: String) -> Bool {
@@ -1755,6 +1934,13 @@ extension FloatingPanelContentView {
         showRenamePinboardDialog(for: pinboard)
         return activeRenamePinboardID == pinboardID
             && activeRenameField?.superview != nil
+    }
+
+    func smokeSetActivePinboardRenameTextForScreenshot(_ text: String) -> Bool {
+        guard let field = activeRenameField else { return false }
+        field.stringValue = text
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+        return true
     }
 
     func smokeShowPinboardDeleteConfirmationForScreenshot(pinboardID: String) -> Bool {

@@ -23,8 +23,6 @@ enum PanelSnapshotCommand {
     static func render(to outputURL: URL, arguments: [String] = CommandLine.arguments) throws {
         let frame = NSRect(x: 0, y: 0, width: 960, height: 320)
         let view = FloatingPanelContentView(frame: frame)
-        // 截图命令只模拟面板背后的编辑器颜色；运行时面板仍使用 behindWindow 毛玻璃。
-        view.blendingMode = .withinWindow
         view.updatePinboards(snapshotPinboards)
         if let selectedPinboardID = selectedPinboardID(arguments: arguments),
            let pinboardButton = view.smokePinboardFilterButton(pinboardID: selectedPinboardID) {
@@ -98,7 +96,7 @@ enum PanelSnapshotCommand {
             ),
             RustPinboardSummary(
                 id: "blue-name",
-                title: "a's'd'sa",
+                title: "一个很长的 Pinboard 名称用于验证 chip 不截断",
                 colorCode: 4_283_973_119,
                 sortOrder: 4,
                 itemCount: 0,
@@ -365,6 +363,10 @@ enum ContextMenuRealQACommand {
 
 enum PinboardRealQACommand {
     private static let flag = "--show-pinboard-ui"
+    @MainActor
+    private static var qaWindow: NSWindow?
+    @MainActor
+    private static var qaContentView: FloatingPanelContentView?
 
     static func shouldRun(arguments: [String]) -> Bool {
         arguments.contains(flag)
@@ -407,6 +409,8 @@ enum PinboardRealQACommand {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.contentView = contentView
+        qaWindow = window
+        qaContentView = contentView
         window.makeKeyAndOrderFront(nil)
         contentView.layoutSubtreeIfNeeded()
 
@@ -414,12 +418,20 @@ enum PinboardRealQACommand {
         let targetPinboardID = "untitled-new"
         contentView.smokePinboardFilterButton(pinboardID: targetPinboardID)?.onPress?()
 
+        switch mode {
+        case "rename", "toolbar", "rename-long":
+            _ = contentView.smokeBeginPinboardRenameForScreenshot(pinboardID: targetPinboardID)
+            if mode == "rename-long" {
+                _ = contentView.smokeSetActivePinboardRenameTextForScreenshot("输入中的长 Pinboard 名称会实时撑开 chip")
+            }
+        default:
+            break
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             switch mode {
             case "menu":
                 _ = contentView.smokeShowPinboardChipMenu(pinboardID: targetPinboardID)
-            case "rename":
-                _ = contentView.smokeBeginPinboardRenameForScreenshot(pinboardID: targetPinboardID)
             case "delete":
                 _ = contentView.smokeShowPinboardDeleteConfirmationForScreenshot(pinboardID: targetPinboardID)
             default:
@@ -470,7 +482,7 @@ enum PinboardRealQACommand {
             ),
             RustPinboardSummary(
                 id: "blue-name",
-                title: "a's'd'sa",
+                title: "一个很长的 Pinboard 名称用于验证 chip 不截断",
                 colorCode: 4_283_973_119,
                 sortOrder: 4,
                 itemCount: 0,

@@ -95,7 +95,7 @@ enum PasteTheme {
     private static let lightPalette = PasteThemePalette(
         scheme: .light,
         panel: PastePanelTheme(
-            backgroundColor: NSColor.clear,
+            backgroundColor: NSColor.white.withAlphaComponent(0.32),
             toolbarIconColor: NSColor(calibratedWhite: 0.10, alpha: 0.94),
             toolbarTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
             toolbarSelectedBackgroundColor: NSColor.white.withAlphaComponent(0.38),
@@ -148,7 +148,7 @@ enum PasteTheme {
     private static let darkPalette = PasteThemePalette(
         scheme: .dark,
         panel: PastePanelTheme(
-            backgroundColor: NSColor(calibratedWhite: 0.30, alpha: 0.94),
+            backgroundColor: NSColor.white.withAlphaComponent(0.32),
             toolbarIconColor: NSColor.white.withAlphaComponent(0.54),
             toolbarTextColor: NSColor.white.withAlphaComponent(0.72),
             toolbarSelectedBackgroundColor: NSColor.white.withAlphaComponent(0.15),

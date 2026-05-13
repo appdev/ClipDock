@@ -1003,6 +1003,18 @@ enum PanelInteractionSmokeScenario {
             contentView.smokeCreatePinboardAction()?.title == "未命名",
             "工具栏加号应按 Paste 实拍直接创建未命名 Pinboard，而不是打开命名弹窗"
         )
+        try PanelQAHarness.require(
+            contentView.smokeCreatedPinboardStartsInlineRename(),
+            "新建 Pinboard chip 应按 Paste 实拍立即进入内联编辑态"
+        )
+        try PanelQAHarness.require(
+            contentView.smokePanelUsesLightBlurredBackground(),
+            "面板根背景应使用 Paste 式浅色毛玻璃承载面，不能完全裸露桌面"
+        )
+        try PanelQAHarness.require(
+            contentView.smokePinboardChipAllowsLongIntrinsicWidth(),
+            "Pinboard chip 应只保留最小宽度，不能限制长文本的最大显示长度"
+        )
 
         let overflowItems = contentView.smokePanelOverflowMenuItems()
         try PanelQAHarness.require(
@@ -1030,6 +1042,14 @@ enum PanelInteractionSmokeScenario {
         try PanelQAHarness.require(
             contentView.smokePinboardRenameUsesInlineEditor(pinboardID: "default"),
             "Pinboard 重命名应使用 Paste 式 chip 内联编辑态"
+        )
+        try PanelQAHarness.require(
+            contentView.smokePinboardRenameCommitsOnFocusLoss(pinboardID: "default"),
+            "Pinboard chip 内联重命名应在失去焦点时自动保存"
+        )
+        try PanelQAHarness.require(
+            contentView.smokePinboardRenameResizesWhileTyping(pinboardID: "default"),
+            "Pinboard chip 内联重命名应在输入过程中随文本实时扩展或缩小"
         )
         try PanelQAHarness.require(
             pinboardMenuItems.first(where: { $0.title == "颜色" })?.hasCustomView == true

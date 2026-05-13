@@ -31,6 +31,22 @@ struct PasteThemeTests {
         }
     }
 
+    @Test
+    @MainActor
+    func panelTintStaysLightAndTranslucent() throws {
+        let palettes = [
+            PasteTheme.current(for: NSAppearance(named: .aqua)),
+            PasteTheme.current(for: NSAppearance(named: .darkAqua))
+        ]
+
+        for palette in palettes {
+            let alpha = palette.panel.backgroundColor.usingColorSpace(.sRGB)?.alphaComponent ?? 0
+
+            #expect(alpha >= 0.30)
+            #expect(alpha <= 0.34)
+        }
+    }
+
     private func contrastRatio(_ foreground: NSColor, _ background: NSColor) -> CGFloat {
         let foregroundLuminance = relativeLuminance(foreground)
         let backgroundLuminance = relativeLuminance(background)
