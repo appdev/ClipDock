@@ -9,3 +9,10 @@ Generated/ClipboardCoreBridge/RustXcframework.xcframework/
 .codex/artifacts/panel-interaction-smoke/
 .codex/artifacts/release/
 .codex/telegram.env
+
+# Local Codex run outputs
+.codex/artifacts/
+.codex/module-cache/
+.codex/*.png
+.codex/testing.md
+.codex/*-qa-*.md
