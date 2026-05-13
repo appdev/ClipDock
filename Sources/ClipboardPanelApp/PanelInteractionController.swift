@@ -1,7 +1,7 @@
 import Foundation
 
 public enum PanelExternalAction: Equatable, Sendable {
-    case queryChanged(searchText: String, sourceAppID: String?, pinboardID: String?)
+    case queryChanged(searchText: String, sourceAppID: String?, pinboardID: String?, debounce: Bool)
     case copyItem(itemID: String)
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
     case deleteItem(itemID: String)
@@ -119,19 +119,19 @@ public final class PanelInteractionController {
         switch action {
         case .setSearchText(let searchText):
             contentController.setSearchText(searchText)
-            return makeResult(effects: [queryChangedEffect()])
+            return makeResult(effects: [queryChangedEffect(debounce: true)])
 
         case .setPinboardFilter(let pinboardID):
             contentController.setPinboardFilter(pinboardID)
             return makeResult(
-                effects: [queryChangedEffect()],
+                effects: [queryChangedEffect(debounce: false)],
                 shouldSyncToolbar: true
             )
 
         case .clearFilters:
             contentController.clearFilters()
             return makeResult(
-                effects: [queryChangedEffect()],
+                effects: [queryChangedEffect(debounce: false)],
                 shouldSyncToolbar: true
             )
 
@@ -184,7 +184,7 @@ public final class PanelInteractionController {
             case .clearSearch:
                 contentController.setSearchText("")
                 return makeResult(
-                    effects: [queryChangedEffect()],
+                    effects: [queryChangedEffect(debounce: false)],
                     shouldSyncToolbar: true
                 )
             case .hidePanel:
@@ -282,11 +282,12 @@ public final class PanelInteractionController {
         )
     }
 
-    private func queryChangedEffect() -> PanelInteractionEffect {
+    private func queryChangedEffect(debounce: Bool) -> PanelInteractionEffect {
         .external(.queryChanged(
             searchText: viewState.toolbar.searchText,
             sourceAppID: nil,
-            pinboardID: viewState.toolbar.selectedPinboardID
+            pinboardID: viewState.toolbar.selectedPinboardID,
+            debounce: debounce
         ))
     }
 

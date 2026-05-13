@@ -734,6 +734,7 @@ enum RealFunctionQAScenario {
             PanelQAHarness.waitForPanelFocus(controller),
             "真实功能 QA 面板未获得键盘焦点: \(controller.smokeFocusDiagnostic)"
         )
+
         try PanelQAHarness.require(
             contentView.smokePerformManagementAction(itemID: renderedItems[0].id, title: "预览"),
             "真实捕获条目未找到预览菜单动作"
@@ -1016,7 +1017,7 @@ enum PanelInteractionSmokeScenario {
         )
         try PanelQAHarness.require(
             contentView.smokeCreatedPinboardStartsInlineRename(),
-            "新建 Pinboard chip 应按 Paste 实拍立即进入内联编辑态"
+            "新建 Pinboard chip 应立即进入内联编辑态，但不能自动切换当前列表"
         )
         try PanelQAHarness.require(
             contentView.smokePanelUsesLightBlurredBackground(),
@@ -1051,8 +1052,8 @@ enum PanelInteractionSmokeScenario {
 
         let pinboardMenuItems = contentView.smokePinboardChipMenuItems(pinboardID: "default")
         try PanelQAHarness.require(
-            pinboardMenuItems.map(\.title) == ["重命名", "共享 Pinboard", "删除...", "颜色"],
-            "Pinboard chip 右键菜单未按 Paste 样式展示重命名、共享、删除和颜色入口"
+            pinboardMenuItems.map(\.title) == ["重命名", "删除...", "颜色"],
+            "Pinboard chip 右键菜单未按 Paste 样式展示重命名、删除和颜色入口"
         )
         try PanelQAHarness.require(
             contentView.smokePinboardRenameUsesInlineEditor(pinboardID: "default"),
@@ -1324,7 +1325,7 @@ final class PanelInteractionSmokeProbe {
             case .hidePanel:
                 self?.hideCount += 1
                 controller?.hide()
-            case .queryChanged(let searchText, let sourceAppID, let pinboardID):
+            case .queryChanged(let searchText, let sourceAppID, let pinboardID, _):
                 self?.queries.append(Query(
                     searchText: searchText,
                     sourceAppID: sourceAppID,

@@ -3,7 +3,7 @@ import ClipboardPanelApp
 enum PanelRuntimeAction {
     case showPreferences
     case hidePanel
-    case queryChanged(searchText: String, sourceAppID: String?, pinboardID: String?)
+    case queryChanged(searchText: String, sourceAppID: String?, pinboardID: String?, debounce: Bool)
     case copyItem(RustClipboardItemSummary)
     case setPinboardMembership(RustClipboardItemSummary, pinboardID: String, isMember: Bool)
     case createPinboard(title: String, colorCode: Int64)

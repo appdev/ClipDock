@@ -24,18 +24,59 @@ public struct ClipboardListQuery: Equatable, Sendable {
     public var isFiltered: Bool {
         sourceAppID != nil || pinboardID != nil || !normalizedSearch.isEmpty
     }
+
+    public var scope: ClipboardListScope {
+        ClipboardListScope(
+            sourceAppID: sourceAppID,
+            pinboardID: pinboardID,
+            normalizedSearch: normalizedSearch
+        )
+    }
+}
+
+public struct ClipboardListScope: Hashable, Sendable {
+    public let sourceAppID: String?
+    public let pinboardID: String?
+    public let normalizedSearch: String
+
+    public init(
+        sourceAppID: String? = nil,
+        pinboardID: String? = nil,
+        normalizedSearch: String = ""
+    ) {
+        self.sourceAppID = sourceAppID
+        self.pinboardID = pinboardID
+        self.normalizedSearch = normalizedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public init(searchText: String, sourceAppID: String?, pinboardID: String?) {
+        self.init(
+            sourceAppID: sourceAppID,
+            pinboardID: pinboardID,
+            normalizedSearch: searchText
+        )
+    }
+
+    public static let clipboard = ClipboardListScope()
+
+    public var isFiltered: Bool {
+        sourceAppID != nil || pinboardID != nil || !normalizedSearch.isEmpty
+    }
 }
 
 public struct ClipboardListUpdate: Sendable {
+    public let scope: ClipboardListScope
     public let result: Result<RustCoreListResult, RustCoreError>
     public let isFiltered: Bool
     public let append: Bool
 
     public init(
+        scope: ClipboardListScope = .clipboard,
         result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
         append: Bool
     ) {
+        self.scope = scope
         self.result = result
         self.isFiltered = isFiltered
         self.append = append
@@ -245,7 +286,12 @@ public final class ClipboardListCoordinator {
             }
 
             self.pendingListRefreshTask = nil
-            self.applyListResult(result, isFiltered: query.isFiltered, append: false)
+            self.applyListResult(
+                result,
+                isFiltered: query.isFiltered,
+                append: false,
+                scope: query.scope
+            )
         }
     }
 
@@ -284,7 +330,12 @@ public final class ClipboardListCoordinator {
             }
 
             self.setLoadingMore(false)
-            self.applyListResult(result, isFiltered: query.isFiltered, append: true)
+            self.applyListResult(
+                result,
+                isFiltered: query.isFiltered,
+                append: true,
+                scope: query.scope
+            )
         }
     }
 
@@ -336,6 +387,7 @@ public final class ClipboardListCoordinator {
         )
         onStatusTextChanged?("存储：已连接（\(totalCount) 条）")
         onListUpdate?(ClipboardListUpdate(
+            scope: .clipboard,
             result: .success(firstResult),
             isFiltered: false,
             append: false
@@ -379,7 +431,8 @@ public final class ClipboardListCoordinator {
         applyListResult(
             prefetchedPage.result,
             isFiltered: isCurrentListFiltered(),
-            append: true
+            append: true,
+            scope: makeQuery(limit: pageSize, offset: loadedItemCountStorage).scope
         )
         return true
     }
@@ -425,8 +478,9 @@ public final class ClipboardListCoordinator {
                 self.setLoadingMore(false)
                 self.applyListResult(
                     result,
-                    isFiltered: self.isCurrentListFiltered(),
-                    append: true
+                    isFiltered: query.isFiltered,
+                    append: true,
+                    scope: query.scope
                 )
             } else {
                 self.prefetchedPage = PrefetchedPage(
@@ -454,8 +508,10 @@ public final class ClipboardListCoordinator {
     private func applyListResult(
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
-        append: Bool
+        append: Bool,
+        scope: ClipboardListScope? = nil
     ) {
+        let updateScope = scope ?? makeQuery(limit: pageSize, offset: 0).scope
         switch result {
         case .success(let list):
             onStatusTextChanged?("存储：已连接（\(list.totalCount) 条）")
@@ -464,6 +520,7 @@ public final class ClipboardListCoordinator {
                 : Int64(list.items.count)
             hasMoreItems = list.hasMore
             onListUpdate?(ClipboardListUpdate(
+                scope: updateScope,
                 result: .success(list),
                 isFiltered: isFiltered,
                 append: append
@@ -474,6 +531,7 @@ public final class ClipboardListCoordinator {
             setLoadingMore(false)
             onStatusTextChanged?("查询：\(error.code)")
             onListUpdate?(ClipboardListUpdate(
+                scope: updateScope,
                 result: .failure(error),
                 isFiltered: false,
                 append: append

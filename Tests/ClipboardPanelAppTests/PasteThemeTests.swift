@@ -19,17 +19,18 @@ struct PasteThemeTests {
     @Test
     @MainActor
     func appliesStoredAppearanceModeToApplicationAppearance() throws {
-        let originalAppearance = NSApp.appearance
+        let app = NSApplication.shared
+        let originalAppearance = app.appearance
         defer { NSApp.appearance = originalAppearance }
 
         PasteTheme.applyAppearanceMode("dark")
-        #expect(NSApp.appearance?.name == .darkAqua)
+        #expect(app.appearance?.name == .darkAqua)
 
         PasteTheme.applyAppearanceMode("light")
-        #expect(NSApp.appearance?.name == .aqua)
+        #expect(app.appearance?.name == .aqua)
 
         PasteTheme.applyAppearanceMode("system")
-        #expect(NSApp.appearance == nil)
+        #expect(app.appearance == nil)
     }
 
     @Test

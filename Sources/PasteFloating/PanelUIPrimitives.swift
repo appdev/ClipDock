@@ -438,7 +438,10 @@ final class PinboardChipButton: PanelActionButton {
 
         if let chipSymbolName,
            let symbol = NSImage(systemSymbolName: chipSymbolName, accessibilityDescription: chipTitleText)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: chipIconSide, weight: .regular)) {
+            .withSymbolConfiguration(
+                NSImage.SymbolConfiguration(pointSize: chipIconSide, weight: .regular)
+                    .applying(NSImage.SymbolConfiguration(hierarchicalColor: selectedTextColor))
+            ) {
             symbol.draw(
                 in: NSRect(
                     x: originX,

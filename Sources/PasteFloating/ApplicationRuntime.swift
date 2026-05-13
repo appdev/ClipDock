@@ -138,7 +138,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.panelController.updateListState(
                 update.result,
                 isFiltered: update.isFiltered,
-                append: update.append
+                append: update.append,
+                scope: update.scope
             )
         }
         listCoordinator.onLoadingMoreChanged = { [weak self] isLoading in
@@ -149,10 +150,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         listCoordinator.onMutationCompleted = { [weak self] mutation, _ in
             switch mutation {
-            case .setPinboardMembership(_, _, _), .delete(_):
+            case .setPinboardMembership(_, _, _), .delete(_), .clear:
+                self?.panelController.invalidateCachedListPages()
                 self?.refreshPinboards()
-            case .clear:
-                break
             }
         }
         self.listCoordinator = listCoordinator
@@ -265,11 +265,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showPreferences(nil)
             case .hidePanel:
                 self?.hidePanel(nil)
-            case .queryChanged(let searchText, let sourceAppID, let pinboardID):
+            case .queryChanged(let searchText, let sourceAppID, let pinboardID, let debounce):
                 self?.updateQuery(
                     searchText: searchText,
                     sourceAppID: sourceAppID,
-                    pinboardID: pinboardID
+                    pinboardID: pinboardID,
+                    debounce: debounce
                 )
             case .copyItem(let item):
                 self?.copySelectedItemToPasteboard(item)
@@ -621,12 +622,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateQuery(
         searchText: String,
         sourceAppID: String?,
-        pinboardID: String?
+        pinboardID: String?,
+        debounce: Bool
     ) {
         listCoordinator?.updateQuery(
             searchText: searchText,
             sourceAppID: sourceAppID,
-            pinboardID: pinboardID
+            pinboardID: pinboardID,
+            debounce: debounce
         )
     }
 

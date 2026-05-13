@@ -10,7 +10,7 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.toolbar.searchText == "report")
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "report", sourceAppID: nil, pinboardID: nil))
+            .external(.queryChanged(searchText: "report", sourceAppID: nil, pinboardID: nil, debounce: true))
         ])
         #expect(!result.shouldSyncToolbar)
     }
@@ -23,7 +23,7 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.toolbar.selectedPinboardID == "default")
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: "default"))
+            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: "default", debounce: false))
         ])
         #expect(result.shouldSyncToolbar)
     }
@@ -164,7 +164,7 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.toolbar.searchText.isEmpty)
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: nil))
+            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: nil, debounce: false))
         ])
         #expect(result.shouldSyncToolbar)
     }

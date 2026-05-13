@@ -320,6 +320,76 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func pinboardChipSwitchRestoresCachedClipboardPageWithoutRebuildingCards() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let clipboardItems = PanelQASamples.makePagedPanelItems(count: 75)
+        let pinboardItems = [clipboardItems[3]]
+        var queries: [(pinboardID: String?, debounce: Bool)] = []
+
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(_, _, let pinboardID, let debounce) = action {
+                queries.append((pinboardID, debounce))
+                if pinboardID == "board-a" {
+                    controller.updateListState(
+                        .success(RustCoreListResult(
+                            items: pinboardItems,
+                            totalCount: Int64(pinboardItems.count),
+                            hasMore: false
+                        )),
+                        isFiltered: true,
+                        scope: ClipboardListScope(pinboardID: "board-a")
+                    )
+                }
+            }
+        }
+
+        controller.show()
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "board-a",
+                title: "Board A",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: clipboardItems,
+                totalCount: Int64(clipboardItems.count),
+                hasMore: false
+            )),
+            isFiltered: false,
+            scope: .clipboard
+        )
+
+        #expect(await waitForMainActor { contentView.smokeCurrentItemCount == clipboardItems.count })
+        let firstClipboardCard = try #require(contentView.smokeCardBoxes().first)
+        contentView.smokeScrollToX(640)
+        let savedScrollX = contentView.smokeScrollOriginX
+        #expect(savedScrollX > 0)
+
+        contentView.smokePinboardFilterButton(pinboardID: "board-a")?.onPress?()
+        #expect(await waitForMainActor { contentView.smokeCurrentItemCount == pinboardItems.count })
+
+        contentView.smokePinboardFilterButton(pinboardID: nil)?.onPress?()
+        #expect(contentView.smokeCurrentItemCount == clipboardItems.count)
+        #expect(contentView.smokeCardBoxes().first === firstClipboardCard)
+        #expect(abs(contentView.smokeScrollOriginX - savedScrollX) < 1)
+        #expect(queries.map(\.debounce) == [false, false])
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
     func prefetchedLoadMoreAppendsImmediatelyWithoutEnteringLoadingState() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

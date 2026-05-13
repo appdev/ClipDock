@@ -102,6 +102,58 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let itemCount: Int64
     }
 
+    @MainActor
+    private final class ListPageSurface {
+        let scrollView: HorizontalWheelScrollView
+        let documentView = NSView()
+        let stack = NSStackView()
+        var hostConstraints: [NSLayoutConstraint] = []
+        var itemWidthConstraints: [NSLayoutConstraint] = []
+        var itemHeightConstraints: [NSLayoutConstraint] = []
+        var itemPreviewHeightConstraints: [NSLayoutConstraint] = []
+        var itemPreviewWidthConstraints: [NSLayoutConstraint] = []
+        var itemImagePreviewViews: [NSImageView] = []
+        var itemBodyLabels: [NSTextField] = []
+        var renderedCardStatesByID: [String: PanelItemCardViewState] = [:]
+        var hasRenderedContent = false
+        var savedScrollOrigin = NSPoint.zero
+
+        init(onScrollDidChange: @escaping () -> Void) {
+            scrollView = HorizontalWheelScrollView()
+            scrollView.drawsBackground = false
+            scrollView.borderType = .noBorder
+            scrollView.hasHorizontalScroller = false
+            scrollView.hasVerticalScroller = false
+            scrollView.horizontalScrollElasticity = .allowed
+            scrollView.verticalScrollElasticity = .none
+            scrollView.automaticallyAdjustsContentInsets = false
+            scrollView.usesPredominantAxisScrolling = true
+            scrollView.onScrollDidChange = onScrollDidChange
+
+            stack.orientation = .horizontal
+            stack.alignment = .top
+            stack.spacing = 22
+            stack.userInterfaceLayoutDirection = .leftToRight
+            stack.translatesAutoresizingMaskIntoConstraints = false
+
+            documentView.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: Layout.scrollEdgeInset),
+                stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -Layout.scrollEdgeInset),
+                stack.topAnchor.constraint(equalTo: documentView.topAnchor),
+                stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor)
+            ])
+
+            scrollView.documentView = documentView
+        }
+    }
+
+    private struct CachedListScopeState {
+        var result: RustCoreListResult
+        var isFiltered: Bool
+        var selectedItemID: String?
+    }
+
     private final class PinboardColorSwatchButton: NSButton {
         let colorCode: Int64
         private let swatchColor: NSColor
@@ -212,16 +264,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private let searchField = NSSearchField()
     private let previewPopoverController = ClipboardPreviewPopoverController()
-    private let itemBandDocumentView = NSView()
-    private let itemBandStack = NSStackView()
-    private weak var itemBandScrollView: HorizontalWheelScrollView?
-    private var itemWidthConstraints: [NSLayoutConstraint] = []
-    private var itemHeightConstraints: [NSLayoutConstraint] = []
-    private var itemPreviewHeightConstraints: [NSLayoutConstraint] = []
-    private var itemPreviewWidthConstraints: [NSLayoutConstraint] = []
-    private var itemImagePreviewViews: [NSImageView] = []
-    private var itemBodyLabels: [NSTextField] = []
-    private var renderedCardStatesByID: [String: PanelItemCardViewState] = [:]
+    private let itemBandContainerView = NSView()
+    private static let maxRetainedPinboardListPages = 3
+    private var currentListScope: ClipboardListScope = .clipboard
+    private var listPageSurfaces: [ClipboardListScope: ListPageSurface] = [:]
+    private var listPageAccessOrder: [ClipboardListScope] = [.clipboard]
+    private var cachedListScopeStates: [ClipboardListScope: CachedListScopeState] = [:]
     private var currentPanelHeight: CGFloat = BottomPanelGeometryPlanner.defaultHeight
     private var pinboardButtons: [PinboardChipButton] = []
     private var toolbarIconButtons: [PanelActionButton] = []
@@ -243,6 +291,46 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
     private var theme: PasteThemePalette {
         PasteTheme.current(for: self)
+    }
+    private var activeListPage: ListPageSurface {
+        pageSurface(for: currentListScope)
+    }
+    private var itemBandDocumentView: NSView {
+        activeListPage.documentView
+    }
+    private var itemBandStack: NSStackView {
+        activeListPage.stack
+    }
+    private var itemBandScrollView: HorizontalWheelScrollView? {
+        activeListPage.scrollView
+    }
+    private var itemWidthConstraints: [NSLayoutConstraint] {
+        get { activeListPage.itemWidthConstraints }
+        set { activeListPage.itemWidthConstraints = newValue }
+    }
+    private var itemHeightConstraints: [NSLayoutConstraint] {
+        get { activeListPage.itemHeightConstraints }
+        set { activeListPage.itemHeightConstraints = newValue }
+    }
+    private var itemPreviewHeightConstraints: [NSLayoutConstraint] {
+        get { activeListPage.itemPreviewHeightConstraints }
+        set { activeListPage.itemPreviewHeightConstraints = newValue }
+    }
+    private var itemPreviewWidthConstraints: [NSLayoutConstraint] {
+        get { activeListPage.itemPreviewWidthConstraints }
+        set { activeListPage.itemPreviewWidthConstraints = newValue }
+    }
+    private var itemImagePreviewViews: [NSImageView] {
+        get { activeListPage.itemImagePreviewViews }
+        set { activeListPage.itemImagePreviewViews = newValue }
+    }
+    private var itemBodyLabels: [NSTextField] {
+        get { activeListPage.itemBodyLabels }
+        set { activeListPage.itemBodyLabels = newValue }
+    }
+    private var renderedCardStatesByID: [String: PanelItemCardViewState] {
+        get { activeListPage.renderedCardStatesByID }
+        set { activeListPage.renderedCardStatesByID = newValue }
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -271,6 +359,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyTheme()
+        for (scope, page) in listPageSurfaces where scope != currentListScope {
+            page.hasRenderedContent = false
+        }
         renderCurrentItems(scrollSelectedItem: false, preserveScrollPosition: true)
     }
 
@@ -280,6 +371,17 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     func updateStorageState(_ result: Result<RustCoreOpenResult, RustCoreError>) {
         applyRenderPlan(interactionController.updateStorageState(result))
+        if case .success(let openResult) = result {
+            cachedListScopeStates[.clipboard] = CachedListScopeState(
+                result: RustCoreListResult(
+                    items: openResult.items,
+                    totalCount: openResult.itemCount,
+                    hasMore: Int64(openResult.items.count) < openResult.itemCount
+                ),
+                isFiltered: false,
+                selectedItemID: panelViewState().selectedItemID
+            )
+        }
     }
 
     func updateAppSupportDirectory(_ url: URL) {
@@ -313,9 +415,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             let createdPinboardID = nextFilters.first { !previousPinboardIDs.contains($0.id) }?.id
                 ?? (nextFilters.count > previousPinboardIDs.count ? nextFilters.last?.id : nil)
             if let createdPinboardID {
-                selectPinboardAfterCreation(pinboardID: createdPinboardID)
+                beginInlinePinboardRenameAfterCreation(pinboardID: createdPinboardID)
             }
         }
+
+        pruneCachedPinboardPages(validPinboardIDs: Set(nextFilters.map(\.id)))
     }
 
     func setPreviewPopoverEnabled(_ enabled: Bool) {
@@ -342,6 +446,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             effects: localEffects,
             shouldSyncToolbar: result.shouldSyncToolbar
         ))
+        switchListPage(to: .clipboard)
     }
 
     func clearPinboardSelectionIfNeeded(deletedPinboardID: String) {
@@ -358,13 +463,56 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             effects: localEffects,
             shouldSyncToolbar: result.shouldSyncToolbar
         ))
+        switchListPage(to: .clipboard)
+        removeCachedPinboardPages(pinboardID: deletedPinboardID)
     }
 
-    private func selectPinboardAfterCreation(pinboardID: String) {
-        if panelViewState().toolbar.selectedPinboardID != pinboardID {
-            applyInteractionAction(.setPinboardFilter(pinboardID))
+    func invalidateCachedListPages() {
+        let currentScope = currentListScope
+        cachedListScopeStates = cachedListScopeStates.filter { $0.key == currentScope }
+        let removableScopes = listPageSurfaces.keys.filter { $0 != currentScope }
+        for scope in removableScopes {
+            if let page = listPageSurfaces.removeValue(forKey: scope) {
+                NSLayoutConstraint.deactivate(page.hostConstraints)
+                page.scrollView.removeFromSuperview()
+            }
         }
-        beginInlinePinboardRenameAfterCreation(pinboardID: pinboardID)
+        listPageAccessOrder.removeAll { $0 != currentScope }
+    }
+
+    private func removeCachedPinboardPages(pinboardID: String) {
+        let removableScopes = listPageSurfaces.keys.filter {
+            $0.pinboardID == pinboardID && $0 != currentListScope
+        }
+        for scope in removableScopes {
+            if let page = listPageSurfaces.removeValue(forKey: scope) {
+                NSLayoutConstraint.deactivate(page.hostConstraints)
+                page.scrollView.removeFromSuperview()
+            }
+        }
+        listPageAccessOrder.removeAll { $0.pinboardID == pinboardID && $0 != currentListScope }
+        cachedListScopeStates = cachedListScopeStates.filter { $0.key.pinboardID != pinboardID || $0.key == currentListScope }
+    }
+
+    private func pruneCachedPinboardPages(validPinboardIDs: Set<String>) {
+        let removableScopes = listPageSurfaces.keys.filter { scope in
+            guard let pinboardID = scope.pinboardID else { return false }
+            return !validPinboardIDs.contains(pinboardID) && scope != currentListScope
+        }
+        for scope in removableScopes {
+            if let page = listPageSurfaces.removeValue(forKey: scope) {
+                NSLayoutConstraint.deactivate(page.hostConstraints)
+                page.scrollView.removeFromSuperview()
+            }
+        }
+        listPageAccessOrder.removeAll { scope in
+            guard let pinboardID = scope.pinboardID else { return false }
+            return !validPinboardIDs.contains(pinboardID) && scope != currentListScope
+        }
+        cachedListScopeStates = cachedListScopeStates.filter { scope, _ in
+            guard let pinboardID = scope.pinboardID else { return true }
+            return validPinboardIDs.contains(pinboardID) || scope == currentListScope
+        }
     }
 
     private func beginInlinePinboardRenameAfterCreation(pinboardID: String) {
@@ -462,6 +610,84 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             button.contentTintColor = theme.panel.toolbarIconColor
         }
         updatePinboardChipAppearance()
+    }
+
+    private func pageSurface(for scope: ClipboardListScope) -> ListPageSurface {
+        if let page = listPageSurfaces[scope] {
+            return page
+        }
+
+        let page = ListPageSurface { [weak self] in
+            self?.handleItemBandScrollDidChange()
+        }
+        listPageSurfaces[scope] = page
+        return page
+    }
+
+    private func attachListPage(_ page: ListPageSurface) {
+        for cachedPage in listPageSurfaces.values {
+            cachedPage.savedScrollOrigin = cachedPage.scrollView.contentView.bounds.origin
+            cachedPage.scrollView.isHidden = cachedPage !== page
+        }
+
+        guard page.scrollView.superview !== itemBandContainerView else {
+            page.scrollView.isHidden = false
+            return
+        }
+
+        page.scrollView.translatesAutoresizingMaskIntoConstraints = false
+        itemBandContainerView.addSubview(page.scrollView)
+        page.hostConstraints = [
+            page.scrollView.leadingAnchor.constraint(equalTo: itemBandContainerView.leadingAnchor),
+            page.scrollView.trailingAnchor.constraint(equalTo: itemBandContainerView.trailingAnchor),
+            page.scrollView.topAnchor.constraint(equalTo: itemBandContainerView.topAnchor),
+            page.scrollView.bottomAnchor.constraint(equalTo: itemBandContainerView.bottomAnchor)
+        ]
+        NSLayoutConstraint.activate(page.hostConstraints)
+    }
+
+    private func recordListPageAccess(_ scope: ClipboardListScope) {
+        listPageAccessOrder.removeAll { $0 == scope }
+        listPageAccessOrder.append(scope)
+        pruneRetainedListPagesIfNeeded()
+    }
+
+    private func pruneRetainedListPagesIfNeeded() {
+        let nonRetainedScopes = listPageSurfaces.keys.filter {
+            $0 != .clipboard
+                && $0 != currentListScope
+                && (!$0.normalizedSearch.isEmpty || $0.sourceAppID != nil)
+        }
+        for scope in nonRetainedScopes {
+            if let page = listPageSurfaces.removeValue(forKey: scope) {
+                NSLayoutConstraint.deactivate(page.hostConstraints)
+                page.scrollView.removeFromSuperview()
+            }
+            cachedListScopeStates.removeValue(forKey: scope)
+            listPageAccessOrder.removeAll { $0 == scope }
+        }
+
+        let retainedPinboardPages = listPageSurfaces.keys.filter {
+            $0.pinboardID != nil && $0 != currentListScope
+        }
+        guard retainedPinboardPages.count > Self.maxRetainedPinboardListPages else { return }
+
+        for scope in Array(listPageAccessOrder) {
+            guard scope != .clipboard,
+                  scope != currentListScope,
+                  scope.pinboardID != nil,
+                  let page = listPageSurfaces.removeValue(forKey: scope)
+            else {
+                continue
+            }
+            NSLayoutConstraint.deactivate(page.hostConstraints)
+            page.scrollView.removeFromSuperview()
+            listPageAccessOrder.removeAll { $0 == scope }
+            if listPageSurfaces.keys.filter({ $0.pinboardID != nil && $0 != currentListScope }).count
+                <= Self.maxRetainedPinboardListPages {
+                break
+            }
+        }
     }
 
     private func configureLayout() {
@@ -674,10 +900,6 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             self?.showRenamePinboardDialog(for: pinboard)
         })
 
-        menu.addItem(ActionMenuItem(title: "共享 Pinboard", imageName: "square.and.arrow.up") { [weak self] in
-            self?.showShareUnavailableAlert()
-        })
-
         menu.addItem(ActionMenuItem(title: "删除...", imageName: "trash") { [weak self] in
             self?.confirmDeletePinboard(pinboard)
         })
@@ -835,45 +1057,159 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func makeItemBand() -> NSView {
-        let scrollView = HorizontalWheelScrollView()
-        itemBandScrollView = scrollView
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-        scrollView.hasHorizontalScroller = false
-        scrollView.hasVerticalScroller = false
-        scrollView.horizontalScrollElasticity = .allowed
-        scrollView.verticalScrollElasticity = .none
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.usesPredominantAxisScrolling = true
-        scrollView.onScrollDidChange = { [weak self] in
-            self?.handleItemBandScrollDidChange()
-        }
-
-        itemBandStack.orientation = .horizontal
-        itemBandStack.alignment = .top
-        itemBandStack.spacing = 22
-        itemBandStack.userInterfaceLayoutDirection = .leftToRight
-        itemBandStack.translatesAutoresizingMaskIntoConstraints = false
-
-        itemBandDocumentView.addSubview(itemBandStack)
-
-        NSLayoutConstraint.activate([
-            itemBandStack.leadingAnchor.constraint(equalTo: itemBandDocumentView.leadingAnchor, constant: Layout.scrollEdgeInset),
-            itemBandStack.trailingAnchor.constraint(equalTo: itemBandDocumentView.trailingAnchor, constant: -Layout.scrollEdgeInset),
-            itemBandStack.topAnchor.constraint(equalTo: itemBandDocumentView.topAnchor),
-            itemBandStack.bottomAnchor.constraint(equalTo: itemBandDocumentView.bottomAnchor)
-        ])
-
-        scrollView.documentView = itemBandDocumentView
-        return scrollView
+        attachListPage(activeListPage)
+        return itemBandContainerView
     }
 
-    func updateListState(_ result: Result<RustCoreListResult, RustCoreError>, isFiltered: Bool, append: Bool = false) {
-        applyRenderPlan(interactionController.updateListState(result, isFiltered: isFiltered, append: append))
+    func updateListState(
+        _ result: Result<RustCoreListResult, RustCoreError>,
+        isFiltered: Bool,
+        append: Bool = false,
+        scope: ClipboardListScope? = nil
+    ) {
+        let updateScope = scope ?? currentListScope
+        if updateScope != currentListScope {
+            let activeQueryScope = ClipboardListScope(
+                searchText: panelViewState().toolbar.searchText,
+                sourceAppID: nil,
+                pinboardID: panelViewState().toolbar.selectedPinboardID
+            )
+            guard updateScope == activeQueryScope else {
+                cacheListState(result, isFiltered: isFiltered, append: append, scope: updateScope)
+                return
+            }
+            switchListPage(to: updateScope)
+        }
+
+        let shouldReuseRenderedPage = shouldReuseRenderedPage(
+            for: result,
+            append: append,
+            scope: updateScope
+        )
+        let plan = interactionController.updateListState(result, isFiltered: isFiltered, append: append)
+        cacheListState(result, isFiltered: isFiltered, append: append, scope: updateScope)
+
+        if shouldReuseRenderedPage {
+            updateVisibleSelection(scrollIntoView: false)
+            restoreScrollOriginIfNeeded(activeListPage.savedScrollOrigin)
+            refreshVisibleCommandHints()
+            return
+        }
+
+        applyRenderPlan(plan)
     }
 
     func updateLoadingMoreState(_ isLoading: Bool) {
         interactionController.updateLoadingMoreState(isLoading)
+    }
+
+    private func shouldReuseRenderedPage(
+        for result: Result<RustCoreListResult, RustCoreError>,
+        append: Bool,
+        scope: ClipboardListScope
+    ) -> Bool {
+        guard !append,
+              activeListPage.hasRenderedContent,
+              let cachedState = cachedListScopeStates[scope],
+              case .success(let listResult) = result
+        else {
+            return false
+        }
+
+        return cachedState.result == listResult
+    }
+
+    private func cacheListState(
+        _ result: Result<RustCoreListResult, RustCoreError>,
+        isFiltered: Bool,
+        append: Bool,
+        scope: ClipboardListScope
+    ) {
+        guard case .success(let listResult) = result else {
+            cachedListScopeStates.removeValue(forKey: scope)
+            return
+        }
+
+        let cachedResult: RustCoreListResult
+        if append, let previous = cachedListScopeStates[scope]?.result {
+            let existingIDs = Set(previous.items.map(\.id))
+            let appendedItems = listResult.items.filter { !existingIDs.contains($0.id) }
+            cachedResult = RustCoreListResult(
+                items: previous.items + appendedItems,
+                totalCount: listResult.totalCount,
+                hasMore: listResult.hasMore
+            )
+        } else {
+            cachedResult = listResult
+        }
+
+        cachedListScopeStates[scope] = CachedListScopeState(
+            result: cachedResult,
+            isFiltered: isFiltered,
+            selectedItemID: panelViewState().selectedItemID
+        )
+    }
+
+    private func saveCurrentListPageState() {
+        activeListPage.savedScrollOrigin = itemBandScrollView?.contentView.bounds.origin ?? .zero
+        if var cachedState = cachedListScopeStates[currentListScope] {
+            cachedState.selectedItemID = panelViewState().selectedItemID
+            cachedListScopeStates[currentListScope] = cachedState
+        }
+    }
+
+    private func restoreCachedListState(for scope: ClipboardListScope) {
+        guard let cachedState = cachedListScopeStates[scope] else { return }
+        let plan = interactionController.updateListState(
+            .success(cachedState.result),
+            isFiltered: cachedState.isFiltered,
+            append: false
+        )
+        if !activeListPage.hasRenderedContent {
+            applyRenderPlan(plan)
+        }
+        if let selectedItemID = cachedState.selectedItemID,
+           cachedState.result.items.contains(where: { $0.id == selectedItemID }) {
+            applyInteractionResult(interactionController.dispatch(.selectItem(
+                id: selectedItemID,
+                scrollIntoView: false
+            )))
+        } else {
+            updateVisibleSelection(scrollIntoView: false)
+        }
+    }
+
+    private func restoreScrollOriginIfNeeded(_ origin: NSPoint) {
+        guard let scrollView = itemBandScrollView else { return }
+        layoutSubtreeIfNeeded()
+        itemBandDocumentView.layoutSubtreeIfNeeded()
+        let maxX = max(0, itemBandDocumentView.frame.width - scrollView.contentView.bounds.width)
+        let clampedOrigin = NSPoint(x: min(max(0, origin.x), maxX), y: 0)
+        scrollView.contentView.scroll(to: clampedOrigin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func switchListPage(to scope: ClipboardListScope) {
+        guard scope != currentListScope else { return }
+
+        saveCurrentListPageState()
+        currentListScope = scope
+        let page = activeListPage
+        attachListPage(page)
+        recordListPageAccess(scope)
+        updatePanelHeight(currentPanelHeight)
+        if cachedListScopeStates[scope] != nil {
+            restoreCachedListState(for: scope)
+        } else if !page.hasRenderedContent {
+            let emptyResult = RustCoreListResult(items: [], totalCount: 0, hasMore: false)
+            applyRenderPlan(interactionController.updateListState(
+                .success(emptyResult),
+                isFiltered: scope.isFiltered,
+                append: false
+            ))
+        }
+        restoreScrollOriginIfNeeded(page.savedScrollOrigin)
+        refreshVisibleCommandHints()
     }
 
     private func renderCurrentItems(
@@ -887,6 +1223,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             renderItemCards([makeEmptyHistoryCard()])
             return
         case .filteredEmpty:
+            if panelViewState().toolbar.selectedPinboardID != nil,
+               panelViewState().toolbar.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                renderItemCards([])
+                return
+            }
             renderItemCards([makeNoResultsCard()])
             return
         case .databaseError:
@@ -1032,11 +1373,20 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func emitRuntimeAction(_ action: PanelExternalAction) {
         switch action {
-        case .queryChanged(let searchText, let sourceAppID, let pinboardID):
-            onRuntimeAction?(.queryChanged(
+        case .queryChanged(let searchText, let sourceAppID, let pinboardID, let debounce):
+            let scope = ClipboardListScope(
                 searchText: searchText,
                 sourceAppID: sourceAppID,
                 pinboardID: pinboardID
+            )
+            if !debounce {
+                switchListPage(to: scope)
+            }
+            onRuntimeAction?(.queryChanged(
+                searchText: searchText,
+                sourceAppID: sourceAppID,
+                pinboardID: pinboardID,
+                debounce: debounce
             ))
         case .copyItem(let itemID):
             guard let item = interactionController.item(withID: itemID) else { return }
@@ -1405,6 +1755,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
 
         cards.forEach { itemBandStack.addArrangedSubview($0) }
+        activeListPage.hasRenderedContent = true
 
         let itemSide = itemSideLength(for: currentPanelHeight)
         itemBandDocumentView.frame = NSRect(
@@ -1687,7 +2038,7 @@ extension FloatingPanelContentView {
             .filter { $0.itemID != nil }
     }
 
-    func smokePinboardFilterButton(pinboardID: String) -> PinboardChipButton? {
+    func smokePinboardFilterButton(pinboardID: String?) -> PinboardChipButton? {
         pinboardButtons.first { $0.pinboardID == pinboardID }
     }
 
@@ -1750,6 +2101,20 @@ extension FloatingPanelContentView {
         itemBandDocumentView.layoutSubtreeIfNeeded()
         let maxX = max(0, itemBandDocumentView.frame.width - scrollView.contentView.bounds.width)
         scrollView.contentView.scroll(to: NSPoint(x: maxX, y: 0))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        handleItemBandScrollDidChange()
+    }
+
+    var smokeScrollOriginX: CGFloat {
+        itemBandScrollView?.contentView.bounds.origin.x ?? 0
+    }
+
+    func smokeScrollToX(_ x: CGFloat) {
+        guard let scrollView = itemBandScrollView else { return }
+        layoutSubtreeIfNeeded()
+        itemBandDocumentView.layoutSubtreeIfNeeded()
+        let maxX = max(0, itemBandDocumentView.frame.width - scrollView.contentView.bounds.width)
+        scrollView.contentView.scroll(to: NSPoint(x: min(max(0, x), maxX), y: 0))
         scrollView.reflectScrolledClipView(scrollView.contentView)
         handleItemBandScrollDidChange()
     }
@@ -1935,13 +2300,14 @@ extension FloatingPanelContentView {
 
         let isInline = activeRenamePinboardID == createdPinboardID
             && activeRenameField?.superview != nil
+        let keptCurrentSelection = panelViewState().toolbar.selectedPinboardID == previousSelectedPinboardID
 
         cancelInlinePinboardRename()
         updatePinboards(previousSummaries)
         pendingCreatedPinboardSourceIDs = previousPendingIDs
         applyInteractionAction(.setPinboardFilter(previousSelectedPinboardID))
         onRuntimeAction = previousAction
-        return isInline
+        return isInline && keptCurrentSelection
     }
 
     func smokePinboardRenameUsesInlineEditor(pinboardID: String) -> Bool {

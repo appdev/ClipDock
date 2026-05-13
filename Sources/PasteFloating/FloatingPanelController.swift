@@ -230,8 +230,13 @@ final class FloatingPanelController {
         contentView.updateStorageState(result)
     }
 
-    func updateListState(_ result: Result<RustCoreListResult, RustCoreError>, isFiltered: Bool, append: Bool = false) {
-        contentView.updateListState(result, isFiltered: isFiltered, append: append)
+    func updateListState(
+        _ result: Result<RustCoreListResult, RustCoreError>,
+        isFiltered: Bool,
+        append: Bool = false,
+        scope: ClipboardListScope? = nil
+    ) {
+        contentView.updateListState(result, isFiltered: isFiltered, append: append, scope: scope)
     }
 
     func updateLoadingMoreState(_ isLoading: Bool) {
@@ -260,6 +265,10 @@ final class FloatingPanelController {
 
     func clearPinboardSelectionIfNeeded(deletedPinboardID: String) {
         contentView.clearPinboardSelectionIfNeeded(deletedPinboardID: deletedPinboardID)
+    }
+
+    func invalidateCachedListPages() {
+        contentView.invalidateCachedListPages()
     }
 
     func setPreferredHeight(_ height: CGFloat) {
