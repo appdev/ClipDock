@@ -97,8 +97,12 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             }
 
             let colorInset: CGFloat = selectedSwatch ? 5 : 3
+            let colorPath = NSBezierPath(ovalIn: bounds.insetBy(dx: colorInset, dy: colorInset))
             swatchColor.setFill()
-            NSBezierPath(ovalIn: bounds.insetBy(dx: colorInset, dy: colorInset)).fill()
+            colorPath.fill()
+            NSColor.black.withAlphaComponent(0.16).setStroke()
+            colorPath.lineWidth = 1
+            colorPath.stroke()
         }
     }
 
@@ -180,14 +184,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     private var currentPanelHeight: CGFloat = BottomPanelGeometryPlanner.defaultHeight
     private var pinboardButtons: [PinboardChipButton] = []
     private var toolbarIconButtons: [PanelActionButton] = []
-    private var pinboardFilters = [
-        PinboardFilterEntry(
-            id: DefaultPinboard.defaultID,
-            title: DefaultPinboard.defaultTitle,
-            colorCode: 4_293_940_557,
-            itemCount: 0
-        )
-    ]
+    private var pinboardFilters: [PinboardFilterEntry] = []
     private var pendingCreatedPinboardSourceIDs: Set<String>?
     private weak var activeRenameField: NSTextField?
     private weak var activeRenameButton: PinboardChipButton?
@@ -244,8 +241,11 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     func updatePinboards(_ pinboards: [RustPinboardSummary]) {
-        let nextFilters = pinboards.map { pinboard in
-            PinboardFilterEntry(
+        let nextFilters = pinboards.compactMap { pinboard -> PinboardFilterEntry? in
+            if pinboard.id == DefaultPinboard.defaultID && pinboard.itemCount == 0 {
+                return nil
+            }
+            return PinboardFilterEntry(
                 id: pinboard.id,
                 title: pinboard.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? "未命名"
@@ -649,7 +649,7 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
     }
 
     private func createPinboardDirectly() {
-        let colorOption = Self.pinboardColorOptions[pinboardFilters.count % Self.pinboardColorOptions.count]
+        let colorOption = Self.pinboardColorOptions.randomElement() ?? Self.pinboardColorOptions[0]
         pendingCreatedPinboardSourceIDs = Set(pinboardFilters.map(\.id))
         onRuntimeAction?(.createPinboard(title: "未命名", colorCode: colorOption.colorCode))
     }
@@ -1141,8 +1141,12 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
         let size = NSSize(width: 12, height: 12)
         let image = NSImage(size: size)
         image.lockFocus()
+        let dotPath = NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: 10, height: 10))
         pinboardDotColor(colorCode: colorCode).setFill()
-        NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: 10, height: 10)).fill()
+        dotPath.fill()
+        NSColor.black.withAlphaComponent(0.16).setStroke()
+        dotPath.lineWidth = 1
+        dotPath.stroke()
         image.unlockFocus()
         return image
     }
@@ -1180,6 +1184,9 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
             matching: [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { [weak self] event in
             guard let self else { return event }
+            if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) {
+                self.commitInlinePinboardRenameBeforePanelMouseDown(event)
+            }
             let commandPressed = event.modifierFlags
                 .intersection(.deviceIndependentFlagsMask)
                 .contains(.command)
@@ -1192,6 +1199,16 @@ final class FloatingPanelContentView: NSVisualEffectView, NSSearchFieldDelegate 
 
             return event
         }
+    }
+
+    private func commitInlinePinboardRenameBeforePanelMouseDown(_ event: NSEvent) {
+        guard let activeRenameField,
+              event.window === window
+        else { return }
+
+        let fieldPoint = activeRenameField.convert(event.locationInWindow, from: nil)
+        guard !activeRenameField.bounds.contains(fieldPoint) else { return }
+        finishInlinePinboardRename(commit: true)
     }
 
     private func stopCommandHintMonitor() {
@@ -1636,6 +1653,29 @@ extension FloatingPanelContentView {
             && widthConstraints.allSatisfy { $0.relation == .greaterThanOrEqual }
     }
 
+    func smokeEmptyDefaultPinboardIsHidden() -> Bool {
+        let previousPinboards = pinboardFilters
+        defer {
+            pinboardFilters = previousPinboards
+            rebuildFilterChips()
+        }
+
+        updatePinboards([
+            RustPinboardSummary(
+                id: DefaultPinboard.defaultID,
+                title: DefaultPinboard.defaultTitle,
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 0,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+
+        return pinboardFilters.isEmpty
+            && pinboardButtons.allSatisfy { $0.pinboardID != DefaultPinboard.defaultID }
+    }
+
     func smokeHorizontalScrollView() -> HorizontalWheelScrollView? {
         allSmokeSubviews(of: self)
             .compactMap { $0 as? HorizontalWheelScrollView }
@@ -1917,6 +1957,48 @@ extension FloatingPanelContentView {
         cancelInlinePinboardRename()
         return longWidth > shortWidth + 120
             && shortWidth >= 40
+    }
+
+    func smokePinboardRenameCommitsBeforeInternalPanelClick(pinboardID: String) -> Bool {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }),
+              let window
+        else { return false }
+
+        let previousAction = onRuntimeAction
+        let nextTitle = "点击面板保存"
+        var capturedRename: (pinboardID: String, title: String)?
+        onRuntimeAction = { action in
+            if case .renamePinboard(let capturedPinboardID, let capturedTitle) = action {
+                capturedRename = (capturedPinboardID, capturedTitle)
+            }
+        }
+        defer {
+            cancelInlinePinboardRename()
+            onRuntimeAction = previousAction
+        }
+
+        showRenamePinboardDialog(for: pinboard)
+        guard let field = activeRenameField else { return false }
+        isInstallingRenameField = false
+        field.stringValue = nextTitle
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+
+        guard let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: bounds.midX, y: bounds.midY),
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ) else { return false }
+
+        commitInlinePinboardRenameBeforePanelMouseDown(event)
+        return capturedRename?.pinboardID == pinboardID
+            && capturedRename?.title == nextTitle
+            && activeRenameField == nil
     }
 
     func smokeShowPinboardChipMenu(pinboardID: String) -> Bool {

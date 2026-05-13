@@ -879,6 +879,17 @@ enum PanelInteractionSmokeScenario {
 
         controller.setAppSupportDirectory(appSupportURL)
         controller.show()
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "default",
+                title: "固定",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
         controller.updateListState(
             .success(RustCoreListResult(
                 items: sampleItems,
@@ -1050,6 +1061,14 @@ enum PanelInteractionSmokeScenario {
         try PanelQAHarness.require(
             contentView.smokePinboardRenameResizesWhileTyping(pinboardID: "default"),
             "Pinboard chip 内联重命名应在输入过程中随文本实时扩展或缩小"
+        )
+        try PanelQAHarness.require(
+            contentView.smokePinboardRenameCommitsBeforeInternalPanelClick(pinboardID: "default"),
+            "Pinboard chip 内联重命名应在点击面板其他位置时先自动保存"
+        )
+        try PanelQAHarness.require(
+            contentView.smokeEmptyDefaultPinboardIsHidden(),
+            "空的默认固定分组不应作为默认数据出现在 Pinboard 列表中"
         )
         try PanelQAHarness.require(
             pinboardMenuItems.first(where: { $0.title == "颜色" })?.hasCustomView == true

@@ -506,6 +506,10 @@ final class FloatingPanelController {
     }
 
     private func shouldHideForMouseDown(eventWindow: NSWindow?, mouseLocation: CGPoint) -> Bool {
+        if let eventWindow, eventWindow !== panel {
+            return false
+        }
+
         if contentView.containsPreviewSurface(eventWindow: eventWindow, mouseLocation: mouseLocation) {
             return false
         }
@@ -600,6 +604,18 @@ extension FloatingPanelController {
     ) {
         let eventWindow = eventWindowIsPanel ? panel : nil
         if shouldHideForMouseDown(eventWindow: eventWindow, mouseLocation: mouseLocation) {
+            hide(restoresPreviousApplicationFocus: false)
+        }
+    }
+
+    func smokeHandleAppOwnedNonPanelMouseDown(mouseLocation: CGPoint) {
+        let appOwnedWindow = NSWindow(
+            contentRect: NSRect(x: mouseLocation.x, y: mouseLocation.y, width: 80, height: 40),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        if shouldHideForMouseDown(eventWindow: appOwnedWindow, mouseLocation: mouseLocation) {
             hide(restoresPreviousApplicationFocus: false)
         }
     }

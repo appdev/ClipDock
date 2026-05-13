@@ -147,6 +147,24 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func appOwnedDialogClickDoesNotHidePanel() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        controller.show()
+        #expect(await waitForMainActor { controller.isVisible })
+
+        controller.smokeHandleAppOwnedNonPanelMouseDown(
+            mouseLocation: CGPoint(x: controller.smokePanelFrame.maxX + 40, y: controller.smokePanelFrame.midY)
+        )
+
+        #expect(controller.isVisible)
+    }
+
+    @Test
+    @MainActor
     func clickingPreviewPopoverDoesNotHidePanel() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

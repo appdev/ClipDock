@@ -478,6 +478,16 @@ fn item_management_pins_and_soft_deletes_single_item() {
 }
 
 #[test]
+fn empty_default_pinboard_is_hidden_until_used() {
+    let (_, core) = open_temp_core();
+
+    let pinboards = core.list_pinboards().unwrap();
+
+    assert_eq!(pinboards.total_count, 0);
+    assert!(pinboards.pinboards.is_empty());
+}
+
+#[test]
 fn pinned_items_enter_default_pinboard_and_leave_on_unpin() {
     let (_, mut core) = open_temp_core();
     let pinned = core

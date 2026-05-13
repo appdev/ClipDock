@@ -2013,3 +2013,26 @@ doubleClickCopy=panel-smoke-text
 - 已停止使用离屏 `--render-panel-snapshot` 作为“我们应用”的运行截图。
 - 顶部工具栏改为真实窗口截图验证口径；对比图为 `.codex/artifacts/paste-vs-ours-real-window-after-layout.png`。
 - 布局修正后，工具栏贴近面板顶部，卡片尺寸和间距更接近 Paste。
+
+## Pinboard 内联重命名与默认分组复检
+
+日期：2026-05-13
+
+执行者：Codex
+
+验证结果：
+
+- `cargo test --manifest-path rust/Cargo.toml`：通过，29 个 Rust 测试通过。
+- `swift run PasteFloating --exercise-panel-interactions`：通过，输出 `panelInteractions=ok`、`menuPin=panel-smoke-file:default:true`。
+- `swift test`：通过，123 个 Swift 测试通过。
+- `swift run PasteFloating --show-pinboard-ui rename-long`：通过，展示当前 0.32 白色毛玻璃面板和长标题内联编辑态。
+- `screencapture -x -l 409 .codex/artifacts/pinboard-replica-qa-2026-05-13/08-current-alpha-032-rename-live-resize-window.png`：通过，捕获真实窗口截图。
+- `screencapture -x -R46,120,1840,330 .codex/artifacts/pinboard-replica-qa-2026-05-13/08-current-alpha-032-rename-live-resize-screen-region.png`：通过，捕获真实屏幕区域截图。
+- `git diff --check`：通过，无输出。
+
+结论：
+
+- Pinboard chip 在编辑中点击面板内部其他位置会提交保存。
+- 点击删除确认弹窗属于应用内操作，不再关闭面板。
+- 空默认固定分组不再显示为默认 chip。
+- 新建 Pinboard 使用随机备选色，浅色色点增加描边后视觉尺寸一致。

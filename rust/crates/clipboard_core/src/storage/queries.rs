@@ -170,11 +170,6 @@ impl ClipboardCore {
     }
 
     pub fn list_pinboards(&self) -> Result<PinboardPage> {
-        let total_count = self.connection.query_row(
-            "SELECT COUNT(*) FROM pinboards WHERE deleted_at_ms IS NULL",
-            [],
-            |row| row.get::<_, i64>(0),
-        )?;
         let mut statement = self.connection.prepare(
             r#"
             SELECT
@@ -195,11 +190,14 @@ impl ClipboardCore {
         )?;
         let pinboards = statement
             .query_map([], map_pinboard_summary)?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|pinboard| !(pinboard.id == DEFAULT_PINBOARD_ID && pinboard.item_count == 0))
+            .collect::<Vec<_>>();
 
         Ok(PinboardPage {
+            total_count: pinboards.len() as i64,
             pinboards,
-            total_count,
         })
     }
 
