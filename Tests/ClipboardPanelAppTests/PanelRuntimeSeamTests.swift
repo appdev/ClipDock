@@ -202,6 +202,44 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func spacePreviewCanReopenAfterPopoverSpaceClosesIt() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let item = PanelQASamples.makePreviewItem(isLongText: false)
+        controller.setAppSupportDirectory(FileManager.default.temporaryDirectory)
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(items: [item], totalCount: 1, hasMore: false)),
+            isFiltered: false
+        )
+        PanelQAHarness.drainMainRunLoop()
+
+        #expect(await waitForMainActor { controller.isVisible && contentView.smokeCurrentItemCount == 1 })
+        #expect(controller.smokeFirstResponderIsContentView)
+
+        PanelQAHarness.sendSpace(to: contentView)
+        PanelQAHarness.drainMainRunLoop()
+        #expect(await waitForMainActor { contentView.smokeIsPreviewShown })
+        #expect(controller.smokeFirstResponderIsContentView)
+
+        #expect(contentView.smokeClosePreviewWithSpaceFromPopoverFocus())
+        PanelQAHarness.drainMainRunLoop()
+        #expect(!contentView.smokeIsPreviewShown)
+        #expect(controller.smokeFirstResponderIsContentView)
+
+        #expect(controller.smokeSendSpaceToFirstResponder())
+        PanelQAHarness.drainMainRunLoop()
+        #expect(await waitForMainActor { contentView.smokeIsPreviewShown })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
     func appRuntimeIgnoresDuplicateShortcutToggleAndHidesOnDeactivate() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

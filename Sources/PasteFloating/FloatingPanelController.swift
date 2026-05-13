@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ClipboardPanelApp
 
 private enum PanelPresentationAnimation {
@@ -600,6 +601,27 @@ extension FloatingPanelController {
 
     var smokeFirstResponderIsContentView: Bool {
         panel.firstResponder === contentView
+    }
+
+    @discardableResult
+    func smokeSendSpaceToFirstResponder() -> Bool {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Space)
+        ) else {
+            return false
+        }
+
+        panel.firstResponder?.keyDown(with: event)
+        return true
     }
 
     var smokeFocusDiagnostic: String {

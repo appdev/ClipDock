@@ -7,6 +7,7 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private var shownItemID: String?
     private var keyDownMonitor: Any?
+    private weak var returnFocusView: NSView?
 
     override init() {
         super.init()
@@ -34,22 +35,29 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     func toggle(
         item: RustClipboardItemSummary,
         appSupportDirectory: URL,
-        relativeTo anchorView: NSView
+        relativeTo anchorView: NSView,
+        returnFocusTo focusView: NSView
     ) {
         if popover.isShown, shownItemID == item.id {
             close()
             return
         }
 
-        show(item: item, appSupportDirectory: appSupportDirectory, relativeTo: anchorView)
+        show(
+            item: item,
+            appSupportDirectory: appSupportDirectory,
+            relativeTo: anchorView,
+            returnFocusTo: focusView
+        )
     }
 
     func show(
         item: RustClipboardItemSummary,
         appSupportDirectory: URL,
-        relativeTo anchorView: NSView
+        relativeTo anchorView: NSView,
+        returnFocusTo focusView: NSView
     ) {
-        close()
+        close(restoresFocus: false)
 
         let content = ClipboardPreviewContentPlanner.preview(
             for: item,
@@ -62,27 +70,40 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
         popover.contentViewController = viewController
         popover.contentSize = viewController.preferredContentSize
         shownItemID = item.id
+        returnFocusView = focusView
         startKeyDownMonitor()
         popover.show(
             relativeTo: anchorView.bounds.insetBy(dx: 10, dy: 10),
             of: anchorView,
             preferredEdge: .maxY
         )
-        anchorView.window?.makeFirstResponder(anchorView.window?.contentView)
+        focusView.window?.makeFirstResponder(focusView)
     }
 
     func close() {
+        close(restoresFocus: true)
+    }
+
+    private func close(restoresFocus: Bool) {
         if popover.isShown {
             popover.performClose(nil)
             popover.close()
         }
-        stopKeyDownMonitor()
-        shownItemID = nil
+        finishClosing(restoresFocus: restoresFocus)
     }
 
     func popoverDidClose(_ notification: Notification) {
+        guard !popover.isShown else { return }
+        finishClosing(restoresFocus: true)
+    }
+
+    private func finishClosing(restoresFocus: Bool) {
         stopKeyDownMonitor()
         shownItemID = nil
+        if restoresFocus {
+            returnFocusView?.window?.makeFirstResponder(returnFocusView)
+        }
+        returnFocusView = nil
     }
 
     private func startKeyDownMonitor() {

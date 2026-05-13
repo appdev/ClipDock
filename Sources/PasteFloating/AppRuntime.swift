@@ -1440,7 +1440,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         previewPopoverController.toggle(
             item: item,
             appSupportDirectory: appSupportDirectory,
-            relativeTo: itemBandStack.arrangedSubviews[index]
+            relativeTo: itemBandStack.arrangedSubviews[index],
+            returnFocusTo: self
         )
     }
 
@@ -1455,7 +1456,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         previewPopoverController.show(
             item: item,
             appSupportDirectory: appSupportDirectory ?? URL(fileURLWithPath: NSHomeDirectory()),
-            relativeTo: itemBandStack.arrangedSubviews[index]
+            relativeTo: itemBandStack.arrangedSubviews[index],
+            returnFocusTo: self
         )
     }
 
