@@ -765,16 +765,20 @@ private struct PreferencesRootView: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
 
     var body: some View {
-        HStack(spacing: 0) {
-            PreferencesSidebar(model: model)
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(width: 1)
-            PreferencesContent(model: model)
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+                .ignoresSafeArea()
+
+            HStack(spacing: 0) {
+                PreferencesSidebar(model: model)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.055))
+                    .frame(width: 1)
+                PreferencesContent(model: model)
+            }
         }
         .frame(minWidth: 820, minHeight: 600)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
@@ -782,29 +786,78 @@ private struct PreferencesSidebar: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("设置")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 16) {
+            PreferencesSidebarHeader()
 
-            ForEach(PreferenceSection.allCases, id: \.self) { section in
-                PreferenceSidebarRow(
-                    section: section,
-                    isSelected: model.selectedSection == section
-                ) {
-                    model.selectSection(section)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(PreferenceSection.allCases, id: \.self) { section in
+                    PreferenceSidebarRow(
+                        section: section,
+                        isSelected: model.selectedSection == section
+                    ) {
+                        model.selectSection(section)
+                    }
                 }
             }
 
             Spacer(minLength: 16)
         }
-        .padding(.top, 66)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 18)
-        .frame(width: 264)
-        .background(.ultraThinMaterial)
+        .padding(.top, 52)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 20)
+        .frame(width: 244)
+        .background {
+            Color(nsColor: .windowBackgroundColor)
+                .ignoresSafeArea()
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+        }
+    }
+}
+
+private struct PreferencesSidebarHeader: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            PreferenceMiniAppIconView()
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(aboutDisplayName())
+                    .font(.system(size: 14.5, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("偏好设置")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 2)
+    }
+}
+
+private struct PreferenceMiniAppIconView: View {
+    var body: some View {
+        Group {
+            if let image = aboutAppIconImage() {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(2)
+            } else {
+                Image(systemName: "clipboard.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .frame(width: 34, height: 34)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.6)
+        )
     }
 }
 
@@ -823,19 +876,27 @@ private struct PreferenceSidebarRow: View {
                     .font(.system(size: 13.5, weight: .medium))
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.76))
+            .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.72))
             .padding(.horizontal, 10)
-            .frame(height: 38)
+            .frame(height: 36)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.regularMaterial)
+                        .fill(Color.accentColor.opacity(0.13))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 0.7)
+                                .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.7)
                         )
+                }
+            }
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 3, height: 18)
+                        .padding(.leading, 1)
                 }
             }
         }
@@ -847,16 +908,19 @@ private struct PreferencesContent: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            PreferencePageHeader(section: model.selectedSection)
-            pageContent
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                PreferencePageHeader(section: model.selectedSection)
+                pageContent
+            }
+            .frame(maxWidth: 700, alignment: .leading)
+            .padding(.top, 48)
+            .padding(.horizontal, 44)
+            .padding(.bottom, 48)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: 660, alignment: .leading)
-        .padding(.top, 56)
-        .padding(.horizontal, 42)
-        .padding(.bottom, 42)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -880,25 +944,28 @@ private struct PreferencePageHeader: View {
     let section: PreferenceSection
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: section.symbolName)
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 42, height: 42)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.7)
-                )
-
+        HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(section.title)
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.system(size: 25, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text(section.subtitle)
                     .font(.system(size: 13.5))
                     .foregroundStyle(.secondary)
             }
+            .layoutPriority(1)
+
+            Spacer(minLength: 16)
+
+            Image(systemName: section.symbolName)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 34, height: 34)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.6)
+                )
         }
     }
 }
@@ -907,7 +974,7 @@ private struct PreferenceGeneralSection: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             PreferenceSectionGroup(title: "基础") {
                 PreferenceRow(title: "登录时打开", detail: model.state.launchAtLoginState.detail) {
                     Toggle(
@@ -1000,7 +1067,7 @@ private struct PreferenceShortcutSection: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             PreferenceSectionGroup(title: "全局操作") {
                 PreferenceRow(title: "打开剪贴板", detail: "从任意应用呼出底部面板") {
                     ShortcutRecorderRepresentable(
@@ -1046,7 +1113,7 @@ private struct PreferencePrivacySection: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             PreferenceSectionGroup(title: "系统权限") {
                 PreferenceRow(title: "窗口标题采集", detail: model.state.accessibilityPermissionState.detail) {
                     Button(model.state.accessibilityPermissionState.actionTitle) {
@@ -1124,7 +1191,7 @@ private struct PreferencePrivacySection: View {
 
 private struct PreferenceAboutSection: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             PreferenceSectionGroup {
                 HStack(spacing: 16) {
                     PreferenceAppIconView()
@@ -1192,9 +1259,9 @@ private struct PreferenceSectionGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             if let title {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 2)
+                    .padding(.leading, 4)
             }
 
             VStack(spacing: 0) {
@@ -1218,11 +1285,11 @@ private struct PreferenceRow<Accessory: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 18) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14.5, weight: .medium))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text(detail)
                     .font(.system(size: 12.5))
                     .foregroundStyle(.secondary)
@@ -1237,15 +1304,15 @@ private struct PreferenceRow<Accessory: View>: View {
                 .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, 22)
-        .padding(.vertical, 12)
-        .frame(minHeight: 60)
+        .padding(.vertical, 11)
+        .frame(minHeight: 58)
     }
 }
 
 private struct PreferenceDivider: View {
     var body: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.08))
+            .fill(Color.primary.opacity(0.065))
             .frame(height: 0.5)
             .padding(.horizontal, 22)
     }
@@ -1383,15 +1450,28 @@ private struct ShortcutRecorderRepresentable: NSViewRepresentable {
 }
 
 private struct PreferenceGlassModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
+        let fillColor = colorScheme == .dark
+            ? Color.white.opacity(0.045)
+            : Color.white.opacity(0.72)
+        let strokeColor = colorScheme == .dark
+            ? Color.white.opacity(0.08)
+            : Color.black.opacity(0.07)
+        let shadowColor = colorScheme == .dark
+            ? Color.black.opacity(0.10)
+            : Color.black.opacity(0.045)
+
         content
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(fillColor, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.7)
+                    .strokeBorder(strokeColor, lineWidth: 0.7)
             )
+            .shadow(color: shadowColor, radius: 9, x: 0, y: 2)
     }
 }
 

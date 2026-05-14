@@ -37,7 +37,7 @@ scripts/release-macos.sh
 ```bash
 APP_VERSION=0.1.0 \
 APP_BUILD=1 \
-BUNDLE_IDENTIFIER=dev.codex.clipshelf \
+BUNDLE_IDENTIFIER=com.apkdv.clipshelf \
 APP_DISPLAY_NAME=ClipShelf \
 CODESIGN_IDENTITY=- \
 scripts/release-macos.sh
@@ -49,7 +49,7 @@ scripts/release-macos.sh
 - 正式发布应设置为 `Developer ID Application: ...`。
 - `RELEASE_DIR` 可覆盖输出目录。
 - `APP_BUNDLE_NAME` 与 `APP_EXECUTABLE_NAME` 可覆盖默认 bundle 名和包内可执行文件名。
-- `BUNDLE_IDENTIFIER` 默认已切换到 `dev.codex.clipshelf`。
+- `BUNDLE_IDENTIFIER` 默认已切换到 `com.apkdv.clipshelf`。
 
 ## 公证入口
 
