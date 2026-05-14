@@ -2,8 +2,20 @@ import Foundation
 
 public enum PreferencesSceneSection: String, CaseIterable, Equatable, Sendable {
     case general
+    case appearance
+    case history
     case shortcuts
     case rules
+    case about
+
+    public static var allCases: [PreferencesSceneSection] {
+        [
+            .general,
+            .shortcuts,
+            .rules,
+            .about
+        ]
+    }
 }
 
 public struct PreferencesSceneState: Equatable, Sendable {
@@ -67,11 +79,12 @@ public final class PreferencesSceneController {
     }
 
     public func selectSection(_ section: PreferencesSceneSection) -> PreferencesSceneUpdate {
-        guard state.selectedSection != section else {
+        let resolvedSection = normalizedSection(section)
+        guard state.selectedSection != resolvedSection else {
             return noOpUpdate()
         }
 
-        state.selectedSection = section
+        state.selectedSection = resolvedSection
         return PreferencesSceneUpdate(
             state: state,
             shouldRenderSection: true,
@@ -175,5 +188,14 @@ public final class PreferencesSceneController {
             shouldUpdateNavigationSelection: false,
             shouldScheduleDeferredRender: false
         )
+    }
+
+    private func normalizedSection(_ section: PreferencesSceneSection) -> PreferencesSceneSection {
+        switch section {
+        case .history:
+            return .general
+        default:
+            return section
+        }
     }
 }

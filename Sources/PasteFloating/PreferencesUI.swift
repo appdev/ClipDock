@@ -3,31 +3,56 @@ import ApplicationServices
 import Carbon.HIToolbox
 import ClipboardPanelApp
 import ServiceManagement
+import SwiftUI
 
-enum PreferenceSection: Int, CaseIterable {
+enum PreferenceSection: Int, CaseIterable, Hashable {
     case general
+    case appearance
+    case history
     case shortcuts
     case rules
+    case about
+
+    static var allCases: [PreferenceSection] {
+        [
+            .general,
+            .shortcuts,
+            .rules,
+            .about
+        ]
+    }
 
     var title: String {
         switch self {
         case .general:
             return "通用"
+        case .appearance:
+            return "外观"
+        case .history:
+            return "保留历史"
         case .shortcuts:
             return "键盘快捷键"
         case .rules:
-            return "规则"
+            return "隐私"
+        case .about:
+            return "关于"
         }
     }
 
     var subtitle: String {
         switch self {
         case .general:
-            return "启动、菜单栏、记录与面板"
+            return "启动、菜单栏、主题、预览与保留策略"
+        case .appearance:
+            return "主题与预览浮层"
+        case .history:
+            return "记录类型、保留时长与数量"
         case .shortcuts:
             return "打开、搜索与快速取用"
         case .rules:
             return "来源权限、忽略规则与窗口标题"
+        case .about:
+            return "版本、构建与项目说明"
         }
     }
 
@@ -35,10 +60,16 @@ enum PreferenceSection: Int, CaseIterable {
         switch self {
         case .general:
             return "gearshape"
+        case .appearance:
+            return "paintpalette"
+        case .history:
+            return "clock.arrow.circlepath"
         case .shortcuts:
             return "keyboard"
         case .rules:
-            return "arrow.triangle.branch"
+            return "hand.raised"
+        case .about:
+            return "info.circle"
         }
     }
 }
@@ -213,6 +244,11 @@ final class ShortcutRecorderButton: NSButton {
         keyDown(with: event)
     }
 
+    func updateShortcut(_ shortcut: RustKeyboardShortcut) {
+        self.shortcut = KeyboardShortcutPresenter.normalized(shortcut)
+        refreshTitle()
+    }
+
     private func beginRecording() {
         isRecordingShortcut = true
         window?.makeFirstResponder(self)
@@ -272,29 +308,6 @@ final class ShortcutRecorderButton: NSButton {
 }
 
 final class PreferenceSwitch: NSSwitch {
-    var onChange: ((Bool) -> Void)?
-
-    override func mouseDown(with event: NSEvent) {
-        super.mouseDown(with: event)
-        emitChange()
-    }
-
-    override func keyDown(with event: NSEvent) {
-        super.keyDown(with: event)
-        emitChange()
-    }
-
-    func triggerForSmoke() {
-        state = state == .on ? .off : .on
-        emitChange()
-    }
-
-    private func emitChange() {
-        onChange?(state == .on)
-    }
-}
-
-final class PreferenceCheckboxButton: NSButton {
     var onChange: ((Bool) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
@@ -442,15 +455,19 @@ final class LaunchAtLoginController {
             return .failure(LaunchAtLoginError(message: "当前 swift run 形态不能注册登录项"))
         }
 
+        let service = SMAppService.mainApp
         do {
             if enabled {
-                if SMAppService.mainApp.status != .enabled,
-                   SMAppService.mainApp.status != .requiresApproval {
-                    try SMAppService.mainApp.register()
+                if service.status != .enabled,
+                   service.status != .requiresApproval {
+                    try service.register()
                 }
-            } else if SMAppService.mainApp.status == .enabled
-                || SMAppService.mainApp.status == .requiresApproval {
-                try SMAppService.mainApp.unregister()
+                if service.status == .requiresApproval {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+            } else if service.status == .enabled
+                || service.status == .requiresApproval {
+                try service.unregister()
             }
 
             return .success(currentState())
@@ -510,31 +527,930 @@ final class AccessibilityPermissionController {
 @MainActor
 final class PreferencesWindowController: NSWindowController {
     private enum Layout {
-        static let defaultWindowSize = NSSize(width: 780, height: 640)
-        static let minimumWindowSize = NSSize(width: 700, height: 560)
-        static let sidebarWidth: CGFloat = 200
-        static let contentInset: CGFloat = 28
-        static let sidebarInset: CGFloat = 20
-        static let sidebarTopInset: CGFloat = 96
+        static let defaultWindowSize = NSSize(width: 920, height: 700)
+        static let minimumWindowSize = NSSize(width: 820, height: 600)
+    }
+
+    private let viewModel = PreferencesSwiftUIViewModel()
+    private var hostingView: NSHostingView<PreferencesRootView>?
+
+    var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)? {
+        didSet {
+            viewModel.onPreferencesChanged = onPreferencesChanged
+        }
+    }
+
+    var onAccessibilityPermissionRequested: (() -> Void)? {
+        didSet {
+            viewModel.onAccessibilityPermissionRequested = onAccessibilityPermissionRequested
+        }
+    }
+
+    init() {
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: Layout.defaultWindowSize),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "偏好设置"
+        window.minSize = Layout.minimumWindowSize
+        window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.styleMask.insert(.fullSizeContentView)
+        window.backgroundColor = .windowBackgroundColor
+        window.isMovableByWindowBackground = true
+        window.isOpaque = true
+
+        super.init(window: window)
+
+        configureWindow(window)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func showPreferences() {
+        guard let window else { return }
+
+        if !window.isVisible {
+            window.center()
+        }
+
+        showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func updatePreferences(_ preferences: RustPreferencesDocument) {
+        viewModel.updatePreferences(preferences)
+    }
+
+    func showSection(_ section: PreferenceSection) {
+        viewModel.selectSection(section)
+    }
+
+    func updateLaunchAtLoginState(_ state: LaunchAtLoginState) {
+        viewModel.updateLaunchAtLoginState(state)
+    }
+
+    func updateAccessibilityPermissionState(_ state: AccessibilityPermissionState) {
+        viewModel.updateAccessibilityPermissionState(state)
+    }
+
+    func exerciseForSmoke() {
+        PreferenceSection.allCases.forEach { section in
+            viewModel.selectSection(section)
+        }
+        viewModel.persist { $0.general.showMenuBarItem.toggle() }
+        viewModel.persist { $0.appearance.previewPopoverEnabled.toggle() }
+        viewModel.persist { $0.linkPreview.metadataEnabled.toggle() }
+        viewModel.persist { $0.linkPreview.webPreviewEnabled.toggle() }
+        viewModel.persist { $0.shortcuts.pasteDirectlyToTarget.toggle() }
+        viewModel.persist { $0.ignoreList.skipUnknownSource.toggle() }
+        viewModel.persist {
+            $0.shortcuts.openPanel = RustKeyboardShortcut(
+                keyCode: Int64(kVK_ANSI_B),
+                modifiers: ["command", "option"]
+            )
+        }
+    }
+
+    private func configureWindow(_ window: NSWindow) {
+        let rootView = PreferencesRootView(model: viewModel)
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.frame = NSRect(origin: .zero, size: Layout.defaultWindowSize)
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.wantsLayer = true
+        hostingView.layer?.cornerRadius = 22
+        hostingView.layer?.cornerCurve = .continuous
+        hostingView.layer?.masksToBounds = true
+        window.contentView = hostingView
+        self.hostingView = hostingView
+    }
+}
+
+@MainActor
+private final class PreferencesSwiftUIViewModel: ObservableObject {
+    @Published private(set) var state = PreferencesSceneState()
+
+    private let sceneController = PreferencesSceneController()
+    private var pendingDeferredRender = false
+
+    var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
+    var onAccessibilityPermissionRequested: (() -> Void)?
+
+    var selectedSection: PreferenceSection {
+        preferenceSection(for: state.selectedSection)
+    }
+
+    func selectSection(_ section: PreferenceSection) {
+        apply(sceneController.selectSection(sceneSection(for: section)))
+    }
+
+    func updatePreferences(_ preferences: RustPreferencesDocument) {
+        apply(sceneController.updatePreferences(preferences))
+    }
+
+    func updateLaunchAtLoginState(_ state: LaunchAtLoginState) {
+        apply(sceneController.updateLaunchAtLoginState(state))
+    }
+
+    func updateAccessibilityPermissionState(_ state: AccessibilityPermissionState) {
+        apply(sceneController.updateAccessibilityPermissionState(state))
+    }
+
+    func persist(_ update: (inout RustPreferencesDocument) -> Void) {
+        let nextPreferences = sceneController.makeUpdatedPreferences(update)
+        sceneController.beginPreferencePersistence()
+        state = sceneController.state
+
+        let savedPreferences = onPreferencesChanged?(nextPreferences)
+        apply(sceneController.completePreferencePersistence(
+            persistedPreferences: savedPreferences,
+            fallbackPreferences: nextPreferences
+        ))
+    }
+
+    func requestAccessibilityPermission() {
+        onAccessibilityPermissionRequested?()
+    }
+
+    private func apply(_ update: PreferencesSceneUpdate) {
+        state = update.state
+        if update.shouldScheduleDeferredRender {
+            scheduleDeferredRender()
+        }
+    }
+
+    private func scheduleDeferredRender() {
+        guard !pendingDeferredRender else { return }
+        pendingDeferredRender = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingDeferredRender = false
+            self.apply(self.sceneController.consumeDeferredRenderIfNeeded())
+        }
+    }
+
+    private func sceneSection(for section: PreferenceSection) -> PreferencesSceneSection {
+        switch section {
+        case .general:
+            return .general
+        case .appearance:
+            return .general
+        case .history:
+            return .general
+        case .shortcuts:
+            return .shortcuts
+        case .rules:
+            return .rules
+        case .about:
+            return .about
+        }
+    }
+
+    private func preferenceSection(for section: PreferencesSceneSection) -> PreferenceSection {
+        switch section {
+        case .general:
+            return .general
+        case .appearance:
+            return .general
+        case .history:
+            return .general
+        case .shortcuts:
+            return .shortcuts
+        case .rules:
+            return .rules
+        case .about:
+            return .about
+        }
+    }
+}
+
+private struct PreferencesRootView: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            PreferencesSidebar(model: model)
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 1)
+            PreferencesContent(model: model)
+        }
+        .frame(minWidth: 820, minHeight: 600)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct PreferencesSidebar: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("设置")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
+
+            ForEach(PreferenceSection.allCases, id: \.self) { section in
+                PreferenceSidebarRow(
+                    section: section,
+                    isSelected: model.selectedSection == section
+                ) {
+                    model.selectSection(section)
+                }
+            }
+
+            Spacer(minLength: 16)
+        }
+        .padding(.top, 66)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 18)
+        .frame(width: 264)
+        .background(.ultraThinMaterial)
+    }
+}
+
+private struct PreferenceSidebarRow: View {
+    let section: PreferenceSection
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: section.symbolName)
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 20)
+                Text(section.title)
+                    .font(.system(size: 13.5, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.76))
+            .padding(.horizontal, 10)
+            .frame(height: 38)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(.regularMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 0.7)
+                        )
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PreferencesContent: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            PreferencePageHeader(section: model.selectedSection)
+            pageContent
+        }
+        .frame(maxWidth: 660, alignment: .leading)
+        .padding(.top, 56)
+        .padding(.horizontal, 42)
+        .padding(.bottom, 42)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        switch model.selectedSection {
+        case .general, .appearance:
+            PreferenceGeneralSection(model: model)
+        case .history:
+            PreferenceGeneralSection(model: model)
+        case .shortcuts:
+            PreferenceShortcutSection(model: model)
+        case .rules:
+            PreferencePrivacySection(model: model)
+        case .about:
+            PreferenceAboutSection()
+        }
+    }
+}
+
+private struct PreferencePageHeader: View {
+    let section: PreferenceSection
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: section.symbolName)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 42, height: 42)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.7)
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(section.title)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(section.subtitle)
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct PreferenceGeneralSection: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            PreferenceSectionGroup(title: "基础") {
+                PreferenceRow(title: "登录时打开", detail: model.state.launchAtLoginState.detail) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.launchAtLoginState.isOn },
+                            set: { isOn in model.persist { $0.general.launchAtLogin = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .disabled(!model.state.launchAtLoginState.canChange)
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "显示在菜单栏上", detail: "保留状态栏入口与快速菜单") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.general.showMenuBarItem },
+                            set: { isOn in model.persist { $0.general.showMenuBarItem = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+            }
+
+            PreferenceSectionGroup(title: "外观") {
+                PreferenceRow(title: "显示模式", detail: "控制面板、设置与预览") {
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: { model.state.preferences.appearance.mode },
+                            set: { mode in model.persist { $0.appearance.mode = mode } }
+                        )
+                    ) {
+                        Text("系统").tag("system")
+                        Text("浅色").tag("light")
+                        Text("深色").tag("dark")
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 220)
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "预览浮层", detail: "按空格预览选中项目") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.appearance.previewPopoverEnabled },
+                            set: { isOn in model.persist { $0.appearance.previewPopoverEnabled = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+            }
+
+            PreferenceSectionGroup(title: "保留策略") {
+                PreferenceRow(
+                    title: "保留时长",
+                    detail: retentionLabel(days: model.state.preferences.history.retentionDays)
+                ) {
+                    Picker(
+                        "",
+                        selection: Binding(
+                            get: { model.state.preferences.history.retentionDays },
+                            set: { days in model.persist { $0.history.retentionDays = days } }
+                        )
+                    ) {
+                        Text("天").tag(Int64(1))
+                        Text("周").tag(Int64(7))
+                        Text("月").tag(Int64(30))
+                        Text("年").tag(Int64(365))
+                        Text("永久").tag(Int64.max)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 250)
+                }
+            }
+        }
+    }
+}
+
+private struct PreferenceShortcutSection: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            PreferenceSectionGroup(title: "全局操作") {
+                PreferenceRow(title: "打开剪贴板", detail: "从任意应用呼出底部面板") {
+                    ShortcutRecorderRepresentable(
+                        shortcut: model.state.preferences.shortcuts.openPanel
+                    ) { shortcut in
+                        model.persist { $0.shortcuts.openPanel = shortcut }
+                    }
+                    .frame(width: 144, height: 32)
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "快速取用条目", detail: "按住 Command 显示编号，按对应数字复制") {
+                    PreferenceShortcutPill("⌘ 1...9")
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "直接复制到目标", detail: "取用条目后自动粘贴到原应用") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.shortcuts.pasteDirectlyToTarget },
+                            set: { isOn in model.persist { $0.shortcuts.pasteDirectlyToTarget = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+            }
+
+            PreferenceSectionGroup(title: "面板内操作") {
+                PreferenceRow(title: "搜索当前内容", detail: "展开并聚焦搜索框") {
+                    PreferenceShortcutPill("⌘ F")
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "预览选中条目", detail: "展开或关闭临时预览浮层") {
+                    PreferenceShortcutPill("Space")
+                }
+            }
+        }
+    }
+}
+
+private struct PreferencePrivacySection: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            PreferenceSectionGroup(title: "系统权限") {
+                PreferenceRow(title: "窗口标题采集", detail: model.state.accessibilityPermissionState.detail) {
+                    Button(model.state.accessibilityPermissionState.actionTitle) {
+                        model.requestAccessibilityPermission()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!model.state.accessibilityPermissionState.canOpenSettings)
+                }
+            }
+
+            PreferenceSectionGroup(title: "链接预览") {
+                PreferenceRow(title: "生成卡片信息", detail: "后台下载标题、图标和摘要图") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.linkPreview.metadataEnabled },
+                            set: { isOn in model.persist { $0.linkPreview.metadataEnabled = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "网页完整预览", detail: "按空格时加载真实网页") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.linkPreview.webPreviewEnabled },
+                            set: { isOn in model.persist { $0.linkPreview.webPreviewEnabled = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+            }
+
+            PreferenceSectionGroup(title: "忽略规则") {
+                PreferenceRow(title: "应用标识", detail: "逗号分隔，如 com.apple.Terminal") {
+                    RuleListField(
+                        values: model.state.preferences.ignoreList.ignoredAppIdentifiers,
+                        placeholder: "com.apple.Terminal, Xcode"
+                    ) { apps in
+                        model.persist { $0.ignoreList.ignoredAppIdentifiers = apps }
+                    }
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "未知来源", detail: "无法识别来源时不写入历史") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.ignoreList.skipUnknownSource },
+                            set: { isOn in model.persist { $0.ignoreList.skipUnknownSource = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "窗口标题关键词", detail: "标题命中关键词时不写入历史") {
+                    RuleListField(
+                        values: model.state.preferences.ignoreList.windowTitleKeywords,
+                        placeholder: "验证码, Private"
+                    ) { keywords in
+                        model.persist { $0.ignoreList.windowTitleKeywords = keywords }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct PreferenceAboutSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            PreferenceSectionGroup {
+                HStack(spacing: 16) {
+                    PreferenceAppIconView()
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(aboutDisplayName())
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text("本地剪贴板工作台")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 22)
+                .padding(.vertical, 18)
+            }
+
+            PreferenceSectionGroup(title: "应用信息") {
+                PreferenceRow(title: "版本", detail: "当前应用版本") {
+                    PreferenceValuePill(aboutVersionText())
+                }
+            }
+        }
+    }
+}
+
+private struct PreferenceAppIconView: View {
+    var body: some View {
+        Group {
+            if let image = aboutAppIconImage() {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(3)
+            } else {
+                Image(systemName: "clipboard.fill")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .frame(width: 58, height: 58)
+        .background(
+            .regularMaterial,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.16), lineWidth: 0.7)
+        )
+    }
+}
+
+private struct PreferenceSectionGroup<Content: View>: View {
+    let title: String?
+    let content: Content
+
+    init(title: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
+            }
+
+            VStack(spacing: 0) {
+                content
+            }
+            .preferenceGlass(cornerRadius: 8)
+        }
+    }
+}
+
+private struct PreferenceRow<Accessory: View>: View {
+    let title: String
+    let detail: String
+    let accessory: Accessory
+
+    init(title: String, detail: String, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title
+        self.detail = detail
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 18) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 14.5, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 12)
+
+            accessory
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 12)
+        .frame(minHeight: 60)
+    }
+}
+
+private struct PreferenceDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 0.5)
+            .padding(.horizontal, 22)
+    }
+}
+
+private struct PreferenceNumberStepper: View {
+    let value: Binding<Int>
+    let range: ClosedRange<Int>
+    let step: Int
+    let suffix: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("\(value.wrappedValue)\(suffix)")
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(.primary)
+                .frame(width: suffix.isEmpty ? 66 : 82, alignment: .trailing)
+            Stepper("", value: value, in: range, step: step)
+                .labelsHidden()
+                .controlSize(.small)
+        }
+    }
+}
+
+private struct PreferenceShortcutPill: View {
+    let shortcut: String
+
+    init(_ shortcut: String) {
+        self.shortcut = shortcut
+    }
+
+    var body: some View {
+        Text(shortcut)
+            .font(.system(size: 13, weight: .medium, design: .monospaced))
+            .foregroundStyle(.primary)
+            .frame(minWidth: 92)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.6)
+            )
+    }
+}
+
+private struct PreferenceValuePill: View {
+    let value: String
+
+    init(_ value: String) {
+        self.value = value
+    }
+
+    var body: some View {
+        Text(value)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.6)
+            )
+    }
+}
+
+private struct RuleListField: View {
+    let values: [String]
+    let placeholder: String
+    let onCommit: ([String]) -> Void
+
+    @State private var text: String
+    @FocusState private var isFocused: Bool
+
+    init(values: [String], placeholder: String, onCommit: @escaping ([String]) -> Void) {
+        self.values = values
+        self.placeholder = placeholder
+        self.onCommit = onCommit
+        _text = State(initialValue: joinedRuleList(values))
+    }
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 13))
+            .frame(width: 304)
+            .focused($isFocused)
+            .onSubmit(commit)
+            .onDisappear(perform: commit)
+            .onChange(of: isFocused) { focused in
+                if !focused {
+                    commit()
+                }
+            }
+            .onChange(of: values) { nextValues in
+                let nextText = joinedRuleList(nextValues)
+                if nextText != text, !isFocused {
+                    text = nextText
+                }
+            }
+    }
+
+    private func commit() {
+        onCommit(splitRuleList(text))
+    }
+}
+
+private struct ShortcutRecorderRepresentable: NSViewRepresentable {
+    let shortcut: RustKeyboardShortcut
+    let onRecord: (RustKeyboardShortcut) -> Void
+
+    init(shortcut: RustKeyboardShortcut, onRecord: @escaping (RustKeyboardShortcut) -> Void) {
+        self.shortcut = shortcut
+        self.onRecord = onRecord
+    }
+
+    func makeNSView(context: Context) -> ShortcutRecorderButton {
+        let button = ShortcutRecorderButton(shortcut: shortcut)
+        button.normalTextColor = .labelColor
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 8
+        button.layer?.cornerCurve = .continuous
+        button.layer?.borderWidth = 0.5
+        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.55).cgColor
+        button.onShortcutRecorded = onRecord
+        return button
+    }
+
+    func updateNSView(_ nsView: ShortcutRecorderButton, context: Context) {
+        nsView.normalTextColor = .labelColor
+        nsView.onShortcutRecorded = onRecord
+        nsView.updateShortcut(shortcut)
+    }
+}
+
+private struct PreferenceGlassModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.7)
+            )
+    }
+}
+
+private extension View {
+    func preferenceGlass(cornerRadius: CGFloat) -> some View {
+        modifier(PreferenceGlassModifier(cornerRadius: cornerRadius))
+    }
+}
+
+private func retentionLabel(days: Int64) -> String {
+    switch days {
+    case ..<7:
+        return "按天保留"
+    case 7..<30:
+        return "按周保留"
+    case 30..<365:
+        return "按月保留"
+    case 365..<Int64.max:
+        return "按年保留"
+    default:
+        return "永久保留"
+    }
+}
+
+private func joinedRuleList(_ values: [String]) -> String {
+    values.joined(separator: ", ")
+}
+
+private func splitRuleList(_ value: String) -> [String] {
+    value
+        .components(separatedBy: CharacterSet(charactersIn: ",，;；\n"))
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+}
+
+private func aboutDisplayName() -> String {
+    if let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
+       !name.isEmpty {
+        return name
+    }
+
+    if let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String,
+       !name.isEmpty {
+        return name
+    }
+
+    return "剪贴板工作台"
+}
+
+private func aboutVersionText() -> String {
+    let shortVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.1.0"
+    let buildVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? "1"
+    return "\(shortVersion) (\(buildVersion))"
+}
+
+private func aboutAppIconImage() -> NSImage? {
+    AppIconDisplayImageProvider.image(accessibilityDescription: aboutDisplayName())
+}
+
+@MainActor
+private final class LegacyPreferencesWindowController: NSWindowController {
+    private enum Layout {
+        static let defaultWindowSize = NSSize(width: 920, height: 700)
+        static let minimumWindowSize = NSSize(width: 820, height: 600)
+        static let sidebarWidth: CGFloat = 264
+        static let contentInset: CGFloat = 36
+        static let contentMaxWidth: CGFloat = 640
+        static let sidebarInset: CGFloat = 16
+        static let sidebarTopInset: CGFloat = 74
         static let sidebarBottomInset: CGFloat = 18
-        static let rowHeight: CGFloat = 48
-        static let rowHorizontalInset: CGFloat = 20
-        static let cardCornerRadius: CGFloat = 8
-        static let windowCornerRadius: CGFloat = 12
+        static let navigationRowHeight: CGFloat = 38
+        static let rowHeight: CGFloat = 62
+        static let rowHorizontalInset: CGFloat = 24
+        static let cardCornerRadius: CGFloat = 18
+        static let windowCornerRadius: CGFloat = 24
         static var pageTitleFont: NSFont {
-            NSFont.systemFont(ofSize: 21.5, weight: .medium)
+            NSFont.systemFont(ofSize: 28, weight: .semibold)
         }
         static var sectionTitleFont: NSFont {
-            NSFont.systemFont(ofSize: 12.5, weight: .regular)
+            NSFont.systemFont(ofSize: 13, weight: .medium)
         }
         static var rowTitleFont: NSFont {
-            NSFont.systemFont(ofSize: 14.5, weight: .regular)
+            NSFont.systemFont(ofSize: 14.5, weight: .medium)
         }
         static var rowDetailFont: NSFont {
             NSFont.systemFont(ofSize: 12.5, weight: .regular)
         }
         static var navigationFont: NSFont {
-            NSFont.systemFont(ofSize: 12.5, weight: .regular)
+            NSFont.systemFont(ofSize: 13, weight: .medium)
         }
     }
 
@@ -616,6 +1532,7 @@ final class PreferencesWindowController: NSWindowController {
         rootView.translatesAutoresizingMaskIntoConstraints = false
         rootView.wantsLayer = true
         rootView.layer?.cornerRadius = Layout.windowCornerRadius
+        rootView.layer?.cornerCurve = .continuous
         rootView.layer?.masksToBounds = true
         rootView.layer?.borderWidth = 0.6
         window.contentView = rootView
@@ -668,14 +1585,13 @@ final class PreferencesWindowController: NSWindowController {
 
             NSLayoutConstraint.activate([
                 button.widthAnchor.constraint(equalToConstant: Layout.sidebarWidth - Layout.sidebarInset * 2),
-                button.heightAnchor.constraint(equalToConstant: 34)
+                button.heightAnchor.constraint(equalToConstant: Layout.navigationRowHeight)
             ])
         }
 
         let spacer = NSView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
         sidebarStack.addArrangedSubview(spacer)
-        sidebarStack.addArrangedSubview(makeSidebarHelpButton())
 
         sidebar.addSubview(sidebarStack)
 
@@ -698,25 +1614,6 @@ final class PreferencesWindowController: NSWindowController {
         sidebarView?.layer?.backgroundColor = preferencesTheme.sidebarBackgroundColor.cgColor
     }
 
-    private func makeSidebarHelpButton() -> NSButton {
-        let button = PreferenceActionButton(title: "帮助中心", target: nil, action: nil)
-        button.isBordered = false
-        button.alignment = .left
-        button.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: "帮助中心")
-        button.imagePosition = .imageLeading
-        button.imageScaling = .scaleProportionallyDown
-        button.font = NSFont.systemFont(ofSize: 12, weight: .regular)
-        button.contentTintColor = NSColor.systemBlue.withAlphaComponent(0.8)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.onPress = {
-            LocalDocsNavigator.open()
-        }
-        NSLayoutConstraint.activate([
-            button.heightAnchor.constraint(equalToConstant: 26)
-        ])
-        return button
-    }
-
     private func makeNavigationButton(for section: PreferenceSection) -> NSButton {
         let button = PreferenceNavigationButton(title: section.title, target: nil, action: nil)
         button.setButtonType(.toggle)
@@ -728,7 +1625,8 @@ final class PreferencesWindowController: NSWindowController {
         button.imageScaling = .scaleProportionallyDown
         button.font = Layout.navigationFont
         button.wantsLayer = true
-        button.layer?.cornerRadius = 6
+        button.layer?.cornerRadius = 10
+        button.layer?.cornerCurve = .continuous
         button.contentTintColor = NSColor.systemBlue.withAlphaComponent(0.72)
         button.tag = section.rawValue
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -789,7 +1687,7 @@ final class PreferencesWindowController: NSWindowController {
         case .general:
             return makeContentPage(
                 title: section.title,
-                subtitle: "",
+                subtitle: section.subtitle,
                 sections: [
                     makeSection(title: nil, rows: [
                         makeSettingRow(
@@ -803,20 +1701,36 @@ final class PreferencesWindowController: NSWindowController {
                             }
                         ),
                         makeSettingRow(
-                            title: "后台运行",
-                            detail: "关闭窗口后继续监听剪贴板",
-                            control: makeSwitch(isOn: true, isEnabled: false)
-                        ),
-                        makeSettingRow(
                             title: "显示在菜单栏上",
                             detail: "保留状态栏入口与快速菜单",
                             control: makeSwitch(isOn: preferences.general.showMenuBarItem) { [weak self] isOn in
                                 self?.persist { $0.general.showMenuBarItem = isOn }
                             }
-                        ),
+                        )
+                    ]),
+                    makeSection(title: "保留策略", rows: [
                         makeSettingRow(
-                            title: "外观",
-                            detail: "控制面板、设置与预览的显示模式",
+                            title: "保留时长",
+                            detail: retentionLabel(days: preferences.history.retentionDays),
+                            control: makeSegmentedControl(
+                                labels: ["天", "周", "月", "年", "永久"],
+                                selected: retentionIndex(days: preferences.history.retentionDays)
+                            ) { [weak self] selected in
+                                self?.persist { $0.history.retentionDays = self?.retentionDays(for: selected) ?? 30 }
+                            }
+                        )
+                    ])
+                ]
+            )
+        case .appearance:
+            return makeContentPage(
+                title: section.title,
+                subtitle: section.subtitle,
+                sections: [
+                    makeSection(title: nil, rows: [
+                        makeSettingRow(
+                            title: "显示模式",
+                            detail: "控制面板、设置与预览",
                             control: makeAppearanceModeControl(selectedMode: preferences.appearance.mode) { [weak self] mode in
                                 self?.persist { $0.appearance.mode = mode }
                             }
@@ -828,36 +1742,15 @@ final class PreferencesWindowController: NSWindowController {
                                 self?.persist { $0.appearance.previewPopoverEnabled = isOn }
                             }
                         )
-                    ]),
-                    makeSection(title: "粘贴项目", rows: [
-                        makeRadioInfoRow(
-                            title: "到剪贴板",
-                            detail: "双击或回车会复制到系统剪贴板，稍后手动粘贴。"
-                        ),
-                        makeCheckboxRow(
-                            title: "始终以纯文本粘贴",
-                            detail: "当前版本暂未接入，保留界面位置。",
-                            isOn: false,
-                            isEnabled: false
-                        )
-                    ]),
-                    makeSection(title: "记录内容", rows: [
-                        makeSettingRow(
-                            title: "记录图片",
-                            detail: "保存图片摘要和缩略图",
-                            control: makeSwitch(isOn: preferences.history.recordImages) { [weak self] isOn in
-                                self?.persist { $0.history.recordImages = isOn }
-                            }
-                        ),
-                        makeSettingRow(
-                            title: "记录文件",
-                            detail: "保存文件路径",
-                            control: makeSwitch(isOn: preferences.history.recordFiles) { [weak self] isOn in
-                                self?.persist { $0.history.recordFiles = isOn }
-                            }
-                        )
-                    ]),
-                    makeSection(title: "保留历史", rows: [
+                    ])
+                ]
+            )
+        case .history:
+            return makeContentPage(
+                title: PreferenceSection.general.title,
+                subtitle: PreferenceSection.general.subtitle,
+                sections: [
+                    makeSection(title: "保留策略", rows: [
                         makeSettingRow(
                             title: "保留时长",
                             detail: retentionLabel(days: preferences.history.retentionDays),
@@ -867,28 +1760,6 @@ final class PreferencesWindowController: NSWindowController {
                             ) { [weak self] selected in
                                 self?.persist { $0.history.retentionDays = self?.retentionDays(for: selected) ?? 30 }
                             }
-                        ),
-                        makeSettingRow(
-                            title: "保存数量",
-                            detail: "最多保留条目",
-                            control: makeStepperField(
-                                value: Int(preferences.history.maxItems),
-                                minimumValue: 50,
-                                maximumValue: 5000
-                            ) { [weak self] value in
-                                self?.persist { $0.history.maxItems = Int64(value) }
-                            }
-                        ),
-                        makeSettingRow(
-                            title: "面板高度",
-                            detail: "当前 \(preferences.general.defaultPanelHeight) pt，宽度跟随显示器",
-                            control: makeStepperField(
-                                value: Int(preferences.general.defaultPanelHeight),
-                                minimumValue: 260,
-                                maximumValue: 560
-                            ) { [weak self] value in
-                                self?.persist { $0.general.defaultPanelHeight = Int64(value) }
-                            }
                         )
                     ])
                 ]
@@ -896,7 +1767,7 @@ final class PreferencesWindowController: NSWindowController {
         case .shortcuts:
             return makeContentPage(
                 title: section.title,
-                subtitle: "",
+                subtitle: section.subtitle,
                 sections: [
                     makeSection(title: "全局操作", rows: [
                         makeShortcutRow(
@@ -908,6 +1779,15 @@ final class PreferencesWindowController: NSWindowController {
                             title: "快速取用条目",
                             detail: "按住 Command 显示编号，按对应数字复制",
                             shortcut: "⌘ 1...9"
+                        ),
+                        makeSettingRow(
+                            title: "直接复制到目标",
+                            detail: "取用条目后自动粘贴到原应用",
+                            control: makeSwitch(
+                                isOn: preferences.shortcuts.pasteDirectlyToTarget
+                            ) { [weak self] isOn in
+                                self?.persist { $0.shortcuts.pasteDirectlyToTarget = isOn }
+                            }
                         )
                     ]),
                     makeSection(title: "面板内操作", rows: [
@@ -927,7 +1807,7 @@ final class PreferencesWindowController: NSWindowController {
         case .rules:
             return makeContentPage(
                 title: section.title,
-                subtitle: "",
+                subtitle: section.subtitle,
                 sections: [
                     makeSection(title: "系统权限", rows: [
                         makeSettingRow(
@@ -938,6 +1818,22 @@ final class PreferencesWindowController: NSWindowController {
                                 isEnabled: accessibilityPermissionState.canOpenSettings
                             ) { [weak self] in
                                 self?.onAccessibilityPermissionRequested?()
+                            }
+                        )
+                    ]),
+                    makeSection(title: "链接预览", rows: [
+                        makeSettingRow(
+                            title: "生成卡片信息",
+                            detail: "后台下载标题、图标和摘要图",
+                            control: makeSwitch(isOn: preferences.linkPreview.metadataEnabled) { [weak self] isOn in
+                                self?.persist { $0.linkPreview.metadataEnabled = isOn }
+                            }
+                        ),
+                        makeSettingRow(
+                            title: "网页完整预览",
+                            detail: "按空格时加载真实网页",
+                            control: makeSwitch(isOn: preferences.linkPreview.webPreviewEnabled) { [weak self] isOn in
+                                self?.persist { $0.linkPreview.webPreviewEnabled = isOn }
                             }
                         )
                     ]),
@@ -976,6 +1872,20 @@ final class PreferencesWindowController: NSWindowController {
                     ])
                 ]
             )
+        case .about:
+            return makeContentPage(
+                title: section.title,
+                subtitle: section.subtitle,
+                sections: [
+                    makeSection(title: nil, rows: [
+                        makeSettingRow(
+                            title: aboutDisplayName(),
+                            detail: "版本 \(aboutVersionText())",
+                            control: makeShortcutPill("SwiftUI")
+                        )
+                    ])
+                ]
+            )
         }
     }
 
@@ -986,13 +1896,13 @@ final class PreferencesWindowController: NSWindowController {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .width
-        stack.spacing = 20
+        stack.spacing = 26
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let headingStack = NSStackView()
         headingStack.orientation = .vertical
         headingStack.alignment = .leading
-        headingStack.spacing = 2
+        headingStack.spacing = 4
         headingStack.translatesAutoresizingMaskIntoConstraints = false
 
         let titleLabel = makeLabel(title, font: Layout.pageTitleFont, color: theme.preferences.primaryTextColor)
@@ -1023,9 +1933,12 @@ final class PreferencesWindowController: NSWindowController {
 
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: page.centerXAnchor),
-            stack.topAnchor.constraint(equalTo: page.topAnchor, constant: Layout.contentInset + 6),
+            stack.topAnchor.constraint(equalTo: page.topAnchor, constant: Layout.contentInset),
             stack.bottomAnchor.constraint(equalTo: page.bottomAnchor, constant: -Layout.contentInset),
             contentWidthConstraint,
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: page.leadingAnchor, constant: Layout.contentInset),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: page.trailingAnchor, constant: -Layout.contentInset),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: Layout.contentMaxWidth),
             stack.widthAnchor.constraint(greaterThanOrEqualToConstant: 450)
         ])
 
@@ -1039,7 +1952,7 @@ final class PreferencesWindowController: NSWindowController {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .width
-        stack.spacing = 6
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         if let title, !title.isEmpty {
@@ -1050,7 +1963,7 @@ final class PreferencesWindowController: NSWindowController {
             titleContainer.addSubview(titleLabel)
             NSLayoutConstraint.activate([
                 titleLabel.leadingAnchor.constraint(equalTo: titleContainer.leadingAnchor),
-                titleLabel.topAnchor.constraint(equalTo: titleContainer.topAnchor),
+                titleLabel.topAnchor.constraint(equalTo: titleContainer.topAnchor, constant: 1),
                 titleLabel.bottomAnchor.constraint(equalTo: titleContainer.bottomAnchor),
                 titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: titleContainer.trailingAnchor)
             ])
@@ -1063,7 +1976,7 @@ final class PreferencesWindowController: NSWindowController {
         card.layer?.backgroundColor = theme.preferences.cardBackgroundColor.cgColor
         card.layer?.cornerRadius = Layout.cardCornerRadius
         card.layer?.cornerCurve = .continuous
-        card.layer?.borderWidth = 0.4
+        card.layer?.borderWidth = 0.5
         card.layer?.borderColor = theme.preferences.cardBorderColor.cgColor
 
         let rowsStack = NSStackView()
@@ -1109,7 +2022,7 @@ final class PreferencesWindowController: NSWindowController {
         let textStack = NSStackView(views: [titleLabel, detailLabel])
         textStack.orientation = .vertical
         textStack.alignment = .leading
-        textStack.spacing = 1
+        textStack.spacing = 2
         textStack.translatesAutoresizingMaskIntoConstraints = false
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
@@ -1122,7 +2035,7 @@ final class PreferencesWindowController: NSWindowController {
         let rowStack = NSStackView(views: [textStack, spacer, control])
         rowStack.orientation = .horizontal
         rowStack.alignment = .centerY
-        rowStack.spacing = 10
+        rowStack.spacing = 16
         rowStack.translatesAutoresizingMaskIntoConstraints = false
 
         row.addSubview(rowStack)
@@ -1131,8 +2044,8 @@ final class PreferencesWindowController: NSWindowController {
             row.heightAnchor.constraint(greaterThanOrEqualToConstant: Layout.rowHeight),
             rowStack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Layout.rowHorizontalInset),
             rowStack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -Layout.rowHorizontalInset),
-            rowStack.topAnchor.constraint(equalTo: row.topAnchor, constant: 6),
-            rowStack.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -6)
+            rowStack.topAnchor.constraint(equalTo: row.topAnchor, constant: 9),
+            rowStack.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -9)
         ])
 
         return row
@@ -1151,35 +2064,6 @@ final class PreferencesWindowController: NSWindowController {
 
     private func makeShortcutRow(title: String, detail: String, shortcut: String) -> NSView {
         makeSettingRow(title: title, detail: detail, control: makeShortcutPill(shortcut))
-    }
-
-    private func makeRadioInfoRow(title: String, detail: String) -> NSView {
-        let indicator = NSButton(radioButtonWithTitle: "", target: nil, action: nil)
-        indicator.state = .on
-        indicator.isEnabled = false
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            indicator.widthAnchor.constraint(equalToConstant: 28),
-            indicator.heightAnchor.constraint(equalToConstant: 22)
-        ])
-        return makeSettingRow(title: title, detail: detail, control: indicator)
-    }
-
-    private func makeCheckboxRow(
-        title: String,
-        detail: String,
-        isOn: Bool,
-        isEnabled: Bool
-    ) -> NSView {
-        let indicator = PreferenceCheckboxButton(checkboxWithTitle: "", target: nil, action: nil)
-        indicator.state = isOn ? .on : .off
-        indicator.isEnabled = isEnabled
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            indicator.widthAnchor.constraint(equalToConstant: 28),
-            indicator.heightAnchor.constraint(equalToConstant: 22)
-        ])
-        return makeSettingRow(title: title, detail: detail, control: indicator)
     }
 
     private func makeShortcutPill(_ shortcut: String) -> NSView {
@@ -1322,10 +2206,16 @@ final class PreferencesWindowController: NSWindowController {
         switch section {
         case .general:
             return .general
+        case .appearance:
+            return .appearance
+        case .history:
+            return .general
         case .shortcuts:
             return .shortcuts
         case .rules:
             return .rules
+        case .about:
+            return .about
         }
     }
 
@@ -1333,10 +2223,16 @@ final class PreferencesWindowController: NSWindowController {
         switch section {
         case .general:
             return .general
+        case .appearance:
+            return .appearance
+        case .history:
+            return .general
         case .shortcuts:
             return .shortcuts
         case .rules:
             return .rules
+        case .about:
+            return .about
         }
     }
 
@@ -1564,7 +2460,16 @@ final class AboutWindowController: NSWindowController {
         static let socialButtonSize: CGFloat = 40
     }
 
-    private let rootView = NSView()
+    private let rootView = AboutRootView()
+    private weak var titleLabel: NSTextField?
+    private weak var versionLabel: NSTextField?
+    private weak var copyrightLabel: NSTextField?
+    private weak var linksSeparatorLabel: NSTextField?
+    private var socialButtons: [AboutIconButton] = []
+    private var linkButtons: [NSButton] = []
+    private var theme: AboutWindowTheme {
+        AboutWindowTheme(palette: PasteTheme.current(for: window))
+    }
 
     init() {
         let window = NSWindow(
@@ -1581,7 +2486,7 @@ final class AboutWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
-        window.backgroundColor = NSColor(calibratedWhite: 0.29, alpha: 1)
+        window.backgroundColor = PasteTheme.current(for: window).preferences.windowBackgroundColor
         window.isOpaque = true
 
         super.init(window: window)
@@ -1600,6 +2505,7 @@ final class AboutWindowController: NSWindowController {
             window.center()
         }
 
+        applyTheme()
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -1608,12 +2514,13 @@ final class AboutWindowController: NSWindowController {
     private func configureWindow(_ window: NSWindow) {
         rootView.translatesAutoresizingMaskIntoConstraints = false
         rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor(calibratedWhite: 0.29, alpha: 1).cgColor
         rootView.layer?.cornerRadius = Layout.windowCornerRadius
         rootView.layer?.cornerCurve = .continuous
         rootView.layer?.masksToBounds = true
         rootView.layer?.borderWidth = 0.8
-        rootView.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+        rootView.onAppearanceChanged = { [weak self] in
+            self?.applyTheme()
+        }
         window.contentView = rootView
 
         let stack = NSStackView()
@@ -1626,20 +2533,23 @@ final class AboutWindowController: NSWindowController {
         let titleLabel = makeCenteredLabel(
             displayName,
             font: .systemFont(ofSize: 29, weight: .semibold),
-            color: NSColor.white.withAlphaComponent(0.92)
+            color: theme.titleTextColor
         )
+        self.titleLabel = titleLabel
         let versionLabel = makeCenteredLabel(
             versionText,
             font: .systemFont(ofSize: 13, weight: .medium),
-            color: NSColor.white.withAlphaComponent(0.68)
+            color: theme.secondaryTextColor
         )
+        self.versionLabel = versionLabel
         let socialButtons = makeSocialButtonRow()
         let linksRow = makeLinksRow()
         let copyrightLabel = makeCenteredLabel(
             "© 2026 剪贴板工作台\nBuilt with AppKit and Rust.",
             font: .systemFont(ofSize: 12.5, weight: .medium),
-            color: NSColor.white.withAlphaComponent(0.52)
+            color: theme.mutedTextColor
         )
+        self.copyrightLabel = copyrightLabel
 
         stack.addArrangedSubview(iconView)
         stack.addArrangedSubview(titleLabel)
@@ -1661,6 +2571,8 @@ final class AboutWindowController: NSWindowController {
             stack.topAnchor.constraint(greaterThanOrEqualTo: rootView.topAnchor, constant: 54),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: rootView.bottomAnchor, constant: -46)
         ])
+
+        applyTheme()
     }
 
     private var displayName: String {
@@ -1686,7 +2598,7 @@ final class AboutWindowController: NSWindowController {
     private func makeAppIconView() -> NSView {
         let imageView = NSImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.image = preferredAppIconImage()
+        imageView.image = AppIconDisplayImageProvider.image(accessibilityDescription: displayName)
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.wantsLayer = true
         imageView.layer?.shadowColor = NSColor.black.withAlphaComponent(0.30).cgColor
@@ -1724,24 +2636,15 @@ final class AboutWindowController: NSWindowController {
         return stack
     }
 
-    private func makeSocialButton(symbolName: String, title: String, relativePath: String?) -> NSButton {
-        let button = PreferenceActionButton(title: "", target: nil, action: nil)
-        button.isBordered = false
-        button.bezelStyle = .regularSquare
-        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = NSColor.white.withAlphaComponent(0.7)
+    private func makeSocialButton(symbolName: String, title: String, relativePath: String?) -> AboutIconButton {
+        let button = AboutIconButton(symbolName: symbolName, accessibilityDescription: title)
         button.toolTip = title
-        button.wantsLayer = true
-        button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.09).cgColor
-        button.layer?.cornerRadius = Layout.socialButtonSize / 2
-        button.layer?.cornerCurve = .continuous
         button.translatesAutoresizingMaskIntoConstraints = false
         button.isEnabled = LocalDocsNavigator.url(relativePath: relativePath) != nil
         button.onPress = {
             LocalDocsNavigator.open(relativePath: relativePath)
         }
+        socialButtons.append(button)
 
         NSLayoutConstraint.activate([
             button.widthAnchor.constraint(equalToConstant: Layout.socialButtonSize),
@@ -1749,25 +2652,6 @@ final class AboutWindowController: NSWindowController {
         ])
 
         return button
-    }
-
-    private func preferredAppIconImage() -> NSImage? {
-        let packagedIconURL = Bundle.main.resourceURL?
-            .appendingPathComponent("AppIcon.icns")
-        let moduleIconURL = Bundle.module
-            .url(forResource: "AppIcon", withExtension: "icns")
-        let moduleSourceURL = Bundle.module
-            .url(forResource: "AppIcon", withExtension: "png")
-
-        let image = [packagedIconURL, moduleIconURL, moduleSourceURL]
-            .compactMap { $0 }
-            .lazy
-            .compactMap(NSImage.init(contentsOf:))
-            .first
-            ?? NSImage(systemSymbolName: "clipboard.fill", accessibilityDescription: "剪贴板工作台")
-
-        image?.accessibilityDescription = "剪贴板工作台"
-        return image
     }
 
     private func makeLinksRow() -> NSView {
@@ -1778,7 +2662,9 @@ final class AboutWindowController: NSWindowController {
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         stack.addArrangedSubview(makeLinkButton(title: "项目文档", relativePath: nil))
-        stack.addArrangedSubview(makeCenteredLabel("·", font: .systemFont(ofSize: 14, weight: .medium), color: NSColor.white.withAlphaComponent(0.36)))
+        let separatorLabel = makeCenteredLabel("·", font: .systemFont(ofSize: 14, weight: .medium), color: theme.separatorTextColor)
+        linksSeparatorLabel = separatorLabel
+        stack.addArrangedSubview(separatorLabel)
         stack.addArrangedSubview(makeLinkButton(title: "发布说明", relativePath: "release.md"))
 
         return stack
@@ -1789,12 +2675,12 @@ final class AboutWindowController: NSWindowController {
         button.isBordered = false
         button.bezelStyle = .inline
         button.font = .systemFont(ofSize: 13, weight: .medium)
-        button.contentTintColor = NSColor.white.withAlphaComponent(0.68)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.isEnabled = LocalDocsNavigator.url(relativePath: relativePath) != nil
         button.onPress = {
             LocalDocsNavigator.open(relativePath: relativePath)
         }
+        linkButtons.append(button)
         return button
     }
 
@@ -1807,5 +2693,213 @@ final class AboutWindowController: NSWindowController {
         label.lineBreakMode = .byWordWrapping
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }
+
+    private func applyTheme() {
+        let theme = theme
+        window?.backgroundColor = theme.windowBackgroundColor
+        rootView.layer?.backgroundColor = theme.contentBackgroundColor.cgColor
+        rootView.layer?.borderColor = theme.borderColor.cgColor
+        titleLabel?.textColor = theme.titleTextColor
+        versionLabel?.textColor = theme.secondaryTextColor
+        copyrightLabel?.textColor = theme.mutedTextColor
+        linksSeparatorLabel?.textColor = theme.separatorTextColor
+
+        socialButtons.forEach { button in
+            button.iconTintColor = theme.secondaryTextColor
+            button.buttonBackgroundColor = theme.socialButtonBackgroundColor
+            button.buttonBorderColor = theme.socialButtonBorderColor
+        }
+
+        linkButtons.forEach { button in
+            button.contentTintColor = theme.linkTextColor
+        }
+    }
+}
+
+private final class AboutRootView: NSView {
+    var onAppearanceChanged: (() -> Void)?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChanged?()
+    }
+}
+
+private final class AboutIconButton: NSControl {
+    var onPress: (() -> Void)?
+    var buttonBackgroundColor = NSColor.clear {
+        didSet {
+            layer?.backgroundColor = buttonBackgroundColor.cgColor
+        }
+    }
+    var buttonBorderColor = NSColor.clear {
+        didSet {
+            layer?.borderColor = buttonBorderColor.cgColor
+        }
+    }
+    var iconTintColor = NSColor.secondaryLabelColor {
+        didSet {
+            imageView.contentTintColor = iconTintColor
+        }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 40, height: 40)
+    }
+
+    private let imageView = NSImageView()
+
+    init(symbolName: String, accessibilityDescription: String) {
+        super.init(frame: .zero)
+
+        wantsLayer = true
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 0.7
+
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription)
+        imageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+        imageView.imageScaling = .scaleProportionallyDown
+        imageView.contentTintColor = iconTintColor
+        addSubview(imageView)
+
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(accessibilityDescription)
+
+        NSLayoutConstraint.activate([
+            imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            imageView.widthAnchor.constraint(equalToConstant: 20),
+            imageView.heightAnchor.constraint(equalToConstant: 20)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
+        layer?.backgroundColor = buttonBackgroundColor.cgColor
+        layer?.borderColor = buttonBorderColor.cgColor
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        onPress?()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch Int(event.keyCode) {
+        case kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter:
+            guard isEnabled else { return }
+            onPress?()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+}
+
+private struct AboutWindowTheme {
+    let windowBackgroundColor: NSColor
+    let contentBackgroundColor: NSColor
+    let borderColor: NSColor
+    let titleTextColor: NSColor
+    let secondaryTextColor: NSColor
+    let mutedTextColor: NSColor
+    let separatorTextColor: NSColor
+    let linkTextColor: NSColor
+    let socialButtonBackgroundColor: NSColor
+    let socialButtonBorderColor: NSColor
+
+    init(palette: PasteThemePalette) {
+        let preferences = palette.preferences
+        windowBackgroundColor = preferences.windowBackgroundColor
+        contentBackgroundColor = preferences.contentBackgroundColor
+        borderColor = preferences.borderColor
+        titleTextColor = preferences.primaryTextColor
+        secondaryTextColor = preferences.secondaryTextColor
+        mutedTextColor = preferences.secondaryTextColor.withAlphaComponent(
+            palette.scheme == .light ? 0.72 : 0.66
+        )
+        separatorTextColor = preferences.secondaryTextColor.withAlphaComponent(
+            palette.scheme == .light ? 0.48 : 0.42
+        )
+        linkTextColor = preferences.secondaryTextColor.withAlphaComponent(
+            palette.scheme == .light ? 0.86 : 0.78
+        )
+        socialButtonBackgroundColor = preferences.cardBackgroundColor.withAlphaComponent(
+            palette.scheme == .light ? 0.82 : 0.54
+        )
+        socialButtonBorderColor = preferences.cardBorderColor.withAlphaComponent(
+            palette.scheme == .light ? 0.70 : 0.84
+        )
+    }
+}
+
+private enum AppIconDisplayImageProvider {
+    static func image(accessibilityDescription: String) -> NSImage? {
+        if let sourceImage = sourceImage() {
+            let image = cleanedRoundedIcon(from: sourceImage)
+            image.accessibilityDescription = accessibilityDescription
+            return image
+        }
+
+        let fallbackImage = NSImage(systemSymbolName: "clipboard.fill", accessibilityDescription: accessibilityDescription)
+        fallbackImage?.accessibilityDescription = accessibilityDescription
+        return fallbackImage
+    }
+
+    private static func sourceImage() -> NSImage? {
+        let packagedIconURL = Bundle.main.resourceURL?
+            .appendingPathComponent("AppIcon.icns")
+        let moduleIconURL = Bundle.module
+            .url(forResource: "AppIcon", withExtension: "icns")
+        let moduleSourceURL = Bundle.module
+            .url(forResource: "AppIcon", withExtension: "png")
+
+        return [packagedIconURL, moduleIconURL, moduleSourceURL]
+            .compactMap { $0 }
+            .lazy
+            .compactMap(NSImage.init(contentsOf:))
+            .first
+    }
+
+    private static func cleanedRoundedIcon(from sourceImage: NSImage) -> NSImage {
+        let sourceSize = sourceImage.size
+        let sourceSide = max(1, min(sourceSize.width, sourceSize.height))
+        let outputSide = max(256, sourceSide)
+        let outputSize = NSSize(width: outputSide, height: outputSide)
+        let outputImage = NSImage(size: outputSize)
+        let cropInset = sourceSide * 0.052
+        let sourceRect = NSRect(
+            x: max(0, (sourceSize.width - sourceSide) / 2 + cropInset),
+            y: max(0, (sourceSize.height - sourceSide) / 2 + cropInset),
+            width: max(1, sourceSide - cropInset * 2),
+            height: max(1, sourceSide - cropInset * 2)
+        )
+        let destinationRect = NSRect(origin: .zero, size: outputSize)
+
+        outputImage.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        NSBezierPath(
+            roundedRect: destinationRect,
+            xRadius: outputSide * 0.225,
+            yRadius: outputSide * 0.225
+        ).addClip()
+        sourceImage.draw(
+            in: destinationRect,
+            from: sourceRect,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: false,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+        outputImage.unlockFocus()
+
+        outputImage.isTemplate = false
+        return outputImage
     }
 }

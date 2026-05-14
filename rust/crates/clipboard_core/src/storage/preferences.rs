@@ -98,7 +98,12 @@ impl ClipboardCore {
         )?;
         transaction.commit()?;
 
-        Ok((retention_deleted + max_items_deleted) as i64)
+        let deleted_count = (retention_deleted + max_items_deleted) as i64;
+        if deleted_count > 0 {
+            self.purge_soft_deleted_items_and_assets()?;
+        }
+
+        Ok(deleted_count)
     }
 }
 

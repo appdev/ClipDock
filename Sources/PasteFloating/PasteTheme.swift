@@ -13,6 +13,7 @@ struct PastePanelTheme {
     let toolbarIconColor: NSColor
     let toolbarTextColor: NSColor
     let toolbarSelectedBackgroundColor: NSColor
+    let toolbarSelectedBorderColor: NSColor
     let toolbarSelectedTextColor: NSColor
     let resizeHandleColor: NSColor
 }
@@ -107,10 +108,11 @@ enum PasteTheme {
         scheme: .light,
         panel: PastePanelTheme(
             backgroundColor: NSColor.white.withAlphaComponent(0.32),
-            toolbarIconColor: NSColor(calibratedWhite: 0.10, alpha: 0.94),
+            toolbarIconColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
             toolbarTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
-            toolbarSelectedBackgroundColor: NSColor.white.withAlphaComponent(0.38),
-            toolbarSelectedTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
+            toolbarSelectedBackgroundColor: NSColor.white.withAlphaComponent(0.72),
+            toolbarSelectedBorderColor: NSColor.black.withAlphaComponent(0.08),
+            toolbarSelectedTextColor: NSColor(calibratedWhite: 0.04, alpha: 0.98),
             resizeHandleColor: NSColor(calibratedWhite: 0.26, alpha: 0.22)
         ),
         card: PasteCardTheme(
@@ -160,9 +162,10 @@ enum PasteTheme {
         scheme: .dark,
         panel: PastePanelTheme(
             backgroundColor: NSColor.white.withAlphaComponent(0.32),
-            toolbarIconColor: NSColor.white.withAlphaComponent(0.54),
+            toolbarIconColor: NSColor.white.withAlphaComponent(0.72),
             toolbarTextColor: NSColor.white.withAlphaComponent(0.72),
-            toolbarSelectedBackgroundColor: NSColor.white.withAlphaComponent(0.15),
+            toolbarSelectedBackgroundColor: NSColor.white.withAlphaComponent(0.18),
+            toolbarSelectedBorderColor: NSColor.white.withAlphaComponent(0.10),
             toolbarSelectedTextColor: NSColor.white.withAlphaComponent(0.90),
             resizeHandleColor: NSColor.white.withAlphaComponent(0.18)
         ),

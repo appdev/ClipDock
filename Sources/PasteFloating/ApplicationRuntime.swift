@@ -3,6 +3,31 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 
 @MainActor
+protocol PasteKeystrokeSending {
+    func sendPasteKeystroke()
+}
+
+@MainActor
+final class SystemPasteKeystrokeSender: PasteKeystrokeSending {
+    func sendPasteKeystroke() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let commandKeyCode = CGKeyCode(kVK_Command)
+        let pasteKeyCode = CGKeyCode(kVK_ANSI_V)
+        let events: [(event: CGEvent?, flags: CGEventFlags)] = [
+            (CGEvent(keyboardEventSource: source, virtualKey: commandKeyCode, keyDown: true), .maskCommand),
+            (CGEvent(keyboardEventSource: source, virtualKey: pasteKeyCode, keyDown: true), .maskCommand),
+            (CGEvent(keyboardEventSource: source, virtualKey: pasteKeyCode, keyDown: false), .maskCommand),
+            (CGEvent(keyboardEventSource: source, virtualKey: commandKeyCode, keyDown: false), [])
+        ]
+
+        for item in events {
+            item.event?.flags = item.flags
+            item.event?.post(tap: .cghidEventTap)
+        }
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum PasteWriteResult {
         case success(changeCount: Int)
@@ -13,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let duplicateEventInterval: TimeInterval = 0.04
     }
 
+    private enum DirectPasteTiming {
+        static let focusRestoreDelayNanoseconds: UInt64 = 120_000_000
+    }
+
     private let panelController = FloatingPanelController()
     private let aboutController = AboutWindowController()
     private let preferencesController = PreferencesWindowController()
@@ -21,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let accessibilityPermissionController = AccessibilityPermissionController()
     private let sourceApplicationTracker = SourceApplicationTracker()
     private let clipboardMonitor = ClipboardMonitor()
+    private let pasteKeystrokeSender: PasteKeystrokeSending = SystemPasteKeystrokeSender()
     private let databaseWorker = ClipboardCoreDatabaseWorker()
     private var statusItem: NSStatusItem?
     private var togglePanelMenuItem: NSMenuItem?
@@ -39,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var maintenanceCoordinator: StorageMaintenanceCoordinator?
     private var currentPreferences = RustPreferencesDocument()
     private var lastPanelToggleUptime: TimeInterval = 0
+    private var fileCaptureTask: Task<Void, Never>?
+    private var directPasteTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -60,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        fileCaptureTask?.cancel()
+        directPasteTask?.cancel()
         clipboardMonitor.stop()
         sourceApplicationTracker.stop()
         unregisterGlobalHotKey()
@@ -70,7 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidResignActive(_ notification: Notification) {
-        panelController.hide(restoresPreviousApplicationFocus: false)
+        guard !CommandLine.arguments.contains("--show-panel") else { return }
+        panelController.hideUnlessBlockingPanelOperation(restoresPreviousApplicationFocus: false)
     }
 
     @objc private func togglePanel(_ sender: Any?) {
@@ -99,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showPreferences(_ sender: Any?) {
         refreshAccessibilityPermissionState()
         preferencesController.showPreferences()
+        panelController.hideUnlessBlockingPanelOperation(restoresPreviousApplicationFocus: false)
     }
 
     @objc func showAbout(_ sender: Any?) {
@@ -106,12 +142,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyInitialPresentation(arguments: [String]) {
-        if arguments.contains("--show-about") {
+        if arguments.contains("--show-panel") {
+            NSApp.activate(ignoringOtherApps: true)
+            panelController.show()
+        } else if arguments.contains("--show-about") {
             aboutController.showAbout()
         } else if arguments.contains("--show-preferences") {
             refreshAccessibilityPermissionState()
             preferencesController.showPreferences()
         }
+    }
+
+    private func commandLineValue(for flag: String, in arguments: [String]) -> String? {
+        if let inlineValue = arguments.first(where: { $0.hasPrefix("\(flag)=") }) {
+            return String(inlineValue.dropFirst(flag.count + 1))
+        }
+
+        guard let flagIndex = arguments.firstIndex(of: flag) else { return nil }
+        let valueIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(valueIndex) else { return nil }
+
+        let value = arguments[valueIndex]
+        guard !value.hasPrefix("--") else { return nil }
+        return value
+    }
+
+    private func appSupportURLOverride(arguments: [String]) -> URL? {
+        guard let rawValue = commandLineValue(for: "--app-support-dir", in: arguments),
+              !rawValue.isEmpty else {
+            return nil
+        }
+
+        let expandedPath = (rawValue as NSString).expandingTildeInPath
+        return URL(fileURLWithPath: expandedPath, isDirectory: true)
     }
 
     private func configureCoordinators(for appSupportURL: URL) {
@@ -274,6 +337,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             case .copyItem(let item):
                 self?.copySelectedItemToPasteboard(item)
+            case .copyPath(let pathText):
+                self?.copyPathToPasteboard(pathText)
             case .setPinboardMembership(let item, let pinboardID, let isMember):
                 self?.setPinboardMembership(item, pinboardID: pinboardID, isMember: isMember)
             case .createPinboard(let title, let colorCode):
@@ -363,13 +428,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 from: startChangeCount,
                 through: changeCount
             )
-            storageStatusText = "复制：已写入剪贴板"
+            let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
+            storageStatusText = pasteDirectlyToTarget ? "复制：已发送到目标" : "复制：已写入剪贴板"
             refreshStatusText()
             panelController.hide()
+            if pasteDirectlyToTarget {
+                schedulePasteToTarget()
+            }
 
         case .failure(let message):
             storageStatusText = "复制：\(message)"
             refreshStatusText()
+        }
+    }
+
+    private func copyPathToPasteboard(_ pathText: String) {
+        let normalizedPathText = pathText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPathText.isEmpty else {
+            storageStatusText = "复制路径：路径为空"
+            refreshStatusText()
+            return
+        }
+
+        let token = "self-\(UUID().uuidString)"
+        let startChangeCount = NSPasteboard.general.changeCount + 1
+
+        switch writePastePayload(.text(normalizedPathText), token: token) {
+        case .success(let changeCount):
+            clipboardMonitor.markSelfWrite(
+                token: token,
+                from: startChangeCount,
+                through: changeCount
+            )
+            storageStatusText = "复制路径：已写入剪贴板"
+            refreshStatusText()
+            panelController.hide()
+
+        case .failure(let message):
+            storageStatusText = "复制路径：\(message)"
+            refreshStatusText()
+        }
+    }
+
+    private func schedulePasteToTarget() {
+        directPasteTask?.cancel()
+        directPasteTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: DirectPasteTiming.focusRestoreDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.pasteKeystrokeSender.sendPasteKeystroke()
         }
     }
 
@@ -386,24 +492,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             didWrite = pasteboard.writeObjects([item])
 
         case .imageFile(let url):
-            guard let image = NSImage(contentsOf: url) else {
-                return .failure(message: "图片文件无法读取")
-            }
-
-            let pngData = image.pngRepresentation() ?? (try? Data(contentsOf: url))
-            let tiffData = image.tiffRepresentation
-            guard pngData != nil || tiffData != nil else {
+            let sourceData = try? Data(contentsOf: url)
+            let sourceType = pasteboardImageType(for: url)
+            let image = NSImage(contentsOf: url)
+            let tiffData = image?.tiffRepresentation
+            guard sourceData != nil || tiffData != nil else {
                 return .failure(message: "图片数据无法写入")
             }
 
             pasteboard.clearContents()
             var wroteImage = false
-            if let pngData {
-                wroteImage = pasteboard.setData(pngData, forType: .png) || wroteImage
-                wroteImage = pasteboard.setData(
-                    pngData,
-                    forType: NSPasteboard.PasteboardType("public.png")
-                ) || wroteImage
+            if let sourceData, let sourceType {
+                wroteImage = pasteboard.setData(sourceData, forType: sourceType.primary) || wroteImage
+                for alias in sourceType.aliases {
+                    wroteImage = pasteboard.setData(sourceData, forType: alias) || wroteImage
+                }
             }
 
             if let tiffData {
@@ -439,6 +542,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .success(changeCount: pasteboard.changeCount)
     }
 
+    private func pasteboardImageType(
+        for url: URL
+    ) -> (primary: NSPasteboard.PasteboardType, aliases: [NSPasteboard.PasteboardType])? {
+        switch url.pathExtension.lowercased() {
+        case "heic":
+            return (NSPasteboard.PasteboardType("public.heic"), [])
+        case "heif":
+            return (NSPasteboard.PasteboardType("public.heif"), [])
+        case "jpg", "jpeg":
+            return (NSPasteboard.PasteboardType("public.jpeg"), [])
+        case "png":
+            return (.png, [NSPasteboard.PasteboardType("public.png")])
+        case "tif", "tiff":
+            return (.tiff, [NSPasteboard.PasteboardType("public.tiff")])
+        case "gif":
+            return (NSPasteboard.PasteboardType("com.compuserve.gif"), [])
+        default:
+            return nil
+        }
+    }
+
     private func pasteUnsupportedReasonText(_ reason: String) -> String {
         switch reason {
         case "empty_text":
@@ -455,12 +579,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bootstrapLocalStorage() {
-        let appSupportURL = FileManager.default.urls(
+        let defaultAppSupportURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )
         .first?
         .appendingPathComponent("ClipboardWorkbench", isDirectory: true)
+
+        let appSupportURL = appSupportURLOverride(arguments: CommandLine.arguments) ?? defaultAppSupportURL
 
         guard let appSupportURL else {
             storageStatusText = "存储：无法定位 Application Support"
@@ -565,8 +691,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         currentPreferences = result.preferences
         PasteTheme.applyAppearanceMode(result.preferences.appearance.mode)
-        panelController.setPreferredHeight(CGFloat(result.preferences.general.defaultPanelHeight))
+        panelController.setConfiguredDefaultHeight(CGFloat(result.preferences.general.defaultPanelHeight))
         panelController.setPreviewPopoverEnabled(result.preferences.appearance.previewPopoverEnabled)
+        panelController.setLinkWebPreviewEnabled(result.preferences.linkPreview.webPreviewEnabled)
         statusItem?.isVisible = result.preferences.general.showMenuBarItem
         updateTogglePanelMenuShortcut(result.preferences.shortcuts.openPanel)
         registerGlobalHotKey()
@@ -700,16 +827,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func captureClipboardFiles(_ files: CapturedClipboardFiles, changeCount: Int) {
-        guard let captureCoordinator else {
-            return
-        }
+        let previousTask = fileCaptureTask
+        let preferences = currentPreferences
+        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
 
-        applyCaptureResult(captureCoordinator.captureFiles(
-            files.clipboardCapturedFiles,
-            changeCount: changeCount,
-            preferences: currentPreferences,
-            source: sourceApplicationTracker.currentSource()?.clipboardCaptureSource
-        ))
+        fileCaptureTask = Task { [weak self, previousTask, files, changeCount, preferences, source] in
+            await previousTask?.value
+            guard !Task.isCancelled else { return }
+
+            let enrichedFiles = await Task.detached(priority: .utility) {
+                await files.collectingMetadata()
+            }.value
+            guard !Task.isCancelled else { return }
+
+            guard let self,
+                  let captureCoordinator = self.captureCoordinator
+            else {
+                return
+            }
+
+            self.applyCaptureResult(captureCoordinator.captureFiles(
+                enrichedFiles.clipboardCapturedFiles,
+                changeCount: changeCount,
+                preferences: preferences,
+                source: source
+            ))
+        }
     }
 
     private func configureMainMenu() {
@@ -908,6 +1051,10 @@ extension AppDelegate {
 
     func smokeResignActiveForRealFunctionQA() {
         applicationDidResignActive(Notification(name: NSApplication.didResignActiveNotification))
+    }
+
+    func smokeShowPreferencesForRealFunctionQA() {
+        showPreferences(nil)
     }
 
     func smokeApplyInitialPresentationForRealFunctionQA(arguments: [String]) {

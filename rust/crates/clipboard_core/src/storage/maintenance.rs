@@ -10,15 +10,7 @@ use super::ClipboardCore;
 impl ClipboardCore {
     pub fn run_maintenance(&mut self) -> Result<MaintenanceResult> {
         let root = self.root_dir()?.to_path_buf();
-        let removable_asset_paths = self.removable_asset_paths()?;
-        let mut result = MaintenanceResult::default();
-
-        for relative_path in unique_strings(removable_asset_paths) {
-            if let Some(byte_count) = delete_relative_file(&root, &relative_path)? {
-                result.deleted_asset_file_count += 1;
-                result.reclaimed_bytes += byte_count;
-            }
-        }
+        let mut result = self.purge_soft_deleted_items_and_assets()?;
 
         let referenced_asset_paths = self.referenced_asset_paths()?;
         for relative_path in collect_maintenance_files(&root)? {
@@ -30,6 +22,21 @@ impl ClipboardCore {
             }
         }
         remove_empty_maintenance_directories(&root)?;
+
+        Ok(result)
+    }
+
+    pub(super) fn purge_soft_deleted_items_and_assets(&mut self) -> Result<MaintenanceResult> {
+        let root = self.root_dir()?.to_path_buf();
+        let removable_asset_paths = self.removable_asset_paths()?;
+        let mut result = MaintenanceResult::default();
+
+        for relative_path in unique_strings(removable_asset_paths) {
+            if let Some(byte_count) = delete_relative_file(&root, &relative_path)? {
+                result.deleted_asset_file_count += 1;
+                result.reclaimed_bytes += byte_count;
+            }
+        }
 
         let transaction = self.connection.transaction()?;
         result.deleted_asset_row_count = transaction.execute(
@@ -69,9 +76,27 @@ impl ClipboardCore {
             WHERE i.id IS NULL OR i.deleted_at_ms IS NOT NULL
             "#,
         )?;
-        let paths = statement
+        let mut paths = statement
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut link_statement = self.connection.prepare(
+            r#"
+            SELECT lm.icon_relative_path, lm.image_relative_path
+            FROM link_metadata lm
+            LEFT JOIN clipboard_items i ON i.id = lm.item_id
+            WHERE i.id IS NULL OR i.deleted_at_ms IS NOT NULL
+            "#,
+        )?;
+        for row in link_statement.query_map([], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
+        })? {
+            let (icon_path, image_path) = row?;
+            paths.extend(icon_path);
+            paths.extend(image_path);
+        }
         Ok(paths)
     }
 
@@ -102,6 +127,25 @@ impl ClipboardCore {
                 .query_map([], |row| row.get::<_, String>(0))?
                 .collect::<std::result::Result<Vec<_>, _>>()?,
         );
+
+        let mut link_statement = self.connection.prepare(
+            r#"
+            SELECT lm.icon_relative_path, lm.image_relative_path
+            FROM link_metadata lm
+            INNER JOIN clipboard_items i ON i.id = lm.item_id
+            WHERE i.deleted_at_ms IS NULL
+            "#,
+        )?;
+        for row in link_statement.query_map([], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
+        })? {
+            let (icon_path, image_path) = row?;
+            paths.extend(icon_path);
+            paths.extend(image_path);
+        }
 
         Ok(paths.into_iter().collect())
     }

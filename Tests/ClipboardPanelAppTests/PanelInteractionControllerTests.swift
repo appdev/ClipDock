@@ -168,6 +168,47 @@ struct PanelInteractionControllerTests {
         ])
         #expect(result.shouldSyncToolbar)
     }
+
+    @Test
+    func dismissSearchClearsQueryHidesFieldAndPreservesPinboard() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "report",
+                    pinboardID: "default",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.dismissSearch)
+
+        #expect(result.viewState.toolbar.searchText.isEmpty)
+        #expect(!result.viewState.toolbar.isSearchVisible)
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [
+            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: "default", debounce: false))
+        ])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func dismissSearchHidesEmptyFieldWithoutReloadingQuery() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.dismissSearch)
+
+        #expect(!result.viewState.toolbar.isSearchVisible)
+        #expect(result.effects.isEmpty)
+        #expect(result.shouldSyncToolbar)
+    }
 }
 
 private func makePanelInteractionController(

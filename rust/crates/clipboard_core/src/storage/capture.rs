@@ -1,10 +1,13 @@
 use crate::domain::{
-    CaptureFilesRequest, CaptureImageRequest, CaptureResult, CaptureTextRequest, SourceConfidence,
+    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureResult,
+    CaptureTextRequest, CapturedFileMetadata, LinkMetadataState, SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
 use rusqlite::{params, OptionalExtension, Transaction};
+use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 
 use super::source_apps::SourceAppInput;
 use super::support::{
@@ -25,9 +28,19 @@ impl ClipboardCore {
         }
 
         let now = now_ms();
-        let item_type = classify_text(&normalized_text);
-        let summary = summarize_text(&normalized_text);
-        let content_hash = stable_hash(&format!("{}:{normalized_text}", item_type.as_str()));
+        let detected_link = normalized_detected_link(&normalized_text, request.detected_link);
+        let item_type = detected_link
+            .as_ref()
+            .map(|_| crate::domain::ClipboardItemType::Link)
+            .unwrap_or_else(|| classify_text(&normalized_text));
+        let summary = detected_link
+            .as_ref()
+            .map(|link| link.display_url.clone())
+            .unwrap_or_else(|| summarize_text(&normalized_text));
+        let content_hash = detected_link
+            .as_ref()
+            .map(|link| stable_hash(&format!("link:{}", link.canonical_url)))
+            .unwrap_or_else(|| stable_hash(&format!("{}:{normalized_text}", item_type.as_str())));
         let source_app_id = self.upsert_source_app(
             SourceAppInput {
                 bundle_id: request.source_bundle_id.as_deref(),
@@ -115,6 +128,9 @@ impl ClipboardCore {
             &normalized_text,
             source_app_name.unwrap_or_default(),
         )?;
+        if let Some(detected_link) = detected_link.as_ref() {
+            upsert_link_metadata(&transaction, &item_id, detected_link, now)?;
+        }
 
         transaction.commit()?;
         self.apply_post_capture()?;
@@ -302,6 +318,7 @@ impl ClipboardCore {
 
     pub fn capture_files(&mut self, request: CaptureFilesRequest) -> Result<CaptureResult> {
         let file_paths = normalize_file_paths(&request.file_paths)?;
+        let file_items = captured_file_metadata_for_paths(&file_paths, &request.file_items);
         let primary_text = file_paths.join("\n");
         let summary = summarize_files(&file_paths);
         let content_hash = stable_hash(&format!("file:{}", file_paths_fingerprint(&file_paths)));
@@ -323,7 +340,10 @@ impl ClipboardCore {
         )?;
         let source_app_name = request.source_app_name.as_deref();
         let source_confidence = request.source_confidence;
-        let size_bytes = request.snapshot_byte_count.max(primary_text.len() as i64);
+        let metadata_byte_count: i64 = file_items.iter().map(|item| item.byte_count.max(0)).sum();
+        let size_bytes = metadata_byte_count
+            .max(request.snapshot_byte_count)
+            .max(primary_text.len() as i64);
         let transaction = self.connection.transaction()?;
 
         let (item_id, copy_count, inserted) = match find_existing_item(&transaction, &content_hash)?
@@ -388,6 +408,8 @@ impl ClipboardCore {
                 (item_id, 1, true)
             }
         };
+
+        replace_file_items(&transaction, &item_id, &file_items, now)?;
 
         if let Some(snapshot_relative_path) = snapshot_relative_path.as_deref() {
             let snapshot_path = root.join(snapshot_relative_path);
@@ -458,6 +480,254 @@ impl ClipboardCore {
 
 fn make_item_id(content_hash: &str) -> String {
     format!("item_{}", &content_hash[..24])
+}
+
+fn normalized_detected_link(
+    normalized_text: &str,
+    detected_link: Option<CaptureDetectedLink>,
+) -> Option<CaptureDetectedLink> {
+    match detected_link {
+        Some(link) if is_valid_detected_link(&link) => Some(CaptureDetectedLink {
+            original_text: non_empty_or(link.original_text, normalized_text),
+            canonical_url: link.canonical_url.trim().to_string(),
+            display_url: non_empty_or(link.display_url, normalized_text),
+            host: link.host.trim().to_ascii_lowercase(),
+            metadata_state: link.metadata_state,
+        }),
+        _ => fallback_detected_link(normalized_text),
+    }
+}
+
+fn is_valid_detected_link(link: &CaptureDetectedLink) -> bool {
+    let canonical_url = link.canonical_url.trim().to_ascii_lowercase();
+    let host = link.host.trim();
+    !host.is_empty()
+        && (canonical_url.starts_with("https://") || canonical_url.starts_with("http://"))
+}
+
+fn fallback_detected_link(normalized_text: &str) -> Option<CaptureDetectedLink> {
+    let lower = normalized_text.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return None;
+    }
+
+    let host = host_from_http_url(normalized_text)?;
+    Some(CaptureDetectedLink {
+        original_text: normalized_text.to_string(),
+        canonical_url: normalized_text.to_string(),
+        display_url: normalized_text.to_string(),
+        host,
+        metadata_state: LinkMetadataState::Pending,
+    })
+}
+
+fn host_from_http_url(url: &str) -> Option<String> {
+    let scheme_separator = url.find("://")?;
+    let after_scheme = &url[scheme_separator + 3..];
+    let host_end = after_scheme
+        .find(|character| matches!(character, '/' | '?' | '#'))
+        .unwrap_or(after_scheme.len());
+    let host = after_scheme[..host_end].trim().trim_matches('.');
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_ascii_lowercase())
+    }
+}
+
+fn non_empty_or(value: String, fallback: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        fallback.to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn upsert_link_metadata(
+    transaction: &Transaction<'_>,
+    item_id: &str,
+    link: &CaptureDetectedLink,
+    now: i64,
+) -> Result<()> {
+    transaction.execute(
+        r#"
+        INSERT INTO link_metadata (
+            item_id,
+            original_text,
+            canonical_url,
+            display_url,
+            host,
+            metadata_state,
+            created_at_ms,
+            updated_at_ms
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+        ON CONFLICT(item_id) DO UPDATE SET
+            original_text = excluded.original_text,
+            canonical_url = excluded.canonical_url,
+            display_url = excluded.display_url,
+            host = excluded.host,
+            metadata_state = CASE
+                WHEN link_metadata.metadata_state = 'ready' THEN link_metadata.metadata_state
+                WHEN excluded.metadata_state = 'disabled' THEN 'disabled'
+                WHEN link_metadata.metadata_state = 'disabled' AND excluded.metadata_state = 'pending' THEN 'pending'
+                ELSE link_metadata.metadata_state
+            END,
+            updated_at_ms = excluded.updated_at_ms
+        "#,
+        params![
+            item_id,
+            link.original_text.as_str(),
+            link.canonical_url.as_str(),
+            link.display_url.as_str(),
+            link.host.as_str(),
+            link.metadata_state.as_str(),
+            now
+        ],
+    )?;
+    Ok(())
+}
+
+fn captured_file_metadata_for_paths(
+    file_paths: &[String],
+    provided_items: &[CapturedFileMetadata],
+) -> Vec<CapturedFileMetadata> {
+    let provided_by_path: HashMap<String, &CapturedFileMetadata> = provided_items
+        .iter()
+        .map(|item| (normalized_metadata_path(&item.path), item))
+        .collect();
+
+    file_paths
+        .iter()
+        .map(|path| {
+            let normalized_path = normalized_metadata_path(path);
+            provided_by_path
+                .get(&normalized_path)
+                .map(|metadata| normalized_file_metadata(&normalized_path, Some(metadata)))
+                .unwrap_or_else(|| normalized_file_metadata(&normalized_path, None))
+        })
+        .collect()
+}
+
+fn normalized_metadata_path(path: &str) -> String {
+    Path::new(path).to_string_lossy().trim().to_string()
+}
+
+fn normalized_file_metadata(
+    path: &str,
+    provided: Option<&&CapturedFileMetadata>,
+) -> CapturedFileMetadata {
+    let path_value = path.trim().to_string();
+    let path_ref = Path::new(&path_value);
+    let metadata = fs::metadata(path_ref).ok();
+    let is_directory = provided.map(|item| item.is_directory).unwrap_or_else(|| {
+        metadata
+            .as_ref()
+            .map(|value| value.is_dir())
+            .unwrap_or(false)
+    });
+    let byte_count = provided
+        .map(|item| item.byte_count.max(0))
+        .unwrap_or_else(|| {
+            metadata
+                .as_ref()
+                .map(|value| {
+                    if value.is_dir() {
+                        0
+                    } else {
+                        value.len() as i64
+                    }
+                })
+                .unwrap_or(0)
+        });
+    let file_name = provided
+        .and_then(|item| non_empty_optional(item.file_name.as_str()))
+        .or_else(|| {
+            path_ref
+                .file_name()
+                .map(|value| value.to_string_lossy().to_string())
+                .filter(|value| !value.trim().is_empty())
+        })
+        .unwrap_or_else(|| path_value.clone());
+    let file_extension = provided
+        .and_then(|item| item.file_extension.as_deref().and_then(non_empty_optional))
+        .or_else(|| {
+            path_ref
+                .extension()
+                .map(|value| value.to_string_lossy().to_string())
+                .filter(|value| !value.trim().is_empty())
+        });
+
+    CapturedFileMetadata {
+        path: path_value,
+        file_name,
+        file_extension,
+        byte_count,
+        is_directory,
+        width: provided.and_then(|item| positive_optional_dimension(item.width)),
+        height: provided.and_then(|item| positive_optional_dimension(item.height)),
+        content_type: provided
+            .and_then(|item| item.content_type.as_deref().and_then(non_empty_optional)),
+    }
+}
+
+fn non_empty_optional(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn positive_optional_dimension(value: Option<i64>) -> Option<i64> {
+    value.filter(|dimension| *dimension > 0)
+}
+
+fn replace_file_items(
+    transaction: &Transaction<'_>,
+    item_id: &str,
+    file_items: &[CapturedFileMetadata],
+    now: i64,
+) -> Result<()> {
+    transaction.execute(
+        "DELETE FROM clipboard_file_items WHERE item_id = ?1",
+        params![item_id],
+    )?;
+
+    for (index, item) in file_items.iter().enumerate() {
+        let id = format!(
+            "file_item_{}",
+            &stable_hash(&format!("{item_id}:{}:{}", index, item.path))[..24]
+        );
+        transaction.execute(
+            r#"
+            INSERT INTO clipboard_file_items (
+                id, item_id, order_index, path, file_name, file_extension,
+                byte_count, is_directory, width, height, content_type,
+                created_at_ms, updated_at_ms
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
+            "#,
+            params![
+                id,
+                item_id,
+                index as i64,
+                item.path,
+                item.file_name,
+                item.file_extension,
+                item.byte_count,
+                if item.is_directory { 1 } else { 0 },
+                item.width,
+                item.height,
+                item.content_type,
+                now
+            ],
+        )?;
+    }
+
+    Ok(())
 }
 
 fn find_existing_item(

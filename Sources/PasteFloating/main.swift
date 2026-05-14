@@ -19,6 +19,16 @@ private func runClipboardWorkbenchDemoApp() {
         Darwin.exit(0)
     }
 
+    if LinkPreviewSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
+        do {
+            try LinkPreviewSmokeCommand.run(arguments: CommandLine.arguments)
+        } catch {
+            FileHandle.standardError.write(Data("link preview smoke failed: \(error.localizedDescription)\n".utf8))
+            Darwin.exit(1)
+        }
+        Darwin.exit(0)
+    }
+
     if RealFunctionQACommand.shouldRun(arguments: CommandLine.arguments) {
         Task { @MainActor in
             do {

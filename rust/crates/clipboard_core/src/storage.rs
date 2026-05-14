@@ -95,6 +95,16 @@ impl ClipboardCore {
             if let Some(relative_path) = item.payload_asset_path.take() {
                 item.payload_asset_path = Some(root.join(relative_path).display().to_string());
             }
+            if let Some(link_metadata) = item.link_metadata.as_mut() {
+                if let Some(relative_path) = link_metadata.icon_asset_path.take() {
+                    link_metadata.icon_asset_path =
+                        Some(root.join(relative_path).display().to_string());
+                }
+                if let Some(relative_path) = link_metadata.image_asset_path.take() {
+                    link_metadata.image_asset_path =
+                        Some(root.join(relative_path).display().to_string());
+                }
+            }
         }
         item
     }

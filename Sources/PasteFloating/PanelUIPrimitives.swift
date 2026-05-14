@@ -37,6 +37,7 @@ final class FloatingPanel: NSPanel {
 final class HeightResizeHandleView: NSView {
     var onDragBegan: (() -> Void)?
     var onDragChanged: ((CGFloat) -> Void)?
+    var onDragEnded: (() -> Void)?
 
     private let indicatorLayer = CALayer()
     private var initialMouseY: CGFloat = 0
@@ -114,6 +115,10 @@ final class HeightResizeHandleView: NSView {
         onDragChanged?(NSEvent.mouseLocation.y - initialMouseY)
     }
 
+    override func mouseUp(with event: NSEvent) {
+        onDragEnded?()
+    }
+
     private func configureAppearance() {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -142,19 +147,45 @@ final class HorizontalWheelScrollView: NSScrollView {
             return
         }
 
+        let initialHorizontalOrigin = contentView.bounds.origin.x
+        let fallbackDelta = dominantVerticalDelta(from: event)
         guard let projectedEvent = horizontalOnlyEvent(from: event) else {
             super.scrollWheel(with: event)
+            applyManualHorizontalFallbackIfNeeded(
+                initialHorizontalOrigin: initialHorizontalOrigin,
+                delta: fallbackDelta
+            )
             return
         }
 
         super.scrollWheel(with: projectedEvent)
+        applyManualHorizontalFallbackIfNeeded(
+            initialHorizontalOrigin: initialHorizontalOrigin,
+            delta: fallbackDelta
+        )
         onScrollDidChange?()
     }
 
     private func horizontalOnlyEvent(from event: NSEvent) -> NSEvent? {
         guard let cgEvent = event.cgEvent?.copy() else { return nil }
 
-        let shouldMapVertical = abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX)
+        let verticalDelta = scrollDelta(
+            for: event,
+            cgEvent: cgEvent,
+            preciseValue: event.scrollingDeltaY,
+            pointField: .scrollWheelEventPointDeltaAxis1,
+            fixedField: .scrollWheelEventFixedPtDeltaAxis1,
+            lineField: .scrollWheelEventDeltaAxis1
+        )
+        let horizontalDelta = scrollDelta(
+            for: event,
+            cgEvent: cgEvent,
+            preciseValue: event.scrollingDeltaX,
+            pointField: .scrollWheelEventPointDeltaAxis2,
+            fixedField: .scrollWheelEventFixedPtDeltaAxis2,
+            lineField: .scrollWheelEventDeltaAxis2
+        )
+        let shouldMapVertical = abs(verticalDelta) > abs(horizontalDelta)
         if shouldMapVertical {
             projectScrollAxis(in: cgEvent, from: .scrollWheelEventDeltaAxis1, to: .scrollWheelEventDeltaAxis2)
             projectScrollAxis(in: cgEvent, from: .scrollWheelEventPointDeltaAxis1, to: .scrollWheelEventPointDeltaAxis2)
@@ -173,8 +204,73 @@ final class HorizontalWheelScrollView: NSScrollView {
         event.setIntegerValueField(target, value: value)
     }
 
+    private func scrollDelta(
+        for event: NSEvent,
+        cgEvent: CGEvent,
+        preciseValue: CGFloat,
+        pointField: CGEventField,
+        fixedField: CGEventField,
+        lineField: CGEventField
+    ) -> CGFloat {
+        if preciseValue != 0 {
+            return preciseValue
+        }
+
+        let pointValue = cgEvent.getIntegerValueField(pointField)
+        if pointValue != 0 {
+            return CGFloat(pointValue)
+        }
+
+        let fixedValue = cgEvent.getIntegerValueField(fixedField)
+        if fixedValue != 0 {
+            return CGFloat(fixedValue)
+        }
+
+        return CGFloat(cgEvent.getIntegerValueField(lineField))
+    }
+
     private func clearScrollAxis(in event: CGEvent, field: CGEventField) {
         event.setIntegerValueField(field, value: 0)
+    }
+
+    private func dominantVerticalDelta(from event: NSEvent) -> CGFloat {
+        guard let cgEvent = event.cgEvent else { return event.scrollingDeltaY }
+        let verticalDelta = scrollDelta(
+            for: event,
+            cgEvent: cgEvent,
+            preciseValue: event.scrollingDeltaY,
+            pointField: .scrollWheelEventPointDeltaAxis1,
+            fixedField: .scrollWheelEventFixedPtDeltaAxis1,
+            lineField: .scrollWheelEventDeltaAxis1
+        )
+        let horizontalDelta = scrollDelta(
+            for: event,
+            cgEvent: cgEvent,
+            preciseValue: event.scrollingDeltaX,
+            pointField: .scrollWheelEventPointDeltaAxis2,
+            fixedField: .scrollWheelEventFixedPtDeltaAxis2,
+            lineField: .scrollWheelEventDeltaAxis2
+        )
+        return abs(verticalDelta) > abs(horizontalDelta) ? verticalDelta : 0
+    }
+
+    private func applyManualHorizontalFallbackIfNeeded(
+        initialHorizontalOrigin: CGFloat,
+        delta: CGFloat
+    ) {
+        guard abs(contentView.bounds.origin.x - initialHorizontalOrigin) < 0.5,
+              delta != 0,
+              let documentView
+        else {
+            return
+        }
+
+        let maximumX = max(0, documentView.frame.width - contentView.bounds.width)
+        let targetX = min(max(initialHorizontalOrigin + delta, 0), maximumX)
+        guard abs(targetX - initialHorizontalOrigin) >= 0.5 else { return }
+
+        contentView.scroll(to: NSPoint(x: targetX, y: contentView.bounds.origin.y))
+        reflectScrolledClipView(contentView)
     }
 }
 
@@ -369,6 +465,12 @@ final class PinboardChipButton: PanelActionButton {
     var chipSelectedBackgroundColor: NSColor = .controlBackgroundColor {
         didSet { needsDisplay = true }
     }
+    var chipSelectedBorderColor: NSColor = .clear {
+        didSet { needsDisplay = true }
+    }
+    var chipSelectedBorderWidth: CGFloat = 0 {
+        didSet { needsDisplay = true }
+    }
     var chipHeight: CGFloat = 34 {
         didSet { invalidateIntrinsicContentSize() }
     }
@@ -414,12 +516,29 @@ final class PinboardChipButton: PanelActionButton {
         let contentWidth = markerWidth + chipMarkerTextSpacing + titleSize.width
 
         if chipDrawsSelectionPill && chipIsSelected {
+            let fillRect = bounds.insetBy(dx: 0, dy: 1)
+            let fillRadius = fillRect.height / 2
+            let fillPath = NSBezierPath(
+                roundedRect: fillRect,
+                xRadius: fillRadius,
+                yRadius: fillRadius
+            )
             chipSelectedBackgroundColor.setFill()
-            NSBezierPath(
-                roundedRect: bounds.insetBy(dx: 0, dy: 1),
-                xRadius: (bounds.height - 2) / 2,
-                yRadius: (bounds.height - 2) / 2
-            ).fill()
+            fillPath.fill()
+
+            if chipSelectedBorderWidth > 0 {
+                let borderInset = chipSelectedBorderWidth / 2
+                let borderRect = fillRect.insetBy(dx: borderInset, dy: borderInset)
+                let borderRadius = borderRect.height / 2
+                let borderPath = NSBezierPath(
+                    roundedRect: borderRect,
+                    xRadius: borderRadius,
+                    yRadius: borderRadius
+                )
+                chipSelectedBorderColor.setStroke()
+                borderPath.lineWidth = chipSelectedBorderWidth
+                borderPath.stroke()
+            }
         }
 
         if chipIsRenaming {
@@ -437,11 +556,7 @@ final class PinboardChipButton: PanelActionButton {
         let centerY = bounds.midY
 
         if let chipSymbolName,
-           let symbol = NSImage(systemSymbolName: chipSymbolName, accessibilityDescription: chipTitleText)?
-            .withSymbolConfiguration(
-                NSImage.SymbolConfiguration(pointSize: chipIconSide, weight: .regular)
-                    .applying(NSImage.SymbolConfiguration(hierarchicalColor: selectedTextColor))
-            ) {
+           let symbol = monochromeSymbolImage(named: chipSymbolName, color: selectedTextColor) {
             symbol.draw(
                 in: NSRect(
                     x: originX,
@@ -481,5 +596,26 @@ final class PinboardChipButton: PanelActionButton {
 
     private func chipFont() -> NSFont {
         NSFont.systemFont(ofSize: chipFontSize, weight: chipIsSelected ? .medium : .regular)
+    }
+
+    private func monochromeSymbolImage(named symbolName: String, color: NSColor) -> NSImage? {
+        guard let symbol = NSImage(systemSymbolName: symbolName, accessibilityDescription: chipTitleText)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: chipIconSide, weight: .regular))
+        else {
+            return nil
+        }
+
+        let imageSize = NSSize(width: chipIconSide, height: chipIconSide)
+        let tintedImage = NSImage(size: imageSize)
+        tintedImage.lockFocus()
+        defer { tintedImage.unlockFocus() }
+
+        let imageRect = NSRect(origin: .zero, size: imageSize)
+        symbol.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1)
+        color.setFill()
+        // 使用 sourceIn 将 SF Symbol 当作透明度蒙版，避免层级渲染把图标压淡。
+        imageRect.fill(using: .sourceIn)
+        tintedImage.isTemplate = false
+        return tintedImage
     }
 }

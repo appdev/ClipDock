@@ -64,6 +64,75 @@ struct PasteThemeTests {
         }
     }
 
+    @Test
+    @MainActor
+    func toolbarIconsUseToolbarTextColorInBothSchemes() throws {
+        let palettes = [
+            PasteTheme.current(for: NSAppearance(named: .aqua)),
+            PasteTheme.current(for: NSAppearance(named: .darkAqua))
+        ]
+
+        for palette in palettes {
+            #expect(colorAndAlphaDistance(palette.panel.toolbarIconColor, palette.panel.toolbarTextColor) < 0.001)
+        }
+    }
+
+    @Test
+    @MainActor
+    func aboutWindowUsesReadableThemeInBothSchemes() throws {
+        let app = NSApplication.shared
+        let originalAppearance = app.appearance
+        defer { app.appearance = originalAppearance }
+
+        app.appearance = NSAppearance(named: .aqua)
+        let lightController = AboutWindowController()
+        let lightBackground = try #require(layerBackgroundColor(for: lightController))
+        let lightTitleColor = try #require(largestLabel(in: lightController.window?.contentView)?.textColor)
+
+        app.appearance = NSAppearance(named: .darkAqua)
+        let darkController = AboutWindowController()
+        defer {
+            lightController.close()
+            darkController.close()
+        }
+        let darkBackground = try #require(layerBackgroundColor(for: darkController))
+        let darkTitleColor = try #require(largestLabel(in: darkController.window?.contentView)?.textColor)
+
+        #expect(colorDistance(lightBackground, darkBackground) > 0.2)
+        #expect(contrastRatio(lightTitleColor, lightBackground) >= 4.5)
+        #expect(contrastRatio(darkTitleColor, darkBackground) >= 4.5)
+    }
+
+    @Test
+    @MainActor
+    func aboutWindowAppIconDoesNotExposeCheckerboardCorners() throws {
+        let controller = AboutWindowController()
+        defer { controller.close() }
+        let imageView = try #require(firstImageView(in: controller.window?.contentView))
+        let image = try #require(imageView.image)
+        let bitmap = try #require(renderedBitmap(for: image, size: NSSize(width: 128, height: 128)))
+        let alpha = bitmap.colorAt(x: 2, y: 2)?.alphaComponent ?? 1
+
+        #expect(alpha < 0.05)
+    }
+
+    @Test
+    @MainActor
+    func aboutWindowIconButtonsKeepCircularGeometry() throws {
+        let controller = AboutWindowController()
+        defer { controller.close() }
+        let contentView = try #require(controller.window?.contentView)
+        contentView.layoutSubtreeIfNeeded()
+
+        for toolTip in ["文档首页", "架构说明", "UI QA", "发布说明"] {
+            let button = try #require(view(withToolTip: toolTip, in: contentView))
+            button.layoutSubtreeIfNeeded()
+
+            #expect(abs(button.frame.width - button.frame.height) < 0.5)
+            #expect(abs((button.layer?.cornerRadius ?? 0) - min(button.bounds.width, button.bounds.height) / 2) < 0.5)
+        }
+    }
+
     private func contrastRatio(_ foreground: NSColor, _ background: NSColor) -> CGFloat {
         let foregroundLuminance = relativeLuminance(foreground)
         let backgroundLuminance = relativeLuminance(background)
@@ -98,5 +167,82 @@ struct PasteThemeTests {
         return abs(lhs.redComponent - rhs.redComponent)
             + abs(lhs.greenComponent - rhs.greenComponent)
             + abs(lhs.blueComponent - rhs.blueComponent)
+    }
+
+    private func colorAndAlphaDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        guard let lhs = lhs.usingColorSpace(.sRGB),
+              let rhs = rhs.usingColorSpace(.sRGB)
+        else {
+            return 0
+        }
+
+        return colorDistance(lhs, rhs) + abs(lhs.alphaComponent - rhs.alphaComponent)
+    }
+
+    @MainActor
+    private func layerBackgroundColor(for controller: AboutWindowController) -> NSColor? {
+        guard let backgroundColor = controller.window?.contentView?.layer?.backgroundColor else {
+            return nil
+        }
+
+        return NSColor(cgColor: backgroundColor)
+    }
+
+    @MainActor
+    private func largestLabel(in view: NSView?) -> NSTextField? {
+        allSubviews(of: view)
+            .compactMap { $0 as? NSTextField }
+            .max { ($0.font?.pointSize ?? 0) < ($1.font?.pointSize ?? 0) }
+    }
+
+    @MainActor
+    private func firstImageView(in view: NSView?) -> NSImageView? {
+        allSubviews(of: view)
+            .compactMap { $0 as? NSImageView }
+            .first
+    }
+
+    @MainActor
+    private func view(withToolTip toolTip: String, in view: NSView?) -> NSView? {
+        allSubviews(of: view)
+            .first { $0.toolTip == toolTip }
+    }
+
+    @MainActor
+    private func allSubviews(of view: NSView?) -> [NSView] {
+        guard let view else { return [] }
+
+        return view.subviews + view.subviews.flatMap { allSubviews(of: $0) }
+    }
+
+    private func renderedBitmap(for image: NSImage, size: NSSize) -> NSBitmapImageRep? {
+        let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(size.width),
+            pixelsHigh: Int(size.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )
+
+        guard let bitmap else { return nil }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        NSColor.clear.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        image.draw(
+            in: NSRect(origin: .zero, size: size),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        return bitmap
     }
 }

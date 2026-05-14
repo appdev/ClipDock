@@ -1,108 +1,129 @@
-# 剪贴板工作台
+# ClipShelf
 
-剪贴板工作台是一款为 macOS 设计的本地优先剪贴板管理应用。它把剪贴板历史放进一个贴近系统工作流的底部全宽工作台里，让你可以更快地回看、检索、预览和再次使用刚刚复制过的内容。
+<p align="center">
+  <img src="Sources/PasteFloating/Resources/AppIcon.png" alt="ClipShelf app icon" width="96" height="96">
+</p>
 
-这个仓库包含完整的产品代码：Swift/AppKit 界面层、Rust/SQLite 本地存储核心、Swift 与 Rust 的 FFI 桥接，以及本地打包和发布脚本。
+<p align="center">
+  <strong>A lightweight shelf for everything you copy on macOS.</strong><br>
+  <strong>一个贴在 macOS 底部、随时呼出的轻量剪贴板内容架。</strong>
+</p>
 
-## 产品亮点
+<p align="center">
+  <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black">
+  <img alt="Local on your Mac" src="https://img.shields.io/badge/local-on%20your%20Mac-brightgreen">
+  <img alt="Open source" src="https://img.shields.io/badge/open%20source-yes-blue">
+</p>
 
-- 底部全宽工作台：通过全局快捷键快速呼出，不抢占主窗口焦点，适合高频复制粘贴场景。
-- 多类型历史记录：支持文本、链接、图片和文件剪贴板内容，并记录来源应用信息。
-- 快速检索：支持搜索、类型筛选和键盘快速选择，减少在应用之间反复切换。
-- 轻量预览：选中条目后可展开临时预览，确认内容再回贴，降低误操作成本。
-- 历史管理：支持固定、删除、清空当前筛选结果，便于保留常用内容和维护历史整洁。
-- 偏好设置：可配置默认面板高度、保留数量、保留天数、图片与文件记录、忽略规则、外观模式和启动时运行。
-- 本地优先：历史、索引和偏好设置默认保存在用户本机，不依赖云端账户。
+![ClipShelf runtime hero](docs/assets/marketing/clipshelf-runtime-hero.webp)
 
-## 适用场景
+> The ClipShelf panel shown here is rendered by the real app with sample clipboard content. The wallpaper backdrop may be AI-generated.<br>
+> 图中的 ClipShelf 面板来自真实应用运行画面，内容为样例剪贴板数据；壁纸背景可能由 AI 生成。
 
-- 在浏览器、设计工具、编辑器和聊天工具之间频繁复制文本、链接或素材
-- 需要快速找回刚刚复制过的图片、文件路径或多段文本
-- 希望剪贴板工具足够快、足够轻，不打断当前工作流
-- 对本地存储、隐私可控和离线可用有明确要求
+## What It Is / 它是什么
 
-## 当前版本定位
+ClipShelf is a clipboard shelf for macOS. It quietly keeps the things you copied, then appears from the bottom of the screen when you need to find one again.
 
-当前版本聚焦单机、本地优先的核心剪贴板体验，已经覆盖日常高频的收集、检索、预览和回贴流程。
+ClipShelf 是一个 macOS 剪贴板内容架。它会安静记录你复制过的内容，并在需要时从屏幕底部轻轻展开，帮你快速找回刚刚用过的文本、链接、图片或文件。
 
-暂不包含云同步、团队协作、导入导出和自动更新能力；如果你计划将它作为正式商业发行版本，建议结合 [docs/release.md](docs/release.md) 继续完善签名、公证、安装体验和发布元数据。
+It is not a heavy clipboard manager, not a dashboard, and not another window you have to manage. It feels more like a shelf attached to your desktop: quick to open, easy to scan, and gone when the job is done.
 
-## 系统要求
+它不是一个厚重的“管理后台”，也不是又一个需要管理的大窗口。它更像贴在桌面底部的一层轻量架子：呼出很快、扫读很快，用完就收起。
 
-- macOS 13.0 或更高版本
-- 建议以 `.app` 形态分发和运行，以启用更完整的系统集成功能
+## Why ClipShelf / 为什么需要它
 
-## 常用操作
+We copy things all day: a sentence from a chat, a link from the browser, a screenshot, a file, a small snippet we need again five minutes later. macOS only keeps the latest one. ClipShelf keeps the recent ones within reach.
 
-- `Command + Shift + V`：显示或隐藏剪贴板工作台
-- `Command + ,`：打开偏好设置
-- `Command + F`：展开并聚焦搜索
-- `Command + 1...5`：快速选中当前可见的前 5 个条目
-- 左右方向键：移动当前选中条目
-- `Space`：展开或收起当前条目的预览
-- `Escape`：清空搜索；当搜索为空时隐藏面板
-- 双击条目：将条目内容写回系统剪贴板并自动隐藏面板
+我们每天都在复制：聊天里的一句话、浏览器里的链接、一张截图、一个文件、几分钟后还要再用的小片段。macOS 默认只记住最后一次复制。ClipShelf 把最近复制过的东西都放在手边。
 
-## 隐私与本地数据
+![ClipShelf runtime shelf](docs/assets/marketing/clipshelf-runtime-panel.webp)
 
-剪贴板工作台当前默认只使用本地存储。历史记录、偏好设置和索引数据保存在：
+## What You Can Do / 你可以做什么
 
-```text
-~/Library/Application Support/ClipboardWorkbench/clipboard.sqlite
-```
+- **Bring it up instantly / 随时呼出**<br>
+  Press `Command + Shift + V` to open the shelf from the bottom of the screen.<br>
+  按下 `Command + Shift + V`，从屏幕底部呼出内容架。
 
-图片缩略图、来源应用图标和文件快照也保存在用户本机。当前版本不依赖云端账户，也不会主动将剪贴板内容上传到远端服务。
+- **Find recent copies fast / 快速找回刚复制过的内容**<br>
+  Browse recent items visually, or search when the list gets long.<br>
+  可以直接横向扫一眼，也可以在内容变多后搜索定位。
 
-## 从源码运行
+- **Preview before using / 使用前先确认**<br>
+  Check text, links, images, and files before putting them back on the clipboard.<br>
+  在回贴之前先确认文本、链接、图片和文件，减少误选。
 
-先构建 Rust core 和 Swift bridge：
+- **Keep important snippets / 固定常用内容**<br>
+  Pin reusable content so it does not get lost in everyday clipboard noise.<br>
+  把常用片段固定起来，不被日常临时复制内容淹没。
+
+- **Stay focused / 不打断当前工作**<br>
+  ClipShelf appears only when you call it and hides after you pick something.<br>
+  ClipShelf 只在你需要时出现，选完内容后自动退回幕后。
+
+## A More Natural Clipboard / 更自然的剪贴板
+
+ClipShelf is designed for people who move between apps all day: writing, coding, researching, designing, chatting, collecting references, and reusing small pieces of information.
+
+ClipShelf 适合每天在多个应用之间来回切换的人：写作、开发、资料整理、设计、聊天、收集参考、复用零散信息。
+
+The goal is simple: make clipboard history feel like part of macOS, not a separate place you have to visit.
+
+目标很简单：让剪贴板历史像 macOS 的一部分，而不是另一个需要专门打开和整理的地方。
+
+## Privacy / 隐私
+
+Your clipboard history stays on your Mac in the current version. ClipShelf does not require an account, and it does not upload your clipboard content as part of its normal workflow.
+
+当前版本中，剪贴板历史保存在你的 Mac 上。ClipShelf 不需要账号，也不会在正常使用流程中上传你的剪贴板内容。
+
+## Install / 安装
+
+Download the latest release, drag ClipShelf into Applications, then press `Command + Shift + V` to open the shelf.
+
+下载最新版本，将 ClipShelf 拖入“应用程序”，然后按 `Command + Shift + V` 呼出内容架。
+
+> Public release packages will be published with the first GitHub release.<br>
+> 公开安装包会随首个 GitHub Release 一起发布。
+
+## Open Source / 开源
+
+ClipShelf is open source because clipboard tools are personal. You should be able to see how the app works, run it locally, suggest improvements, and shape it into a better everyday tool.
+
+ClipShelf 选择开源，是因为剪贴板工具足够贴近日常工作流。你应该可以看到它如何工作、本地运行它、提出改进，并一起把它打磨成更顺手的日常工具。
+
+<details>
+<summary>Developer Notes / 开发者说明</summary>
+
+### Requirements / 环境要求
+
+- macOS 13.0 or later / macOS 13.0 或更高版本
+- Xcode command line tools / Xcode 命令行工具
+- Swift 6.1 toolchain / Swift 6.1 工具链
+- Rust stable toolchain / Rust stable 工具链
+
+### Run From Source / 从源码运行
 
 ```bash
 scripts/build-rust-core.sh
-```
-
-然后启动应用：
-
-```bash
 swift run PasteFloating
 ```
 
-说明：`PasteFloating` 是当前源码态运行与 QA 命令使用的唯一 executable product；旧兼容入口已移除。用户可见产品名称仍统一使用“剪贴板工作台（ClipboardWorkbench）”。
+`PasteFloating` is the current development executable target. The user-facing product name is ClipShelf.
 
-## 生成可分发应用
+`PasteFloating` 是当前开发阶段的可执行 target，用户可见产品名是 ClipShelf。
 
-生成本地 `.app`：
+### Local Release Build / 本地发布构建
 
 ```bash
 scripts/package-macos-app.sh
-```
-
-默认产物路径：
-
-```text
-.codex/artifacts/ClipboardWorkbench.app
-```
-
-说明：当前打包脚本默认使用正式 bundle 名 `ClipboardWorkbench.app`，包内可执行文件为 `ClipboardWorkbenchApp`。
-
-生成本地候选发布包：
-
-```bash
 scripts/release-macos.sh
 ```
 
-默认会输出：
+Generated artifacts are written under `.codex/artifacts/`.
 
-```text
-.codex/artifacts/release/0.1.0/
-```
+生成产物会写入 `.codex/artifacts/`。
 
-其中包含 `.app`、`.zip`、`.dmg`、`SHA256SUMS` 和 release manifest。
-默认文件名分别为 `ClipboardWorkbench.app`、`ClipboardWorkbench-0.1.0.zip`、`ClipboardWorkbench-0.1.0.dmg` 和 `ClipboardWorkbench-release-manifest.txt`。
-
-## 开发验证
-
-推荐的验证顺序：
+### Verification / 验证
 
 ```bash
 cargo test --manifest-path rust/Cargo.toml
@@ -111,25 +132,20 @@ swift build
 swift test
 ```
 
-`swift test` 会生成视觉回归夹具：
+### Repository Map / 仓库结构
 
-```text
-.codex/artifacts/panel-visual-regression.png
-```
+- `Sources/ClipboardPanelApp`: app UI and product behavior.
+- `Sources/PasteFloating`: current macOS executable shell.
+- `rust/crates/clipboard_core`: local storage and clipboard history core.
+- `Generated/ClipboardCoreBridge`: generated bridge package.
+- `Tests/ClipboardPanelAppTests`: automated tests.
+- `docs/`: architecture, release, QA, and design notes.
 
-## 项目结构
+### Documentation / 文档
 
-- `Sources/ClipboardPanelApp`：Swift/AppKit UI、面板交互与应用逻辑
-- `Sources/PasteFloating`：当前可执行入口 target 源码目录，承载剪贴板工作台运行时壳层
-- `rust/crates/clipboard_core`：剪贴板历史与偏好设置的 Rust/SQLite 核心
-- `rust/crates/clipboard_core_ffi`：Swift 桥接所需的 FFI 层
-- `Generated/ClipboardCoreBridge`：生成的 Swift bridge 本地包；XCFramework 编译产物由 `scripts/build-rust-core.sh` 本地生成，不提交到仓库
-- `Tests/ClipboardPanelAppTests`：Swift 测试
-- `docs/`：架构、UI、QA 和发布说明
+- [Architecture](docs/architecture.md)
+- [Release workflow](docs/release.md)
+- [UI design](docs/ui-design.md)
+- [Feature QA log](docs/feature-qa-log.md)
 
-## 相关文档
-
-- [docs/architecture.md](docs/architecture.md)
-- [docs/release.md](docs/release.md)
-- [docs/ui-design.md](docs/ui-design.md)
-- [docs/feature-qa-log.md](docs/feature-qa-log.md)
+</details>

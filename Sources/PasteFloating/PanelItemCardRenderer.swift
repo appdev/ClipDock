@@ -19,10 +19,14 @@ struct PanelItemCardRenderArtifacts {
     let previewHeightConstraints: [NSLayoutConstraint]
     let previewWidthConstraints: [NSLayoutConstraint]
     let imagePreviewViews: [NSImageView]
+    let footnoteBadgeViews: [NSView]
     let bodyLabels: [NSTextField]
+    let linkPreviewViews: [NSView]
+    let linkIconViews: [NSImageView]
 }
 
 struct PanelRenderedItemCard {
+    let state: PanelItemCardViewState
     let view: NSView
     let artifacts: PanelItemCardRenderArtifacts
 }
@@ -154,11 +158,38 @@ final class PanelItemCardRenderer {
             isSelected: state.isSelected
         )
 
+        let isImageCard: Bool
+        if case .image = state.preview {
+            isImageCard = true
+        } else {
+            isImageCard = false
+        }
+        let isLinkCard: Bool
+        if case .link = state.preview {
+            isLinkCard = true
+        } else {
+            isLinkCard = false
+        }
+
         let summaryLabel = makeBodyLabel(state.summaryText)
         let contentContainer = makeCardContentContainer(
             previewView: previewBundle.view,
-            summaryLabel: summaryLabel
+            summaryLabel: summaryLabel,
+            fillsAvailableArea: isImageCard || isLinkCard
         )
+        let isFileCard: Bool
+        if case .file = state.preview {
+            isFileCard = true
+        } else {
+            isFileCard = false
+        }
+        let linkFooterTitle: String?
+        if case .link(let title, _, _, _, _, _) = state.preview {
+            let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            linkFooterTitle = trimmedTitle.isEmpty ? nil : trimmedTitle
+        } else {
+            linkFooterTitle = nil
+        }
 
         let indexLabel = NSTextField(labelWithString: "")
         indexLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
@@ -172,28 +203,99 @@ final class PanelItemCardRenderer {
         indexLabel.isHidden = state.commandIndexText == nil
 
         let countLabel = NSTextField(labelWithString: state.footnoteText)
-        countLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
-        countLabel.textColor = metrics.theme.card.footerTextColor
-        countLabel.lineBreakMode = .byTruncatingTail
-        configureLeftToRightText(countLabel, alignment: .center)
+        countLabel.font = isImageCard
+            ? .systemFont(ofSize: 12.5, weight: .medium)
+            : (isLinkCard
+                ? .systemFont(ofSize: linkFooterTitle == nil ? 13.5 : 12.5, weight: .regular)
+                : .systemFont(ofSize: 10.5, weight: .medium))
+        countLabel.textColor = isImageCard
+            ? imageFootnoteTextColor()
+            : (isLinkCard ? metrics.theme.card.secondaryTextColor : metrics.theme.card.footerTextColor)
+        countLabel.lineBreakMode = isFileCard ? .byTruncatingMiddle : .byTruncatingTail
+        countLabel.maximumNumberOfLines = isFileCard ? 2 : 1
+        countLabel.preferredMaxLayoutWidth = metrics.defaultItemSide - metrics.cardInset * 2 - 26
+        countLabel.cell?.wraps = isFileCard
+        countLabel.cell?.isScrollable = false
+        countLabel.cell?.lineBreakMode = countLabel.lineBreakMode
+        configureLeftToRightText(countLabel, alignment: isLinkCard ? .left : .center)
         countLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         countLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        let linkTitleLabel = linkFooterTitle.map { title in
+            let label = NSTextField(labelWithString: leftToRightDisplayText(title))
+            label.font = .systemFont(ofSize: 14.5, weight: .semibold)
+            label.textColor = metrics.theme.card.primaryTextColor
+            label.lineBreakMode = .byTruncatingTail
+            label.maximumNumberOfLines = 1
+            label.translatesAutoresizingMaskIntoConstraints = false
+            configureLeftToRightText(label, alignment: .left)
+            return label
+        }
+        let linkFooterStack = linkTitleLabel.map { titleLabel in
+            let stack = NSStackView(views: [titleLabel, countLabel])
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 2
+            stack.userInterfaceLayoutDirection = .leftToRight
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            return stack
+        }
+        let countBadgeView = makeImageFootnoteBadgeView(isHidden: !isImageCard || state.footnoteText.isEmpty)
+        let footnoteView: NSView = isImageCard ? countBadgeView : (linkFooterStack ?? countLabel)
         let footerRow = NSView()
         footerRow.userInterfaceLayoutDirection = .leftToRight
         footerRow.translatesAutoresizingMaskIntoConstraints = false
-        footerRow.addSubview(countLabel)
+        if isImageCard {
+            countBadgeView.addSubview(countLabel)
+            footerRow.addSubview(countBadgeView)
+            NSLayoutConstraint.activate([
+                countLabel.leadingAnchor.constraint(equalTo: countBadgeView.leadingAnchor, constant: 10),
+                countLabel.trailingAnchor.constraint(equalTo: countBadgeView.trailingAnchor, constant: -10),
+                countLabel.topAnchor.constraint(equalTo: countBadgeView.topAnchor, constant: 3),
+                countLabel.bottomAnchor.constraint(equalTo: countBadgeView.bottomAnchor, constant: -3),
+                countBadgeView.heightAnchor.constraint(greaterThanOrEqualToConstant: 22)
+            ])
+        } else if let linkFooterStack {
+            footerRow.addSubview(linkFooterStack)
+        } else {
+            footerRow.addSubview(countLabel)
+        }
         footerRow.addSubview(indexLabel)
         container.configureCommandIndexLabel(indexLabel)
-        let centeredCountConstraint = countLabel.centerXAnchor.constraint(equalTo: footerRow.centerXAnchor)
-        centeredCountConstraint.priority = .defaultHigh
+        let centeredCountConstraint = footnoteView.centerXAnchor.constraint(equalTo: footerRow.centerXAnchor)
+        centeredCountConstraint.priority = isLinkCard ? .fittingSizeCompression : .defaultHigh
+        let linkFooterHeight: CGFloat = linkFooterTitle == nil ? 32 : 50
+        let footerHeight = isFileCard
+            ? max(metrics.cardFooterHeight, 30)
+            : (isImageCard ? max(metrics.cardFooterHeight, 24) : (isLinkCard ? linkFooterHeight : metrics.cardFooterHeight))
 
-        container.contentView?.addSubview(headerView)
         container.contentView?.addSubview(contentContainer)
+        container.contentView?.addSubview(headerView)
         container.contentView?.addSubview(footerRow)
 
         let widthConstraint = container.widthAnchor.constraint(equalToConstant: metrics.defaultItemSide)
         let heightConstraint = container.heightAnchor.constraint(equalToConstant: metrics.defaultItemSide)
+
+        let contentLeadingConstraint = isImageCard || isLinkCard
+            ? contentContainer.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor)
+            : contentContainer.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: metrics.cardInset)
+        let contentTrailingConstraint = isImageCard || isLinkCard
+            ? contentContainer.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor)
+            : contentContainer.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -metrics.cardInset)
+        let contentTopConstraint = isImageCard || isLinkCard
+            ? contentContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor)
+            : contentContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 10)
+        let contentBottomConstraint: NSLayoutConstraint
+        if isImageCard {
+            contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor)
+        } else if isLinkCard {
+            contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: footerRow.topAnchor)
+        } else {
+            contentBottomConstraint = contentContainer.bottomAnchor.constraint(lessThanOrEqualTo: footerRow.topAnchor, constant: -5)
+        }
+        let contentHeightConstraint = isImageCard
+            ? contentContainer.heightAnchor.constraint(equalToConstant: metrics.defaultItemSide - metrics.cardHeaderHeight)
+            : contentContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 1)
 
         NSLayoutConstraint.activate([
             widthConstraint,
@@ -213,30 +315,35 @@ final class PanelItemCardRenderer {
             iconView.widthAnchor.constraint(equalToConstant: metrics.sourceIconSize),
             iconView.heightAnchor.constraint(equalToConstant: metrics.sourceIconSize),
 
-            contentContainer.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: metrics.cardInset),
-            contentContainer.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -metrics.cardInset),
-            contentContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 10),
-            contentContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 1),
-            contentContainer.bottomAnchor.constraint(lessThanOrEqualTo: footerRow.topAnchor, constant: -5),
+            contentLeadingConstraint,
+            contentTrailingConstraint,
+            contentTopConstraint,
+            contentHeightConstraint,
+            contentBottomConstraint,
 
             footerRow.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: metrics.cardInset),
             footerRow.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -metrics.cardInset),
-            footerRow.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: -13),
-            footerRow.heightAnchor.constraint(equalToConstant: metrics.cardFooterHeight),
+            footerRow.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: isLinkCard ? 0 : -13),
+            footerRow.heightAnchor.constraint(equalToConstant: footerHeight),
 
-            countLabel.leadingAnchor.constraint(greaterThanOrEqualTo: footerRow.leadingAnchor),
+            isLinkCard
+                ? footnoteView.leadingAnchor.constraint(equalTo: footerRow.leadingAnchor)
+                : footnoteView.leadingAnchor.constraint(greaterThanOrEqualTo: footerRow.leadingAnchor),
             centeredCountConstraint,
-            countLabel.bottomAnchor.constraint(equalTo: footerRow.bottomAnchor),
-            countLabel.topAnchor.constraint(greaterThanOrEqualTo: footerRow.topAnchor),
-            countLabel.trailingAnchor.constraint(lessThanOrEqualTo: indexLabel.leadingAnchor, constant: -8),
+            isLinkCard
+                ? footnoteView.centerYAnchor.constraint(equalTo: footerRow.centerYAnchor)
+                : footnoteView.bottomAnchor.constraint(equalTo: footerRow.bottomAnchor),
+            footnoteView.topAnchor.constraint(greaterThanOrEqualTo: footerRow.topAnchor),
+            footnoteView.trailingAnchor.constraint(lessThanOrEqualTo: indexLabel.leadingAnchor, constant: -8),
 
             indexLabel.trailingAnchor.constraint(equalTo: footerRow.trailingAnchor),
-            indexLabel.bottomAnchor.constraint(equalTo: footerRow.bottomAnchor),
+            indexLabel.bottomAnchor.constraint(equalTo: footerRow.bottomAnchor, constant: isLinkCard ? -13 : 0),
             indexLabel.topAnchor.constraint(greaterThanOrEqualTo: footerRow.topAnchor),
-            indexLabel.leadingAnchor.constraint(greaterThanOrEqualTo: countLabel.trailingAnchor, constant: 8)
+            indexLabel.leadingAnchor.constraint(greaterThanOrEqualTo: footnoteView.trailingAnchor, constant: 8)
         ])
 
         return PanelRenderedItemCard(
+            state: state,
             view: container,
             artifacts: PanelItemCardRenderArtifacts(
                 itemWidthConstraint: widthConstraint,
@@ -244,14 +351,18 @@ final class PanelItemCardRenderer {
                 previewHeightConstraints: previewBundle.previewHeightConstraints,
                 previewWidthConstraints: previewBundle.previewWidthConstraints,
                 imagePreviewViews: previewBundle.imagePreviewViews,
-                bodyLabels: [summaryLabel]
+                footnoteBadgeViews: isImageCard ? [countBadgeView] : [],
+                bodyLabels: [summaryLabel],
+                linkPreviewViews: previewBundle.linkPreviewViews,
+                linkIconViews: previewBundle.linkIconViews
             )
         )
     }
 
     private func makeCardContentContainer(
         previewView: NSView?,
-        summaryLabel: NSTextField
+        summaryLabel: NSTextField,
+        fillsAvailableArea: Bool
     ) -> NSView {
         let container = NSView()
         container.userInterfaceLayoutDirection = .leftToRight
@@ -261,7 +372,18 @@ final class PanelItemCardRenderer {
         container.setContentCompressionResistancePriority(.required, for: .horizontal)
         container.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        if let previewView {
+        if let previewView, fillsAvailableArea {
+            summaryLabel.isHidden = true
+            previewView.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(previewView)
+
+            NSLayoutConstraint.activate([
+                previewView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                previewView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                previewView.topAnchor.constraint(equalTo: container.topAnchor),
+                previewView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            ])
+        } else if let previewView {
             previewView.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(previewView)
             container.addSubview(summaryLabel)
@@ -308,6 +430,23 @@ final class PanelItemCardRenderer {
         return label
     }
 
+    private func makeImageFootnoteBadgeView(isHidden: Bool) -> NSView {
+        let view = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.wantsLayer = true
+        view.layer?.backgroundColor = imageFootnoteBadgeBackgroundColor().cgColor
+        view.layer?.cornerRadius = 7
+        view.layer?.borderWidth = 0.5
+        view.layer?.borderColor = imageFootnoteBadgeBorderColor().cgColor
+        view.layer?.shadowColor = NSColor.black.cgColor
+        view.layer?.shadowOpacity = metrics.theme.scheme == .light ? 0.12 : 0.22
+        view.layer?.shadowRadius = 4
+        view.layer?.shadowOffset = CGSize(width: 0, height: -1)
+        view.layer?.contentsScale = backingScaleFactor
+        view.isHidden = isHidden
+        return view
+    }
+
     private func makePreviewBundle(
         _ previewState: PanelCardPreviewState,
         assetRequest: PanelCardAssetRequest
@@ -317,12 +456,12 @@ final class PanelItemCardRenderer {
             return PreviewBundle()
         case .image(let previewPath, let payloadPath, _):
             return makeImagePreview(previewPath: previewPath, payloadPath: payloadPath)
-        case .link(let host, let detail, let accessibilityLabel):
+        case .link(let title, _, _, let iconPath, let imagePath, let accessibilityLabel):
             return makeLinkPreview(
-                host: host,
-                detail: detail,
-                accessibilityLabel: accessibilityLabel,
-                assetRequest: assetRequest
+                title: title,
+                iconPath: iconPath,
+                imagePath: imagePath,
+                accessibilityLabel: accessibilityLabel
             )
         case .file:
             return makeFilePreview(
@@ -333,25 +472,19 @@ final class PanelItemCardRenderer {
     }
 
     private func makeImagePreview(previewPath: String?, payloadPath: String?) -> PreviewBundle {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.clear.cgColor
-        container.layer?.cornerRadius = 0
-        container.layer?.masksToBounds = false
-        container.layer?.borderWidth = 0
-        container.layer?.contentsScale = backingScaleFactor
+        let container = CheckerboardImagePreviewContainerView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let imageView = NSImageView()
+        let imageView = ProportionalDownImagePreviewView()
         let previewState = cardAssetResolver.previewImageState(
             previewPath: previewPath,
             payloadPath: payloadPath
         )
         imageView.image = previewState.image
-        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageScaling = .scaleProportionallyDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.wantsLayer = true
-        imageView.layer?.cornerRadius = 7
+        imageView.layer?.cornerRadius = 0
         imageView.layer?.masksToBounds = true
         imageView.toolTip = previewState.tooltip
         imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
@@ -380,82 +513,94 @@ final class PanelItemCardRenderer {
             }
         }
 
-        let heightConstraint = container.heightAnchor.constraint(equalToConstant: 92)
-        heightConstraint.priority = .defaultHigh
-
         NSLayoutConstraint.activate([
-            heightConstraint,
-            imageView.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 18),
-            imageView.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -18),
-            imageView.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
-            imageView.centerXAnchor.constraint(equalTo: container.centerXAnchor)
+            imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: container.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
 
         return PreviewBundle(
             view: container,
-            previewHeightConstraints: [heightConstraint],
             imagePreviewViews: [imageView]
         )
     }
 
     private func makeLinkPreview(
-        host: String,
-        detail: String,
-        accessibilityLabel: String,
-        assetRequest: PanelCardAssetRequest
+        title: String,
+        iconPath: String?,
+        imagePath: String?,
+        accessibilityLabel: String
     ) -> PreviewBundle {
-        let container = NSView()
+        let container = LinkPreviewBlockView()
         container.wantsLayer = true
         container.layer?.backgroundColor = metrics.theme.card.linkPreviewBackgroundColor.cgColor
         container.layer?.cornerRadius = 0
         container.layer?.masksToBounds = true
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let sourceImage = cardAssetResolver.sourceIconImage(for: assetRequest)
-        let iconView = makeAppIconTile(
-            image: sourceImage ?? NSImage(systemSymbolName: "link", accessibilityDescription: "链接"),
-            accessibilityLabel: accessibilityLabel
+        let imagePreviewState = cardAssetResolver.previewImageState(
+            previewPath: imagePath,
+            payloadPath: nil
         )
+        let iconPreviewState = cardAssetResolver.previewImageState(
+            previewPath: iconPath,
+            payloadPath: nil
+        )
+        let backgroundImageView = AspectFillImagePreviewView()
+        backgroundImageView.image = imagePreviewState.image
+        backgroundImageView.translatesAutoresizingMaskIntoConstraints = false
+        backgroundImageView.wantsLayer = true
+        backgroundImageView.layer?.masksToBounds = true
+        backgroundImageView.isHidden = imagePreviewState.image == nil
+        backgroundImageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
 
-        let titleLabel = NSTextField(labelWithString: host)
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = metrics.theme.card.primaryTextColor
-        titleLabel.lineBreakMode = .byTruncatingTail
-        configureLeftToRightText(titleLabel)
+        let iconView = makeLinkIconTile(
+            image: iconPreviewState.image ?? NSImage(systemSymbolName: "link", accessibilityDescription: "链接"),
+            accessibilityLabel: title.isEmpty ? accessibilityLabel : title
+        )
+        iconView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
 
-        let detailLabel = NSTextField(labelWithString: detail)
-        detailLabel.font = .systemFont(ofSize: 10, weight: .medium)
-        detailLabel.textColor = metrics.theme.card.secondaryTextColor
-        detailLabel.lineBreakMode = .byTruncatingMiddle
-        detailLabel.maximumNumberOfLines = 1
-        configureLeftToRightText(detailLabel)
-
-        let textStack = NSStackView(views: [titleLabel, detailLabel])
-        textStack.orientation = .vertical
-        textStack.alignment = .leading
-        textStack.spacing = 2
-        textStack.userInterfaceLayoutDirection = .leftToRight
-        textStack.translatesAutoresizingMaskIntoConstraints = false
-
+        container.addSubview(backgroundImageView)
         container.addSubview(iconView)
-        container.addSubview(textStack)
+        container.iconView = iconView
+        container.hasBackgroundImage = imagePreviewState.image != nil
 
-        let heightConstraint = container.heightAnchor.constraint(equalToConstant: metrics.linkPreviewHeight)
-        heightConstraint.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            heightConstraint,
-            iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: -10),
+            backgroundImageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            backgroundImageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            backgroundImageView.topAnchor.constraint(equalTo: container.topAnchor),
+            backgroundImageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
 
-            textStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            textStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
-            textStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6)
+            iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
+
+        if imagePreviewState.image == nil, !imagePreviewState.paths.isEmpty {
+            let loadIdentifier = backgroundImageView.identifier
+            PanelCardAssetResolver.loadPreviewImageAsync(paths: imagePreviewState.paths) { [weak backgroundImageView, weak container] image in
+                guard backgroundImageView?.identifier == loadIdentifier else { return }
+                backgroundImageView?.image = image
+                backgroundImageView?.isHidden = image == nil
+                container?.hasBackgroundImage = image != nil
+            }
+        }
+
+        if iconPreviewState.image == nil, !iconPreviewState.paths.isEmpty {
+            let loadIdentifier = iconView.identifier
+            PanelCardAssetResolver.loadPreviewImageAsync(paths: iconPreviewState.paths) { [weak iconView] image in
+                guard iconView?.identifier == loadIdentifier,
+                      let image
+                else { return }
+                iconView?.image = image
+            }
+        }
 
         return PreviewBundle(
             view: container,
-            previewHeightConstraints: [heightConstraint]
+            imagePreviewViews: [backgroundImageView],
+            linkPreviewViews: [container],
+            linkIconViews: [iconView]
         )
     }
 
@@ -466,15 +611,36 @@ final class PanelItemCardRenderer {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let imageView = NSImageView()
-        imageView.image = cardAssetResolver.filePreviewImage(for: assetRequest)
+        let maximumPreviewSize = NSSize(width: metrics.defaultItemSide - 72, height: 76)
+        let filePreviewURLs = cardAssetResolver.filePreviewURLs(for: assetRequest)
+        let imageView = FilePreviewImageView()
+        imageView.image = cardAssetResolver.filePreviewImage(
+            for: assetRequest,
+            maximumSize: maximumPreviewSize,
+            scale: backingScaleFactor
+        )
             ?? NSImage(systemSymbolName: "doc", accessibilityDescription: accessibilityLabel)
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.wantsLayer = true
         imageView.layer?.cornerRadius = 8
         imageView.layer?.masksToBounds = true
+        imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
         container.addSubview(imageView)
+
+        let loadIdentifier = imageView.identifier
+        imageView.thumbnailToken = PanelCardAssetResolver.loadFilePreviewImageAsync(
+            urls: filePreviewURLs,
+            maximumSize: maximumPreviewSize,
+            scale: backingScaleFactor
+        ) { [weak imageView] image in
+            guard imageView?.identifier == loadIdentifier,
+                  let image
+            else {
+                return
+            }
+            imageView?.image = image
+        }
 
         let heightConstraint = container.heightAnchor.constraint(equalToConstant: 92)
         heightConstraint.priority = .defaultHigh
@@ -509,6 +675,25 @@ final class PanelItemCardRenderer {
         NSLayoutConstraint.activate([
             imageView.widthAnchor.constraint(equalToConstant: 42),
             imageView.heightAnchor.constraint(equalToConstant: 42)
+        ])
+        return imageView
+    }
+
+    private func makeLinkIconTile(image: NSImage?, accessibilityLabel: String) -> NSImageView {
+        let imageView = NSImageView()
+        imageView.image = image
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 11
+        imageView.layer?.masksToBounds = true
+        imageView.layer?.backgroundColor = metrics.theme.card.appIconTileBackgroundColor.cgColor
+        imageView.layer?.borderWidth = 0.5
+        imageView.layer?.borderColor = NSColor.white.withAlphaComponent(metrics.theme.scheme == .light ? 0.78 : 0.20).cgColor
+        imageView.toolTip = accessibilityLabel
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: 46),
+            imageView.heightAnchor.constraint(equalToConstant: 46)
         ])
         return imageView
     }
@@ -550,10 +735,285 @@ final class PanelItemCardRenderer {
         metrics.theme.card.headerSecondaryTextColor
     }
 
+    private func imageFootnoteBadgeBackgroundColor() -> NSColor {
+        switch metrics.theme.scheme {
+        case .light:
+            return NSColor(calibratedWhite: 0.90, alpha: 0.92)
+        case .dark:
+            return NSColor(calibratedWhite: 0.02, alpha: 0.72)
+        }
+    }
+
+    private func imageFootnoteBadgeBorderColor() -> NSColor {
+        switch metrics.theme.scheme {
+        case .light:
+            return NSColor.white.withAlphaComponent(0.62)
+        case .dark:
+            return NSColor.white.withAlphaComponent(0.18)
+        }
+    }
+
+    private func imageFootnoteTextColor() -> NSColor {
+        switch metrics.theme.scheme {
+        case .light:
+            return NSColor(calibratedWhite: 0.38, alpha: 0.92)
+        case .dark:
+            return NSColor.white.withAlphaComponent(0.88)
+        }
+    }
+
     private struct PreviewBundle {
         var view: NSView?
         var previewHeightConstraints: [NSLayoutConstraint] = []
         var previewWidthConstraints: [NSLayoutConstraint] = []
         var imagePreviewViews: [NSImageView] = []
+        var linkPreviewViews: [NSView] = []
+        var linkIconViews: [NSImageView] = []
+    }
+}
+
+@MainActor
+private final class ProportionalDownImagePreviewView: NSImageView {
+    private var imageGeometry: ProportionalImageGeometry?
+
+    override var image: NSImage? {
+        didSet {
+            imageGeometry = image.flatMap(Self.imageGeometry(for:))
+            needsDisplay = true
+        }
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        drawCheckerboard(in: dirtyRect)
+
+        guard let image,
+              let imageGeometry,
+              imageGeometry.size.width > 0,
+              imageGeometry.size.height > 0,
+              bounds.width > 0,
+              bounds.height > 0
+        else {
+            return
+        }
+
+        let scale = min(
+            bounds.width / imageGeometry.size.width,
+            bounds.height / imageGeometry.size.height,
+            1
+        )
+        let drawSize = NSSize(
+            width: floor(imageGeometry.size.width * scale),
+            height: floor(imageGeometry.size.height * scale)
+        )
+        let drawRect = NSRect(
+            x: floor(bounds.midX - drawSize.width / 2),
+            y: floor(bounds.midY - drawSize.height / 2),
+            width: drawSize.width,
+            height: drawSize.height
+        )
+
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: drawRect,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+    }
+
+    private func drawCheckerboard(in rect: NSRect) {
+        NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
+        rect.fill()
+
+        let square: CGFloat = 10
+        NSColor(calibratedWhite: 0.88, alpha: 1).setFill()
+        let minX = Int(floor(rect.minX / square))
+        let maxX = Int(ceil(rect.maxX / square))
+        let minY = Int(floor(rect.minY / square))
+        let maxY = Int(ceil(rect.maxY / square))
+
+        for x in minX...maxX {
+            for y in minY...maxY where (x + y).isMultiple(of: 2) {
+                NSRect(
+                    x: CGFloat(x) * square,
+                    y: CGFloat(y) * square,
+                    width: square,
+                    height: square
+                ).fill()
+            }
+        }
+    }
+
+    private static func imageGeometry(for image: NSImage) -> ProportionalImageGeometry? {
+        if let bitmap = image.representations
+            .compactMap({ $0 as? NSBitmapImageRep })
+            .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) }) {
+            return ProportionalImageGeometry(size: NSSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+        }
+
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        return ProportionalImageGeometry(size: image.size)
+    }
+
+    private struct ProportionalImageGeometry {
+        let size: NSSize
+    }
+}
+
+@MainActor
+private final class CheckerboardImagePreviewContainerView: NSView {
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
+        dirtyRect.fill()
+
+        let square: CGFloat = 10
+        NSColor(calibratedWhite: 0.88, alpha: 1).setFill()
+        let minX = Int(floor(dirtyRect.minX / square))
+        let maxX = Int(ceil(dirtyRect.maxX / square))
+        let minY = Int(floor(dirtyRect.minY / square))
+        let maxY = Int(ceil(dirtyRect.maxY / square))
+
+        for x in minX...maxX {
+            for y in minY...maxY where (x + y).isMultiple(of: 2) {
+                NSRect(
+                    x: CGFloat(x) * square,
+                    y: CGFloat(y) * square,
+                    width: square,
+                    height: square
+                ).fill()
+            }
+        }
+    }
+}
+
+@MainActor
+private final class AspectFillImagePreviewView: NSImageView {
+    private var imageGeometry: ImageGeometry?
+
+    override var image: NSImage? {
+        didSet {
+            imageGeometry = image.flatMap(Self.imageGeometry(for:))
+        }
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        drawCheckerboard(in: dirtyRect)
+
+        guard let image,
+              let imageGeometry
+        else {
+            return
+        }
+        let imageSize = imageGeometry.imageSize
+        guard imageSize.width > 0, imageSize.height > 0, bounds.width > 0, bounds.height > 0 else {
+            return
+        }
+
+        let scale = max(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let drawRect = NSRect(
+            x: floor(bounds.midX - imageSize.width * scale / 2),
+            y: floor(bounds.midY - imageSize.height * scale / 2),
+            width: ceil(imageSize.width * scale),
+            height: ceil(imageSize.height * scale)
+        )
+
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: drawRect,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+    }
+
+    private func drawCheckerboard(in rect: NSRect) {
+        NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
+        rect.fill()
+
+        let square: CGFloat = 10
+        NSColor(calibratedWhite: 0.88, alpha: 1).setFill()
+        let minX = Int(floor(rect.minX / square))
+        let maxX = Int(ceil(rect.maxX / square))
+        let minY = Int(floor(rect.minY / square))
+        let maxY = Int(ceil(rect.maxY / square))
+
+        for x in minX...maxX {
+            for y in minY...maxY where (x + y).isMultiple(of: 2) {
+                NSRect(
+                    x: CGFloat(x) * square,
+                    y: CGFloat(y) * square,
+                    width: square,
+                    height: square
+                ).fill()
+            }
+        }
+    }
+
+    private static func imageGeometry(for image: NSImage) -> ImageGeometry? {
+        if let bitmap = image.representations
+            .compactMap({ $0 as? NSBitmapImageRep })
+            .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) }) {
+            return ImageGeometry(imageSize: NSSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+        }
+
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        return ImageGeometry(imageSize: image.size)
+    }
+
+    private struct ImageGeometry {
+        let imageSize: NSSize
+    }
+}
+
+@MainActor
+private final class LinkPreviewBlockView: NSView {
+    weak var iconView: NSView? {
+        didSet {
+            updateResponsiveVisibility()
+        }
+    }
+
+    var hasBackgroundImage = false {
+        didSet {
+            updateResponsiveVisibility()
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        updateResponsiveVisibility()
+    }
+
+    private func updateResponsiveVisibility() {
+        let height = bounds.height
+        let isLaidOut = height > 0
+        let compact = isLaidOut && height < 74
+        iconView?.isHidden = hasBackgroundImage || compact
+    }
+}
+
+@MainActor
+private final class FilePreviewImageView: NSImageView {
+    var thumbnailToken: PanelFilePreviewThumbnailToken? {
+        didSet {
+            PanelCardAssetResolver.cancelFilePreviewImageRequest(oldValue)
+        }
+    }
+
+    deinit {
+        let token = thumbnailToken
+        Task { @MainActor in
+            PanelCardAssetResolver.cancelFilePreviewImageRequest(token)
+        }
     }
 }

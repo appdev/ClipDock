@@ -106,6 +106,67 @@ impl PreviewState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkMetadataState {
+    Pending,
+    Fetching,
+    Ready,
+    Failed,
+    Disabled,
+    Stale,
+}
+
+impl LinkMetadataState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Fetching => "fetching",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+            Self::Disabled => "disabled",
+            Self::Stale => "stale",
+        }
+    }
+
+    pub fn from_storage(value: &str) -> Self {
+        match value {
+            "pending" => Self::Pending,
+            "fetching" => Self::Fetching,
+            "ready" => Self::Ready,
+            "failed" => Self::Failed,
+            "disabled" => Self::Disabled,
+            "stale" => Self::Stale,
+            _ => Self::Failed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkMetadataSummary {
+    pub canonical_url: String,
+    pub display_url: String,
+    pub host: String,
+    pub title: Option<String>,
+    pub site_name: Option<String>,
+    pub icon_asset_path: Option<String>,
+    pub image_asset_path: Option<String>,
+    pub metadata_state: LinkMetadataState,
+    pub fetched_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardFileItemSummary {
+    pub path: String,
+    pub file_name: String,
+    pub file_extension: Option<String>,
+    pub byte_count: i64,
+    pub is_directory: bool,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub content_type: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClipboardItemSummary {
     pub id: String,
@@ -125,6 +186,8 @@ pub struct ClipboardItemSummary {
     pub is_pinned: bool,
     pub size_bytes: i64,
     pub preview_state: PreviewState,
+    pub file_items: Vec<ClipboardFileItemSummary>,
+    pub link_metadata: Option<LinkMetadataSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -224,6 +287,7 @@ pub struct ItemManagementResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureTextRequest {
     pub text: String,
+    pub detected_link: Option<CaptureDetectedLink>,
     pub source_bundle_id: Option<String>,
     pub source_app_name: Option<String>,
     pub source_bundle_path: Option<String>,
@@ -231,6 +295,15 @@ pub struct CaptureTextRequest {
     pub source_confidence: SourceConfidence,
     pub pasteboard_change_count: i64,
     pub self_write_token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaptureDetectedLink {
+    pub original_text: String,
+    pub canonical_url: String,
+    pub display_url: String,
+    pub host: String,
+    pub metadata_state: LinkMetadataState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -253,6 +326,7 @@ pub struct CaptureImageRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CaptureFilesRequest {
     pub file_paths: Vec<String>,
+    pub file_items: Vec<CapturedFileMetadata>,
     pub snapshot_relative_path: Option<String>,
     pub snapshot_byte_count: i64,
     pub source_bundle_id: Option<String>,
@@ -262,6 +336,18 @@ pub struct CaptureFilesRequest {
     pub source_confidence: SourceConfidence,
     pub pasteboard_change_count: i64,
     pub self_write_token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapturedFileMetadata {
+    pub path: String,
+    pub file_name: String,
+    pub file_extension: Option<String>,
+    pub byte_count: i64,
+    pub is_directory: bool,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub content_type: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -281,6 +367,8 @@ pub struct PreferencesDocument {
     #[serde(default)]
     pub appearance: AppearancePreferences,
     #[serde(default)]
+    pub link_preview: LinkPreviewPreferences,
+    #[serde(default)]
     pub shortcuts: ShortcutsPreferences,
     #[serde(default)]
     pub ignore_list: IgnoreListPreferences,
@@ -292,6 +380,7 @@ impl Default for PreferencesDocument {
             general: GeneralPreferences::default(),
             history: HistoryPreferences::default(),
             appearance: AppearancePreferences::default(),
+            link_preview: LinkPreviewPreferences::default(),
             shortcuts: ShortcutsPreferences::default(),
             ignore_list: IgnoreListPreferences::default(),
         }
@@ -301,8 +390,10 @@ impl Default for PreferencesDocument {
 impl PreferencesDocument {
     pub fn normalized(mut self) -> Self {
         self.general.default_panel_height = self.general.default_panel_height.clamp(260, 560);
-        self.history.max_items = self.history.max_items.clamp(50, 5000);
+        self.history.max_items = default_max_items();
         self.history.retention_days = self.history.retention_days.clamp(1, 365);
+        self.history.record_images = true;
+        self.history.record_files = true;
         self.appearance.mode = normalized_choice(
             &self.appearance.mode,
             &["light", "dark", "system"],
@@ -350,7 +441,7 @@ pub struct HistoryPreferences {
     pub retention_days: i64,
     #[serde(default = "default_true")]
     pub record_images: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub record_files: bool,
 }
 
@@ -360,7 +451,7 @@ impl Default for HistoryPreferences {
             max_items: default_max_items(),
             retention_days: default_retention_days(),
             record_images: true,
-            record_files: false,
+            record_files: true,
         }
     }
 }
@@ -389,12 +480,15 @@ impl Default for AppearancePreferences {
 pub struct ShortcutsPreferences {
     #[serde(default = "default_open_panel_shortcut")]
     pub open_panel: KeyboardShortcut,
+    #[serde(default)]
+    pub paste_directly_to_target: bool,
 }
 
 impl Default for ShortcutsPreferences {
     fn default() -> Self {
         Self {
             open_panel: default_open_panel_shortcut(),
+            paste_directly_to_target: false,
         }
     }
 }
@@ -410,6 +504,23 @@ pub struct KeyboardShortcut {
 impl Default for KeyboardShortcut {
     fn default() -> Self {
         default_open_panel_shortcut()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkPreviewPreferences {
+    #[serde(default)]
+    pub metadata_enabled: bool,
+    #[serde(default = "default_true")]
+    pub web_preview_enabled: bool,
+}
+
+impl Default for LinkPreviewPreferences {
+    fn default() -> Self {
+        Self {
+            metadata_enabled: false,
+            web_preview_enabled: true,
+        }
     }
 }
 
@@ -432,7 +543,7 @@ fn default_panel_height() -> i64 {
 }
 
 fn default_max_items() -> i64 {
-    500
+    5000
 }
 
 fn default_retention_days() -> i64 {

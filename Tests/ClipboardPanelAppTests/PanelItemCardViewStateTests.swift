@@ -23,6 +23,7 @@ struct PanelItemCardViewStateTests {
         #expect(state.sourceAppName == "Preview")
         #expect(state.relativeTimeText == "2m ago")
         #expect(state.isSelected)
+        #expect(state.footnoteText == "100 × 100")
         #expect(state.preview == .image(previewPath: "preview.png", payloadPath: "payload.png", summary: "图片 100 x 100"))
     }
 
@@ -43,8 +44,16 @@ struct PanelItemCardViewStateTests {
 
         #expect(state.symbolName == "link")
         #expect(state.typeText == "链接")
-        #expect(state.summaryText == "https://example.com/docs?q=1")
-        #expect(state.preview == .link(host: "example.com", detail: "https://example.com/docs?q=1", accessibilityLabel: "Preview"))
+        #expect(state.summaryText.isEmpty)
+        #expect(state.footnoteText == "example.com/docs?q=1")
+        #expect(state.preview == .link(
+            title: "",
+            host: "example.com",
+            detail: "https://example.com/docs?q=1",
+            iconPath: nil,
+            imagePath: nil,
+            accessibilityLabel: "Preview"
+        ))
         #expect(state.assetRequest.sourceAppIconPath == "/tmp/Preview.app/icon.icns")
     }
 
@@ -65,7 +74,8 @@ struct PanelItemCardViewStateTests {
         )
 
         #expect(state.preview == .file(accessibilityLabel: "Preview"))
-        #expect(state.footnoteText.isEmpty == false)
+        #expect(state.summaryText.isEmpty)
+        #expect(state.footnoteText == "/tmp/report.pdf\n/tmp/notes.txt")
         #expect(state.assetRequest.payloadAssetPath == "snapshots/report.json")
         #expect(state.assetRequest.primaryText == "/tmp/report.pdf\n/tmp/notes.txt")
     }

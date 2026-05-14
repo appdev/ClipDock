@@ -2,8 +2,9 @@ use super::*;
 use crate::error::CoreErrorCode;
 use crate::time::now_ms;
 use crate::{
-    CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest, ClipboardItemType, ItemQuery,
-    PageRequest, SourceConfidence, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
+    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest,
+    CapturedFileMetadata, ClipboardItemType, ItemQuery, LinkMetadataState, PageRequest,
+    SourceConfidence, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
 };
 use rusqlite::params;
 use std::fs;
@@ -54,6 +55,7 @@ fn capture_text_inserts_source_and_updates_empty_history() {
     let result = core
         .capture_text(CaptureTextRequest {
             text: "Hello from Safari".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.Safari".to_string()),
             source_app_name: Some("Safari".to_string()),
             source_bundle_path: Some("/Applications/Safari.app".to_string()),
@@ -100,11 +102,66 @@ fn capture_text_inserts_source_and_updates_empty_history() {
 }
 
 #[test]
+fn updating_source_icon_replaces_previous_icon_row() {
+    let (_, mut core) = open_temp_core();
+
+    core.capture_text(CaptureTextRequest {
+        text: "First icon path".to_string(),
+        detected_link: None,
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: Some("/Applications/Safari.app".to_string()),
+        source_icon_relative_path: Some("app-icons/safari.tiff".to_string()),
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 10,
+        self_write_token: None,
+    })
+    .unwrap();
+    core.capture_text(CaptureTextRequest {
+        text: "Second icon path".to_string(),
+        detected_link: None,
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: Some("/Applications/Safari.app".to_string()),
+        source_icon_relative_path: Some("app-icons/safari.png".to_string()),
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 11,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let icon_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM source_app_icons", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let icon_path: String = core
+        .connection
+        .query_row("SELECT relative_path FROM source_app_icons", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+
+    assert_eq!(icon_count, 1);
+    assert_eq!(icon_path, "app-icons/safari.png");
+    assert_eq!(page.items.len(), 2);
+    assert!(page.items.iter().all(|item| item
+        .source_app_icon_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with("app-icons/safari.png"))));
+}
+
+#[test]
 fn capture_text_deduplicates_by_content_hash() {
     let (_, mut core) = open_temp_core();
 
     let request = CaptureTextRequest {
         text: "https://example.com".to_string(),
+        detected_link: None,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -133,6 +190,45 @@ fn capture_text_deduplicates_by_content_hash() {
     assert_eq!(page.total_count, 1);
     assert_eq!(page.items[0].item_type, ClipboardItemType::Link);
     assert_eq!(page.items[0].copy_count, 2);
+}
+
+#[test]
+fn capture_detected_link_persists_metadata_summary() {
+    let (_, mut core) = open_temp_core();
+
+    let result = core
+        .capture_text(CaptureTextRequest {
+            text: "example.com/docs".to_string(),
+            detected_link: Some(CaptureDetectedLink {
+                original_text: "example.com/docs".to_string(),
+                canonical_url: "https://example.com/docs".to_string(),
+                display_url: "https://example.com/docs".to_string(),
+                host: "example.com".to_string(),
+                metadata_state: LinkMetadataState::Disabled,
+            }),
+            source_bundle_id: Some("com.apple.Safari".to_string()),
+            source_app_name: Some("Safari".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 3,
+            self_write_token: None,
+        })
+        .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let item = &page.items[0];
+    let link_metadata = item.link_metadata.as_ref().expect("link metadata");
+
+    assert_eq!(item.id, result.item_id);
+    assert_eq!(item.item_type, ClipboardItemType::Link);
+    assert_eq!(item.primary_text.as_deref(), Some("example.com/docs"));
+    assert_eq!(link_metadata.canonical_url, "https://example.com/docs");
+    assert_eq!(link_metadata.display_url, "https://example.com/docs");
+    assert_eq!(link_metadata.host, "example.com");
+    assert_eq!(link_metadata.metadata_state, LinkMetadataState::Disabled);
 }
 
 #[test]
@@ -226,6 +322,7 @@ fn capture_files_inserts_snapshot_and_source() {
                 "/Users/evan/Desktop/report.pdf".to_string(),
                 "/Users/evan/Desktop/design.sketch".to_string(),
             ],
+            file_items: vec![],
             snapshot_relative_path: Some("assets/file-snapshots/files.json".to_string()),
             snapshot_byte_count: 78,
             source_bundle_id: Some("com.apple.finder".to_string()),
@@ -279,10 +376,76 @@ fn capture_files_inserts_snapshot_and_source() {
 }
 
 #[test]
+fn capture_files_persists_structured_file_metadata() {
+    let (temp_dir, mut core) = open_temp_core();
+    let first_file = temp_dir.path().join("frame.png");
+    let second_file = temp_dir.path().join("movie.mov");
+    fs::write(&first_file, vec![1_u8; 64]).expect("first file");
+    fs::write(&second_file, vec![2_u8; 128]).expect("second file");
+    let first_path = first_file.display().to_string();
+    let second_path = second_file.display().to_string();
+
+    core.capture_files(CaptureFilesRequest {
+        file_paths: vec![first_path.clone(), second_path.clone()],
+        file_items: vec![
+            CapturedFileMetadata {
+                path: first_path.clone(),
+                file_name: "frame.png".to_string(),
+                file_extension: Some("png".to_string()),
+                byte_count: 64,
+                is_directory: false,
+                width: Some(1920),
+                height: Some(1080),
+                content_type: Some("public.png".to_string()),
+            },
+            CapturedFileMetadata {
+                path: second_path.clone(),
+                file_name: "movie.mov".to_string(),
+                file_extension: Some("mov".to_string()),
+                byte_count: 128,
+                is_directory: false,
+                width: Some(1280),
+                height: Some(720),
+                content_type: Some("com.apple.quicktime-movie".to_string()),
+            },
+        ],
+        snapshot_relative_path: None,
+        snapshot_byte_count: 0,
+        source_bundle_id: Some("com.apple.finder".to_string()),
+        source_app_name: Some("Finder".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 45,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let item = &page.items[0];
+
+    assert_eq!(item.payload_asset_path, None);
+    assert_eq!(item.size_bytes, 192);
+    assert_eq!(item.file_items.len(), 2);
+    assert_eq!(item.file_items[0].path, first_path);
+    assert_eq!(item.file_items[0].byte_count, 64);
+    assert_eq!(item.file_items[0].width, Some(1920));
+    assert_eq!(item.file_items[0].height, Some(1080));
+    assert_eq!(item.file_items[1].path, second_path);
+    assert_eq!(
+        item.file_items[1].content_type.as_deref(),
+        Some("com.apple.quicktime-movie")
+    );
+}
+
+#[test]
 fn list_items_filters_by_type_and_search_text() {
     let (temp_dir, mut core) = open_temp_core();
     core.capture_text(CaptureTextRequest {
         text: "Alpha search target from Safari".to_string(),
+        detected_link: None,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -347,6 +510,7 @@ fn list_source_apps_and_filter_items_by_source_app_id() {
     let (temp_dir, mut core) = open_temp_core();
     core.capture_text(CaptureTextRequest {
         text: "Source filter text from Safari".to_string(),
+        detected_link: None,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -422,6 +586,7 @@ fn item_management_pins_and_soft_deletes_single_item() {
     let pinned = core
         .capture_text(CaptureTextRequest {
             text: "Pinned management sample".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -435,6 +600,7 @@ fn item_management_pins_and_soft_deletes_single_item() {
     let regular = core
         .capture_text(CaptureTextRequest {
             text: "Regular management sample".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.Safari".to_string()),
             source_app_name: Some("Safari".to_string()),
             source_bundle_path: None,
@@ -493,6 +659,7 @@ fn pinned_items_enter_default_pinboard_and_leave_on_unpin() {
     let pinned = core
         .capture_text(CaptureTextRequest {
             text: "Pinboard membership sample".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -557,6 +724,7 @@ fn pinboard_crud_updates_title_color_and_deletes_owned_items() {
     let first = core
         .capture_text(CaptureTextRequest {
             text: "Pinboard CRUD owned item".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -569,6 +737,7 @@ fn pinboard_crud_updates_title_color_and_deletes_owned_items() {
     let second = core
         .capture_text(CaptureTextRequest {
             text: "Pinboard CRUD shared item".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.Notes".to_string()),
             source_app_name: Some("Notes".to_string()),
             source_bundle_path: None,
@@ -659,6 +828,7 @@ fn delete_pinboard_cleans_many_items_in_bulk_and_keeps_shared_members() {
         let captured = core
             .capture_text(CaptureTextRequest {
                 text: format!("Bulk Pinboard item {index}"),
+                detected_link: None,
                 source_bundle_id: Some("com.apple.TextEdit".to_string()),
                 source_app_name: Some("TextEdit".to_string()),
                 source_bundle_path: None,
@@ -724,6 +894,7 @@ fn pinned_items_survive_history_retention_and_max_item_pruning() {
     let pinned = core
         .capture_text(CaptureTextRequest {
             text: "Protected pinboard item".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -737,6 +908,7 @@ fn pinned_items_survive_history_retention_and_max_item_pruning() {
         .unwrap();
     core.capture_text(CaptureTextRequest {
         text: "Removable old item".to_string(),
+        detected_link: None,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -789,6 +961,7 @@ fn clear_items_soft_deletes_matching_unpinned_items_only() {
     let pinned = core
         .capture_text(CaptureTextRequest {
             text: "Clear scope pinned text".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -802,6 +975,7 @@ fn clear_items_soft_deletes_matching_unpinned_items_only() {
         .unwrap();
     core.capture_text(CaptureTextRequest {
         text: "Clear scope removable text".to_string(),
+        detected_link: None,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -813,6 +987,7 @@ fn clear_items_soft_deletes_matching_unpinned_items_only() {
     .unwrap();
     core.capture_text(CaptureTextRequest {
         text: "Different scope sample".to_string(),
+        detected_link: None,
         source_bundle_id: Some("com.apple.Notes".to_string()),
         source_app_name: Some("Notes".to_string()),
         source_bundle_path: None,
@@ -860,13 +1035,16 @@ fn default_preferences_document_is_seeded() {
     assert_eq!(row.0, CURRENT_SCHEMA_VERSION);
     assert!(row.1.contains("\"default_panel_height\":320"));
     assert_eq!(preferences.general.default_panel_height, 320);
-    assert_eq!(preferences.history.max_items, 500);
+    assert_eq!(preferences.history.max_items, 5000);
     assert_eq!(preferences.appearance.mode, "system");
+    assert!(!preferences.link_preview.metadata_enabled);
+    assert!(preferences.link_preview.web_preview_enabled);
     assert_eq!(preferences.shortcuts.open_panel.key_code, 9);
     assert_eq!(
         preferences.shortcuts.open_panel.modifiers,
         vec!["command".to_string(), "shift".to_string()]
     );
+    assert!(!preferences.shortcuts.paste_directly_to_target);
     assert!(preferences.ignore_list.ignored_app_identifiers.is_empty());
     assert!(preferences.ignore_list.window_title_keywords.is_empty());
     assert!(!preferences.ignore_list.skip_unknown_source);
@@ -883,6 +1061,8 @@ fn preferences_update_persists_normalized_document() {
     preferences.history.record_files = true;
     preferences.appearance.mode = "neon".to_string();
     preferences.appearance.item_density = "compact".to_string();
+    preferences.link_preview.metadata_enabled = true;
+    preferences.link_preview.web_preview_enabled = false;
     preferences.shortcuts.open_panel.key_code = 11;
     preferences.shortcuts.open_panel.modifiers = vec![
         "shift".to_string(),
@@ -891,6 +1071,7 @@ fn preferences_update_persists_normalized_document() {
         "command".to_string(),
         "ignored".to_string(),
     ];
+    preferences.shortcuts.paste_directly_to_target = true;
     preferences.ignore_list.ignored_app_identifiers = vec![
         "  com.apple.Terminal  ".to_string(),
         "terminal".to_string(),
@@ -908,12 +1089,14 @@ fn preferences_update_persists_normalized_document() {
     let reloaded = core.get_preferences().unwrap();
 
     assert_eq!(saved.general.default_panel_height, 560);
-    assert_eq!(saved.history.max_items, 50);
+    assert_eq!(saved.history.max_items, 5000);
     assert_eq!(saved.history.retention_days, 365);
-    assert!(!saved.history.record_images);
+    assert!(saved.history.record_images);
     assert!(saved.history.record_files);
     assert_eq!(saved.appearance.mode, "system");
     assert_eq!(saved.appearance.item_density, "compact");
+    assert!(saved.link_preview.metadata_enabled);
+    assert!(!saved.link_preview.web_preview_enabled);
     assert_eq!(saved.shortcuts.open_panel.key_code, 11);
     assert_eq!(
         saved.shortcuts.open_panel.modifiers,
@@ -923,6 +1106,7 @@ fn preferences_update_persists_normalized_document() {
             "shift".to_string()
         ]
     );
+    assert!(saved.shortcuts.paste_directly_to_target);
     assert_eq!(
         saved.ignore_list.ignored_app_identifiers,
         vec!["com.apple.Terminal".to_string(), "terminal".to_string()]
@@ -978,15 +1162,22 @@ fn preferences_parse_keeps_backward_compatible_missing_ignore_list() {
 
     assert!(preferences.ignore_list.ignored_app_identifiers.is_empty());
     assert!(preferences.ignore_list.window_title_keywords.is_empty());
+    assert_eq!(preferences.history.max_items, 5000);
+    assert!(preferences.history.record_images);
+    assert!(preferences.history.record_files);
+    assert!(!preferences.link_preview.metadata_enabled);
+    assert!(preferences.link_preview.web_preview_enabled);
+    assert!(!preferences.shortcuts.paste_directly_to_target);
     assert!(!preferences.ignore_list.skip_unknown_source);
 }
 
 #[test]
-fn preferences_update_prunes_history_to_max_items() {
+fn preferences_update_keeps_internal_max_items_as_high_guard() {
     let (_, mut core) = open_temp_core();
     for index in 0..55 {
         core.capture_text(CaptureTextRequest {
             text: format!("Max item pruning sample {index:02}"),
+            detected_link: None,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -1001,7 +1192,7 @@ fn preferences_update_prunes_history_to_max_items() {
     let mut preferences = core.get_preferences().unwrap();
     preferences.history.max_items = 50;
     preferences.history.retention_days = 365;
-    core.update_preferences(preferences).unwrap();
+    let saved = core.update_preferences(preferences).unwrap();
 
     let active_page = core
         .list_items(
@@ -1012,23 +1203,15 @@ fn preferences_update_prunes_history_to_max_items() {
             },
         )
         .unwrap();
-    let deleted_count: i64 = core
-        .connection
-        .query_row(
-            "SELECT COUNT(*) FROM clipboard_items WHERE deleted_at_ms IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
 
-    assert_eq!(active_page.total_count, 50);
-    assert_eq!(active_page.items.len(), 50);
-    assert_eq!(deleted_count, 5);
+    assert_eq!(saved.history.max_items, 5000);
+    assert_eq!(active_page.total_count, 55);
+    assert_eq!(active_page.items.len(), 55);
     assert!(active_page
         .items
         .iter()
         .any(|item| item.summary == "Max item pruning sample 54"));
-    assert!(!active_page
+    assert!(active_page
         .items
         .iter()
         .any(|item| item.summary == "Max item pruning sample 00"));
@@ -1040,6 +1223,7 @@ fn preferences_update_prunes_history_by_retention_days() {
     let old_result = core
         .capture_text(CaptureTextRequest {
             text: "Old retention sample".to_string(),
+            detected_link: None,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -1051,6 +1235,7 @@ fn preferences_update_prunes_history_by_retention_days() {
         .unwrap();
     core.capture_text(CaptureTextRequest {
         text: "Fresh retention sample".to_string(),
+        detected_link: None,
         source_bundle_id: Some("com.apple.TextEdit".to_string()),
         source_app_name: Some("TextEdit".to_string()),
         source_bundle_path: None,
@@ -1081,10 +1266,18 @@ fn preferences_update_prunes_history_by_retention_days() {
     let active_page = core
         .list_items(ItemQuery::default(), PageRequest::default())
         .unwrap();
-    let deleted_summary: String = core
+    let old_item_count: i64 = core
         .connection
         .query_row(
-            "SELECT summary FROM clipboard_items WHERE deleted_at_ms IS NOT NULL",
+            "SELECT COUNT(*) FROM clipboard_items WHERE summary = 'Old retention sample'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let old_fts_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_items_fts WHERE clipboard_items_fts MATCH 'Old'",
             [],
             |row| row.get(0),
         )
@@ -1092,7 +1285,106 @@ fn preferences_update_prunes_history_by_retention_days() {
 
     assert_eq!(active_page.total_count, 1);
     assert_eq!(active_page.items[0].summary, "Fresh retention sample");
-    assert_eq!(deleted_summary, "Old retention sample");
+    assert_eq!(old_item_count, 0);
+    assert_eq!(old_fts_count, 0);
+}
+
+#[test]
+fn retention_update_purges_generated_assets_but_keeps_user_files() {
+    let (temp_dir, mut core) = open_temp_core();
+    let user_dir = TempDir::new().expect("user dir");
+    let user_file_path = user_dir.path().join("Quarterly Report.pdf");
+    fs::write(&user_file_path, b"user-owned file").expect("user file");
+
+    let payload_path = temp_dir.path().join("assets/old-image.png");
+    let thumbnail_path = temp_dir.path().join("thumbnails/old-image.png");
+    let snapshot_path = temp_dir.path().join("assets/file-snapshots/old-files.json");
+    fs::create_dir_all(snapshot_path.parent().unwrap()).expect("snapshot dir");
+    fs::write(&payload_path, b"old image payload").expect("payload");
+    fs::write(&thumbnail_path, b"old image thumbnail").expect("thumbnail");
+    fs::write(&snapshot_path, b"{\"paths\":[\"Quarterly Report.pdf\"]}").expect("snapshot");
+
+    core.capture_image(CaptureImageRequest {
+        payload_relative_path: "assets/old-image.png".to_string(),
+        preview_relative_path: Some("thumbnails/old-image.png".to_string()),
+        mime_type: Some("image/png".to_string()),
+        width: 320,
+        height: 180,
+        byte_count: 17,
+        source_bundle_id: Some("com.apple.Preview".to_string()),
+        source_app_name: Some("Preview".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 30,
+        self_write_token: None,
+    })
+    .unwrap();
+    core.capture_files(CaptureFilesRequest {
+        file_paths: vec![user_file_path.display().to_string()],
+        file_items: vec![],
+        snapshot_relative_path: Some("assets/file-snapshots/old-files.json".to_string()),
+        snapshot_byte_count: 35,
+        source_bundle_id: Some("com.apple.finder".to_string()),
+        source_app_name: Some("Finder".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 31,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let old_timestamp = now_ms() - 3 * 24 * 60 * 60 * 1000;
+    core.connection
+        .execute(
+            r#"
+            UPDATE clipboard_items
+            SET first_copied_at_ms = ?1, last_copied_at_ms = ?1, updated_at_ms = ?1
+            "#,
+            params![old_timestamp],
+        )
+        .unwrap();
+
+    let mut preferences = core.get_preferences().unwrap();
+    preferences.history.retention_days = 1;
+    core.update_preferences(preferences).unwrap();
+
+    let active_page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let item_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))
+        .unwrap();
+    let asset_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM clipboard_assets", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let format_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM clipboard_formats", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let capture_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM clipboard_captures", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+
+    assert_eq!(active_page.total_count, 0);
+    assert_eq!(item_count, 0);
+    assert_eq!(asset_count, 0);
+    assert_eq!(format_count, 0);
+    assert_eq!(capture_count, 0);
+    assert!(!payload_path.exists());
+    assert!(!thumbnail_path.exists());
+    assert!(!snapshot_path.exists());
+    assert!(user_file_path.exists());
 }
 
 #[test]
@@ -1219,6 +1511,66 @@ fn maintenance_removes_orphan_files_and_keeps_active_assets() {
         .unwrap();
     assert_eq!(active_page.total_count, 1);
     assert_eq!(active_page.items[0].item_type, ClipboardItemType::Image);
+}
+
+#[test]
+fn maintenance_preserves_and_purges_link_metadata_assets() {
+    let (temp_dir, mut core) = open_temp_core();
+    let icon_path = temp_dir.path().join("assets/link-icons/example.png");
+    let image_path = temp_dir.path().join("assets/link-previews/example.png");
+    fs::create_dir_all(icon_path.parent().unwrap()).expect("link icon dir");
+    fs::create_dir_all(image_path.parent().unwrap()).expect("link image dir");
+    fs::write(&icon_path, b"link icon").expect("icon");
+    fs::write(&image_path, b"link preview").expect("image");
+
+    let result = core
+        .capture_text(CaptureTextRequest {
+            text: "https://example.com".to_string(),
+            detected_link: Some(CaptureDetectedLink {
+                original_text: "https://example.com".to_string(),
+                canonical_url: "https://example.com".to_string(),
+                display_url: "https://example.com".to_string(),
+                host: "example.com".to_string(),
+                metadata_state: LinkMetadataState::Ready,
+            }),
+            source_bundle_id: Some("com.apple.Safari".to_string()),
+            source_app_name: Some("Safari".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 92,
+            self_write_token: None,
+        })
+        .unwrap();
+    core.connection
+        .execute(
+            r#"
+            UPDATE link_metadata
+            SET icon_relative_path = 'assets/link-icons/example.png',
+                image_relative_path = 'assets/link-previews/example.png'
+            WHERE item_id = ?1
+            "#,
+            params![result.item_id],
+        )
+        .unwrap();
+
+    let active_maintenance = core.run_maintenance().unwrap();
+    assert_eq!(active_maintenance.deleted_orphan_file_count, 0);
+    assert!(icon_path.exists());
+    assert!(image_path.exists());
+
+    core.connection
+        .execute(
+            "UPDATE clipboard_items SET deleted_at_ms = ?1 WHERE id = ?2",
+            params![now_ms(), result.item_id],
+        )
+        .unwrap();
+
+    let deleted_maintenance = core.run_maintenance().unwrap();
+    assert_eq!(deleted_maintenance.purged_item_count, 1);
+    assert_eq!(deleted_maintenance.deleted_asset_file_count, 2);
+    assert!(!icon_path.exists());
+    assert!(!image_path.exists());
 }
 
 #[test]

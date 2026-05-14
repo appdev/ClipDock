@@ -1,6 +1,9 @@
 import AppKit
 import Carbon.HIToolbox
 import ClipboardPanelApp
+import QuickLookUI
+import UniformTypeIdentifiers
+import WebKit
 
 @MainActor
 final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
@@ -8,6 +11,7 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     private var shownItemID: String?
     private var keyDownMonitor: Any?
     private weak var returnFocusView: NSView?
+    private var linkWebPreviewEnabled = true
 
     override init() {
         super.init()
@@ -35,6 +39,7 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     func toggle(
         item: RustClipboardItemSummary,
         appSupportDirectory: URL,
+        linkWebPreviewEnabled: Bool = true,
         relativeTo anchorView: NSView,
         returnFocusTo focusView: NSView
     ) {
@@ -46,6 +51,7 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
         show(
             item: item,
             appSupportDirectory: appSupportDirectory,
+            linkWebPreviewEnabled: linkWebPreviewEnabled,
             relativeTo: anchorView,
             returnFocusTo: focusView
         )
@@ -54,16 +60,21 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     func show(
         item: RustClipboardItemSummary,
         appSupportDirectory: URL,
+        linkWebPreviewEnabled: Bool = true,
         relativeTo anchorView: NSView,
         returnFocusTo focusView: NSView
     ) {
         close(restoresFocus: false)
+        self.linkWebPreviewEnabled = linkWebPreviewEnabled
 
         let content = ClipboardPreviewContentPlanner.preview(
             for: item,
             appSupportDirectory: appSupportDirectory
         )
-        let viewController = ClipboardPreviewViewController(content: content)
+        let viewController = ClipboardPreviewViewController(
+            content: content,
+            linkWebPreviewEnabled: linkWebPreviewEnabled
+        )
         viewController.onClose = { [weak self] in
             self?.close()
         }
@@ -100,6 +111,8 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     private func finishClosing(restoresFocus: Bool) {
         stopKeyDownMonitor()
         shownItemID = nil
+        (popover.contentViewController as? ClipboardPreviewViewController)?.prepareForClose()
+        popover.contentViewController = nil
         if restoresFocus {
             returnFocusView?.window?.makeFirstResponder(returnFocusView)
         }
@@ -143,31 +156,56 @@ private final class ClipboardPreviewViewController: NSViewController {
         static let maxWidth: CGFloat = 820
         static let minContentHeight: CGFloat = 96
         static let minTextContentHeight: CGFloat = 58
+        static let minMediaContentWidth: CGFloat = 420
+        static let minMediaContentHeight: CGFloat = 180
+        static let minDocumentWidth: CGFloat = 520
+        static let minDocumentContentHeight: CGFloat = 360
+        static let minLinkPreviewWidth: CGFloat = 640
+        static let minLinkPreviewContentHeight: CGFloat = 420
         static let maxTextWidth: CGFloat = 720
         static let maxContentHeight: CGFloat = 560
-        static let headerHeight: CGFloat = 48
-        static let footerHeight: CGFloat = 50
-        static let previewHorizontalInset: CGFloat = 5
-        static let imagePreviewHorizontalInset: CGFloat = 2
-        static let textHorizontalPadding: CGFloat = 12
-        static let textVerticalPadding: CGFloat = 13
-        static let preciseTextMeasurementLimit = 1_800
+        static let headerHeight: CGFloat = 34
+        static let footerHeight: CGFloat = 36
+        static let previewHorizontalInset: CGFloat = 0
+        static let imagePreviewHorizontalInset: CGFloat = 0
+        static let previewMaximumScreenFraction: CGFloat = 0.5
+        static let previewShellExtraWidth: CGFloat = 10
+        static let previewShellExtraHeight: CGFloat = 76
+        static let minCompactPreviewShellWidth: CGFloat = 112
+        static let minTextPreviewShellWidth: CGFloat = 390
+        static let minTextPreviewContentHeight: CGFloat = 240
+        static let textPreviewExtraHorizontalPadding: CGFloat = 20
+        static let textHorizontalPadding: CGFloat = 8
+        static let textVerticalPadding: CGFloat = 10
+        static let textLineFragmentPadding: CGFloat = 5
+        static let windowCornerRadius: CGFloat = 20
+        static let chromeHorizontalInset: CGFloat = 16
+        static let closeButtonSize: CGFloat = 16
+        static let textPreviewMeasurementLimit = 2_000
         static let chromeHeight: CGFloat = headerHeight + footerHeight
         static var previewTextFont: NSFont {
-            .systemFont(ofSize: 12.5)
+            NSFont(name: "HelveticaNeue", size: 13) ?? .systemFont(ofSize: 13)
         }
     }
 
     private let content: ClipboardPreviewContent
+    private let linkWebPreviewEnabled: Bool
     var onClose: (() -> Void)?
+    private var quickLookPreviewView: QLPreviewView?
+    private var linkWebView: WKWebView?
+    private var linkNavigationDelegate: LinkPreviewNavigationDelegate?
     private var theme: PasteThemePalette {
         isViewLoaded ? PasteTheme.current(for: view) : PasteTheme.current(for: NSApp.effectiveAppearance)
     }
 
-    init(content: ClipboardPreviewContent) {
+    init(content: ClipboardPreviewContent, linkWebPreviewEnabled: Bool = true) {
         self.content = content
+        self.linkWebPreviewEnabled = linkWebPreviewEnabled
         super.init(nibName: nil, bundle: nil)
-        preferredContentSize = Self.preferredSize(for: content)
+        preferredContentSize = Self.preferredSize(
+            for: content,
+            linkWebPreviewEnabled: linkWebPreviewEnabled
+        )
     }
 
     required init?(coder: NSCoder) {
@@ -175,22 +213,21 @@ private final class ClipboardPreviewViewController: NSViewController {
     }
 
     override func loadView() {
-        let previewTheme = theme.preview
         let root = NSVisualEffectView()
         root.material = .popover
         root.blendingMode = .behindWindow
         root.state = .active
         root.translatesAutoresizingMaskIntoConstraints = false
         root.wantsLayer = true
-        root.layer?.backgroundColor = previewTheme.backgroundColor.cgColor
-        root.layer?.cornerRadius = 11
+        root.layer?.backgroundColor = theme.panel.backgroundColor.cgColor
+        root.layer?.cornerRadius = Layout.windowCornerRadius
         root.layer?.cornerCurve = .continuous
         root.layer?.masksToBounds = true
-        root.layer?.borderColor = previewTheme.borderColor.cgColor
-        root.layer?.borderWidth = 0.8
+        root.layer?.borderColor = previewOuterBorderColor().cgColor
+        root.layer?.borderWidth = 0.5
 
         let header = makeHeader()
-        let preview = content.itemType == "image" ? makeImagePreview() : makeTextPreview()
+        let preview = makePreview()
         let footer = makeFooter()
         let previewInset = content.itemType == "image"
             ? Layout.imagePreviewHorizontalInset
@@ -222,46 +259,42 @@ private final class ClipboardPreviewViewController: NSViewController {
         view = root
     }
 
-    private static func preferredSize(for content: ClipboardPreviewContent) -> NSSize {
+    fileprivate static func preferredSize(
+        for content: ClipboardPreviewContent,
+        linkWebPreviewEnabled: Bool = true
+    ) -> NSSize {
+        if content.itemType == "link",
+           linkWebPreviewEnabled,
+           content.linkURL != nil {
+            return preferredLinkPreviewSize()
+        }
+
         if content.itemType == "image",
            let image = content.imageURL.flatMap(NSImage.init(contentsOf:)) {
             let pixelSize = imagePixelSize(for: image) ?? image.size
-            let visibleSize = visiblePixelBounds(for: image)?.size ?? pixelSize
-            let previewSize = fittedImagePreviewSize(for: visibleSize)
-            let width = previewSize.width + Layout.imagePreviewHorizontalInset * 2
-            let contentHeight = previewSize.height
-            return NSSize(width: width, height: contentHeight + Layout.chromeHeight)
+            return preferredImagePreviewSize(for: pixelSize)
         }
 
-        let textMetrics = estimatedTextMetrics(for: content.body)
-        let width = bounded(
-            textMetrics.preferredWidth,
-            minimum: Layout.minWidth,
-            maximum: availableMaximumWidth()
-        )
-        let contentHeight = bounded(
-            textMetrics.preferredHeight,
-            minimum: Layout.minTextContentHeight,
-            maximum: availableMaximumContentHeight()
-        )
-        return NSSize(width: width, height: contentHeight + Layout.chromeHeight)
+        if content.itemType == "file",
+           let fileURL = content.fileURLs.first,
+           FileManager.default.fileExists(atPath: fileURL.path) {
+            return preferredFilePreviewSize(for: fileURL, fileCount: content.fileURLs.count)
+        }
+
+        return preferredTextPreviewSize(for: content.body)
     }
 
     private func makeHeader() -> NSView {
-        let container = NSVisualEffectView()
-        container.material = .popover
-        container.blendingMode = .withinWindow
-        container.state = .active
+        let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
-        container.layer?.backgroundColor = theme.preview.chromeBackgroundColor.cgColor
+        container.layer?.backgroundColor = NSColor.clear.cgColor
 
-        let closeButton = PanelActionButton()
-        closeButton.bezelStyle = .texturedRounded
-        closeButton.isBordered = false
-        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "关闭预览")
-        closeButton.imageScaling = .scaleProportionallyDown
-        closeButton.contentTintColor = theme.preview.closeButtonColor
+        let closeButton = PreviewCloseButton()
+        closeButton.configure(
+            backgroundColor: previewCloseButtonBackgroundColor(),
+            tintColor: previewCloseButtonTintColor()
+        )
         closeButton.target = nil
         closeButton.action = nil
         closeButton.onPress = { [weak self] in
@@ -271,7 +304,7 @@ private final class ClipboardPreviewViewController: NSViewController {
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
         let titleLabel = NSTextField(labelWithString: displayTypeTitle())
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 13.5, weight: .semibold)
         titleLabel.textColor = theme.preview.titleTextColor
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
@@ -289,13 +322,13 @@ private final class ClipboardPreviewViewController: NSViewController {
         container.addSubview(separator)
 
         NSLayoutConstraint.activate([
-            closeButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            closeButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Layout.chromeHorizontalInset),
             closeButton.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 20),
-            closeButton.heightAnchor.constraint(equalToConstant: 20),
+            closeButton.widthAnchor.constraint(equalToConstant: Layout.closeButtonSize),
+            closeButton.heightAnchor.constraint(equalToConstant: Layout.closeButtonSize),
 
             titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 9),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -14),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -Layout.chromeHorizontalInset),
             titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
 
             separator.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -304,6 +337,58 @@ private final class ClipboardPreviewViewController: NSViewController {
             separator.heightAnchor.constraint(equalToConstant: 1)
         ])
 
+        return container
+    }
+
+    private func makePreview() -> NSView {
+        if content.itemType == "image" {
+            return makeImagePreview()
+        }
+
+        if content.itemType == "file", !content.fileURLs.isEmpty {
+            return makeFilePreview() ?? makeTextPreview()
+        }
+
+        if content.itemType == "link",
+           linkWebPreviewEnabled,
+           content.linkURL != nil {
+            return makeLinkWebPreview()
+        }
+
+        return makeTextPreview()
+    }
+
+    private func makeLinkWebPreview() -> NSView {
+        guard let linkURL = content.linkURL else {
+            return makeTextPreview()
+        }
+
+        let container = makePreviewSurface(backgroundAlpha: 0.76)
+        let configuration = WKWebViewConfiguration()
+        configuration.suppressesIncrementalRendering = false
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let navigationDelegate = LinkPreviewNavigationDelegate()
+        webView.navigationDelegate = navigationDelegate
+        webView.allowsMagnification = true
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        linkWebView = webView
+        linkNavigationDelegate = navigationDelegate
+
+        container.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: container.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        let request = URLRequest(
+            url: linkURL,
+            cachePolicy: .useProtocolCachePolicy,
+            timeoutInterval: 60
+        )
+        webView.load(request)
         return container
     }
 
@@ -370,9 +455,6 @@ private final class ClipboardPreviewViewController: NSViewController {
             width: documentWidth,
             height: max(viewportHeight, documentHeight)
         ))
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byCharWrapping
-        paragraphStyle.lineSpacing = 0
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -382,7 +464,7 @@ private final class ClipboardPreviewViewController: NSViewController {
             width: Layout.textHorizontalPadding,
             height: Layout.textVerticalPadding
         )
-        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.lineFragmentPadding = Layout.textLineFragmentPadding
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineBreakMode = .byCharWrapping
         textView.textContainer?.containerSize = NSSize(
@@ -393,13 +475,9 @@ private final class ClipboardPreviewViewController: NSViewController {
         textView.isVerticallyResizable = true
         textView.minSize = NSSize(width: documentWidth, height: viewportHeight)
         textView.maxSize = NSSize(width: documentWidth, height: CGFloat.greatestFiniteMagnitude)
-        textView.textStorage?.setAttributedString(NSAttributedString(
-            string: content.body,
-            attributes: [
-                .font: Layout.previewTextFont,
-                .foregroundColor: theme.preview.bodyTextColor,
-                .paragraphStyle: paragraphStyle
-            ]
+        textView.textStorage?.setAttributedString(Self.previewTextAttributedString(
+            for: content.body,
+            foregroundColor: theme.preview.bodyTextColor
         ))
         textView.translatesAutoresizingMaskIntoConstraints = true
 
@@ -423,38 +501,53 @@ private final class ClipboardPreviewViewController: NSViewController {
         return container
     }
 
-    private func makePreviewSurface(backgroundAlpha: CGFloat) -> NSVisualEffectView {
-        let container = NSVisualEffectView()
-        container.material = .popover
-        container.blendingMode = .withinWindow
-        container.state = .active
+    private func makeFilePreview() -> NSView? {
+        guard let url = content.fileURLs.first,
+              FileManager.default.fileExists(atPath: url.path),
+              let quickLookView = FocusPreservingQLPreviewView(frame: .zero, style: .normal)
+        else {
+            return nil
+        }
+
+        let container = makePreviewSurface(backgroundAlpha: 0.76)
+        quickLookView.translatesAutoresizingMaskIntoConstraints = false
+        quickLookView.previewItem = FilePreviewItem(url: url)
+        quickLookPreviewView = quickLookView
+
+        container.addSubview(quickLookView)
+        NSLayoutConstraint.activate([
+            quickLookView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            quickLookView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            quickLookView.topAnchor.constraint(equalTo: container.topAnchor),
+            quickLookView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        return container
+    }
+
+    private func makePreviewSurface(backgroundAlpha _: CGFloat) -> NSView {
+        let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
-        let surfaceColor = backgroundAlpha < 0.60
-            ? theme.preview.imageSurfaceBackgroundColor
-            : theme.preview.surfaceBackgroundColor
-        container.layer?.backgroundColor = surfaceColor.cgColor
-        container.layer?.cornerRadius = 5
+        container.layer?.backgroundColor = NSColor.clear.cgColor
+        container.layer?.cornerRadius = 0
         container.layer?.cornerCurve = .continuous
         container.layer?.masksToBounds = true
-        container.layer?.borderColor = theme.preview.surfaceBorderColor.cgColor
-        container.layer?.borderWidth = 0.5
+        container.layer?.borderColor = NSColor.clear.cgColor
+        container.layer?.borderWidth = 0
         return container
     }
 
     private func makeFooter() -> NSView {
-        let container = NSVisualEffectView()
-        container.material = .popover
-        container.blendingMode = .withinWindow
-        container.state = .active
+        let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
-        container.layer?.backgroundColor = theme.preview.chromeBackgroundColor.cgColor
+        container.layer?.backgroundColor = NSColor.clear.cgColor
 
         let metadataStack = NSStackView()
         metadataStack.orientation = .horizontal
         metadataStack.alignment = .firstBaseline
-        metadataStack.spacing = 13
+        metadataStack.spacing = 10
         metadataStack.translatesAutoresizingMaskIntoConstraints = false
 
         footerComponents().enumerated().forEach { index, component in
@@ -466,23 +559,50 @@ private final class ClipboardPreviewViewController: NSViewController {
 
         container.addSubview(metadataStack)
         NSLayoutConstraint.activate([
-            metadataStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 25),
-            metadataStack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -16),
+            metadataStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Layout.chromeHorizontalInset),
+            metadataStack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -Layout.chromeHorizontalInset),
             metadataStack.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: -1),
-            metadataStack.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor, constant: 13),
-            metadataStack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -15)
+            metadataStack.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor, constant: 8),
+            metadataStack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -9)
         ])
         return container
     }
 
     private func makeFooterLabel(_ text: String, isDimmed: Bool) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 13.5, weight: .medium)
+        label.font = .systemFont(ofSize: 12.5, weight: .medium)
         label.textColor = isDimmed ? theme.preview.footerDimTextColor : theme.preview.footerTextColor
-        label.lineBreakMode = .byTruncatingTail
+        label.lineBreakMode = content.itemType == "file" ? .byTruncatingMiddle : .byTruncatingTail
         label.maximumNumberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }
+
+    private func previewOuterBorderColor() -> NSColor {
+        switch theme.scheme {
+        case .light:
+            return NSColor.black.withAlphaComponent(0.08)
+        case .dark:
+            return NSColor.white.withAlphaComponent(0.10)
+        }
+    }
+
+    private func previewCloseButtonBackgroundColor() -> NSColor {
+        switch theme.scheme {
+        case .light:
+            return NSColor.black.withAlphaComponent(0.07)
+        case .dark:
+            return NSColor.white.withAlphaComponent(0.11)
+        }
+    }
+
+    private func previewCloseButtonTintColor() -> NSColor {
+        switch theme.scheme {
+        case .light:
+            return NSColor.black.withAlphaComponent(0.58)
+        case .dark:
+            return NSColor.white.withAlphaComponent(0.70)
+        }
     }
 
     private func displayTypeTitle() -> String {
@@ -509,16 +629,22 @@ private final class ClipboardPreviewViewController: NSViewController {
             return ["\(Int(size.width)) × \(Int(size.height))"]
         }
 
+        if content.itemType == "file", !content.fileURLs.isEmpty {
+            if content.fileURLs.count > 1 {
+                return ["\(content.fileURLs.count) 个文件", content.fileURLs[0].path]
+            }
+            return [content.fileURLs[0].path]
+        }
+
         if content.itemType == "text" || content.itemType == "rich_text" || content.itemType == "link" {
+            if content.itemType == "link", let displayURL = content.linkDisplayURL {
+                return [displayURL]
+            }
             let text = content.body
             let characterCount = text.count
-            let wordCount = text
-                .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
-                .count
             let lineCount = text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count
             return [
                 "\(Self.decimalString(characterCount)) 个字符",
-                "\(Self.decimalString(wordCount)) 单词",
                 "\(Self.decimalString(lineCount)) 行"
             ]
         }
@@ -545,11 +671,16 @@ private final class ClipboardPreviewViewController: NSViewController {
     }
 
     private static func estimatedTextDocumentHeight(for text: String, documentWidth: CGFloat, font: NSFont) -> CGFloat {
-        if text.count > Layout.preciseTextMeasurementLimit {
+        if text.count > Layout.textPreviewMeasurementLimit {
             return approximateTextDocumentHeight(for: text, documentWidth: documentWidth, font: font)
         }
 
-        let textWidth = max(40, documentWidth - Layout.textHorizontalPadding * 2)
+        let textWidth = max(
+            40,
+            documentWidth
+                - Layout.textHorizontalPadding * 2
+                - Layout.textLineFragmentPadding * 2
+        )
         let measured = (text.isEmpty ? " " : text as NSString).boundingRect(
             with: NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -559,7 +690,12 @@ private final class ClipboardPreviewViewController: NSViewController {
     }
 
     private static func approximateTextDocumentHeight(for text: String, documentWidth: CGFloat, font: NSFont) -> CGFloat {
-        let textWidth = max(40, documentWidth - Layout.textHorizontalPadding * 2)
+        let textWidth = max(
+            40,
+            documentWidth
+                - Layout.textHorizontalPadding * 2
+                - Layout.textLineFragmentPadding * 2
+        )
         let averageGlyphWidth = max(7.2, ceil(("剪贴板" as NSString).size(withAttributes: [.font: font]).width / 3))
         let charactersPerLine = max(1, Int(floor(textWidth / averageGlyphWidth)))
         var visualLineCount = 1
@@ -593,51 +729,6 @@ private final class ClipboardPreviewViewController: NSViewController {
         return image.size.width > 0 && image.size.height > 0 ? image.size : nil
     }
 
-    static func visiblePixelBounds(for image: NSImage) -> NSRect? {
-        guard let bitmap = image.representations
-            .compactMap({ $0 as? NSBitmapImageRep })
-            .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) })
-        else {
-            return nil
-        }
-
-        guard bitmap.hasAlpha else {
-            return NSRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
-        }
-
-        var minX = bitmap.pixelsWide
-        var minY = bitmap.pixelsHigh
-        var maxX = -1
-        var maxY = -1
-        let alphaThreshold: CGFloat = 0.03
-
-        for y in 0..<bitmap.pixelsHigh {
-            for x in 0..<bitmap.pixelsWide {
-                guard let color = bitmap.colorAt(x: x, y: y),
-                      color.alphaComponent > alphaThreshold
-                else {
-                    continue
-                }
-
-                minX = min(minX, x)
-                minY = min(minY, y)
-                maxX = max(maxX, x)
-                maxY = max(maxY, y)
-            }
-        }
-
-        guard maxX >= minX, maxY >= minY else {
-            return NSRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
-        }
-
-        return NSRect(
-            x: minX,
-            y: minY,
-            width: maxX - minX + 1,
-            height: maxY - minY + 1
-        )
-    }
-
     private static func decimalString(_ value: Int) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -660,48 +751,389 @@ private final class ClipboardPreviewViewController: NSViewController {
         min(Layout.maxContentHeight, (NSScreen.main?.visibleFrame.height ?? 820) - 156 - Layout.chromeHeight)
     }
 
-    private static func fittedImagePreviewSize(for imageSize: NSSize) -> NSSize {
-        guard imageSize.width > 0, imageSize.height > 0 else {
-            return NSSize(width: Layout.minWidth - Layout.previewHorizontalInset * 2, height: Layout.minContentHeight)
+    private static func preferredFilePreviewSize(for url: URL, fileCount: Int) -> NSSize {
+        guard fileCount == 1 else {
+            return preferredDocumentFilePreviewSize()
         }
 
-        let maximumContentWidth = availableMaximumWidth() - Layout.imagePreviewHorizontalInset * 2
-        let maximumContentHeight = availableMaximumContentHeight()
-        let minimumContentWidth = Layout.minWidth - Layout.imagePreviewHorizontalInset * 2
-        let imageAspectRatio = imageSize.width / imageSize.height
-        let boundedScale = min(
-            maximumContentWidth / imageSize.width,
-            maximumContentHeight / imageSize.height,
-            1
-        )
+        if isImageFileURL(url),
+           let image = NSImage(contentsOf: url) {
+            let pixelSize = imagePixelSize(for: image) ?? image.size
+            return preferredMediaPreviewSize(for: pixelSize)
+        }
 
-        var fittedWidth = floor(imageSize.width * boundedScale)
-        var fittedHeight = floor(imageSize.height * boundedScale)
+        if isVideoFileURL(url) {
+            return preferredDocumentFilePreviewSize()
+        }
+
+        return preferredDocumentFilePreviewSize()
+    }
+
+    private static func preferredDocumentFilePreviewSize() -> NSSize {
+        let screenFrame = documentPreviewScreenFrame()
+        let contentSize = NSSize(
+            width: floor(max(1, screenFrame.width * Layout.previewMaximumScreenFraction)),
+            height: floor(max(1, screenFrame.height * Layout.previewMaximumScreenFraction))
+        )
+        return previewShellSize(for: contentSize)
+    }
+
+    private static func preferredLinkPreviewSize() -> NSSize {
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
+        let width = bounded(
+            screenFrame.width * 0.56,
+            minimum: min(Layout.minLinkPreviewWidth, max(Layout.minWidth, screenFrame.width - 96)),
+            maximum: max(Layout.minWidth, screenFrame.width - 96)
+        )
+        let contentHeight = bounded(
+            screenFrame.height * 0.58,
+            minimum: min(Layout.minLinkPreviewContentHeight, max(Layout.minContentHeight, screenFrame.height - 156 - Layout.chromeHeight)),
+            maximum: max(Layout.minContentHeight, screenFrame.height - 156 - Layout.chromeHeight)
+        )
+        return NSSize(width: width, height: contentHeight + Layout.chromeHeight)
+    }
+
+    private static func preferredMediaPreviewSize(for mediaSize: NSSize) -> NSSize {
+        let contentSize = fittedMediaPreviewSize(for: mediaSize)
+        return previewShellSize(for: contentSize)
+    }
+
+    private static func fittedMediaPreviewSize(for mediaSize: NSSize) -> NSSize {
+        guard mediaSize.width > 0, mediaSize.height > 0 else {
+            return NSSize(width: Layout.minMediaContentWidth, height: Layout.minMediaContentHeight)
+        }
+
+        let maximumContentWidth = availableMaximumWidth()
+        let maximumContentHeight = availableMaximumContentHeight()
+        let minimumContentWidth = min(Layout.minMediaContentWidth, maximumContentWidth)
+        let minimumContentHeight = min(Layout.minMediaContentHeight, maximumContentHeight)
+        let aspectRatio = mediaSize.width / mediaSize.height
+        var fittedWidth = floor(mediaSize.width)
+        var fittedHeight = floor(mediaSize.height)
+
+        let downscale = min(maximumContentWidth / fittedWidth, maximumContentHeight / fittedHeight, 1)
+        fittedWidth = floor(fittedWidth * downscale)
+        fittedHeight = floor(fittedHeight * downscale)
+
         if fittedWidth < minimumContentWidth {
             fittedWidth = minimumContentWidth
-            fittedHeight = floor(fittedWidth / imageAspectRatio)
+            fittedHeight = floor(fittedWidth / aspectRatio)
+        }
+
+        if fittedHeight < minimumContentHeight {
+            fittedHeight = minimumContentHeight
+            fittedWidth = floor(fittedHeight * aspectRatio)
+        }
+
+        if fittedWidth > maximumContentWidth {
+            fittedWidth = maximumContentWidth
+            fittedHeight = floor(fittedWidth / aspectRatio)
         }
 
         if fittedHeight > maximumContentHeight {
             fittedHeight = maximumContentHeight
-            fittedWidth = floor(fittedHeight * imageAspectRatio)
-        }
-
-        if fittedHeight < Layout.minContentHeight {
-            fittedHeight = Layout.minContentHeight
-            fittedWidth = floor(fittedHeight * imageAspectRatio)
+            fittedWidth = floor(fittedHeight * aspectRatio)
         }
 
         fittedWidth = bounded(fittedWidth, minimum: minimumContentWidth, maximum: maximumContentWidth)
-        fittedHeight = bounded(fittedHeight, minimum: Layout.minContentHeight, maximum: maximumContentHeight)
+        fittedHeight = bounded(fittedHeight, minimum: minimumContentHeight, maximum: maximumContentHeight)
         return NSSize(width: fittedWidth, height: fittedHeight)
     }
+
+    private static func preferredTextPreviewSize(
+        for text: String,
+        maximumContentSize: NSSize = textPreviewMaximumContentSize()
+    ) -> NSSize {
+        let measuredText = previewTextAttributedString(for: text)
+        let measured = attributedMeasurementPrefix(from: measuredText).boundingRect(
+            with: maximumContentSize,
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        )
+        let contentSize = NSSize(
+            width: min(
+                maximumContentSize.width,
+                ceil(measured.width)
+                    + Layout.textHorizontalPadding * 2
+                    + Layout.textPreviewExtraHorizontalPadding
+            ),
+            height: min(
+                maximumContentSize.height,
+                ceil(measured.height) + Layout.textVerticalPadding * 2
+            )
+        )
+        return previewShellSize(
+            for: contentSize,
+            minimumWidth: Layout.minTextPreviewShellWidth,
+            minimumContentHeight: Layout.minTextPreviewContentHeight
+        )
+    }
+
+    private static func previewTextAttributedString(
+        for text: String,
+        foregroundColor: NSColor? = nil
+    ) -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byCharWrapping
+        paragraphStyle.lineSpacing = 0
+
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: Layout.previewTextFont,
+            .paragraphStyle: paragraphStyle
+        ]
+        if let foregroundColor {
+            attributes[.foregroundColor] = foregroundColor
+        }
+
+        return NSAttributedString(
+            string: text.isEmpty ? " " : text,
+            attributes: attributes
+        )
+    }
+
+    private static func attributedMeasurementPrefix(from text: NSAttributedString) -> NSAttributedString {
+        guard text.length >= Layout.textPreviewMeasurementLimit + 1 else {
+            return text
+        }
+
+        return text.attributedSubstring(
+            from: NSRange(location: 0, length: Layout.textPreviewMeasurementLimit)
+        )
+    }
+
+    private static func isImageFileURL(_ url: URL) -> Bool {
+        fileType(for: url)?.conforms(to: .image) == true
+    }
+
+    private static func isVideoFileURL(_ url: URL) -> Bool {
+        guard let fileType = fileType(for: url) else { return false }
+        return fileType.conforms(to: .movie)
+            || ["mp4", "m4v", "mov", "avi", "mkv", "webm"].contains(url.pathExtension.lowercased())
+    }
+
+    private static func fileType(for url: URL) -> UTType? {
+        UTType(filenameExtension: url.pathExtension)
+    }
+
+    private static func preferredImagePreviewSize(
+        for imageSize: NSSize,
+        screenFrame: NSRect = imagePreviewScreenFrame()
+    ) -> NSSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return previewShellSize(
+                for: NSSize(width: Layout.minWidth, height: Layout.minContentHeight),
+                minimumWidth: Layout.minCompactPreviewShellWidth
+            )
+        }
+
+        let imageContentSize = fittedImagePreviewSize(for: imageSize, screenFrame: screenFrame)
+        return previewShellSize(
+            for: imageContentSize,
+            minimumWidth: Layout.minCompactPreviewShellWidth
+        )
+    }
+
+    private static func fittedImagePreviewSize(
+        for imageSize: NSSize,
+        screenFrame: NSRect = imagePreviewScreenFrame()
+    ) -> NSSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return NSSize(width: Layout.minWidth - Layout.previewHorizontalInset * 2, height: Layout.minContentHeight)
+        }
+
+        // 图片预览遵循 Paste 的窗口策略：小图保持原尺寸，大图只按主屏半幅等比缩小。
+        let maximumContentWidth = max(1, screenFrame.width * Layout.previewMaximumScreenFraction)
+        let maximumContentHeight = max(1, screenFrame.height * Layout.previewMaximumScreenFraction)
+        let scale = (imageSize.width > maximumContentWidth || imageSize.height > maximumContentHeight)
+            ? min(maximumContentWidth / imageSize.width, maximumContentHeight / imageSize.height)
+            : 1
+        return NSSize(
+            width: floor(imageSize.width * scale),
+            height: floor(imageSize.height * scale)
+        )
+    }
+
+    private static func imagePreviewScreenFrame() -> NSRect {
+        NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
+    }
+
+    private static func documentPreviewScreenFrame() -> NSRect {
+        NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
+    }
+
+    private static func textPreviewMaximumContentSize() -> NSSize {
+        guard let screenFrame = NSScreen.main?.frame else {
+            return NSSize(width: 1_000, height: 1_000)
+        }
+
+        return NSSize(
+            width: floor(max(1, screenFrame.width * Layout.previewMaximumScreenFraction)),
+            height: floor(max(1, screenFrame.height * Layout.previewMaximumScreenFraction))
+        )
+    }
+
+    private static func previewShellSize(
+        for contentSize: NSSize,
+        minimumWidth: CGFloat = 0,
+        minimumContentHeight: CGFloat = 0
+    ) -> NSSize {
+        NSSize(
+            width: max(
+                floor(contentSize.width + Layout.previewShellExtraWidth),
+                minimumWidth
+            ),
+            height: floor(max(contentSize.height, minimumContentHeight) + Layout.previewShellExtraHeight)
+        )
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        clearLinkWebPreview()
+        clearQuickLookPreview()
+    }
+
+    func prepareForClose() {
+        clearLinkWebPreview()
+        clearQuickLookPreview()
+    }
+
+    private func clearLinkWebPreview() {
+        linkWebView?.stopLoading()
+        linkWebView?.navigationDelegate = nil
+        linkWebView?.uiDelegate = nil
+        linkWebView?.removeFromSuperview()
+        linkWebView = nil
+        linkNavigationDelegate = nil
+    }
+
+    private func clearQuickLookPreview() {
+        quickLookPreviewView?.previewItem = nil
+        quickLookPreviewView = nil
+    }
+}
+
+private final class PreviewCloseButton: PanelActionButton {
+    private var circleColor = NSColor.clear
+    private var symbolColor = NSColor.labelColor
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureButton()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let diameter = min(bounds.width, bounds.height)
+        let circleRect = NSRect(
+            x: bounds.midX - diameter / 2,
+            y: bounds.midY - diameter / 2,
+            width: diameter,
+            height: diameter
+        )
+        let fillColor = isHighlighted
+            ? circleColor.withAlphaComponent(min(circleColor.alphaComponent + 0.08, 1))
+            : circleColor
+        fillColor.setFill()
+        NSBezierPath(ovalIn: circleRect).fill()
+
+        let iconInset = diameter * 0.32
+        let iconRect = circleRect.insetBy(dx: iconInset, dy: iconInset)
+        let path = NSBezierPath()
+        path.lineWidth = 2
+        path.lineCapStyle = .round
+        path.move(to: NSPoint(x: iconRect.minX, y: iconRect.minY))
+        path.line(to: NSPoint(x: iconRect.maxX, y: iconRect.maxY))
+        path.move(to: NSPoint(x: iconRect.minX, y: iconRect.maxY))
+        path.line(to: NSPoint(x: iconRect.maxX, y: iconRect.minY))
+        symbolColor.setStroke()
+        path.stroke()
+    }
+
+    override func highlight(_ flag: Bool) {
+        super.highlight(flag)
+        needsDisplay = true
+    }
+
+    func configure(backgroundColor: NSColor, tintColor: NSColor) {
+        circleColor = backgroundColor
+        symbolColor = tintColor
+        needsDisplay = true
+    }
+
+    private func configureButton() {
+        bezelStyle = .regularSquare
+        isBordered = false
+        title = ""
+        focusRingType = .none
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+}
+
+private final class LinkPreviewNavigationDelegate: NSObject, WKNavigationDelegate {
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+    ) {
+        guard navigationAction.targetFrame?.isMainFrame != false,
+              let scheme = navigationAction.request.url?.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        decisionHandler(.allow)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void
+    ) {
+        guard let scheme = navigationResponse.response.url?.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            decisionHandler(.cancel)
+            return
+        }
+
+        decisionHandler(.allow)
+    }
+}
+
+private final class FocusPreservingQLPreviewView: QLPreviewView {
+    override var acceptsFirstResponder: Bool { false }
+}
+
+private final class FilePreviewItem: NSObject, QLPreviewItem {
+    let previewItemURL: URL?
+    let previewItemTitle: String?
+
+    init(url: URL) {
+        previewItemURL = url
+        previewItemTitle = url.lastPathComponent
+        super.init()
+    }
+}
+
+@MainActor
+func smokePreferredClipboardPreviewSize(for content: ClipboardPreviewContent) -> NSSize {
+    ClipboardPreviewViewController.preferredSize(for: content)
 }
 
 private final class PreviewImageDocumentView: NSView {
     private let image: NSImage?
     private let imageSize: NSSize
-    private let visiblePixelBounds: NSRect?
     private let checkerLight = NSColor(calibratedWhite: 0.72, alpha: 0.22)
     private let checkerDark = NSColor(calibratedWhite: 0.18, alpha: 0.18)
 
@@ -709,7 +1141,6 @@ private final class PreviewImageDocumentView: NSView {
         self.image = image
         self.imageSize = image.flatMap(ClipboardPreviewViewController.imagePixelSize(for:))
             ?? NSSize(width: 320, height: 220)
-        self.visiblePixelBounds = image.flatMap(ClipboardPreviewViewController.visiblePixelBounds(for:))
         super.init(frame: NSRect(origin: .zero, size: viewportSize))
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
@@ -729,15 +1160,9 @@ private final class PreviewImageDocumentView: NSView {
             return
         }
 
-        let visibleSize = visiblePixelBounds?.size ?? imageSize
-        let imageRect = aspectFitRect(for: visibleSize, in: bounds)
+        let imageRect = aspectFitRect(for: imageSize, in: bounds)
         NSGraphicsContext.current?.imageInterpolation = .high
-        if let visiblePixelBounds,
-           let cropRect = imageRectForVisiblePixels(visiblePixelBounds, in: imageRect) {
-            image.draw(in: cropRect)
-        } else {
-            image.draw(in: imageRect)
-        }
+        image.draw(in: imageRect)
     }
 
     private func aspectFitRect(for imageSize: NSSize, in bounds: NSRect) -> NSRect {
@@ -745,7 +1170,7 @@ private final class PreviewImageDocumentView: NSView {
             return bounds
         }
 
-        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height, 1)
         let scaledSize = NSSize(
             width: floor(imageSize.width * scale),
             height: floor(imageSize.height * scale)
@@ -755,20 +1180,6 @@ private final class PreviewImageDocumentView: NSView {
             y: floor(bounds.midY - scaledSize.height / 2),
             width: scaledSize.width,
             height: scaledSize.height
-        )
-    }
-
-    private func imageRectForVisiblePixels(_ visibleBounds: NSRect, in targetVisibleRect: NSRect) -> NSRect? {
-        guard visibleBounds.width > 0, visibleBounds.height > 0, imageSize.width > 0, imageSize.height > 0 else {
-            return nil
-        }
-
-        let scale = targetVisibleRect.width / visibleBounds.width
-        return NSRect(
-            x: floor(targetVisibleRect.minX - visibleBounds.minX * scale),
-            y: floor(targetVisibleRect.minY - visibleBounds.minY * scale),
-            width: floor(imageSize.width * scale),
-            height: floor(imageSize.height * scale)
         )
     }
 

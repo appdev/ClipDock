@@ -4,7 +4,7 @@ import Testing
 
 struct PanelRegressionPlannerTests {
     @Test
-    func bottomPanelFrameUsesFullScreenFrameAndClampsHeight() {
+    func bottomPanelFrameAppliesOuterMarginsAndClampsHeight() {
         let screenFrame = CGRect(x: -1440, y: -40, width: 1440, height: 900)
 
         let frame = BottomPanelGeometryPlanner.frame(
@@ -12,9 +12,9 @@ struct PanelRegressionPlannerTests {
             preferredHeight: 999
         )
 
-        #expect(frame.minX == -1440)
-        #expect(frame.minY == -40)
-        #expect(frame.width == 1440)
+        #expect(frame.minX == -1430)
+        #expect(frame.minY == -30)
+        #expect(frame.width == 1420)
         #expect(frame.height == 558)
     }
 
@@ -68,7 +68,7 @@ struct PanelRegressionPlannerTests {
     }
 
     @Test
-    func screenSelectionPlansFullWidthPanelForEveryDisplay() {
+    func screenSelectionPlansInsetPanelForEveryDisplay() {
         let screens = [
             CGRect(x: -1440, y: -40, width: 1440, height: 900),
             CGRect(x: 0, y: 0, width: 1728, height: 1117)
@@ -79,13 +79,13 @@ struct PanelRegressionPlannerTests {
             preferredHeight: 999
         )
 
-        #expect(frames[0].minX == -1440)
-        #expect(frames[0].minY == -40)
-        #expect(frames[0].width == 1440)
+        #expect(frames[0].minX == -1430)
+        #expect(frames[0].minY == -30)
+        #expect(frames[0].width == 1420)
         #expect(frames[0].height == 558)
-        #expect(frames[1].minX == 0)
-        #expect(frames[1].minY == 0)
-        #expect(frames[1].width == 1728)
+        #expect(frames[1].minX == 10)
+        #expect(frames[1].minY == 10)
+        #expect(frames[1].width == 1708)
         #expect(frames[1].height == 560)
     }
 

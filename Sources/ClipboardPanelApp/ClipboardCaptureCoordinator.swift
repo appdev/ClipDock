@@ -24,17 +24,79 @@ public struct ClipboardCaptureSource: Equatable, Sendable {
 
 public struct ClipboardCapturedFiles: Equatable, Sendable {
     public let paths: [String]
+    public let fileItems: [ClipboardCapturedFileMetadata]
 
-    public init(paths: [String]) {
+    public init(paths: [String], fileItems: [ClipboardCapturedFileMetadata] = []) {
         self.paths = paths
+        self.fileItems = fileItems
+    }
+}
+
+public struct ClipboardCapturedFileMetadata: Equatable, Codable, Sendable {
+    public let path: String
+    public let fileName: String
+    public let fileExtension: String?
+    public let byteCount: Int64
+    public let isDirectory: Bool
+    public let width: Int64?
+    public let height: Int64?
+    public let contentType: String?
+
+    public init(
+        path: String,
+        fileName: String,
+        fileExtension: String?,
+        byteCount: Int64,
+        isDirectory: Bool,
+        width: Int64?,
+        height: Int64?,
+        contentType: String?
+    ) {
+        self.path = path
+        self.fileName = fileName
+        self.fileExtension = fileExtension
+        self.byteCount = byteCount
+        self.isDirectory = isDirectory
+        self.width = width
+        self.height = height
+        self.contentType = contentType
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case fileName = "file_name"
+        case fileExtension = "file_extension"
+        case byteCount = "byte_count"
+        case isDirectory = "is_directory"
+        case width
+        case height
+        case contentType = "content_type"
     }
 }
 
 public struct ClipboardCapturedImage: Equatable, Sendable {
-    public let pngData: Data
-    public let thumbnailPNGData: Data
+    public let data: Data
+    public let thumbnailData: Data
+    public let mimeType: String
+    public let fileExtension: String
     public let width: Int
     public let height: Int
+
+    public init(
+        data: Data,
+        thumbnailData: Data,
+        mimeType: String,
+        fileExtension: String,
+        width: Int,
+        height: Int
+    ) {
+        self.data = data
+        self.thumbnailData = thumbnailData
+        self.mimeType = mimeType
+        self.fileExtension = fileExtension
+        self.width = width
+        self.height = height
+    }
 
     public init(
         pngData: Data,
@@ -42,11 +104,18 @@ public struct ClipboardCapturedImage: Equatable, Sendable {
         width: Int,
         height: Int
     ) {
-        self.pngData = pngData
-        self.thumbnailPNGData = thumbnailPNGData
-        self.width = width
-        self.height = height
+        self.init(
+            data: pngData,
+            thumbnailData: thumbnailPNGData,
+            mimeType: "image/png",
+            fileExtension: "png",
+            width: width,
+            height: height
+        )
     }
+
+    public var pngData: Data { data }
+    public var thumbnailPNGData: Data { thumbnailData }
 }
 
 public struct ClipboardStoredFileSnapshot: Equatable, Sendable {
@@ -120,6 +189,7 @@ public final class ClipboardCaptureCoordinator {
     private let cacheIcon: ClipboardSourceIconCache
     private let cacheImageAsset: ClipboardImageAssetCache
     private let cacheFileSnapshot: ClipboardFileSnapshotCache
+    private let linkDetector: ClipboardLinkDetector
 
     public init(
         captureText: @escaping ClipboardTextCapturePerformer,
@@ -127,7 +197,8 @@ public final class ClipboardCaptureCoordinator {
         captureFiles: @escaping ClipboardFilesCapturePerformer,
         cacheIcon: @escaping ClipboardSourceIconCache,
         cacheImageAsset: @escaping ClipboardImageAssetCache,
-        cacheFileSnapshot: @escaping ClipboardFileSnapshotCache
+        cacheFileSnapshot: @escaping ClipboardFileSnapshotCache,
+        linkDetector: ClipboardLinkDetector = ClipboardLinkDetector()
     ) {
         self.captureText = captureText
         self.captureImage = captureImage
@@ -135,6 +206,7 @@ public final class ClipboardCaptureCoordinator {
         self.cacheIcon = cacheIcon
         self.cacheImageAsset = cacheImageAsset
         self.cacheFileSnapshot = cacheFileSnapshot
+        self.linkDetector = linkDetector
     }
 
     public func captureText(
@@ -147,8 +219,18 @@ public final class ClipboardCaptureCoordinator {
             return skipResult
         }
 
+        let detectedLink = linkDetector.detectPureLink(in: text).map { link in
+            RustDetectedLink(
+                originalText: link.originalText,
+                canonicalURL: link.canonicalURL,
+                displayURL: link.displayURL,
+                host: link.host,
+                metadataState: preferences.linkPreview.metadataEnabled ? "pending" : "disabled"
+            )
+        }
         let request = RustCaptureTextRequest(
             text: text,
+            detectedLink: detectedLink,
             sourceBundleId: source?.bundleId,
             sourceAppName: source?.appName,
             sourceBundlePath: source?.bundlePath,
@@ -180,14 +262,6 @@ public final class ClipboardCaptureCoordinator {
         preferences: RustPreferencesDocument,
         source: ClipboardCaptureSource?
     ) -> ClipboardCaptureHandlingResult {
-        guard preferences.history.recordImages else {
-            return ClipboardCaptureHandlingResult(
-                statusText: "捕获：图片记录已关闭",
-                shouldRefreshList: false,
-                storageError: nil
-            )
-        }
-
         if let skipResult = skipResult(for: source, preferences: preferences) {
             return skipResult
         }
@@ -238,30 +312,15 @@ public final class ClipboardCaptureCoordinator {
         preferences: RustPreferencesDocument,
         source: ClipboardCaptureSource?
     ) -> ClipboardCaptureHandlingResult {
-        guard preferences.history.recordFiles else {
-            return ClipboardCaptureHandlingResult(
-                statusText: "捕获：文件记录已关闭",
-                shouldRefreshList: false,
-                storageError: nil
-            )
-        }
-
         if let skipResult = skipResult(for: source, preferences: preferences) {
             return skipResult
         }
 
-        guard let snapshot = cacheFileSnapshot(files, changeCount) else {
-            return ClipboardCaptureHandlingResult(
-                statusText: "捕获：文件快照写入失败",
-                shouldRefreshList: false,
-                storageError: nil
-            )
-        }
-
         let request = RustCaptureFilesRequest(
             filePaths: files.paths,
-            snapshotRelativePath: snapshot.relativePath,
-            snapshotByteCount: Int64(snapshot.byteCount),
+            fileItems: files.fileItems,
+            snapshotRelativePath: nil,
+            snapshotByteCount: 0,
             sourceBundleId: source?.bundleId,
             sourceAppName: source?.appName,
             sourceBundlePath: source?.bundlePath,

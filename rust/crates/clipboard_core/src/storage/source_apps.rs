@@ -70,6 +70,10 @@ impl ClipboardCore {
             let cache_key = format!("{}:{relative_path}", source_app_id);
             let icon_id = format!("icon_{}", &stable_hash(&cache_key)[..24]);
             self.connection.execute(
+                "DELETE FROM source_app_icons WHERE source_app_id = ?1 AND relative_path <> ?2",
+                params![source_app_id, relative_path],
+            )?;
+            self.connection.execute(
                 r#"
                 INSERT INTO source_app_icons (
                     id, source_app_id, cache_key, relative_path,

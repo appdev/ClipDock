@@ -1,12 +1,13 @@
 use crate::domain::{
-    ClipboardItemSummary, ClipboardItemType, ItemManagementResult, ItemPage, ItemQuery,
-    PageRequest, PinboardPage, PinboardSummary, PreviewState, SourceAppPage, SourceAppSummary,
-    SourceConfidence,
+    ClipboardFileItemSummary, ClipboardItemSummary, ClipboardItemType, ItemManagementResult,
+    ItemPage, ItemQuery, LinkMetadataState, LinkMetadataSummary, PageRequest, PinboardPage,
+    PinboardSummary, PreviewState, SourceAppPage, SourceAppSummary, SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
 use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Transaction};
+use std::collections::HashMap;
 
 use super::support::normalize_item_id;
 use super::{ClipboardCore, DEFAULT_PINBOARD_ID};
@@ -75,10 +76,26 @@ impl ClipboardCore {
                         AND pb_state.deleted_at_ms IS NULL
                 ) THEN 1 ELSE 0 END,
                 i.size_bytes,
-                i.preview_state
+                i.preview_state,
+                lm.canonical_url,
+                lm.display_url,
+                lm.host,
+                lm.title,
+                lm.site_name,
+                lm.icon_relative_path,
+                lm.image_relative_path,
+                lm.metadata_state,
+                lm.fetched_at_ms
             FROM clipboard_items i
             LEFT JOIN source_apps s ON s.id = i.source_app_id
-            LEFT JOIN source_app_icons ic ON ic.source_app_id = s.id
+            LEFT JOIN source_app_icons ic ON ic.id = (
+                SELECT latest_ic.id
+                FROM source_app_icons latest_ic
+                WHERE latest_ic.source_app_id = s.id
+                ORDER BY latest_ic.updated_at_ms DESC
+                LIMIT 1
+            )
+            LEFT JOIN link_metadata lm ON lm.item_id = i.id
             "#,
         );
 
@@ -116,7 +133,14 @@ impl ClipboardCore {
         let mut statement = self.connection.prepare(&sql)?;
         let rows = statement.query_map(params_from_iter(filter_params.iter()), map_item_summary)?;
 
-        let items = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut items = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let file_items_by_item = self.file_items_for_items(&items)?;
+        for item in &mut items {
+            item.file_items = file_items_by_item
+                .get(item.id.as_str())
+                .cloned()
+                .unwrap_or_default();
+        }
         let items: Vec<ClipboardItemSummary> = items
             .into_iter()
             .map(|item| self.with_absolute_paths(item))
@@ -127,6 +151,68 @@ impl ClipboardCore {
             items,
             total_count,
         })
+    }
+
+    fn file_items_for_items(
+        &self,
+        items: &[ClipboardItemSummary],
+    ) -> Result<HashMap<String, Vec<ClipboardFileItemSummary>>> {
+        let item_ids: Vec<&str> = items
+            .iter()
+            .filter(|item| item.item_type == ClipboardItemType::File)
+            .map(|item| item.id.as_str())
+            .collect();
+        if item_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders = std::iter::repeat("?")
+            .take(item_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            r#"
+            SELECT
+                item_id,
+                path,
+                file_name,
+                file_extension,
+                byte_count,
+                is_directory,
+                width,
+                height,
+                content_type
+            FROM clipboard_file_items
+            WHERE item_id IN ({placeholders})
+            ORDER BY item_id ASC, order_index ASC
+            "#
+        );
+        let mut statement = self.connection.prepare(&sql)?;
+        let rows = statement.query_map(params_from_iter(item_ids.iter()), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                ClipboardFileItemSummary {
+                    path: row.get(1)?,
+                    file_name: row.get(2)?,
+                    file_extension: row.get(3)?,
+                    byte_count: row.get(4)?,
+                    is_directory: row.get::<_, i64>(5)? == 1,
+                    width: row.get(6)?,
+                    height: row.get(7)?,
+                    content_type: row.get(8)?,
+                },
+            ))
+        })?;
+
+        let mut file_items_by_item: HashMap<String, Vec<ClipboardFileItemSummary>> = HashMap::new();
+        for row in rows {
+            let (item_id, file_item) = row?;
+            file_items_by_item
+                .entry(item_id)
+                .or_default()
+                .push(file_item);
+        }
+        Ok(file_items_by_item)
     }
 
     pub fn list_source_apps(&self, page: PageRequest) -> Result<SourceAppPage> {
@@ -766,6 +852,26 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
     let item_type = row.get::<_, String>(1)?;
     let source_confidence = row.get::<_, String>(10)?;
     let preview_state = row.get::<_, String>(16)?;
+    let canonical_url = row.get::<_, Option<String>>(17)?;
+    let link_metadata = match canonical_url {
+        Some(canonical_url) => {
+            let metadata_state = row.get::<_, Option<String>>(24)?;
+            Some(LinkMetadataSummary {
+                canonical_url,
+                display_url: row.get(18)?,
+                host: row.get(19)?,
+                title: row.get(20)?,
+                site_name: row.get(21)?,
+                icon_asset_path: row.get(22)?,
+                image_asset_path: row.get(23)?,
+                metadata_state: LinkMetadataState::from_storage(
+                    metadata_state.as_deref().unwrap_or("failed"),
+                ),
+                fetched_at_ms: row.get(25)?,
+            })
+        }
+        None => None,
+    };
 
     Ok(ClipboardItemSummary {
         id: row.get(0)?,
@@ -785,6 +891,8 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
         is_pinned: row.get::<_, i64>(14)? == 1,
         size_bytes: row.get(15)?,
         preview_state: PreviewState::from_storage(&preview_state),
+        file_items: Vec::new(),
+        link_metadata,
     })
 }
 

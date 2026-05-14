@@ -204,8 +204,7 @@ extension CapturedSourceApplication {
             bundleId: bundleId,
             appName: name,
             bundlePath: bundlePath,
-            windowTitle: windowTitle,
-            iconTIFFData: icon?.tiffRepresentation
+            windowTitle: windowTitle
         )
     }
 }

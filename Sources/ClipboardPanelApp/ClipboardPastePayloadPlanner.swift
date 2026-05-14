@@ -30,7 +30,7 @@ public enum ClipboardPastePayloadPlanner {
             return .imageFile(url)
 
         case "file":
-            let urls = fileURLs(
+            let urls = ClipboardFilePreviewResolver.fileURLs(
                 for: item,
                 appSupportDirectory: appSupportDirectory,
                 fileManager: fileManager
@@ -53,53 +53,4 @@ public enum ClipboardPastePayloadPlanner {
             fileManager: fileManager
         )
     }
-
-    private static func fileURLs(
-        for item: RustClipboardItemSummary,
-        appSupportDirectory: URL,
-        fileManager: FileManager
-    ) -> [URL] {
-        let paths = snapshotFilePaths(
-            for: item,
-            appSupportDirectory: appSupportDirectory
-        ) ?? item.primaryText?
-            .split(whereSeparator: \.isNewline)
-            .map(String.init) ?? []
-
-        return paths
-            .map {
-                ClipboardAssetPathResolver.resolvedURL(
-                    for: $0,
-                    appSupportDirectory: appSupportDirectory
-                )
-            }
-            .filter { fileManager.fileExists(atPath: $0.path) }
-    }
-
-    private static func snapshotFilePaths(
-        for item: RustClipboardItemSummary,
-        appSupportDirectory: URL
-    ) -> [String]? {
-        for path in ClipboardAssetPathResolver.normalizedPaths(
-            from: [item.payloadAssetPath, item.previewAssetPath]
-        ) {
-            let url = ClipboardAssetPathResolver.resolvedURL(
-                for: path,
-                appSupportDirectory: appSupportDirectory
-            )
-            guard let data = try? Data(contentsOf: url),
-                  let document = try? JSONDecoder().decode(FileSnapshotDocument.self, from: data),
-                  !document.paths.isEmpty
-            else {
-                continue
-            }
-            return document.paths
-        }
-
-        return nil
-    }
-}
-
-private struct FileSnapshotDocument: Decodable {
-    let paths: [String]
 }

@@ -1,8 +1,10 @@
 use clipboard_core::{
-    CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest, ClipboardCore, ClipboardItemType,
-    ItemManagementResult, ItemQuery, MaintenanceResult, PageRequest, PinboardPage,
-    PreferencesDocument, SourceConfidence,
+    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest,
+    CapturedFileMetadata, ClipboardCore, ClipboardItemType, ItemManagementResult, ItemQuery,
+    LinkMetadataState, MaintenanceResult, PageRequest, PinboardPage, PreferencesDocument,
+    SourceConfidence,
 };
+use serde::Deserialize;
 
 #[swift_bridge::bridge]
 mod ffi {
@@ -143,6 +145,11 @@ mod ffi {
         fn capture_text(
             app_support_dir: String,
             text: String,
+            link_original_text: String,
+            link_canonical_url: String,
+            link_display_url: String,
+            link_host: String,
+            link_metadata_state: String,
             source_bundle_id: String,
             source_app_name: String,
             source_bundle_path: String,
@@ -431,6 +438,11 @@ fn open_core(app_support_dir: String) -> ffi::CoreOpenResult {
 fn capture_text(
     app_support_dir: String,
     text: String,
+    link_original_text: String,
+    link_canonical_url: String,
+    link_display_url: String,
+    link_host: String,
+    link_metadata_state: String,
     source_bundle_id: String,
     source_app_name: String,
     source_bundle_path: String,
@@ -442,6 +454,13 @@ fn capture_text(
     match ClipboardCore::open(app_support_dir).and_then(|mut core| {
         core.capture_text(CaptureTextRequest {
             text,
+            detected_link: capture_detected_link(
+                link_original_text,
+                link_canonical_url,
+                link_display_url,
+                link_host,
+                link_metadata_state,
+            ),
             source_bundle_id: optional_string(source_bundle_id),
             source_app_name: optional_string(source_app_name),
             source_bundle_path: optional_string(source_bundle_path),
@@ -470,6 +489,28 @@ fn capture_text(
             message_key: error.message_key().to_string(),
         },
     }
+}
+
+fn capture_detected_link(
+    original_text: String,
+    canonical_url: String,
+    display_url: String,
+    host: String,
+    metadata_state: String,
+) -> Option<CaptureDetectedLink> {
+    let canonical_url = canonical_url.trim().to_string();
+    let host = host.trim().to_string();
+    if canonical_url.is_empty() || host.is_empty() {
+        return None;
+    }
+
+    Some(CaptureDetectedLink {
+        original_text,
+        canonical_url,
+        display_url,
+        host,
+        metadata_state: parse_link_metadata_state(&metadata_state),
+    })
 }
 
 fn capture_image(
@@ -539,8 +580,8 @@ fn capture_files(
     pasteboard_change_count: i64,
     self_write_token: String,
 ) -> ffi::CoreCaptureResult {
-    let file_paths = match serde_json::from_str::<Vec<String>>(&files_json) {
-        Ok(file_paths) => file_paths,
+    let files_payload = match serde_json::from_str::<CaptureFilesPayload>(&files_json) {
+        Ok(files_payload) => files_payload,
         Err(_error) => {
             return ffi::CoreCaptureResult {
                 ok: false,
@@ -553,10 +594,12 @@ fn capture_files(
             };
         }
     };
+    let (file_paths, file_items) = files_payload.into_parts();
 
     match ClipboardCore::open(app_support_dir).and_then(|mut core| {
         core.capture_files(CaptureFilesRequest {
             file_paths,
+            file_items,
             snapshot_relative_path: optional_string(snapshot_relative_path),
             snapshot_byte_count,
             source_bundle_id: optional_string(source_bundle_id),
@@ -586,6 +629,25 @@ fn capture_files(
             error_code: error.code.as_str().to_string(),
             message_key: error.message_key().to_string(),
         },
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CaptureFilesPayload {
+    Metadata(Vec<CapturedFileMetadata>),
+    Paths(Vec<String>),
+}
+
+impl CaptureFilesPayload {
+    fn into_parts(self) -> (Vec<String>, Vec<CapturedFileMetadata>) {
+        match self {
+            Self::Metadata(file_items) => {
+                let file_paths = file_items.iter().map(|item| item.path.clone()).collect();
+                (file_paths, file_items)
+            }
+            Self::Paths(file_paths) => (file_paths, Vec::new()),
+        }
     }
 }
 
@@ -673,6 +735,17 @@ fn parse_source_confidence(value: &str) -> SourceConfidence {
         "medium" => SourceConfidence::Medium,
         "low" => SourceConfidence::Low,
         _ => SourceConfidence::Unknown,
+    }
+}
+
+fn parse_link_metadata_state(value: &str) -> LinkMetadataState {
+    match value {
+        "fetching" => LinkMetadataState::Fetching,
+        "ready" => LinkMetadataState::Ready,
+        "failed" => LinkMetadataState::Failed,
+        "disabled" => LinkMetadataState::Disabled,
+        "stale" => LinkMetadataState::Stale,
+        _ => LinkMetadataState::Pending,
     }
 }
 

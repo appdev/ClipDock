@@ -28,7 +28,14 @@ public struct PanelCardAssetRequest: Equatable, Sendable {
 public enum PanelCardPreviewState: Equatable, Sendable {
     case none
     case image(previewPath: String?, payloadPath: String?, summary: String)
-    case link(host: String, detail: String, accessibilityLabel: String)
+    case link(
+        title: String,
+        host: String,
+        detail: String,
+        iconPath: String?,
+        imagePath: String?,
+        accessibilityLabel: String
+    )
     case file(accessibilityLabel: String)
 }
 
@@ -121,8 +128,11 @@ public enum PanelItemCardViewStateAdapter {
             )
         case "link":
             return .link(
+                title: presentation.linkTitle ?? "",
                 host: presentation.linkHost ?? "网页链接",
                 detail: presentation.linkDetail ?? "网页链接",
+                iconPath: item.linkMetadata?.iconAssetPath,
+                imagePath: item.linkMetadata?.imageAssetPath,
                 accessibilityLabel: sourceAppName
             )
         case "file":
@@ -144,6 +154,18 @@ public enum PanelItemCardViewStateAdapter {
         _ state: PanelItemCardViewState,
         commandIndexText: String?
     ) -> PanelItemCardViewState {
+        stateBySettingTransientDecorations(
+            state,
+            isSelected: state.isSelected,
+            commandIndexText: commandIndexText
+        )
+    }
+
+    public static func stateBySettingTransientDecorations(
+        _ state: PanelItemCardViewState,
+        isSelected: Bool,
+        commandIndexText: String?
+    ) -> PanelItemCardViewState {
         PanelItemCardViewState(
             itemID: state.itemID,
             sourceAppName: state.sourceAppName,
@@ -153,7 +175,7 @@ public enum PanelItemCardViewStateAdapter {
             summaryText: state.summaryText,
             footnoteText: state.footnoteText,
             commandIndexText: commandIndexText,
-            isSelected: state.isSelected,
+            isSelected: isSelected,
             preview: state.preview,
             assetRequest: state.assetRequest
         )

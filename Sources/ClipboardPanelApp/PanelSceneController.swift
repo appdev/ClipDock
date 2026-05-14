@@ -157,6 +157,10 @@ public final class PanelSceneRuntimeController {
         return result
     }
 
+    public func dismissSearch() {
+        state = PanelSceneController.stateByDismissingSearch(state)
+    }
+
     public func setCommandHintMode(enabled: Bool) {
         state = PanelSceneController.stateByUpdatingCommandHintMode(state, enabled: enabled)
     }
@@ -308,6 +312,13 @@ public enum PanelSceneController {
         var nextState = state
         nextState.query.isSearchVisible = true
         return PanelSearchFocusResult(state: nextState, focusTarget: .searchField)
+    }
+
+    public static func stateByDismissingSearch(_ state: PanelSceneState) -> PanelSceneState {
+        var nextState = state
+        nextState.query.searchText = ""
+        nextState.query.isSearchVisible = false
+        return nextState
     }
 
     public static func escapeAction(

@@ -65,8 +65,8 @@ enum PanelQASamples {
             makeItem(
                 id: "snapshot-link",
                 itemType: "link",
-                summary: "example.com",
-                primaryText: "https://example.com/docs/production-ui?from=clipboard",
+                summary: "github.com",
+                primaryText: "https://github.com/",
                 sourceAppName: "Safari",
                 timestamp: now - 360_000,
                 contentHash: "snapshot-snapshot-link",
@@ -148,7 +148,7 @@ enum PanelQASamples {
                 id: "panel-smoke-file",
                 itemType: "file",
                 summary: "2 个文件 · report.pdf",
-                primaryText: nil,
+                primaryText: "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt",
                 sourceAppName: "Finder",
                 timestamp: now - 120_000,
                 contentHash: "panel-smoke-panel-smoke-file",
@@ -157,8 +157,8 @@ enum PanelQASamples {
             makeItem(
                 id: "panel-smoke-link",
                 itemType: "link",
-                summary: "example.com",
-                primaryText: "https://example.com",
+                summary: "github.com",
+                primaryText: "https://github.com/",
                 sourceAppName: "Safari",
                 timestamp: now - 180_000,
                 contentHash: "panel-smoke-panel-smoke-link",
@@ -654,12 +654,6 @@ enum PreferencesQAHarness {
     @MainActor
     private static func exerciseCurrentPage(in rootView: NSView) -> Bool {
         for control in allSubviews(of: rootView) {
-            if let button = control as? PreferenceCheckboxButton {
-                button.triggerForSmoke()
-                PanelQAHarness.drainMainRunLoop()
-                return true
-            }
-
             if let recorder = control as? ShortcutRecorderButton {
                 recorder.triggerForSmoke()
                 PanelQAHarness.drainMainRunLoop()
@@ -906,10 +900,10 @@ enum PanelInteractionSmokeScenario {
         try verifyCardLayout(in: contentView)
         try verifySelectionAndPreview(in: contentView)
         try verifyCommandHints(in: contentView)
-        try verifyFilteringAndSearch(in: contentView, probe: probe)
         try verifyPinboardManagementEntrypoints(in: contentView)
         try verifyScrolling(in: contentView)
         let menuPreviewShown = try verifyManagementMenu(in: contentView, probe: probe)
+        try verifyFilteringAndSearch(in: contentView, probe: probe)
         try verifyEscapeHide(in: contentView, controller: controller, probe: probe)
         let doubleClickCopiedItemID = try verifyCopyInteractions(in: contentView, controller: controller, probe: probe)
         let loadMoreCount = try verifyPaging(in: contentView, controller: controller, probe: probe)
@@ -1034,20 +1028,12 @@ enum PanelInteractionSmokeScenario {
 
         let overflowItems = contentView.smokePanelOverflowMenuItems()
         try PanelQAHarness.require(
-            Array(overflowItems.prefix(4).map(\.title)) == [
-                "重命名",
-                "共享 Pinboard",
-                "删除...",
-                "颜色"
-            ],
-            "更多菜单未按 Paste 样式展示 Pinboard 重命名、共享、删除和颜色入口"
+            overflowItems.map(\.title) == ["隐藏面板", "偏好设置"],
+            "更多菜单应只展示隐藏面板和偏好设置"
         )
         try PanelQAHarness.require(
-            overflowItems.first(where: { $0.title == "重命名" })?.isEnabled == true
-                && overflowItems.first(where: { $0.title == "共享 Pinboard" })?.isEnabled == true
-                && overflowItems.first(where: { $0.title == "删除..." })?.isEnabled == true
-                && overflowItems.first(where: { $0.title == "颜色" })?.hasCustomView == true,
-            "选择 Pinboard 后更多菜单中的管理项应可用"
+            overflowItems.allSatisfy { $0.isEnabled && !$0.hasSubmenu && !$0.hasCustomView },
+            "更多菜单中的隐藏和偏好设置应为可直接触发的动作"
         )
 
         let pinboardMenuItems = contentView.smokePinboardChipMenuItems(pinboardID: "default")
@@ -1175,6 +1161,11 @@ enum PanelInteractionSmokeScenario {
         PanelQAHarness.sendEscape(to: contentView)
         PanelQAHarness.drainMainRunLoop()
         try PanelQAHarness.require(probe.lastQuery?.searchText == "", "Escape 未先清空搜索")
+
+        if let clipboardChip = contentView.smokePinboardFilterButton(pinboardID: nil) {
+            PanelQAHarness.sendMouseDown(to: clipboardChip, clickCount: 1)
+            PanelQAHarness.drainMainRunLoop()
+        }
 
         PanelQAHarness.sendEscape(to: contentView)
         PanelQAHarness.drainMainRunLoop()
@@ -1333,6 +1324,8 @@ final class PanelInteractionSmokeProbe {
                 ))
             case .copyItem(let item):
                 self?.copiedItemID = item.id
+                controller?.hide()
+            case .copyPath:
                 controller?.hide()
             case .setPinboardMembership(let item, let pinboardID, let isMember):
                 self?.pinboardRequest = (item.id, pinboardID, isMember)

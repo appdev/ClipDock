@@ -18,7 +18,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 4)
+        #expect(value.schemaVersion == 6)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -78,6 +78,9 @@ struct RustCoreClientTests {
         #expect(page.items[0].copyCount == 2)
         #expect(page.items[0].sourceAppName == "Safari")
         #expect(page.items[0].sourceAppIconPath?.hasSuffix("app-icons/safari.tiff") == true)
+        #expect(page.items[0].linkMetadata?.canonicalURL == "https://example.com")
+        #expect(page.items[0].linkMetadata?.host == "example.com")
+        #expect(page.items[0].linkMetadata?.metadataState == "pending")
     }
 
     @Test
@@ -130,24 +133,40 @@ struct RustCoreClientTests {
     func capturesFilesThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let snapshotDirectory = tempDirectory
-            .appendingPathComponent("assets", isDirectory: true)
-            .appendingPathComponent("file-snapshots", isDirectory: true)
-        try FileManager.default.createDirectory(at: snapshotDirectory, withIntermediateDirectories: true)
         let filePaths = [
             "/Users/evan/Desktop/report.pdf",
             "/Users/evan/Desktop/design.sketch"
         ]
-        let snapshotData = try JSONEncoder().encode(["paths": filePaths])
-        try snapshotData.write(to: snapshotDirectory.appendingPathComponent("files.json"))
         let client = RustCoreClient()
 
         let result = try client.captureFiles(
             appSupportDirectory: tempDirectory,
             request: RustCaptureFilesRequest(
                 filePaths: filePaths,
-                snapshotRelativePath: "assets/file-snapshots/files.json",
-                snapshotByteCount: Int64(snapshotData.count),
+                fileItems: [
+                    ClipboardCapturedFileMetadata(
+                        path: filePaths[0],
+                        fileName: "report.pdf",
+                        fileExtension: "pdf",
+                        byteCount: 1024,
+                        isDirectory: false,
+                        width: nil,
+                        height: nil,
+                        contentType: "com.adobe.pdf"
+                    ),
+                    ClipboardCapturedFileMetadata(
+                        path: filePaths[1],
+                        fileName: "design.sketch",
+                        fileExtension: "sketch",
+                        byteCount: 2048,
+                        isDirectory: false,
+                        width: nil,
+                        height: nil,
+                        contentType: nil
+                    )
+                ],
+                snapshotRelativePath: nil,
+                snapshotByteCount: 0,
                 sourceBundleId: "com.apple.finder",
                 sourceAppName: "Finder",
                 sourceBundlePath: "/System/Library/CoreServices/Finder.app",
@@ -165,7 +184,10 @@ struct RustCoreClientTests {
         #expect(page.items[0].summary == "2 个文件 · report.pdf")
         #expect(page.items[0].primaryText?.contains("design.sketch") == true)
         #expect(page.items[0].sourceAppName == "Finder")
-        #expect(page.items[0].payloadAssetPath?.hasSuffix("assets/file-snapshots/files.json") == true)
+        #expect(page.items[0].payloadAssetPath == nil)
+        #expect(page.items[0].sizeBytes == 3072)
+        #expect(page.items[0].fileItems.map(\.path) == filePaths)
+        #expect(page.items[0].fileItems.map(\.byteCount) == [1024, 2048])
     }
 
     @Test
@@ -447,18 +469,21 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 4)
+        #expect(result.schemaVersion == 6)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
-        #expect(result.preferences.history.maxItems == 500)
+        #expect(result.preferences.history.maxItems == 5000)
         #expect(result.preferences.history.retentionDays == 30)
         #expect(result.preferences.history.recordImages)
-        #expect(!result.preferences.history.recordFiles)
+        #expect(result.preferences.history.recordFiles)
         #expect(result.preferences.appearance.mode == "system")
         #expect(result.preferences.appearance.itemDensity == "standard")
         #expect(result.preferences.appearance.previewPopoverEnabled)
+        #expect(!result.preferences.linkPreview.metadataEnabled)
+        #expect(result.preferences.linkPreview.webPreviewEnabled)
         #expect(result.preferences.shortcuts.openPanel.keyCode == 9)
         #expect(result.preferences.shortcuts.openPanel.modifiers == ["command", "shift"])
+        #expect(!result.preferences.shortcuts.pasteDirectlyToTarget)
         #expect(result.preferences.ignoreList.ignoredAppIdentifiers.isEmpty)
         #expect(result.preferences.ignoreList.windowTitleKeywords.isEmpty)
         #expect(!result.preferences.ignoreList.skipUnknownSource)
@@ -478,10 +503,13 @@ struct RustCoreClientTests {
         preferences.appearance.mode = "neon"
         preferences.appearance.itemDensity = "compact"
         preferences.appearance.previewPopoverEnabled = false
+        preferences.linkPreview.metadataEnabled = true
+        preferences.linkPreview.webPreviewEnabled = false
         preferences.shortcuts.openPanel = RustKeyboardShortcut(
             keyCode: 11,
             modifiers: ["shift", "cmd", "alt", "command", "ignored"]
         )
+        preferences.shortcuts.pasteDirectlyToTarget = true
         preferences.ignoreList.ignoredAppIdentifiers = [
             "  com.apple.Terminal  ",
             "terminal",
@@ -502,15 +530,18 @@ struct RustCoreClientTests {
         let reloaded = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
         #expect(saved.preferences.general.defaultPanelHeight == 560)
-        #expect(saved.preferences.history.maxItems == 50)
+        #expect(saved.preferences.history.maxItems == 5000)
         #expect(saved.preferences.history.retentionDays == 365)
-        #expect(!saved.preferences.history.recordImages)
+        #expect(saved.preferences.history.recordImages)
         #expect(saved.preferences.history.recordFiles)
         #expect(saved.preferences.appearance.mode == "system")
         #expect(saved.preferences.appearance.itemDensity == "compact")
         #expect(!saved.preferences.appearance.previewPopoverEnabled)
+        #expect(saved.preferences.linkPreview.metadataEnabled)
+        #expect(!saved.preferences.linkPreview.webPreviewEnabled)
         #expect(saved.preferences.shortcuts.openPanel.keyCode == 11)
         #expect(saved.preferences.shortcuts.openPanel.modifiers == ["command", "option", "shift"])
+        #expect(saved.preferences.shortcuts.pasteDirectlyToTarget)
         #expect(saved.preferences.ignoreList.ignoredAppIdentifiers == ["com.apple.Terminal", "terminal"])
         #expect(saved.preferences.ignoreList.windowTitleKeywords == ["密码", "验证码"])
         #expect(saved.preferences.ignoreList.skipUnknownSource)
@@ -547,6 +578,10 @@ struct RustCoreClientTests {
 
         #expect(preferences.ignoreList == RustIgnoreListPreferences())
         #expect(preferences.shortcuts == RustShortcutsPreferences())
+        #expect(!preferences.shortcuts.pasteDirectlyToTarget)
+        #expect(preferences.history.maxItems == 5000)
+        #expect(preferences.history.recordImages)
+        #expect(preferences.history.recordFiles)
     }
 
     @Test
@@ -761,7 +796,7 @@ struct RustCoreClientTests {
     }
 
     @Test
-    func plansImagePreviewContentFromThumbnailAsset() throws {
+    func plansImagePreviewContentFromOriginalPayloadAsset() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let payloadDirectory = tempDirectory.appendingPathComponent("assets", isDirectory: true)
@@ -800,7 +835,7 @@ struct RustCoreClientTests {
 
         #expect(preview.itemType == "image")
         #expect(preview.title == "图片 420 x 260")
-        #expect(preview.imageURL == thumbnailURL)
+        #expect(preview.imageURL == payloadURL)
         #expect(preview.metadata.hasPrefix("PNG"))
     }
 

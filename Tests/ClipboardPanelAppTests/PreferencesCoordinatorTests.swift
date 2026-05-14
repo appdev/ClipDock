@@ -3,6 +3,27 @@ import Testing
 
 struct PreferencesCoordinatorTests {
     @Test
+    func sceneSectionsExposeSettingsNavigationOrder() {
+        #expect(PreferencesSceneSection.allCases == [
+            .general,
+            .shortcuts,
+            .rules,
+            .about
+        ])
+    }
+
+    @Test
+    func sceneControllerRoutesLegacyHistorySectionToGeneral() {
+        let controller = PreferencesSceneController()
+
+        let update = controller.selectSection(.history)
+
+        #expect(update.state.selectedSection == .general)
+        #expect(!update.shouldRenderSection)
+        #expect(!update.shouldUpdateNavigationSelection)
+    }
+
+    @Test
     func sceneControllerSelectSectionRequestsNavigationAndRender() {
         let controller = PreferencesSceneController()
 

@@ -100,6 +100,37 @@ struct PanelSceneControllerTests {
     }
 
     @Test
+    func dismissingSearchClearsTextHidesFieldAndKeepsPinboardFilter() {
+        let state = PanelSceneState(
+            query: PanelQueryState(
+                searchText: "report",
+                pinboardID: "default",
+                isSearchVisible: true
+            )
+        )
+
+        let nextState = PanelSceneController.stateByDismissingSearch(state)
+
+        #expect(nextState.query.searchText.isEmpty)
+        #expect(!nextState.query.isSearchVisible)
+        #expect(nextState.query.pinboardID == "default")
+    }
+
+    @Test
+    func runtimeControllerDismissSearchMutatesState() {
+        let controller = PanelSceneRuntimeController(
+            state: PanelSceneState(
+                query: PanelQueryState(searchText: "report", isSearchVisible: true)
+            )
+        )
+
+        controller.dismissSearch()
+
+        #expect(controller.state.query.searchText.isEmpty)
+        #expect(!controller.state.query.isSearchVisible)
+    }
+
+    @Test
     func clearingSelectionRemovesSelectedItem() {
         let state = PanelSceneState(
             selection: PanelSelectionState(selectedItemID: "selected")

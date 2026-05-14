@@ -5,14 +5,20 @@ DerivedData/
 rust/target/
 Generated/ClipboardCoreBridge/RustXcframework.xcframework/
 .DS_Store
-.codex/artifacts/*.app/
-.codex/artifacts/panel-interaction-smoke/
-.codex/artifacts/release/
-.codex/telegram.env
 
 # Local Codex run outputs
-.codex/artifacts/
-.codex/module-cache/
-.codex/*.png
-.codex/testing.md
-.codex/*-qa-*.md
+.codex/
+verification.md
+
+# Local verification and test artifacts
+*.log
+*.xcactivitylog
+*.xcresult
+*.xccovreport
+*.xccovarchive
+test-results/
+screenshots/
+Screenshots/
+Screen Shot*.png
+Screenshot*.png
+SCR-*.png

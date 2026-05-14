@@ -6,6 +6,7 @@ public enum BottomPanelGeometryPlanner {
     public static let minimumHeight: CGFloat = 260
     public static let maximumHeight: CGFloat = 560
     public static let maximumHeightRatio: CGFloat = 0.62
+    public static let outerMargin: CGFloat = 10
 
     public static func clampedHeight(
         _ height: CGFloat,
@@ -32,9 +33,9 @@ public enum BottomPanelGeometryPlanner {
     ) -> CGRect {
         let height = clampedHeight(preferredHeight, screenHeight: screenFrame.height)
         return CGRect(
-            x: screenFrame.minX,
-            y: screenFrame.minY,
-            width: screenFrame.width,
+            x: screenFrame.minX + outerMargin,
+            y: screenFrame.minY + outerMargin,
+            width: max(0, screenFrame.width - outerMargin * 2),
             height: height
         )
     }

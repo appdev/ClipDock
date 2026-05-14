@@ -71,6 +71,7 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
     public var general: RustGeneralPreferences
     public var history: RustHistoryPreferences
     public var appearance: RustAppearancePreferences
+    public var linkPreview: RustLinkPreviewPreferences
     public var shortcuts: RustShortcutsPreferences
     public var ignoreList: RustIgnoreListPreferences
 
@@ -78,12 +79,14 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         general: RustGeneralPreferences = RustGeneralPreferences(),
         history: RustHistoryPreferences = RustHistoryPreferences(),
         appearance: RustAppearancePreferences = RustAppearancePreferences(),
+        linkPreview: RustLinkPreviewPreferences = RustLinkPreviewPreferences(),
         shortcuts: RustShortcutsPreferences = RustShortcutsPreferences(),
         ignoreList: RustIgnoreListPreferences = RustIgnoreListPreferences()
     ) {
         self.general = general
         self.history = history
         self.appearance = appearance
+        self.linkPreview = linkPreview
         self.shortcuts = shortcuts
         self.ignoreList = ignoreList
     }
@@ -92,6 +95,7 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         case general
         case history
         case appearance
+        case linkPreview = "link_preview"
         case shortcuts
         case ignoreList = "ignore_list"
     }
@@ -101,6 +105,7 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         self.general = try container.decodeIfPresent(RustGeneralPreferences.self, forKey: .general) ?? RustGeneralPreferences()
         self.history = try container.decodeIfPresent(RustHistoryPreferences.self, forKey: .history) ?? RustHistoryPreferences()
         self.appearance = try container.decodeIfPresent(RustAppearancePreferences.self, forKey: .appearance) ?? RustAppearancePreferences()
+        self.linkPreview = try container.decodeIfPresent(RustLinkPreviewPreferences.self, forKey: .linkPreview) ?? RustLinkPreviewPreferences()
         self.shortcuts = try container.decodeIfPresent(RustShortcutsPreferences.self, forKey: .shortcuts) ?? RustShortcutsPreferences()
         self.ignoreList = try container.decodeIfPresent(RustIgnoreListPreferences.self, forKey: .ignoreList) ?? RustIgnoreListPreferences()
     }
@@ -135,15 +140,15 @@ public struct RustHistoryPreferences: Equatable, Codable, Sendable {
     public var recordFiles: Bool
 
     public init(
-        maxItems: Int64 = 500,
+        maxItems: Int64 = 5000,
         retentionDays: Int64 = 30,
         recordImages: Bool = true,
-        recordFiles: Bool = false
+        recordFiles: Bool = true
     ) {
-        self.maxItems = maxItems
+        self.maxItems = 5000
         self.retentionDays = retentionDays
-        self.recordImages = recordImages
-        self.recordFiles = recordFiles
+        self.recordImages = true
+        self.recordFiles = true
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -151,6 +156,15 @@ public struct RustHistoryPreferences: Equatable, Codable, Sendable {
         case retentionDays = "retention_days"
         case recordImages = "record_images"
         case recordFiles = "record_files"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        _ = try container.decodeIfPresent(Int64.self, forKey: .maxItems)
+        self.maxItems = 5000
+        self.retentionDays = try container.decodeIfPresent(Int64.self, forKey: .retentionDays) ?? 30
+        self.recordImages = true
+        self.recordFiles = true
     }
 }
 
@@ -178,13 +192,49 @@ public struct RustAppearancePreferences: Equatable, Codable, Sendable {
 
 public struct RustShortcutsPreferences: Equatable, Codable, Sendable {
     public var openPanel: RustKeyboardShortcut
+    public var pasteDirectlyToTarget: Bool
 
-    public init(openPanel: RustKeyboardShortcut = RustKeyboardShortcut()) {
+    public init(
+        openPanel: RustKeyboardShortcut = RustKeyboardShortcut(),
+        pasteDirectlyToTarget: Bool = false
+    ) {
         self.openPanel = openPanel
+        self.pasteDirectlyToTarget = pasteDirectlyToTarget
     }
 
     private enum CodingKeys: String, CodingKey {
         case openPanel = "open_panel"
+        case pasteDirectlyToTarget = "paste_directly_to_target"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.openPanel = try container.decodeIfPresent(
+            RustKeyboardShortcut.self,
+            forKey: .openPanel
+        ) ?? RustKeyboardShortcut()
+        self.pasteDirectlyToTarget = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .pasteDirectlyToTarget
+        ) ?? false
+    }
+}
+
+public struct RustLinkPreviewPreferences: Equatable, Codable, Sendable {
+    public var metadataEnabled: Bool
+    public var webPreviewEnabled: Bool
+
+    public init(
+        metadataEnabled: Bool = false,
+        webPreviewEnabled: Bool = true
+    ) {
+        self.metadataEnabled = metadataEnabled
+        self.webPreviewEnabled = webPreviewEnabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case metadataEnabled = "metadata_enabled"
+        case webPreviewEnabled = "web_preview_enabled"
     }
 }
 
@@ -228,6 +278,94 @@ public struct RustIgnoreListPreferences: Equatable, Codable, Sendable {
     }
 }
 
+public struct RustLinkMetadataSummary: Equatable, Decodable, Sendable {
+    public let canonicalURL: String
+    public let displayURL: String
+    public let host: String
+    public let title: String?
+    public let siteName: String?
+    public let iconAssetPath: String?
+    public let imageAssetPath: String?
+    public let metadataState: String
+    public let fetchedAtMs: Int64?
+
+    public init(
+        canonicalURL: String,
+        displayURL: String,
+        host: String,
+        title: String? = nil,
+        siteName: String? = nil,
+        iconAssetPath: String? = nil,
+        imageAssetPath: String? = nil,
+        metadataState: String = "pending",
+        fetchedAtMs: Int64? = nil
+    ) {
+        self.canonicalURL = canonicalURL
+        self.displayURL = displayURL
+        self.host = host
+        self.title = title
+        self.siteName = siteName
+        self.iconAssetPath = iconAssetPath
+        self.imageAssetPath = imageAssetPath
+        self.metadataState = metadataState
+        self.fetchedAtMs = fetchedAtMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case canonicalURL = "canonical_url"
+        case displayURL = "display_url"
+        case host
+        case title
+        case siteName = "site_name"
+        case iconAssetPath = "icon_asset_path"
+        case imageAssetPath = "image_asset_path"
+        case metadataState = "metadata_state"
+        case fetchedAtMs = "fetched_at_ms"
+    }
+}
+
+public struct RustClipboardFileItemSummary: Equatable, Decodable, Sendable {
+    public let path: String
+    public let fileName: String
+    public let fileExtension: String?
+    public let byteCount: Int64
+    public let isDirectory: Bool
+    public let width: Int64?
+    public let height: Int64?
+    public let contentType: String?
+
+    public init(
+        path: String,
+        fileName: String,
+        fileExtension: String?,
+        byteCount: Int64,
+        isDirectory: Bool,
+        width: Int64?,
+        height: Int64?,
+        contentType: String?
+    ) {
+        self.path = path
+        self.fileName = fileName
+        self.fileExtension = fileExtension
+        self.byteCount = byteCount
+        self.isDirectory = isDirectory
+        self.width = width
+        self.height = height
+        self.contentType = contentType
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path
+        case fileName = "file_name"
+        case fileExtension = "file_extension"
+        case byteCount = "byte_count"
+        case isDirectory = "is_directory"
+        case width
+        case height
+        case contentType = "content_type"
+    }
+}
+
 public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let id: String
     public let itemType: String
@@ -246,6 +384,8 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let isPinned: Bool
     public let sizeBytes: Int64
     public let previewState: String
+    public let fileItems: [RustClipboardFileItemSummary]
+    public let linkMetadata: RustLinkMetadataSummary?
 
     public init(
         id: String,
@@ -264,7 +404,9 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         copyCount: Int64,
         isPinned: Bool,
         sizeBytes: Int64,
-        previewState: String
+        previewState: String,
+        fileItems: [RustClipboardFileItemSummary] = [],
+        linkMetadata: RustLinkMetadataSummary? = nil
     ) {
         self.id = id
         self.itemType = itemType
@@ -283,6 +425,36 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         self.isPinned = isPinned
         self.sizeBytes = sizeBytes
         self.previewState = previewState
+        self.fileItems = fileItems
+        self.linkMetadata = linkMetadata
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            itemType: try container.decode(String.self, forKey: .itemType),
+            summary: try container.decode(String.self, forKey: .summary),
+            primaryText: try container.decodeIfPresent(String.self, forKey: .primaryText),
+            contentHash: try container.decode(String.self, forKey: .contentHash),
+            sourceAppId: try container.decodeIfPresent(String.self, forKey: .sourceAppId),
+            sourceAppName: try container.decodeIfPresent(String.self, forKey: .sourceAppName),
+            sourceAppIconPath: try container.decodeIfPresent(String.self, forKey: .sourceAppIconPath),
+            previewAssetPath: try container.decodeIfPresent(String.self, forKey: .previewAssetPath),
+            payloadAssetPath: try container.decodeIfPresent(String.self, forKey: .payloadAssetPath),
+            sourceConfidence: try container.decode(String.self, forKey: .sourceConfidence),
+            firstCopiedAtMs: try container.decode(Int64.self, forKey: .firstCopiedAtMs),
+            lastCopiedAtMs: try container.decode(Int64.self, forKey: .lastCopiedAtMs),
+            copyCount: try container.decode(Int64.self, forKey: .copyCount),
+            isPinned: try container.decode(Bool.self, forKey: .isPinned),
+            sizeBytes: try container.decode(Int64.self, forKey: .sizeBytes),
+            previewState: try container.decode(String.self, forKey: .previewState),
+            fileItems: try container.decodeIfPresent(
+                [RustClipboardFileItemSummary].self,
+                forKey: .fileItems
+            ) ?? [],
+            linkMetadata: try container.decodeIfPresent(RustLinkMetadataSummary.self, forKey: .linkMetadata)
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -303,6 +475,8 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         case isPinned = "is_pinned"
         case sizeBytes = "size_bytes"
         case previewState = "preview_state"
+        case fileItems = "file_items"
+        case linkMetadata = "link_metadata"
     }
 }
 
@@ -364,6 +538,7 @@ public struct RustPinboardSummary: Equatable, Decodable, Sendable {
 
 public struct RustCaptureTextRequest: Equatable, Sendable {
     public let text: String
+    public let detectedLink: RustDetectedLink?
     public let sourceBundleId: String?
     public let sourceAppName: String?
     public let sourceBundlePath: String?
@@ -374,6 +549,7 @@ public struct RustCaptureTextRequest: Equatable, Sendable {
 
     public init(
         text: String,
+        detectedLink: RustDetectedLink? = nil,
         sourceBundleId: String?,
         sourceAppName: String?,
         sourceBundlePath: String?,
@@ -383,6 +559,7 @@ public struct RustCaptureTextRequest: Equatable, Sendable {
         selfWriteToken: String? = nil
     ) {
         self.text = text
+        self.detectedLink = detectedLink
         self.sourceBundleId = sourceBundleId
         self.sourceAppName = sourceAppName
         self.sourceBundlePath = sourceBundlePath
@@ -390,6 +567,28 @@ public struct RustCaptureTextRequest: Equatable, Sendable {
         self.sourceConfidence = sourceConfidence
         self.pasteboardChangeCount = pasteboardChangeCount
         self.selfWriteToken = selfWriteToken
+    }
+}
+
+public struct RustDetectedLink: Equatable, Sendable {
+    public let originalText: String
+    public let canonicalURL: String
+    public let displayURL: String
+    public let host: String
+    public let metadataState: String
+
+    public init(
+        originalText: String,
+        canonicalURL: String,
+        displayURL: String,
+        host: String,
+        metadataState: String
+    ) {
+        self.originalText = originalText
+        self.canonicalURL = canonicalURL
+        self.displayURL = displayURL
+        self.host = host
+        self.metadataState = metadataState
     }
 }
 
@@ -450,6 +649,7 @@ public typealias RustCaptureImageResult = RustCaptureTextResult
 
 public struct RustCaptureFilesRequest: Equatable, Sendable {
     public let filePaths: [String]
+    public let fileItems: [ClipboardCapturedFileMetadata]
     public let snapshotRelativePath: String?
     public let snapshotByteCount: Int64
     public let sourceBundleId: String?
@@ -462,6 +662,7 @@ public struct RustCaptureFilesRequest: Equatable, Sendable {
 
     public init(
         filePaths: [String],
+        fileItems: [ClipboardCapturedFileMetadata] = [],
         snapshotRelativePath: String?,
         snapshotByteCount: Int64,
         sourceBundleId: String?,
@@ -473,6 +674,7 @@ public struct RustCaptureFilesRequest: Equatable, Sendable {
         selfWriteToken: String? = nil
     ) {
         self.filePaths = filePaths
+        self.fileItems = fileItems
         self.snapshotRelativePath = snapshotRelativePath
         self.snapshotByteCount = snapshotByteCount
         self.sourceBundleId = sourceBundleId
@@ -906,6 +1108,11 @@ public struct RustCoreClient: Sendable {
             let result = capture_text(
                 appSupportPath,
                 request.text,
+                request.detectedLink?.originalText ?? "",
+                request.detectedLink?.canonicalURL ?? "",
+                request.detectedLink?.displayURL ?? "",
+                request.detectedLink?.host ?? "",
+                request.detectedLink?.metadataState ?? "",
                 request.sourceBundleId ?? "",
                 request.sourceAppName ?? "",
                 request.sourceBundlePath ?? "",
@@ -978,7 +1185,10 @@ public struct RustCoreClient: Sendable {
         request: RustCaptureFilesRequest
     ) -> Result<RustCaptureFilesResult, RustCoreError> {
         withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            switch Self.encodeBridgeJSON(request.filePaths) {
+            let encodedFiles = request.fileItems.isEmpty
+                ? Self.encodeBridgeJSON(request.filePaths)
+                : Self.encodeBridgeJSON(request.fileItems)
+            switch encodedFiles {
             case .success(let filesJSON):
                 let result = capture_files(
                     appSupportPath,

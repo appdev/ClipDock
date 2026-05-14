@@ -135,13 +135,24 @@ struct ClipboardListCoordinatorTests {
     @Test
     @MainActor
     func newerRefreshIgnoresOlderInFlightResult() async {
-        let gate = QueryResultGate()
+        let requests = QueryRecorder()
+        let completedRequests = QueryRecorder()
         var updates: [ClipboardListUpdate] = []
         let coordinator = ClipboardListCoordinator(
             pageSize: 2,
             debounceNanoseconds: 0,
             pageLoader: { query in
-                await gate.wait(for: "\(query.offset)|\(query.normalizedSearch)")
+                await requests.record(query)
+                if query.normalizedSearch == "first" {
+                    await nonCancellableDelay(nanoseconds: 40_000_000)
+                }
+                await completedRequests.record(query)
+
+                return .success(RustCoreListResult(
+                    items: [makeItem(id: query.normalizedSearch)],
+                    totalCount: 1,
+                    hasMore: false
+                ))
             },
             mutationPerformer: { _ in
                 .success(RustItemManagementResult(affectedCount: 0))
@@ -149,27 +160,13 @@ struct ClipboardListCoordinatorTests {
         )
         coordinator.onListUpdate = { updates.append($0) }
 
-        coordinator.updateQuery(searchText: "first", sourceAppID: nil)
-        let registeredFirst = await waitUntil { await gate.registeredCount() == 1 }
-        #expect(registeredFirst)
-        guard registeredFirst else { return }
+        coordinator.updateQuery(searchText: "first", sourceAppID: nil, debounce: false)
+        #expect(await waitUntil { await requests.values().count == 1 })
 
-        coordinator.updateQuery(searchText: "second", sourceAppID: nil)
+        coordinator.updateQuery(searchText: "second", sourceAppID: nil, debounce: false)
+        #expect(await waitUntil(attempts: 400) { await requests.values().count == 2 })
 
-        let registeredSecond = await waitUntil { await gate.registeredCount() == 2 }
-        #expect(registeredSecond)
-        guard registeredSecond else { return }
-
-        await gate.release(
-            key: "0|second",
-            result: .success(RustCoreListResult(
-                items: [makeItem(id: "second")],
-                totalCount: 1,
-                hasMore: false
-            ))
-        )
-
-        let didApplyLatest = await waitUntil { updates.count == 1 }
+        let didApplyLatest = await waitUntil(attempts: 400) { updates.count == 1 }
         #expect(didApplyLatest)
         guard didApplyLatest else { return }
         guard case .success(let firstAppliedResult) = updates[0].result else {
@@ -178,15 +175,7 @@ struct ClipboardListCoordinatorTests {
         }
         #expect(firstAppliedResult.items.map(\.id) == ["second"])
 
-        await gate.release(
-            key: "0|first",
-            result: .success(RustCoreListResult(
-                items: [makeItem(id: "first")],
-                totalCount: 1,
-                hasMore: false
-            ))
-        )
-
+        #expect(await waitUntil(attempts: 400) { await completedRequests.values().count == 2 })
         try? await Task.sleep(nanoseconds: 20_000_000)
         #expect(updates.count == 1)
     }
@@ -256,32 +245,11 @@ private actor QueryRecorder {
     }
 }
 
-private actor QueryResultGate {
-    private var continuations: [String: CheckedContinuation<Result<RustCoreListResult, RustCoreError>, Never>] = [:]
-
-    func wait(for key: String) async -> Result<RustCoreListResult, RustCoreError> {
-        await withCheckedContinuation { continuation in
-            continuations[key] = continuation
-        }
-    }
-
-    func registeredCount() -> Int {
-        continuations.count
-    }
-
-    func release(
-        key: String,
-        result: Result<RustCoreListResult, RustCoreError>
-    ) {
-        continuations.removeValue(forKey: key)?.resume(returning: result)
-    }
-}
-
 private actor SleepGate {
     private var continuation: CheckedContinuation<Void, Never>?
 
     func wait() async {
-        await withCheckedContinuation { continuation in
+        await withCheckedContinuation(isolation: self) { continuation in
             self.continuation = continuation
         }
     }
@@ -290,6 +258,16 @@ private actor SleepGate {
         continuation?.resume()
         continuation = nil
     }
+}
+
+private func nonCancellableDelay(nanoseconds: UInt64) async {
+    await Task.detached {
+        sleepSynchronously(seconds: TimeInterval(nanoseconds) / 1_000_000_000)
+    }.value
+}
+
+private func sleepSynchronously(seconds: TimeInterval) {
+    Thread.sleep(forTimeInterval: seconds)
 }
 
 @MainActor

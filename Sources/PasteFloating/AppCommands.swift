@@ -150,7 +150,6 @@ enum PreferencesSnapshotCommand {
         var preferences = RustPreferencesDocument()
         preferences.general.launchAtLogin = true
         preferences.general.defaultPanelHeight = 360
-        preferences.history.recordFiles = true
         preferences.ignoreList.ignoredAppIdentifiers = [
             "com.apple.Terminal",
             "Xcode"
@@ -159,7 +158,6 @@ enum PreferencesSnapshotCommand {
             "验证码",
             "Private"
         ]
-        preferences.appearance.itemDensity = "standard"
 
         controller.updatePreferences(preferences)
         controller.showSection(section(arguments: arguments))
@@ -202,10 +200,16 @@ enum PreferencesSnapshotCommand {
         switch arguments[valueIndex].lowercased() {
         case "general":
             return .general
+        case "appearance":
+            return .general
+        case "history":
+            return .general
         case "shortcuts":
             return .shortcuts
-        case "rules":
+        case "privacy", "rules":
             return .rules
+        case "about":
+            return .about
         default:
             return .general
         }
@@ -250,8 +254,7 @@ enum PreferencesSmokeCommand {
             return preferences
         }
 
-        guard let rootView = controller.window?.contentView else { return }
-        PreferencesQAHarness.exerciseAllSections(in: rootView)
+        controller.exerciseForSmoke()
     }
 }
 
@@ -265,6 +268,138 @@ enum PanelInteractionSmokeCommand {
     @MainActor
     static func run() throws {
         try PanelInteractionSmokeScenario.run().emit()
+    }
+}
+
+enum LinkPreviewSmokeCommand {
+    private static let flag = "--exercise-link-preview"
+    private static let urlFlag = "--link-preview-url"
+    private static let fallbackURL = URL(string: "http://127.0.0.1:9/smoke")!
+
+    static func shouldRun(arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
+
+    @MainActor
+    static func run(arguments: [String] = CommandLine.arguments) throws {
+        let linkURL = try previewURL(arguments: arguments)
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let appSupportURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("link-preview-smoke", isDirectory: true)
+        try FileManager.default.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        controller.setAppSupportDirectory(appSupportURL)
+        controller.setLinkWebPreviewEnabled(true)
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: [smokeLinkItem(url: linkURL)],
+                totalCount: 1,
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        PanelQAHarness.drainMainRunLoop()
+
+        guard !contentView.smokeCardsContainWebView() else {
+            throw QAError(message: "链接卡片层不应包含 WKWebView")
+        }
+
+        PanelQAHarness.sendSpace(to: contentView)
+        PanelQAHarness.drainMainRunLoop()
+        guard contentView.smokeIsPreviewShown,
+              contentView.smokePreviewContainsWebView()
+        else {
+            throw QAError(message: "链接完整预览未创建 WKWebView")
+        }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+        guard let previewWebViewURL = contentView.smokePreviewWebViewURLString(),
+              previewWebViewURL == linkURL.absoluteString
+        else {
+            throw QAError(message: "链接完整预览未加载指定 URL")
+        }
+
+        guard contentView.smokeClosePreviewWithSpaceFromPopoverFocus() else {
+            throw QAError(message: "链接预览无法通过 Space 关闭")
+        }
+        PanelQAHarness.drainMainRunLoop()
+        guard !contentView.smokeIsPreviewShown,
+              !contentView.smokePreviewContainsWebView()
+        else {
+            throw QAError(message: "链接预览关闭后 WKWebView 未从视图树释放")
+        }
+
+        controller.hide()
+        print("link_preview_smoke=passed")
+        print("link_preview_url=\(linkURL.absoluteString)")
+        print("preview_webview_url=\(linkURL.absoluteString)")
+        print("card_contains_webview=false")
+        print("preview_contains_webview=true")
+        print("metadata_background_fetch=disabled")
+    }
+
+    private static func previewURL(arguments: [String]) throws -> URL {
+        guard let flagIndex = arguments.firstIndex(of: urlFlag) else {
+            return fallbackURL
+        }
+
+        let valueIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(valueIndex),
+              !arguments[valueIndex].hasPrefix("--"),
+              let url = URL(string: arguments[valueIndex]),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false
+        else {
+            throw QAError(message: "链接预览 URL 参数无效")
+        }
+
+        return url
+    }
+
+    private static func smokeLinkItem(url: URL) -> RustClipboardItemSummary {
+        let absoluteString = url.absoluteString
+        let host = url.host ?? absoluteString
+        return RustClipboardItemSummary(
+            id: "link-preview-smoke",
+            itemType: "link",
+            summary: absoluteString,
+            primaryText: absoluteString,
+            contentHash: "link-preview-smoke",
+            sourceAppId: nil,
+            sourceAppName: "Safari",
+            sourceAppIconPath: nil,
+            previewAssetPath: nil,
+            payloadAssetPath: nil,
+            sourceConfidence: "high",
+            firstCopiedAtMs: 1,
+            lastCopiedAtMs: 1,
+            copyCount: 1,
+            isPinned: false,
+            sizeBytes: Int64(absoluteString.utf8.count),
+            previewState: "ready",
+            linkMetadata: RustLinkMetadataSummary(
+                canonicalURL: absoluteString,
+                displayURL: absoluteString,
+                host: host,
+                metadataState: "disabled"
+            )
+        )
+    }
+
+    private struct QAError: LocalizedError {
+        let message: String
+
+        var errorDescription: String? {
+            message
+        }
     }
 }
 

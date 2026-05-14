@@ -32,28 +32,72 @@ struct PanelItemCardPresentationTests {
 
         #expect(presentation.symbolName == "link")
         #expect(presentation.displayType == "链接")
-        #expect(presentation.summaryText == "https://example.com/docs?q=1")
-        #expect(presentation.footnoteText == "example.com")
+        #expect(presentation.summaryText.isEmpty)
+        #expect(presentation.footnoteText == "example.com/docs?q=1")
         #expect(presentation.linkHost == "example.com")
         #expect(presentation.linkDetail == "https://example.com/docs?q=1")
+        #expect(presentation.linkTitle == nil)
     }
 
     @Test
-    func presentsImageSummaryFromByteCountAndCopyCount() {
+    func presentsLinkTitleWhenMetadataProvidesTitle() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "link",
+                summary: "GitHub",
+                primaryText: "https://github.com/",
+                linkMetadata: RustLinkMetadataSummary(
+                    canonicalURL: "https://github.com/",
+                    displayURL: "https://github.com/",
+                    host: "github.com",
+                    title: "GitHub · Change is constant",
+                    metadataState: "ready"
+                )
+            )
+        )
+
+        #expect(presentation.footnoteText == "github.com")
+        #expect(presentation.linkHost == "github.com")
+        #expect(presentation.linkDetail == "https://github.com/")
+        #expect(presentation.linkTitle == "GitHub · Change is constant")
+    }
+
+    @Test
+    func doesNotUseSiteNameAsMissingLinkTitle() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "link",
+                summary: "GitHub",
+                primaryText: "https://github.com/",
+                linkMetadata: RustLinkMetadataSummary(
+                    canonicalURL: "https://github.com/",
+                    displayURL: "https://github.com/",
+                    host: "github.com",
+                    siteName: "GitHub",
+                    metadataState: "ready"
+                )
+            )
+        )
+
+        #expect(presentation.footnoteText == "github.com")
+        #expect(presentation.linkHost == "github.com")
+        #expect(presentation.linkDetail == "https://github.com/")
+        #expect(presentation.linkTitle == nil)
+    }
+
+    @Test
+    func presentsImageFooterResolutionWithoutBodyMetadata() {
         let presentation = PanelItemCardPresenter.presentation(
             for: makeItem(
                 itemType: "image",
                 summary: "图片 100 x 100",
-                primaryText: nil,
-                copyCount: 2,
-                sizeBytes: 2048
-            ),
-            byteCountFormatter: { _ in "2 KB" }
+                primaryText: nil
+            )
         )
 
         #expect(presentation.symbolName == "photo")
-        #expect(presentation.summaryText == "PNG · 2 KB · 2 次复制")
-        #expect(presentation.footnoteText == "2 KB")
+        #expect(presentation.summaryText.isEmpty)
+        #expect(presentation.footnoteText == "100 × 100")
     }
 
     @Test
@@ -62,17 +106,33 @@ struct PanelItemCardPresentationTests {
             for: makeItem(
                 itemType: "file",
                 summary: "report.pdf · /tmp/report.pdf",
-                primaryText: nil,
+                primaryText: "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt",
                 copyCount: 3
             )
         )
 
         #expect(presentation.symbolName == "folder")
         #expect(presentation.displayType == "文件")
-        #expect(presentation.summaryText == "report.pdf · 3 次复制")
-        #expect(presentation.footnoteText == "3 次复制")
+        #expect(presentation.summaryText.isEmpty)
+        #expect(presentation.footnoteText == "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt")
         #expect(presentation.fileTitle == "report.pdf")
-        #expect(presentation.fileDetail == "/tmp/report.pdf")
+        #expect(presentation.fileDetail == "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt")
+    }
+
+    @Test
+    func presentsFileWithoutStoredPathUsingPathFallback() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "file",
+                summary: "2 个文件 · report.pdf",
+                primaryText: nil,
+                copyCount: 2
+            )
+        )
+
+        #expect(presentation.summaryText.isEmpty)
+        #expect(presentation.footnoteText == "本地文件路径")
+        #expect(presentation.fileDetail == "本地文件路径")
     }
 }
 
@@ -82,7 +142,8 @@ private func makeItem(
     primaryText: String?,
     isPinned: Bool = false,
     copyCount: Int64 = 1,
-    sizeBytes: Int64 = 128
+    sizeBytes: Int64 = 128,
+    linkMetadata: RustLinkMetadataSummary? = nil
 ) -> RustClipboardItemSummary {
     RustClipboardItemSummary(
         id: UUID().uuidString,
@@ -101,6 +162,7 @@ private func makeItem(
         copyCount: copyCount,
         isPinned: isPinned,
         sizeBytes: sizeBytes,
-        previewState: "ready"
+        previewState: "ready",
+        linkMetadata: linkMetadata
     )
 }

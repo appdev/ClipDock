@@ -1,6 +1,7 @@
 import AppKit
 import ClipboardPanelApp
 import CoreImage
+import QuickLookThumbnailing
 
 struct PanelCardResolvedItem {
     let sourceIconImage: NSImage?
@@ -15,9 +16,16 @@ struct PanelCardPreviewImageState {
     let fallbackText: String
 }
 
+struct PanelFilePreviewThumbnailToken: Sendable {
+    let cacheKey: String
+    let callbackID: UUID
+}
+
 @MainActor
 final class PanelCardAssetResolver {
     private static let imageCache = NSCache<NSString, NSImage>()
+    private static let fileThumbnailCache = NSCache<NSString, NSImage>()
+    private static var fileThumbnailInFlight: [String: FileThumbnailInFlight] = [:]
     private static let sourceColorCache = NSCache<NSString, NSColor>()
     private static let sourceColorContext = CIContext(options: [
         .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB) as Any,
@@ -63,8 +71,21 @@ final class PanelCardAssetResolver {
         request.sourceAppIconPath.flatMap(Self.loadCachedImage(path:))
     }
 
-    func filePreviewImage(for request: PanelCardAssetRequest) -> NSImage? {
-        for url in filePreviewURLs(for: request) {
+    func filePreviewImage(
+        for request: PanelCardAssetRequest,
+        maximumSize: NSSize = NSSize(width: 96, height: 96),
+        scale: CGFloat = NSScreen.main?.backingScaleFactor ?? 2
+    ) -> NSImage? {
+        let urls = filePreviewURLs(for: request)
+        if let cachedThumbnail = Self.cachedFileThumbnail(
+            urls: urls,
+            maximumSize: maximumSize,
+            scale: scale
+        ) {
+            return cachedThumbnail
+        }
+
+        for url in urls {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             let icon = NSWorkspace.shared.icon(forFile: url.path)
             icon.size = NSSize(width: 96, height: 96)
@@ -72,6 +93,89 @@ final class PanelCardAssetResolver {
         }
 
         return NSImage(systemSymbolName: "folder", accessibilityDescription: "文件")
+    }
+
+    func filePreviewURLs(for request: PanelCardAssetRequest) -> [URL] {
+        ClipboardFilePreviewResolver.fileURLsFromPrimaryText(
+            request.primaryText,
+            appSupportDirectory: appSupportDirectory ?? defaultAppSupportDirectory()
+        )
+    }
+
+    @discardableResult
+    static func loadFilePreviewImageAsync(
+        urls: [URL],
+        maximumSize: NSSize,
+        scale: CGFloat,
+        completion: @escaping @MainActor (NSImage?) -> Void
+    ) -> PanelFilePreviewThumbnailToken? {
+        guard let requestInfo = fileThumbnailRequestInfo(
+            urls: urls,
+            maximumSize: maximumSize,
+            scale: scale
+        ) else {
+            completion(nil)
+            return nil
+        }
+
+        let callbackID = UUID()
+        let token = PanelFilePreviewThumbnailToken(
+            cacheKey: requestInfo.cacheKey,
+            callbackID: callbackID
+        )
+        if let cachedImage = fileThumbnailCache.object(forKey: requestInfo.cacheKey as NSString) {
+            completion(cachedImage)
+            return token
+        }
+
+        if var inFlight = fileThumbnailInFlight[requestInfo.cacheKey] {
+            inFlight.completions[callbackID] = completion
+            fileThumbnailInFlight[requestInfo.cacheKey] = inFlight
+            return token
+        }
+
+        let thumbnailRequest = QLThumbnailGenerator.Request(
+            fileAt: requestInfo.url,
+            size: maximumSize,
+            scale: scale,
+            representationTypes: .thumbnail
+        )
+        fileThumbnailInFlight[requestInfo.cacheKey] = FileThumbnailInFlight(
+            request: thumbnailRequest,
+            completions: [callbackID: completion]
+        )
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: thumbnailRequest) { representation, _ in
+            let imageData = representation?.nsImage.tiffRepresentation
+            DispatchQueue.main.async {
+                let image = imageData.flatMap(NSImage.init(data:))
+                MainActor.assumeIsolated {
+                    if let image {
+                        fileThumbnailCache.setObject(image, forKey: requestInfo.cacheKey as NSString)
+                    }
+                    guard let inFlight = fileThumbnailInFlight.removeValue(forKey: requestInfo.cacheKey) else {
+                        return
+                    }
+                    inFlight.completions.values.forEach { $0(image) }
+                }
+            }
+        }
+        return token
+    }
+
+    static func cancelFilePreviewImageRequest(_ token: PanelFilePreviewThumbnailToken?) {
+        guard let token,
+              var inFlight = fileThumbnailInFlight[token.cacheKey]
+        else {
+            return
+        }
+
+        inFlight.completions[token.callbackID] = nil
+        if inFlight.completions.isEmpty {
+            QLThumbnailGenerator.shared.cancel(inFlight.request)
+            fileThumbnailInFlight[token.cacheKey] = nil
+        } else {
+            fileThumbnailInFlight[token.cacheKey] = inFlight
+        }
     }
 
     func headerColor(
@@ -450,46 +554,6 @@ final class PanelCardAssetResolver {
             .appendingPathComponent(path)
     }
 
-    private func filePreviewURLs(for request: PanelCardAssetRequest) -> [URL] {
-        if let snapshotPaths = fileSnapshotPaths(for: request), !snapshotPaths.isEmpty {
-            return snapshotPaths.map(resolvedFileURL(for:))
-        }
-
-        return request.primaryText?
-            .split(whereSeparator: \.isNewline)
-            .map(String.init)
-            .map(resolvedFileURL(for:)) ?? []
-    }
-
-    private func fileSnapshotPaths(for request: PanelCardAssetRequest) -> [String]? {
-        for path in [request.payloadAssetPath, request.previewAssetPath]
-            .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) }) where !path.isEmpty {
-            let url = resolvedFileURL(for: path)
-            guard let data = try? Data(contentsOf: url),
-                  let document = try? JSONDecoder().decode(FileSnapshotPreviewDocument.self, from: data),
-                  !document.paths.isEmpty
-            else {
-                continue
-            }
-            return document.paths
-        }
-
-        return nil
-    }
-
-    private func resolvedFileURL(for path: String) -> URL {
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-
-        if path.hasPrefix("~/") {
-            return URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
-        }
-
-        return (appSupportDirectory ?? defaultAppSupportDirectory())
-            .appendingPathComponent(path)
-    }
-
     private func sourceColorKey(for request: PanelCardAssetRequest) -> String? {
         if let sourceAppID = request.sourceAppId?.trimmingCharacters(in: .whitespacesAndNewlines),
            !sourceAppID.isEmpty {
@@ -542,7 +606,59 @@ final class PanelCardAssetResolver {
         ?? URL(fileURLWithPath: NSHomeDirectory())
     }
 
-    private struct FileSnapshotPreviewDocument: Decodable {
-        let paths: [String]
+    private static func cachedFileThumbnail(
+        urls: [URL],
+        maximumSize: NSSize,
+        scale: CGFloat
+    ) -> NSImage? {
+        guard let requestInfo = fileThumbnailRequestInfo(
+            urls: urls,
+            maximumSize: maximumSize,
+            scale: scale
+        ) else {
+            return nil
+        }
+
+        return fileThumbnailCache.object(forKey: requestInfo.cacheKey as NSString)
     }
+
+    private static func fileThumbnailRequestInfo(
+        urls: [URL],
+        maximumSize: NSSize,
+        scale: CGFloat
+    ) -> FileThumbnailRequestInfo? {
+        for url in urls {
+            let standardizedURL = url.standardizedFileURL
+            guard FileManager.default.fileExists(atPath: standardizedURL.path),
+                  let attributes = try? FileManager.default.attributesOfItem(atPath: standardizedURL.path)
+            else {
+                continue
+            }
+
+            let modifiedAt = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+            let cacheKey = [
+                standardizedURL.path,
+                "mtime=\(modifiedAt)",
+                "size=\(size)",
+                "width=\(Int(maximumSize.width.rounded()))",
+                "height=\(Int(maximumSize.height.rounded()))",
+                "scale=\(scale)",
+                "representation=thumbnail"
+            ].joined(separator: "|")
+            return FileThumbnailRequestInfo(url: standardizedURL, cacheKey: cacheKey)
+        }
+
+        return nil
+    }
+}
+
+private struct FileThumbnailRequestInfo {
+    let url: URL
+    let cacheKey: String
+}
+
+private struct FileThumbnailInFlight {
+    let request: QLThumbnailGenerator.Request
+    var completions: [UUID: @MainActor (NSImage?) -> Void]
 }

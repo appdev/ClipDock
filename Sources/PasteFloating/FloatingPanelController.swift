@@ -81,6 +81,35 @@ extension NSWorkspace: PanelFocusApplicationProviding {
     }
 }
 
+protocol PanelHeightPreferenceStoring: AnyObject {
+    var preferredPanelHeight: CGFloat? { get set }
+}
+
+final class UserDefaultsPanelHeightPreferenceStore: PanelHeightPreferenceStoring {
+    private let defaults: UserDefaults
+    private let key = "floatingPanel.preferredHeight"
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    var preferredPanelHeight: CGFloat? {
+        get {
+            guard defaults.object(forKey: key) != nil else { return nil }
+            let height = defaults.double(forKey: key)
+            guard height.isFinite, height > 0 else { return nil }
+            return CGFloat(height)
+        }
+        set {
+            guard let newValue else {
+                defaults.removeObject(forKey: key)
+                return
+            }
+            defaults.set(Double(newValue), forKey: key)
+        }
+    }
+}
+
 @MainActor
 final class FloatingPanelController {
     private static let defaultPanelHeight = BottomPanelGeometryPlanner.defaultHeight
@@ -88,6 +117,7 @@ final class FloatingPanelController {
     private let panel: FloatingPanel
     private let contentView: FloatingPanelContentView
     private let focusApplicationProvider: PanelFocusApplicationProviding
+    private let heightPreferenceStore: PanelHeightPreferenceStoring
     private let mainBundleIdentifier: String?
     private(set) var levelMode: PanelLevelMode = .aboveDock
     private var preferredHeight = FloatingPanelController.defaultPanelHeight
@@ -104,10 +134,16 @@ final class FloatingPanelController {
 
     init(
         focusApplicationProvider: PanelFocusApplicationProviding = NSWorkspace.shared,
+        heightPreferenceStore: PanelHeightPreferenceStoring = UserDefaultsPanelHeightPreferenceStore(),
         mainBundleIdentifier: String? = Bundle.main.bundleIdentifier
     ) {
         self.focusApplicationProvider = focusApplicationProvider
+        self.heightPreferenceStore = heightPreferenceStore
         self.mainBundleIdentifier = mainBundleIdentifier
+        if let storedHeight = heightPreferenceStore.preferredPanelHeight {
+            preferredHeight = storedHeight
+            resizeStartHeight = storedHeight
+        }
         contentView = FloatingPanelContentView(frame: .zero)
         panel = FloatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 920, height: Self.defaultPanelHeight),
@@ -210,6 +246,18 @@ final class FloatingPanelController {
         }
     }
 
+    var hasBlockingPanelOperation: Bool {
+        contentView.hasBlockingPanelOperation
+    }
+
+    @discardableResult
+    func hideUnlessBlockingPanelOperation(restoresPreviousApplicationFocus: Bool = true) -> Bool {
+        guard !hasBlockingPanelOperation else { return false }
+
+        hide(restoresPreviousApplicationFocus: restoresPreviousApplicationFocus)
+        return true
+    }
+
     func toggle() {
         isVisible ? hide() : show()
     }
@@ -260,6 +308,10 @@ final class FloatingPanelController {
         contentView.setPreviewPopoverEnabled(enabled)
     }
 
+    func setLinkWebPreviewEnabled(_ enabled: Bool) {
+        contentView.setLinkWebPreviewEnabled(enabled)
+    }
+
     func resetFiltersForCapturedItem() {
         contentView.resetFiltersForCapturedItem()
     }
@@ -273,13 +325,31 @@ final class FloatingPanelController {
     }
 
     func setPreferredHeight(_ height: CGFloat) {
+        applyPreferredHeight(height, persistUserChoice: true)
+    }
+
+    func setConfiguredDefaultHeight(_ height: CGFloat) {
+        if let storedHeight = heightPreferenceStore.preferredPanelHeight {
+            applyPreferredHeight(storedHeight, persistUserChoice: false)
+        } else {
+            applyPreferredHeight(height, persistUserChoice: false)
+        }
+    }
+
+    private func applyPreferredHeight(_ height: CGFloat, persistUserChoice: Bool) {
         guard let screen = targetScreenForPresentation() else {
             preferredHeight = height
             contentView.updatePanelHeight(height)
+            if persistUserChoice {
+                heightPreferenceStore.preferredPanelHeight = height
+            }
             return
         }
 
         preferredHeight = clampedHeight(height, for: screen)
+        if persistUserChoice {
+            heightPreferenceStore.preferredPanelHeight = preferredHeight
+        }
         if panel.isVisible && isPanelPresented {
             applyPanelFrame(on: screen, height: preferredHeight, animate: true)
         } else {
@@ -308,6 +378,11 @@ final class FloatingPanelController {
             screenHeight: screen.frame.height
         )
         applyPanelFrame(on: screen, height: preferredHeight, animate: false)
+    }
+
+    private func endHeightResize() {
+        heightPreferenceStore.preferredPanelHeight = preferredHeight
+        resizeScreen = nil
     }
 
     private func applyPanelFrame(on screen: NSScreen, height: CGFloat, animate: Bool) {
@@ -472,6 +547,7 @@ final class FloatingPanelController {
         }
         contentView.onHeightResizeBegan = { [weak self] in self?.beginHeightResize() }
         contentView.onHeightResizeChanged = { [weak self] deltaY in self?.resizeHeight(deltaY: deltaY) }
+        contentView.onHeightResizeEnded = { [weak self] in self?.endHeightResize() }
     }
 
     private func startOutsideClickMonitoring() {
@@ -479,15 +555,19 @@ final class FloatingPanelController {
 
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         localOutsideClickMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            let eventWindow = event.window
+            let mouseLocation = NSEvent.mouseLocation
             Task { @MainActor [weak self] in
-                self?.hideIfClickIsOutsidePanel(event)
+                self?.hideIfClickIsOutsidePanel(eventWindow: eventWindow, mouseLocation: mouseLocation)
             }
             return event
         }
 
         globalOutsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            let eventWindow = event.window
+            let mouseLocation = NSEvent.mouseLocation
             Task { @MainActor [weak self] in
-                self?.hideIfClickIsOutsidePanel(event)
+                self?.hideIfClickIsOutsidePanel(eventWindow: eventWindow, mouseLocation: mouseLocation)
             }
         }
     }
@@ -504,14 +584,14 @@ final class FloatingPanelController {
         }
     }
 
-    private func hideIfClickIsOutsidePanel(_ event: NSEvent) {
+    private func hideIfClickIsOutsidePanel(eventWindow: NSWindow?, mouseLocation: CGPoint) {
         guard panel.isVisible else {
             stopOutsideClickMonitoring()
             return
         }
 
-        if shouldHideForMouseDown(eventWindow: event.window, mouseLocation: NSEvent.mouseLocation) {
-            hide(restoresPreviousApplicationFocus: false)
+        if shouldHideForMouseDown(eventWindow: eventWindow, mouseLocation: mouseLocation) {
+            hideUnlessBlockingPanelOperation(restoresPreviousApplicationFocus: false)
         }
     }
 
@@ -571,12 +651,38 @@ extension FloatingPanelController {
         panel.frame
     }
 
+    var smokePreferredHeight: CGFloat {
+        preferredHeight
+    }
+
     var smokePanelIsActuallyVisible: Bool {
         panel.isVisible
     }
 
     var smokePanelAlphaValue: CGFloat {
         panel.alphaValue
+    }
+
+    var smokePanelContentBackgroundAlpha: CGFloat {
+        contentView.smokePanelContentBackgroundAlpha
+    }
+
+    var smokeHasBlockingPanelOperation: Bool {
+        hasBlockingPanelOperation
+    }
+
+    func smokeWithBlockingPanelOperation(_ body: () -> Void) {
+        contentView.smokeWithBlockingPanelOperation(body)
+    }
+
+    func smokeBlockingPanelModalProbe() -> (
+        outerDuring: Bool,
+        nestedDuring: Bool,
+        afterNested: Bool,
+        afterOuter: Bool,
+        responses: [NSApplication.ModalResponse]
+    ) {
+        contentView.smokeBlockingPanelModalProbe()
     }
 
     var smokeHasActivePanelAnimation: Bool {
@@ -635,8 +741,14 @@ extension FloatingPanelController {
     ) {
         let eventWindow = eventWindowIsPanel ? panel : nil
         if shouldHideForMouseDown(eventWindow: eventWindow, mouseLocation: mouseLocation) {
-            hide(restoresPreviousApplicationFocus: false)
+            hideUnlessBlockingPanelOperation(restoresPreviousApplicationFocus: false)
         }
+    }
+
+    func smokeResizePanelHeight(deltaY: CGFloat) {
+        beginHeightResize()
+        resizeHeight(deltaY: deltaY)
+        endHeightResize()
     }
 
     func smokeHandleAppOwnedNonPanelMouseDown(mouseLocation: CGPoint) {
@@ -647,7 +759,7 @@ extension FloatingPanelController {
             defer: true
         )
         if shouldHideForMouseDown(eventWindow: appOwnedWindow, mouseLocation: mouseLocation) {
-            hide(restoresPreviousApplicationFocus: false)
+            hideUnlessBlockingPanelOperation(restoresPreviousApplicationFocus: false)
         }
     }
 

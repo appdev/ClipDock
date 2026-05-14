@@ -28,7 +28,7 @@ struct ClipboardPayloadReader: ClipboardContentReading {
             return .files(files)
         }
 
-        if let image = CapturedClipboardImage.read(from: pasteboard) {
+        if let image = CapturedClipboardImage.read(from: pasteboard, skipFileURLCheck: true) {
             return .image(image)
         }
 

@@ -10,6 +10,10 @@ public struct ClipboardPreviewContent: Equatable, Sendable {
     public let sourceAppName: String
     public let sourceAppIconPath: String?
     public let imageURL: URL?
+    public let linkURL: URL?
+    public let linkDisplayURL: String?
+    public let linkTitle: String?
+    public let fileURLs: [URL]
     public let copiedAtMilliseconds: Int64
 }
 
@@ -25,6 +29,11 @@ public enum ClipboardPreviewContentPlanner {
             appSupportDirectory: appSupportDirectory,
             fileManager: fileManager
         )
+        let fileURLs = previewFileURLs(
+            for: item,
+            appSupportDirectory: appSupportDirectory,
+            fileManager: fileManager
+        )
 
         return ClipboardPreviewContent(
             itemID: item.id,
@@ -36,6 +45,10 @@ public enum ClipboardPreviewContentPlanner {
             sourceAppName: item.sourceAppName ?? "未知来源",
             sourceAppIconPath: item.sourceAppIconPath,
             imageURL: imageURL,
+            linkURL: previewLinkURL(for: item),
+            linkDisplayURL: item.linkMetadata?.displayURL,
+            linkTitle: item.linkMetadata?.title,
+            fileURLs: fileURLs,
             copiedAtMilliseconds: item.lastCopiedAtMs
         )
     }
@@ -43,7 +56,10 @@ public enum ClipboardPreviewContentPlanner {
     private static func previewTitle(for item: RustClipboardItemSummary) -> String {
         switch item.itemType {
         case "link":
-            return item.primaryText.flatMap(hostName) ?? item.summary
+            return item.linkMetadata?.title
+                ?? item.linkMetadata?.host
+                ?? item.primaryText.flatMap(hostName)
+                ?? item.summary
         case "image":
             return item.summary
         default:
@@ -93,11 +109,25 @@ public enum ClipboardPreviewContentPlanner {
             let sizeText = formatter.string(fromByteCount: item.sizeBytes)
             return item.sizeBytes > 0 ? "PNG · \(sizeText)" : "PNG"
         case "link":
-            return item.primaryText ?? item.summary
+            return item.linkMetadata?.displayURL ?? item.primaryText ?? item.summary
         default:
             let sizeText = formatter.string(fromByteCount: item.sizeBytes)
             return item.sizeBytes > 0 ? sizeText : item.sourceConfidence
         }
+    }
+
+    private static func previewLinkURL(for item: RustClipboardItemSummary) -> URL? {
+        guard item.itemType == "link" else { return nil }
+
+        return [
+            item.linkMetadata?.canonicalURL,
+            item.primaryText,
+            item.summary
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .lazy
+        .compactMap(normalizedHTTPURL(from:))
+        .first
     }
 
     private static func previewImageURL(
@@ -108,7 +138,21 @@ public enum ClipboardPreviewContentPlanner {
         guard item.itemType == "image" else { return nil }
 
         return ClipboardAssetPathResolver.firstExistingURL(
-            for: [item.previewAssetPath, item.payloadAssetPath],
+            for: [item.payloadAssetPath, item.previewAssetPath],
+            appSupportDirectory: appSupportDirectory,
+            fileManager: fileManager
+        )
+    }
+
+    private static func previewFileURLs(
+        for item: RustClipboardItemSummary,
+        appSupportDirectory: URL,
+        fileManager: FileManager
+    ) -> [URL] {
+        guard item.itemType == "file" else { return [] }
+
+        return ClipboardFilePreviewResolver.fileURLs(
+            for: item,
             appSupportDirectory: appSupportDirectory,
             fileManager: fileManager
         )
@@ -116,5 +160,18 @@ public enum ClipboardPreviewContentPlanner {
 
     private static func hostName(from text: String) -> String? {
         URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines))?.host
+    }
+
+    private static func normalizedHTTPURL(from text: String) -> URL? {
+        guard !text.isEmpty else { return nil }
+        let candidate = text.contains("://") ? text : "https://\(text)"
+        guard let url = URL(string: candidate),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil
+        else {
+            return nil
+        }
+        return url
     }
 }

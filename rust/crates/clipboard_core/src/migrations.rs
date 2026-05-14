@@ -30,6 +30,16 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "full_pinboard_management_schema",
         sql: FULL_PINBOARD_MANAGEMENT_SCHEMA,
     },
+    Migration {
+        version: 5,
+        name: "link_metadata_schema",
+        sql: LINK_METADATA_SCHEMA,
+    },
+    Migration {
+        version: 6,
+        name: "file_items_metadata_schema",
+        sql: FILE_ITEMS_METADATA_SCHEMA,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -340,4 +350,60 @@ DROP INDEX IF EXISTS ix_pinboards_sort;
 CREATE INDEX IF NOT EXISTS ix_pinboards_active_sort
     ON pinboards(sort_order ASC, updated_at_ms DESC)
     WHERE deleted_at_ms IS NULL;
+"#;
+
+const LINK_METADATA_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS link_metadata (
+    item_id TEXT PRIMARY KEY REFERENCES clipboard_items(id) ON DELETE CASCADE,
+    original_text TEXT NOT NULL,
+    canonical_url TEXT NOT NULL,
+    display_url TEXT NOT NULL,
+    host TEXT NOT NULL,
+    title TEXT,
+    site_name TEXT,
+    icon_relative_path TEXT,
+    image_relative_path TEXT,
+    metadata_state TEXT NOT NULL DEFAULT 'pending'
+        CHECK (metadata_state IN ('pending', 'fetching', 'ready', 'failed', 'disabled', 'stale')),
+    failure_code TEXT,
+    fetch_attempts INTEGER NOT NULL DEFAULT 0 CHECK (fetch_attempts >= 0),
+    last_requested_at_ms INTEGER,
+    fetched_at_ms INTEGER,
+    next_retry_at_ms INTEGER,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_link_metadata_state_retry
+    ON link_metadata(metadata_state, next_retry_at_ms, updated_at_ms);
+
+CREATE INDEX IF NOT EXISTS ix_link_metadata_canonical_url
+    ON link_metadata(canonical_url);
+"#;
+
+const FILE_ITEMS_METADATA_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS clipboard_file_items (
+    id TEXT PRIMARY KEY,
+    item_id TEXT NOT NULL REFERENCES clipboard_items(id) ON DELETE CASCADE,
+    order_index INTEGER NOT NULL CHECK (order_index >= 0),
+    path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_extension TEXT,
+    byte_count INTEGER NOT NULL DEFAULT 0 CHECK (byte_count >= 0),
+    is_directory INTEGER NOT NULL DEFAULT 0 CHECK (is_directory IN (0, 1)),
+    width INTEGER,
+    height INTEGER,
+    content_type TEXT,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_clipboard_file_items_order
+    ON clipboard_file_items(item_id, order_index);
+
+CREATE INDEX IF NOT EXISTS ix_clipboard_file_items_item
+    ON clipboard_file_items(item_id);
+
+CREATE INDEX IF NOT EXISTS ix_clipboard_file_items_path
+    ON clipboard_file_items(path);
 "#;

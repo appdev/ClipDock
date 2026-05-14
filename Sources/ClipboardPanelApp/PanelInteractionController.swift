@@ -28,6 +28,7 @@ public enum PanelInteractionAction: Equatable, Sendable {
     case clearFilters
     case toggleSearch
     case focusSearch
+    case dismissSearch
     case copyItem(itemID: String)
     case selectItem(id: String, scrollIntoView: Bool)
     case selectOffset(Int)
@@ -146,6 +147,21 @@ public final class PanelInteractionController {
             let result = contentController.focusSearch()
             return makeResult(
                 effects: [.focus(result.focusTarget)],
+                shouldSyncToolbar: true
+            )
+
+        case .dismissSearch:
+            let toolbar = viewState.toolbar
+            guard toolbar.isSearchVisible || !toolbar.searchText.isEmpty else {
+                return makeResult()
+            }
+
+            contentController.dismissSearch()
+            let effects: [PanelInteractionEffect] = toolbar.searchText.isEmpty
+                ? []
+                : [queryChangedEffect(debounce: false)]
+            return makeResult(
+                effects: effects,
                 shouldSyncToolbar: true
             )
 

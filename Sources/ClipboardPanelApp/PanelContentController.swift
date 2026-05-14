@@ -155,6 +155,10 @@ public final class PanelContentController {
         sceneStore.focusSearch()
     }
 
+    public func dismissSearch() {
+        sceneStore.dismissSearch()
+    }
+
     public func setCommandHintMode(enabled: Bool) {
         sceneStore.setCommandHintMode(enabled: enabled)
     }

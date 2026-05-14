@@ -5,6 +5,7 @@ enum PanelRuntimeAction {
     case hidePanel
     case queryChanged(searchText: String, sourceAppID: String?, pinboardID: String?, debounce: Bool)
     case copyItem(RustClipboardItemSummary)
+    case copyPath(String)
     case setPinboardMembership(RustClipboardItemSummary, pinboardID: String, isMember: Bool)
     case createPinboard(title: String, colorCode: Int64)
     case renamePinboard(pinboardID: String, title: String)
