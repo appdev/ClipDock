@@ -1,14 +1,14 @@
 import AppKit
 
-struct PasteThemePalette {
-    let scheme: PasteTheme.Scheme
-    let panel: PastePanelTheme
-    let card: PasteCardTheme
-    let preferences: PastePreferencesTheme
-    let preview: PastePreviewTheme
+struct ClipShelfThemePalette {
+    let scheme: ClipShelfTheme.Scheme
+    let panel: ClipShelfPanelTheme
+    let card: ClipShelfCardTheme
+    let preferences: ClipShelfPreferencesTheme
+    let preview: ClipShelfPreviewTheme
 }
 
-struct PastePanelTheme {
+struct ClipShelfPanelTheme {
     let backgroundColor: NSColor
     let toolbarIconColor: NSColor
     let toolbarTextColor: NSColor
@@ -18,7 +18,7 @@ struct PastePanelTheme {
     let resizeHandleColor: NSColor
 }
 
-struct PasteCardTheme {
+struct ClipShelfCardTheme {
     let backgroundColor: NSColor
     let borderColor: NSColor
     let selectionBorderColor: NSColor
@@ -32,7 +32,7 @@ struct PasteCardTheme {
     let appIconTileBackgroundColor: NSColor
 }
 
-struct PastePreferencesTheme {
+struct ClipShelfPreferencesTheme {
     let windowBackgroundColor: NSColor
     let contentBackgroundColor: NSColor
     let sidebarBackgroundColor: NSColor
@@ -48,7 +48,7 @@ struct PastePreferencesTheme {
     let controlBackgroundColor: NSColor
 }
 
-struct PastePreviewTheme {
+struct ClipShelfPreviewTheme {
     let backgroundColor: NSColor
     let borderColor: NSColor
     let chromeBackgroundColor: NSColor
@@ -63,7 +63,7 @@ struct PastePreviewTheme {
 }
 
 @MainActor
-enum PasteTheme {
+enum ClipShelfTheme {
     enum Scheme {
         case light
         case dark
@@ -80,15 +80,15 @@ enum PasteTheme {
         }
     }
 
-    static func current(for view: NSView?) -> PasteThemePalette {
+    static func current(for view: NSView?) -> ClipShelfThemePalette {
         current(for: view?.effectiveAppearance)
     }
 
-    static func current(for window: NSWindow?) -> PasteThemePalette {
+    static func current(for window: NSWindow?) -> ClipShelfThemePalette {
         current(for: window?.effectiveAppearance)
     }
 
-    static func current(for appearance: NSAppearance?) -> PasteThemePalette {
+    static func current(for appearance: NSAppearance?) -> ClipShelfThemePalette {
         let scheme: Scheme = isDark(appearance) ? .dark : .light
         switch scheme {
         case .light:
@@ -104,9 +104,9 @@ enum PasteTheme {
         return match == .darkAqua
     }
 
-    private static let lightPalette = PasteThemePalette(
+    private static let lightPalette = ClipShelfThemePalette(
         scheme: .light,
-        panel: PastePanelTheme(
+        panel: ClipShelfPanelTheme(
             backgroundColor: NSColor.white.withAlphaComponent(0.32),
             toolbarIconColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
             toolbarTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
@@ -115,7 +115,7 @@ enum PasteTheme {
             toolbarSelectedTextColor: NSColor(calibratedWhite: 0.04, alpha: 0.98),
             resizeHandleColor: NSColor(calibratedWhite: 0.26, alpha: 0.22)
         ),
-        card: PasteCardTheme(
+        card: ClipShelfCardTheme(
             backgroundColor: NSColor(calibratedWhite: 0.98, alpha: 0.98),
             borderColor: NSColor(calibratedWhite: 0.0, alpha: 0.13),
             selectionBorderColor: .systemBlue,
@@ -128,7 +128,7 @@ enum PasteTheme {
             linkPreviewBackgroundColor: NSColor(calibratedWhite: 0.91, alpha: 0.94),
             appIconTileBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.92)
         ),
-        preferences: PastePreferencesTheme(
+        preferences: ClipShelfPreferencesTheme(
             windowBackgroundColor: NSColor(calibratedWhite: 0.93, alpha: 1),
             contentBackgroundColor: NSColor(calibratedWhite: 0.94, alpha: 1),
             sidebarBackgroundColor: NSColor(calibratedWhite: 0.88, alpha: 1),
@@ -143,7 +143,7 @@ enum PasteTheme {
             separatorColor: NSColor(calibratedWhite: 0.0, alpha: 0.16),
             controlBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.92)
         ),
-        preview: PastePreviewTheme(
+        preview: ClipShelfPreviewTheme(
             backgroundColor: NSColor(calibratedWhite: 0.96, alpha: 0.94),
             borderColor: NSColor(calibratedWhite: 0.0, alpha: 0.16),
             chromeBackgroundColor: NSColor(calibratedWhite: 0.88, alpha: 0.46),
@@ -158,9 +158,9 @@ enum PasteTheme {
         )
     )
 
-    private static let darkPalette = PasteThemePalette(
+    private static let darkPalette = ClipShelfThemePalette(
         scheme: .dark,
-        panel: PastePanelTheme(
+        panel: ClipShelfPanelTheme(
             backgroundColor: NSColor.white.withAlphaComponent(0.32),
             toolbarIconColor: NSColor.white.withAlphaComponent(0.72),
             toolbarTextColor: NSColor.white.withAlphaComponent(0.72),
@@ -169,7 +169,7 @@ enum PasteTheme {
             toolbarSelectedTextColor: NSColor.white.withAlphaComponent(0.90),
             resizeHandleColor: NSColor.white.withAlphaComponent(0.18)
         ),
-        card: PasteCardTheme(
+        card: ClipShelfCardTheme(
             backgroundColor: NSColor(calibratedWhite: 0.075, alpha: 0.98),
             borderColor: NSColor.black.withAlphaComponent(0.14),
             selectionBorderColor: .systemBlue,
@@ -182,7 +182,7 @@ enum PasteTheme {
             linkPreviewBackgroundColor: NSColor.white.withAlphaComponent(0.08),
             appIconTileBackgroundColor: NSColor.white.withAlphaComponent(0.90)
         ),
-        preferences: PastePreferencesTheme(
+        preferences: ClipShelfPreferencesTheme(
             windowBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),
             contentBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),
             sidebarBackgroundColor: NSColor(calibratedWhite: 0.145, alpha: 1),
@@ -197,7 +197,7 @@ enum PasteTheme {
             separatorColor: NSColor.separatorColor.withAlphaComponent(0.36),
             controlBackgroundColor: NSColor.windowBackgroundColor.withAlphaComponent(0.90)
         ),
-        preview: PastePreviewTheme(
+        preview: ClipShelfPreviewTheme(
             backgroundColor: NSColor(calibratedWhite: 0.07, alpha: 0.84),
             borderColor: NSColor.white.withAlphaComponent(0.13),
             chromeBackgroundColor: NSColor(calibratedWhite: 0.06, alpha: 0.18),

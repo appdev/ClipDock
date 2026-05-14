@@ -18,7 +18,7 @@
 
 当前项目已经完成本轮重构的大部分主收益：
 
-- 商业化命名和发布产物已收口到 `ClipboardWorkbench`
+- 商业化命名和发布产物已收口到 `ClipShelf`
 - 应用编排已从 `AppDelegate` 大量迁出
 - panel scene / list / view state / content controller 已建立 headless test seam
 - `AppRuntime.swift` 已从超大总装文件降到可继续拆分的剩余视图层实现
@@ -43,7 +43,7 @@
 - 死代码清理、命名美化、注释补写、格式统一这类低收益修补
 - 为了“更像 MVC”而继续扩张新的 target / module / QA tool
 - 没有新增测试保护或没有减少耦合的局部小修
-- 打断现有 `swift run PasteFloating --exercise-*` / `--render-*` / `--print-ui-diagnostics` QA 入口
+- 打断现有 `swift run ClipShelf --exercise-*` / `--render-*` / `--print-ui-diagnostics` QA 入口
 
 这些内容只有在某个批准阶段内，作为附带整理且不扩大范围时才允许出现。
 
@@ -76,7 +76,7 @@
 
 ### 3.1 `FloatingPanelContentView` 仍然过重
 
-当前 [AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloating/AppRuntime.swift) 仍同时承担：
+当前 [AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipShelf/AppRuntime.swift) 仍同时承担：
 
 - 卡片 AppKit 拼装
 - preview 子视图拼装
@@ -92,7 +92,7 @@
 
 ### 3.2 窗口焦点与显示时序仍是脆弱点
 
-[FloatingPanelController.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloating/FloatingPanelController.swift) 已经很接近 window shell，但 `show()` / `focusContentView()` 仍依赖多次异步补偿来抢 first responder。这里是最像“产品可用性风险”的运行时点，收益高于继续搬文件。
+[FloatingPanelController.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipShelf/FloatingPanelController.swift) 已经很接近 window shell，但 `show()` / `focusContentView()` 仍依赖多次异步补偿来抢 first responder。这里是最像“产品可用性风险”的运行时点，收益高于继续搬文件。
 
 ### 3.3 smoke seam 仍偏结构探测
 
@@ -124,7 +124,7 @@
 
 本阶段必须带来的实质改变：
 
-- [AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/PasteFloating/AppRuntime.swift) 不再直接从 `RustClipboardItemSummary` 组装完整卡片
+- [AppRuntime.swift](/Volumes/extendData/Data/IdeaProjects/Paste/Sources/ClipShelf/AppRuntime.swift) 不再直接从 `RustClipboardItemSummary` 组装完整卡片
 - 卡片展示输入变成稳定 state，而不是 view 内部分支
 - 至少新增一组 headless tests 覆盖 card view state / preview state 映射
 
@@ -139,9 +139,9 @@
 - `FloatingPanelContentView` 不再持有大段卡片内容分支
 - `swift test`
 - `cargo test --manifest-path rust/Cargo.toml`
-- `swift run PasteFloating --exercise-panel-interactions`
-- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png`
-- `swift run PasteFloating --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png`
+- `swift run ClipShelf --exercise-panel-interactions`
+- `swift run ClipShelf --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.current-phase.png`
+- `swift run ClipShelf --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.current-phase.png`
 - `git diff --check`
 
 ### Phase B：面板动作边界拆分
@@ -175,9 +175,9 @@
 - `FloatingPanelContentView` 主要保留 render、控件事件转发和少量纯 UI 行为
 - `swift test`
 - `cargo test --manifest-path rust/Cargo.toml`
-- `swift run PasteFloating --exercise-panel-interactions`
-- `swift run PasteFloating --exercise-preferences`
-- `swift run PasteFloating --print-ui-diagnostics`
+- `swift run ClipShelf --exercise-panel-interactions`
+- `swift run ClipShelf --exercise-preferences`
+- `swift run ClipShelf --print-ui-diagnostics`
 - `git diff --check`
 
 ### Phase C：高风险运行时接缝测试补强
@@ -211,9 +211,9 @@
 - 现有 smoke 命令仍保持兼容
 - `swift test`
 - `cargo test --manifest-path rust/Cargo.toml`
-- `swift run PasteFloating --exercise-panel-interactions`
-- `swift run PasteFloating --exercise-preferences`
-- `swift run PasteFloating --print-ui-diagnostics`
+- `swift run ClipShelf --exercise-panel-interactions`
+- `swift run ClipShelf --exercise-preferences`
+- `swift run ClipShelf --print-ui-diagnostics`
 - `git diff --check`
 
 ---
@@ -225,7 +225,7 @@
 - Phase 6：大规模 target / module 拆分
 - Phase 7：全面拆 `FloatingPanelContentView` 为多级 View 树工程
 - Phase 8：把 QA / snapshot / smoke 完整迁出到独立 QATool target
-- 全量清理旧兼容 CLI，仅保留当前 `PasteFloating` QA 入口
+- 全量清理旧兼容 CLI，仅保留当前 `ClipShelf` QA 入口
 - 全面改名 `ClipboardPanelApp -> ClipboardDomain`
 - SwiftUI 重写或并行双 UI 栈
 
@@ -282,5 +282,5 @@
 - 已明确禁止每次小修补、禁止无限制重构，并要求每次代码修改必须带来实质改变。
 - 已明确只有 QA 通过后才能进入开发，且剩余阶段数量已收敛为 3 个。
 - 后续若某阶段触及 Rust bridge 或生成产物，除阶段内列出的命令外，还应补跑 `scripts/build-rust-core.sh`。
-- 执行阶段时必须继续保持 `PasteFloating` 的 `--exercise-*`、`--render-*`、`--print-ui-diagnostics` 入口与 `.codex/artifacts` 产物契约稳定。
+- 执行阶段时必须继续保持 `ClipShelf` 的 `--exercise-*`、`--render-*`、`--print-ui-diagnostics` 入口与 `.codex/artifacts` 产物契约稳定。
 - 当前停止条件已全部满足，本轮重构应在 Phase C 后终止，不再新增新的结构性阶段。

@@ -9,7 +9,7 @@ import WebKit
 
 @MainActor
 func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView {
-    let tintColor = PasteTheme.current(for: contentView).panel.backgroundColor
+    let tintColor = ClipShelfTheme.current(for: contentView).panel.backgroundColor
     let hostView: NSView
 
     if #available(macOS 26.0, *) {
@@ -297,8 +297,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var cardAssetResolver: PanelCardAssetResolver {
         PanelCardAssetResolver(appSupportDirectory: appSupportDirectory)
     }
-    private var theme: PasteThemePalette {
-        PasteTheme.current(for: self)
+    private var theme: ClipShelfThemePalette {
+        ClipShelfTheme.current(for: self)
     }
     private var activeListPage: ListPageSurface {
         pageSurface(for: currentListScope)
@@ -634,7 +634,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         updatePinboardChipAppearance()
     }
 
-    private func panelStableBackgroundColor(theme: PasteThemePalette) -> NSColor {
+    private func panelStableBackgroundColor(theme: ClipShelfThemePalette) -> NSColor {
         switch backgroundHostState {
         case .systemGlass, .legacyVisualEffect:
             return .clear

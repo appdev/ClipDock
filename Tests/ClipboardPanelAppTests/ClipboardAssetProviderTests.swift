@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Testing
 @testable import ClipboardPanelApp
-@testable import PasteFloating
+@testable import ClipShelf
 
 struct ClipboardAssetProviderTests {
     @Test

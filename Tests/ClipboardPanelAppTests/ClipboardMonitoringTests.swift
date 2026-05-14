@@ -2,7 +2,7 @@ import AppKit
 import ClipboardPanelApp
 import Foundation
 import Testing
-@testable import PasteFloating
+@testable import ClipShelf
 
 struct ClipboardMonitoringTests {
     @Test

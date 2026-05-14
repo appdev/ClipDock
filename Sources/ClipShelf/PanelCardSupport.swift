@@ -602,7 +602,7 @@ final class PanelCardAssetResolver {
             in: .userDomainMask
         )
         .first?
-        .appendingPathComponent("ClipboardWorkbench", isDirectory: true)
+        .appendingPathComponent("ClipShelf", isDirectory: true)
         ?? URL(fileURLWithPath: NSHomeDirectory())
     }
 

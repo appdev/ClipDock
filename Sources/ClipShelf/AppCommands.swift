@@ -112,7 +112,7 @@ private final class PanelSnapshotBackdropView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        // 模拟 Paste 面板背后的编辑器底色，不能作为产品面板背景使用。
+        // 模拟 ClipShelf 面板背后的编辑器底色，不能作为产品面板背景使用。
         NSColor(calibratedRed: 0.96, green: 0.94, blue: 0.88, alpha: 1).setFill()
         NSBezierPath(rect: bounds).fill()
 

@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 
 version="${APP_VERSION:-0.1.0}"
 build="${APP_BUILD:-1}"
-app_bundle_name="${APP_BUNDLE_NAME:-ClipboardWorkbench}"
-bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipboardWorkbenchApp}"
+app_bundle_name="${APP_BUNDLE_NAME:-ClipShelf}"
+bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipShelf}"
 artifact_root="${RELEASE_DIR:-.codex/artifacts/release/$version}"
 app_path="$artifact_root/${app_bundle_name}.app"
 zip_path="$artifact_root/${app_bundle_name}-$version.zip"
@@ -40,7 +40,7 @@ if command -v hdiutil >/dev/null 2>&1; then
     cp -R "$app_path" "$staging_dir/"
     ln -s /Applications "$staging_dir/Applications"
     hdiutil create \
-        -volname "Clipboard Workbench $version" \
+        -volname "ClipShelf $version" \
         -srcfolder "$staging_dir" \
         -ov \
         -format UDZO \

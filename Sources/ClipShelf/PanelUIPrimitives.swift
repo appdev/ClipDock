@@ -130,7 +130,7 @@ final class HeightResizeHandleView: NSView {
 
     private func applyTheme() {
         let alpha: CGFloat = isHovering ? 0.28 : 0
-        indicatorLayer.backgroundColor = PasteTheme.current(for: self)
+        indicatorLayer.backgroundColor = ClipShelfTheme.current(for: self)
             .panel
             .resizeHandleColor
             .withAlphaComponent(alpha)

@@ -6,7 +6,7 @@
 
 ## 目标
 
-本文件记录当前 macOS 本地发布流程。它用于把已验证的 SwiftPM/AppKit 剪贴板工作台构建打成可分发候选产物，并为后续 Developer ID 签名、公证、安装器和自动更新留出清晰入口。
+本文件记录当前 macOS 本地发布流程。它用于把已验证的 SwiftPM/AppKit ClipShelf（剪贴架）构建打成可分发候选产物，并为后续 Developer ID 签名、公证、安装器和自动更新留出清晰入口。
 
 ## 本地候选发布
 
@@ -24,21 +24,21 @@ scripts/release-macos.sh
 
 默认产物：
 
-- `ClipboardWorkbench.app`
-- `ClipboardWorkbench-0.1.0.zip`
-- `ClipboardWorkbench-0.1.0.dmg`
+- `ClipShelf.app`
+- `ClipShelf-0.1.0.zip`
+- `ClipShelf-0.1.0.dmg`
 - `SHA256SUMS`
-- `ClipboardWorkbench-release-manifest.txt`
+- `ClipShelf-release-manifest.txt`
 
-说明：发布脚本默认使用正式产物名 `ClipboardWorkbench*`，源码运行和 QA 命令统一使用当前 executable product `PasteFloating`。
+说明：发布脚本默认使用正式产物名 `ClipShelf*`，源码运行和 QA 命令统一使用当前 executable product `ClipShelf`。
 
 ## 可配置参数
 
 ```bash
 APP_VERSION=0.1.0 \
 APP_BUILD=1 \
-BUNDLE_IDENTIFIER=dev.codex.clipboard-workbench \
-APP_DISPLAY_NAME=ClipboardWorkbench \
+BUNDLE_IDENTIFIER=dev.codex.clipshelf \
+APP_DISPLAY_NAME=ClipShelf \
 CODESIGN_IDENTITY=- \
 scripts/release-macos.sh
 ```
@@ -49,7 +49,7 @@ scripts/release-macos.sh
 - 正式发布应设置为 `Developer ID Application: ...`。
 - `RELEASE_DIR` 可覆盖输出目录。
 - `APP_BUNDLE_NAME` 与 `APP_EXECUTABLE_NAME` 可覆盖默认 bundle 名和包内可执行文件名。
-- `BUNDLE_IDENTIFIER` 默认已切换到 `dev.codex.clipboard-workbench`。
+- `BUNDLE_IDENTIFIER` 默认已切换到 `dev.codex.clipshelf`。
 
 ## 公证入口
 
@@ -71,13 +71,13 @@ scripts/release-macos.sh
 
 ```bash
 scripts/release-macos.sh
-.codex/artifacts/release/0.1.0/ClipboardWorkbench.app/Contents/MacOS/ClipboardWorkbenchApp --print-ui-diagnostics
-codesign --verify --deep --strict .codex/artifacts/release/0.1.0/ClipboardWorkbench.app
+.codex/artifacts/release/0.1.0/ClipShelf.app/Contents/MacOS/ClipShelf --print-ui-diagnostics
+codesign --verify --deep --strict .codex/artifacts/release/0.1.0/ClipShelf.app
 (cd .codex/artifacts/release/0.1.0 && shasum -a 256 -c SHA256SUMS)
-hdiutil imageinfo .codex/artifacts/release/0.1.0/ClipboardWorkbench-0.1.0.dmg
+hdiutil imageinfo .codex/artifacts/release/0.1.0/ClipShelf-0.1.0.dmg
 ```
 
-说明：发布校验链路使用 `ClipboardWorkbench` bundle 和 `ClipboardWorkbenchApp` 包内可执行文件；源码态 QA 入口统一使用 `swift run PasteFloating ...`。
+说明：发布校验链路使用 `ClipShelf` bundle 和 `ClipShelf` 包内可执行文件；源码态 QA 入口统一使用 `swift run ClipShelf ...`。
 
 ## 遗留风险
 

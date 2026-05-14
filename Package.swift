@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClipboardWorkbench",
+    name: "ClipShelf",
     platforms: [
         .macOS(.v13)
     ],
@@ -13,12 +13,8 @@ let package = Package(
             targets: ["ClipboardPanelApp"]
         ),
         .executable(
-            name: "ClipboardWorkbenchApp",
-            targets: ["PasteFloating"]
-        ),
-        .executable(
-            name: "PasteFloating",
-            targets: ["PasteFloating"]
+            name: "ClipShelf",
+            targets: ["ClipShelf"]
         )
     ],
     dependencies: [
@@ -38,7 +34,7 @@ let package = Package(
                 "Generated",
                 "rust",
                 "scripts",
-                "Sources/PasteFloating",
+                "Sources/ClipShelf",
                 "Tests",
                 "README.md",
                 "AGENTS.md",
@@ -50,9 +46,9 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "PasteFloating",
+            name: "ClipShelf",
             dependencies: ["ClipboardPanelApp"],
-            path: "Sources/PasteFloating",
+            path: "Sources/ClipShelf",
             resources: [
                 .process("Resources")
             ]
@@ -61,7 +57,7 @@ let package = Package(
             name: "ClipboardPanelAppTests",
             dependencies: [
                 "ClipboardPanelApp",
-                "PasteFloating"
+                "ClipShelf"
             ]
         )
     ]

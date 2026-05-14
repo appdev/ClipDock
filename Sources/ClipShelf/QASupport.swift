@@ -204,7 +204,7 @@ enum PanelQASamples {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let body = isLongText
             ? Array(repeating: """
-                Paste 预览窗口需要根据内容自动调整尺寸。短文本不应该撑成固定大盒子，长文本则应该在最大高度内自动换行，并通过滚动继续阅读后续内容。
+                ClipShelf 预览窗口需要根据内容自动调整尺寸。短文本不应该撑成固定大盒子，长文本则应该在最大高度内自动换行，并通过滚动继续阅读后续内容。
 
                 这是一段用于真实窗口 QA 的长文本。它会占用多行，帮助我们确认 NSTextView 的 text container 会跟随 popover 宽度换行，而不是横向溢出。
 
@@ -706,8 +706,8 @@ enum RealFunctionQAScenario {
         let delegate = AppDelegate()
         delegate.smokePrepareRealFunctionQA(appSupportURL: appSupportURL)
 
-        let copyText = "Paste QA real copy \(UUID().uuidString)"
-        let deleteText = "Paste QA delete target \(UUID().uuidString)"
+        let copyText = "ClipShelf QA real copy \(UUID().uuidString)"
+        let deleteText = "ClipShelf QA delete target \(UUID().uuidString)"
 
         delegate.smokeCaptureClipboardText(deleteText, changeCount: 10_001)
         delegate.smokeCaptureClipboardText(copyText, changeCount: 10_002)
@@ -1007,7 +1007,7 @@ enum PanelInteractionSmokeScenario {
         )
         try PanelQAHarness.require(
             contentView.smokeCreatePinboardAction()?.title == "未命名",
-            "工具栏加号应按 Paste 实拍直接创建未命名 Pinboard，而不是打开命名弹窗"
+            "工具栏加号应按 ClipShelf直接创建未命名 Pinboard，而不是打开命名弹窗"
         )
         try PanelQAHarness.require(
             contentView.smokeCreatedPinboardStartsInlineRename(),
@@ -1015,7 +1015,7 @@ enum PanelInteractionSmokeScenario {
         )
         try PanelQAHarness.require(
             contentView.smokePanelUsesLightBlurredBackground(),
-            "面板根背景应使用 Paste 式浅色毛玻璃承载面，不能完全裸露桌面"
+            "面板根背景应使用 ClipShelf浅色毛玻璃承载面，不能完全裸露桌面"
         )
         try PanelQAHarness.require(
             contentView.smokePanelUsesSystemGlassWhenAvailable(),
@@ -1039,11 +1039,11 @@ enum PanelInteractionSmokeScenario {
         let pinboardMenuItems = contentView.smokePinboardChipMenuItems(pinboardID: "default")
         try PanelQAHarness.require(
             pinboardMenuItems.map(\.title) == ["重命名", "删除...", "颜色"],
-            "Pinboard chip 右键菜单未按 Paste 样式展示重命名、删除和颜色入口"
+            "Pinboard chip 右键菜单未按 ClipShelf 样式展示重命名、删除和颜色入口"
         )
         try PanelQAHarness.require(
             contentView.smokePinboardRenameUsesInlineEditor(pinboardID: "default"),
-            "Pinboard 重命名应使用 Paste 式 chip 内联编辑态"
+            "Pinboard 重命名应使用 ClipShelf chip 内联编辑态"
         )
         try PanelQAHarness.require(
             contentView.smokePinboardRenameCommitsOnFocusLoss(pinboardID: "default"),
@@ -1065,12 +1065,12 @@ enum PanelInteractionSmokeScenario {
             pinboardMenuItems.first(where: { $0.title == "颜色" })?.hasCustomView == true
                 && contentView.smokePinboardChipColorMenuItems(pinboardID: "default").map(\.title)
                     == ["红色", "橙色", "黄色", "绿色", "蓝色", "紫色", "粉色", "灰色"],
-            "Pinboard chip 右键颜色行缺少 Paste 风格颜色选项"
+            "Pinboard chip 右键颜色行缺少 ClipShelf 风格颜色选项"
         )
         try PanelQAHarness.require(
             contentView.smokePinboardDeleteRequiresConfirmation(pinboardID: "default") == true
                 && contentView.smokeNonEmptyPinboardDeleteRequiresConfirmation() == true,
-            "Pinboard 删除应按 Paste 实拍总是二次确认"
+            "Pinboard 删除应按 ClipShelf总是二次确认"
         )
     }
 
@@ -1109,7 +1109,7 @@ enum PanelInteractionSmokeScenario {
         let managementMenuItems = contentView.smokeManagementMenuItems(itemID: "panel-smoke-file")
         try PanelQAHarness.require(
             managementMenuItems.map(\.title) == ["复制", "删除", "固定", "预览"],
-            "右键菜单应使用 Paste 风格的固定子菜单"
+            "右键菜单应使用 ClipShelf 风格的固定子菜单"
         )
         try PanelQAHarness.require(
             managementMenuItems.first(where: { $0.title == "固定" })?.hasSubmenu == true,

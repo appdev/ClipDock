@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import Testing
 import WebKit
-@testable import PasteFloating
+@testable import ClipShelf
 @testable import ClipboardPanelApp
 
 struct PanelRuntimeSeamTests {
@@ -627,7 +627,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func singleWordTextPreviewUsesPasteLikeMinimumWindow() {
+    func singleWordTextPreviewUsesClipShelfMinimumWindow() {
         let content = makeTextPreviewContent(body: "Vault")
 
         let size = smokePreferredClipboardPreviewSize(for: content)
@@ -638,11 +638,11 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func textPreviewSizeUsesPasteLikeMeasuredContent() {
+    func textPreviewSizeUsesClipShelfMeasuredContent() {
         let content = makeTextPreviewContent(body: "短文本预览\nsecond line")
 
         let size = smokePreferredClipboardPreviewSize(for: content)
-        let expectedSize = expectedPasteLikeTextPreviewSize(for: content.body)
+        let expectedSize = expectedClipShelfTextPreviewSize(for: content.body)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -650,14 +650,14 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func richTextPreviewSizeUsesPasteLikeTextMetrics() {
+    func richTextPreviewSizeUsesClipShelfTextMetrics() {
         let content = makeTextPreviewContent(
             body: "富文本预览\nbold title\nregular body",
             itemType: "rich_text"
         )
 
         let size = smokePreferredClipboardPreviewSize(for: content)
-        let expectedSize = expectedPasteLikeTextPreviewSize(for: content.body)
+        let expectedSize = expectedClipShelfTextPreviewSize(for: content.body)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -665,16 +665,16 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func longTextPreviewSizeUsesPasteLikeMeasurementLimitAndHalfScreenCap() {
+    func longTextPreviewSizeUsesClipShelfMeasurementLimitAndHalfScreenCap() {
         let body = Array(
-            repeating: "Paste-like preview sizing should measure a bounded prefix and cap the viewport by half of the screen.",
+            repeating: "ClipShelf preview sizing should measure a bounded prefix and cap the viewport by half of the screen.",
             count: 80
         ).joined(separator: "\n")
         let content = makeTextPreviewContent(body: body)
 
         let size = smokePreferredClipboardPreviewSize(for: content)
-        let expectedSize = expectedPasteLikeTextPreviewSize(for: body)
-        let maximumContentSize = expectedPasteLikeTextMaximumContentSize()
+        let expectedSize = expectedClipShelfTextPreviewSize(for: body)
+        let maximumContentSize = expectedClipShelfTextMaximumContentSize()
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -733,7 +733,7 @@ struct PanelRuntimeSeamTests {
         PanelQAHarness.drainMainRunLoop()
 
         #expect(await waitForMainActor { contentView.smokeIsPreviewShown })
-        let expectedBackground = PasteTheme.current(for: contentView).panel.backgroundColor
+        let expectedBackground = ClipShelfTheme.current(for: contentView).panel.backgroundColor
         let actualBackground = try #require(contentView.smokePreviewRootBackgroundColor())
         #expect(colorAndAlphaDistance(actualBackground, expectedBackground) < 0.001)
         #expect(contentView.smokePreviewDirectSubviewBackgroundColors().allSatisfy { background in
@@ -785,7 +785,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func imagePreviewSizeKeepsNaturalImageSizeWithPasteShellInsets() throws {
+    func imagePreviewSizeKeepsNaturalImageSizeWithClipShelfShellInsets() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -793,7 +793,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: imageURL, width: 220, height: 140)
 
         let size = smokePreferredClipboardPreviewSize(for: makeImagePreviewContent(imageURL: imageURL))
-        let expectedSize = expectedPasteLikeImagePreviewSize(imageWidth: 220, imageHeight: 140)
+        let expectedSize = expectedClipShelfImagePreviewSize(imageWidth: 220, imageHeight: 140)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -801,7 +801,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func imagePreviewSizeDownscalesLargeImageToHalfScreenLikePaste() throws {
+    func imagePreviewSizeDownscalesLargeImageToHalfScreenLikeClipShelf() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -809,7 +809,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: imageURL, width: 2000, height: 1000)
 
         let size = smokePreferredClipboardPreviewSize(for: makeImagePreviewContent(imageURL: imageURL))
-        let expectedSize = expectedPasteLikeImagePreviewSize(imageWidth: 2000, imageHeight: 1000)
+        let expectedSize = expectedClipShelfImagePreviewSize(imageWidth: 2000, imageHeight: 1000)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -864,7 +864,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: imageURL, width: 1200, height: 600)
 
         let app = NSApplication.shared
-        let theme = PasteTheme.current(for: app.effectiveAppearance)
+        let theme = ClipShelfTheme.current(for: app.effectiveAppearance)
         let itemSide: CGFloat = 218
         let headerHeight: CGFloat = 48
         let renderer = PanelItemCardRenderer(
@@ -931,7 +931,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: smallImageURL, width: 60, height: 40)
 
         let app = NSApplication.shared
-        let theme = PasteTheme.current(for: app.effectiveAppearance)
+        let theme = ClipShelfTheme.current(for: app.effectiveAppearance)
         let itemSide: CGFloat = 218
         let headerHeight: CGFloat = 48
         let renderer = PanelItemCardRenderer(
@@ -1199,7 +1199,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func videoFilePreviewSizeUsesPasteLikeDocumentQuickLookViewport() throws {
+    func videoFilePreviewSizeUsesClipShelfDocumentQuickLookViewport() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -1207,7 +1207,7 @@ struct PanelRuntimeSeamTests {
         try Data().write(to: videoURL)
 
         let size = smokePreferredClipboardPreviewSize(for: makePreviewContent(fileURLs: [videoURL]))
-        let expectedSize = expectedPasteLikeDocumentPreviewSize()
+        let expectedSize = expectedClipShelfDocumentPreviewSize()
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -1384,7 +1384,7 @@ struct PanelRuntimeSeamTests {
     func appRuntimeKeepsPanelHiddenForDefaultInitialPresentation() async throws {
         let delegate = AppDelegate()
 
-        delegate.smokeApplyInitialPresentationForRealFunctionQA(arguments: ["PasteFloating"])
+        delegate.smokeApplyInitialPresentationForRealFunctionQA(arguments: ["ClipShelf"])
 
         #expect(!delegate.smokePanelIsVisibleForRealFunctionQA)
     }
@@ -1674,8 +1674,8 @@ private func makeImagePreviewContent(imageURL: URL) -> ClipboardPreviewContent {
     )
 }
 
-private func expectedPasteLikeTextPreviewSize(for text: String) -> NSSize {
-    let maximumContentSize = expectedPasteLikeTextMaximumContentSize()
+private func expectedClipShelfTextPreviewSize(for text: String) -> NSSize {
+    let maximumContentSize = expectedClipShelfTextMaximumContentSize()
     let measuredText = NSAttributedString(
         string: text.isEmpty ? " " : text,
         attributes: [
@@ -1704,7 +1704,7 @@ private func expectedPasteLikeTextPreviewSize(for text: String) -> NSSize {
     )
 }
 
-private func expectedPasteLikeTextMaximumContentSize() -> NSSize {
+private func expectedClipShelfTextMaximumContentSize() -> NSSize {
     guard let screenFrame = NSScreen.main?.frame else {
         return NSSize(width: 1_000, height: 1_000)
     }
@@ -1715,7 +1715,7 @@ private func expectedPasteLikeTextMaximumContentSize() -> NSSize {
     )
 }
 
-private func expectedPasteLikeDocumentPreviewSize() -> NSSize {
+private func expectedClipShelfDocumentPreviewSize() -> NSSize {
     let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
     return NSSize(
         width: floor(screenFrame.width * 0.5 + 10),
@@ -1723,7 +1723,7 @@ private func expectedPasteLikeDocumentPreviewSize() -> NSSize {
     )
 }
 
-private func expectedPasteLikeImagePreviewSize(imageWidth: CGFloat, imageHeight: CGFloat) -> NSSize {
+private func expectedClipShelfImagePreviewSize(imageWidth: CGFloat, imageHeight: CGFloat) -> NSSize {
     let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
     let maximumContentWidth = screenFrame.width * 0.5
     let maximumContentHeight = screenFrame.height * 0.5
@@ -1805,7 +1805,7 @@ private func renderLinkCard(
             cardFooterHeight: 17,
             sourceIconSize: 54,
             linkPreviewHeight: 84,
-            theme: PasteTheme.current(for: app.effectiveAppearance)
+            theme: ClipShelfTheme.current(for: app.effectiveAppearance)
         ),
         backingScaleFactor: NSScreen.main?.backingScaleFactor ?? 2
     )

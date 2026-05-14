@@ -10,13 +10,13 @@
 
 ### Swift
 
-- `Sources/PasteFloating/main.swift` 已经超过 8,000 行，同时承担 UI 组件、窗口控制、偏好设置、剪贴板捕获、菜单栏、快捷键、存储编排、诊断命令、快照命令和 smoke QA。
+- `Sources/ClipShelf/main.swift` 已经超过 8,000 行，同时承担 UI 组件、窗口控制、偏好设置、剪贴板捕获、菜单栏、快捷键、存储编排、诊断命令、快照命令和 smoke QA。
 - `AppDelegate` 既是应用生命周期入口，也是剪贴板列表控制器、偏好协调器、权限协调器和存储状态协调器。
 - `RustCoreClient` 既处理 Swift bridge 调用，又负责目录准备、JSON 编解码和错误映射；当前通过 `@unchecked Sendable` 绕过了并发检查。
 - `ClipboardPastePayloadPlanner` 和 `ClipboardPreviewContentPlanner` 各自维护了一份相似的资产路径解析逻辑。
 - 可执行目标中的 smoke / snapshot / diagnostics 命令与生产运行时强耦合，容易继续把测试辅助代码堆进主入口。
 
-命名说明：`PasteFloating` 是当前源码态 executable target / 目录名；产品、发布和用户可见命名统一使用“剪贴板工作台（ClipboardWorkbench）”或中性模块名。
+命名说明：`ClipShelf` 是当前源码态 executable target / 目录名；产品、发布和用户可见命名统一使用“ClipShelf（剪贴架）”或中性模块名。
 
 ### Rust
 
@@ -56,7 +56,7 @@
 
 ### 2. 当前可执行 target 作为运行时壳层
 
-当前 `PasteFloating` target 拆成以下责任区：
+当前 `ClipShelf` target 拆成以下责任区：
 
 - `UI/Panel`
   - `FloatingPanel`
@@ -139,16 +139,16 @@
 - `swift build` 通过，且不再出现 `AGENTS.md` unhandled file warning
 - `swift test` 通过
 - `cargo test --manifest-path rust/Cargo.toml` 通过
-- `swift run PasteFloating --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 成功
-- `swift run PasteFloating --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png` 成功
+- `swift run ClipShelf --render-panel-snapshot .codex/artifacts/panel-runtime-snapshot.png` 成功
+- `swift run ClipShelf --render-preferences-snapshot .codex/artifacts/preferences-runtime-snapshot.png` 成功
   - 对应 snapshot artifact 需实际落盘
-- `swift run PasteFloating --exercise-panel-interactions` 成功
+- `swift run ClipShelf --exercise-panel-interactions` 成功
   - 需在可交互的 GUI 会话中执行
-- `swift run PasteFloating --exercise-preferences` 成功
+- `swift run ClipShelf --exercise-preferences` 成功
 - 无新增行为变化
 - `RustCoreClientTests` 继续全绿
 
-说明：以上验收命令统一使用当前源码态 executable product `PasteFloating`。
+说明：以上验收命令统一使用当前源码态 executable product `ClipShelf`。
 
 ### Phase 2：提取应用编排协调器
 

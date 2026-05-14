@@ -1,13 +1,13 @@
 import AppKit
 import Testing
-@testable import PasteFloating
+@testable import ClipShelf
 
-struct PasteThemeTests {
+struct ClipShelfThemeTests {
     @Test
     @MainActor
     func resolvesSeparateLightAndDarkPalettes() throws {
-        let light = PasteTheme.current(for: NSAppearance(named: .aqua))
-        let dark = PasteTheme.current(for: NSAppearance(named: .darkAqua))
+        let light = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
+        let dark = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
 
         #expect(light.scheme == .light)
         #expect(dark.scheme == .dark)
@@ -23,13 +23,13 @@ struct PasteThemeTests {
         let originalAppearance = app.appearance
         defer { NSApp.appearance = originalAppearance }
 
-        PasteTheme.applyAppearanceMode("dark")
+        ClipShelfTheme.applyAppearanceMode("dark")
         #expect(app.appearance?.name == .darkAqua)
 
-        PasteTheme.applyAppearanceMode("light")
+        ClipShelfTheme.applyAppearanceMode("light")
         #expect(app.appearance?.name == .aqua)
 
-        PasteTheme.applyAppearanceMode("system")
+        ClipShelfTheme.applyAppearanceMode("system")
         #expect(app.appearance == nil)
     }
 
@@ -37,8 +37,8 @@ struct PasteThemeTests {
     @MainActor
     func coreSurfacesKeepReadableContrastInBothSchemes() throws {
         let palettes = [
-            PasteTheme.current(for: NSAppearance(named: .aqua)),
-            PasteTheme.current(for: NSAppearance(named: .darkAqua))
+            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
+            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
         ]
 
         for palette in palettes {
@@ -52,8 +52,8 @@ struct PasteThemeTests {
     @MainActor
     func panelTintStaysLightAndTranslucent() throws {
         let palettes = [
-            PasteTheme.current(for: NSAppearance(named: .aqua)),
-            PasteTheme.current(for: NSAppearance(named: .darkAqua))
+            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
+            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
         ]
 
         for palette in palettes {
@@ -68,8 +68,8 @@ struct PasteThemeTests {
     @MainActor
     func toolbarIconsUseToolbarTextColorInBothSchemes() throws {
         let palettes = [
-            PasteTheme.current(for: NSAppearance(named: .aqua)),
-            PasteTheme.current(for: NSAppearance(named: .darkAqua))
+            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
+            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
         ]
 
         for palette in palettes {

@@ -3,13 +3,13 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 
 @MainActor
-protocol PasteKeystrokeSending {
-    func sendPasteKeystroke()
+protocol CommandVKeystrokeSending {
+    func sendCommandVKeystroke()
 }
 
 @MainActor
-final class SystemPasteKeystrokeSender: PasteKeystrokeSending {
-    func sendPasteKeystroke() {
+final class SystemCommandVKeystrokeSender: CommandVKeystrokeSending {
+    func sendCommandVKeystroke() {
         let source = CGEventSource(stateID: .combinedSessionState)
         let commandKeyCode = CGKeyCode(kVK_Command)
         let pasteKeyCode = CGKeyCode(kVK_ANSI_V)
@@ -29,7 +29,7 @@ final class SystemPasteKeystrokeSender: PasteKeystrokeSending {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private enum PasteWriteResult {
+    private enum ClipboardWriteResult {
         case success(changeCount: Int)
         case failure(message: String)
     }
@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let duplicateEventInterval: TimeInterval = 0.04
     }
 
-    private enum DirectPasteTiming {
+    private enum DirectInsertTiming {
         static let focusRestoreDelayNanoseconds: UInt64 = 120_000_000
     }
 
@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let accessibilityPermissionController = AccessibilityPermissionController()
     private let sourceApplicationTracker = SourceApplicationTracker()
     private let clipboardMonitor = ClipboardMonitor()
-    private let pasteKeystrokeSender: PasteKeystrokeSending = SystemPasteKeystrokeSender()
+    private let commandVKeystrokeSender: CommandVKeystrokeSending = SystemCommandVKeystrokeSender()
     private let databaseWorker = ClipboardCoreDatabaseWorker()
     private var statusItem: NSStatusItem?
     private var togglePanelMenuItem: NSMenuItem?
@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentPreferences = RustPreferencesDocument()
     private var lastPanelToggleUptime: TimeInterval = 0
     private var fileCaptureTask: Task<Void, Never>?
-    private var directPasteTask: Task<Void, Never>?
+    private var directInsertTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         fileCaptureTask?.cancel()
-        directPasteTask?.cancel()
+        directInsertTask?.cancel()
         clipboardMonitor.stop()
         sourceApplicationTracker.stop()
         unregisterGlobalHotKey()
@@ -421,7 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let token = "self-\(UUID().uuidString)"
         let startChangeCount = NSPasteboard.general.changeCount + 1
 
-        switch writePastePayload(payload, token: token) {
+        switch writeClipboardPayload(payload, token: token) {
         case .success(let changeCount):
             clipboardMonitor.markSelfWrite(
                 token: token,
@@ -433,7 +433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshStatusText()
             panelController.hide()
             if pasteDirectlyToTarget {
-                schedulePasteToTarget()
+                scheduleCommandVToTarget()
             }
 
         case .failure(let message):
@@ -453,7 +453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let token = "self-\(UUID().uuidString)"
         let startChangeCount = NSPasteboard.general.changeCount + 1
 
-        switch writePastePayload(.text(normalizedPathText), token: token) {
+        switch writeClipboardPayload(.text(normalizedPathText), token: token) {
         case .success(let changeCount):
             clipboardMonitor.markSelfWrite(
                 token: token,
@@ -470,16 +470,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func schedulePasteToTarget() {
-        directPasteTask?.cancel()
-        directPasteTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: DirectPasteTiming.focusRestoreDelayNanoseconds)
+    private func scheduleCommandVToTarget() {
+        directInsertTask?.cancel()
+        directInsertTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: DirectInsertTiming.focusRestoreDelayNanoseconds)
             guard !Task.isCancelled else { return }
-            self?.pasteKeystrokeSender.sendPasteKeystroke()
+            self?.commandVKeystrokeSender.sendCommandVKeystroke()
         }
     }
 
-    private func writePastePayload(_ payload: ClipboardPastePayload, token: String) -> PasteWriteResult {
+    private func writeClipboardPayload(_ payload: ClipboardPastePayload, token: String) -> ClipboardWriteResult {
         let pasteboard = NSPasteboard.general
 
         let didWrite: Bool
@@ -584,7 +584,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             in: .userDomainMask
         )
         .first?
-        .appendingPathComponent("ClipboardWorkbench", isDirectory: true)
+        .appendingPathComponent("ClipShelf", isDirectory: true)
 
         let appSupportURL = appSupportURLOverride(arguments: CommandLine.arguments) ?? defaultAppSupportURL
 
@@ -690,7 +690,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updatePreferencesController: Bool
     ) {
         currentPreferences = result.preferences
-        PasteTheme.applyAppearanceMode(result.preferences.appearance.mode)
+        ClipShelfTheme.applyAppearanceMode(result.preferences.appearance.mode)
         panelController.setConfiguredDefaultHeight(CGFloat(result.preferences.general.defaultPanelHeight))
         panelController.setPreviewPopoverEnabled(result.preferences.appearance.previewPopoverEnabled)
         panelController.setLinkWebPreviewEnabled(result.preferences.linkPreview.webPreviewEnabled)
@@ -858,9 +858,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureMainMenu() {
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
-        let appMenu = NSMenu(title: "剪贴板工作台")
+        let appMenu = NSMenu(title: "ClipShelf")
 
-        appMenu.addItem(makeMenuItem(title: "关于剪贴板工作台", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        appMenu.addItem(makeMenuItem(title: "关于 ClipShelf", action: #selector(showAbout(_:)), key: "", modifiers: []))
         appMenu.addItem(.separator())
         let togglePanelMenuItem = makeMenuItem(
             title: "显示/隐藏面板",
@@ -887,7 +887,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.title = ""
 
         let menu = NSMenu()
-        menu.addItem(makeMenuItem(title: "关于剪贴板工作台", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: "关于 ClipShelf", action: #selector(showAbout(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: "显示面板", action: #selector(showPanel(_:)), key: "", modifiers: []))
         menu.addItem(makeMenuItem(title: "隐藏面板", action: #selector(hidePanel(_:)), key: "", modifiers: []))
@@ -909,14 +909,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .flatMap(NSImage.init(contentsOf:)) {
             image.isTemplate = false
             image.size = NSSize(width: 19, height: 19)
-            image.accessibilityDescription = "剪贴板工作台"
+            image.accessibilityDescription = "ClipShelf"
             return image
         }
 
-        let fallbackImage = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "剪贴板工作台")
+        let fallbackImage = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "ClipShelf")
         fallbackImage?.isTemplate = true
         fallbackImage?.size = NSSize(width: 19, height: 19)
-        fallbackImage?.accessibilityDescription = "剪贴板工作台"
+        fallbackImage?.accessibilityDescription = "ClipShelf"
         return fallbackImage
     }
 
@@ -1064,7 +1064,7 @@ extension AppDelegate {
     func smokeStoredItems() throws -> [RustClipboardItemSummary] {
         guard let appSupportURL else {
             throw NSError(
-                domain: "PasteFloating.RealFunctionQA",
+                domain: "ClipShelf.RealFunctionQA",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "真实功能 QA 未配置独立存储目录"]
             )
@@ -1079,7 +1079,7 @@ extension AppDelegate {
     func smokeRenderStoredItems() throws -> [RustClipboardItemSummary] {
         guard let appSupportURL else {
             throw NSError(
-                domain: "PasteFloating.RealFunctionQA",
+                domain: "ClipShelf.RealFunctionQA",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "真实功能 QA 未配置独立存储目录"]
             )

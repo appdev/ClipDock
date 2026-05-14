@@ -8,8 +8,8 @@ export CLANG_MODULE_CACHE_PATH="$(pwd)/.build/clang-module-cache"
 
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
-app_bundle_name="${APP_BUNDLE_NAME:-ClipboardWorkbench}"
-bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipboardWorkbenchApp}"
+app_bundle_name="${APP_BUNDLE_NAME:-ClipShelf}"
+bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipShelf}"
 
 app_path="${1:-.codex/artifacts/${app_bundle_name}.app}"
 if [[ "$app_path" != *.app ]]; then
@@ -25,19 +25,19 @@ app_name="$(basename "$app_path" .app)"
 contents_dir="$app_path/Contents"
 macos_dir="$contents_dir/MacOS"
 resources_dir="$contents_dir/Resources"
-bundle_identifier="${BUNDLE_IDENTIFIER:-dev.codex.clipboard-workbench}"
-display_name="${APP_DISPLAY_NAME:-ClipboardWorkbench}"
+bundle_identifier="${BUNDLE_IDENTIFIER:-dev.codex.clipshelf}"
+display_name="${APP_DISPLAY_NAME:-ClipShelf}"
 app_version="${APP_VERSION:-0.1.0}"
 app_build="${APP_BUILD:-1}"
 codesign_identity="${CODESIGN_IDENTITY:--}"
-app_icon_file="${APP_ICON_FILE:-Sources/PasteFloating/Resources/AppIcon.icns}"
-status_icon_file="${STATUS_ICON_FILE:-Sources/PasteFloating/Resources/StatusBarClipboardTemplate.png}"
+app_icon_file="${APP_ICON_FILE:-Sources/ClipShelf/Resources/AppIcon.icns}"
+status_icon_file="${STATUS_ICON_FILE:-Sources/ClipShelf/Resources/StatusBarClipboardTemplate.png}"
 
 scripts/build-rust-core.sh
-swift build -c release --product ClipboardWorkbenchApp
+swift build -c release --product ClipShelf
 
 release_bin_dir="$(swift build -c release --show-bin-path)"
-executable_path="$release_bin_dir/ClipboardWorkbenchApp"
+executable_path="$release_bin_dir/ClipShelf"
 
 if [[ ! -x "$executable_path" ]]; then
     echo "release executable not found: $executable_path" >&2

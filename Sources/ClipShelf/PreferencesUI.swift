@@ -1103,7 +1103,7 @@ private struct PreferenceAboutSection: View {
                         Text(aboutDisplayName())
                             .font(.system(size: 19, weight: .semibold))
                             .foregroundStyle(.primary)
-                        Text("本地剪贴板工作台")
+                        Text("本地剪贴架")
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                     }
@@ -1408,7 +1408,7 @@ private func aboutDisplayName() -> String {
         return name
     }
 
-    return "剪贴板工作台"
+    return "ClipShelf"
 }
 
 private func aboutVersionText() -> String {
@@ -1466,8 +1466,8 @@ private final class LegacyPreferencesWindowController: NSWindowController {
 
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
     var onAccessibilityPermissionRequested: (() -> Void)?
-    private var theme: PasteThemePalette {
-        PasteTheme.current(for: window)
+    private var theme: ClipShelfThemePalette {
+        ClipShelfTheme.current(for: window)
     }
 
     init() {
@@ -1483,7 +1483,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
-        window.backgroundColor = PasteTheme.current(for: window).preferences.windowBackgroundColor
+        window.backgroundColor = ClipShelfTheme.current(for: window).preferences.windowBackgroundColor
         window.isOpaque = true
 
         super.init(window: window)
@@ -2468,7 +2468,7 @@ final class AboutWindowController: NSWindowController {
     private var socialButtons: [AboutIconButton] = []
     private var linkButtons: [NSButton] = []
     private var theme: AboutWindowTheme {
-        AboutWindowTheme(palette: PasteTheme.current(for: window))
+        AboutWindowTheme(palette: ClipShelfTheme.current(for: window))
     }
 
     init() {
@@ -2486,7 +2486,7 @@ final class AboutWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
-        window.backgroundColor = PasteTheme.current(for: window).preferences.windowBackgroundColor
+        window.backgroundColor = ClipShelfTheme.current(for: window).preferences.windowBackgroundColor
         window.isOpaque = true
 
         super.init(window: window)
@@ -2545,7 +2545,7 @@ final class AboutWindowController: NSWindowController {
         let socialButtons = makeSocialButtonRow()
         let linksRow = makeLinksRow()
         let copyrightLabel = makeCenteredLabel(
-            "© 2026 剪贴板工作台\nBuilt with AppKit and Rust.",
+            "© 2026 ClipShelf\nBuilt with AppKit and Rust.",
             font: .systemFont(ofSize: 12.5, weight: .medium),
             color: theme.mutedTextColor
         )
@@ -2586,7 +2586,7 @@ final class AboutWindowController: NSWindowController {
             return name
         }
 
-        return "剪贴板工作台"
+        return "ClipShelf"
     }
 
     private var versionText: String {
@@ -2814,7 +2814,7 @@ private struct AboutWindowTheme {
     let socialButtonBackgroundColor: NSColor
     let socialButtonBorderColor: NSColor
 
-    init(palette: PasteThemePalette) {
+    init(palette: ClipShelfThemePalette) {
         let preferences = palette.preferences
         windowBackgroundColor = preferences.windowBackgroundColor
         contentBackgroundColor = preferences.contentBackgroundColor
