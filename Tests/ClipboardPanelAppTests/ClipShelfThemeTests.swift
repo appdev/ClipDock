@@ -118,19 +118,18 @@ struct ClipShelfThemeTests {
 
     @Test
     @MainActor
-    func aboutWindowIconButtonsKeepCircularGeometry() throws {
+    func aboutWindowDoesNotExposeLocalDocumentationControls() throws {
         let controller = AboutWindowController()
         defer { controller.close() }
         let contentView = try #require(controller.window?.contentView)
-        contentView.layoutSubtreeIfNeeded()
 
         for toolTip in ["文档首页", "架构说明", "UI QA", "发布说明"] {
-            let button = try #require(view(withToolTip: toolTip, in: contentView))
-            button.layoutSubtreeIfNeeded()
-
-            #expect(abs(button.frame.width - button.frame.height) < 0.5)
-            #expect(abs((button.layer?.cornerRadius ?? 0) - min(button.bounds.width, button.bounds.height) / 2) < 0.5)
+            #expect(view(withToolTip: toolTip, in: contentView) == nil)
         }
+
+        let buttonTitles = Set(allSubviews(of: contentView)
+            .compactMap { ($0 as? NSButton)?.title })
+        #expect(buttonTitles.isDisjoint(with: ["项目文档", "发布说明"]))
     }
 
     private func contrastRatio(_ foreground: NSColor, _ background: NSColor) -> CGFloat {

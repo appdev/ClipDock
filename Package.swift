@@ -26,24 +26,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ClipboardCoreBridge", package: "ClipboardCoreBridge")
             ],
-            path: ".",
-            exclude: [
-                ".build",
-                ".codex",
-                "docs",
-                "Generated",
-                "rust",
-                "scripts",
-                "Sources/ClipShelf",
-                "Tests",
-                "README.md",
-                "AGENTS.md",
-                "verification.md",
-                "Package.swift"
-            ],
-            sources: [
-                "Sources/ClipboardPanelApp"
-            ]
+            path: "Sources/ClipboardPanelApp"
         ),
         .executableTarget(
             name: "ClipShelf",

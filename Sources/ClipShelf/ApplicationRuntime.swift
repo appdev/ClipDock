@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private let panelController = FloatingPanelController()
-    private let aboutController = AboutWindowController()
+    private lazy var aboutController = AboutWindowController()
     private let preferencesController = PreferencesWindowController()
     private let rustCoreClient = RustCoreClient()
     private let launchAtLoginController = LaunchAtLoginController()
@@ -71,27 +71,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastPanelToggleUptime: TimeInterval = 0
     private var fileCaptureTask: Task<Void, Never>?
     private var directInsertTask: Task<Void, Never>?
+    private var startupTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         configureMainMenu()
         configureStatusItem()
         configurePanelCallbacks()
-        configureClipboardCapture()
-        sourceApplicationTracker.start()
-        bootstrapLocalStorage()
-        clipboardMonitor.start()
-        registerGlobalHotKey()
-        refreshStatusText()
-
         applyInitialPresentation(arguments: CommandLine.arguments)
+
+        startupTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            continueStartupAfterInitialPresentation()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPreferences(nil)
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        startupTask?.cancel()
         fileCaptureTask?.cancel()
         directInsertTask?.cancel()
         clipboardMonitor.stop()
@@ -142,6 +148,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyInitialPresentation(arguments: [String]) {
+        applyInitialPresentation(
+            arguments: arguments,
+            isRunningAsApplicationBundle: isRunningAsApplicationBundle
+        )
+    }
+
+    private func applyInitialPresentation(
+        arguments: [String],
+        isRunningAsApplicationBundle: Bool
+    ) {
         if arguments.contains("--show-panel") {
             NSApp.activate(ignoringOtherApps: true)
             panelController.show()
@@ -150,7 +166,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if arguments.contains("--show-preferences") {
             refreshAccessibilityPermissionState()
             preferencesController.showPreferences()
+        } else if isRunningAsApplicationBundle {
+            showPreferences(nil)
         }
+    }
+
+    private var isRunningAsApplicationBundle: Bool {
+        Bundle.main.bundleURL.pathExtension == "app"
+            && Bundle.main.bundleIdentifier != nil
+    }
+
+    private func continueStartupAfterInitialPresentation() {
+        configureClipboardCapture()
+        sourceApplicationTracker.start()
+        bootstrapLocalStorage()
+        clipboardMonitor.start()
+        registerGlobalHotKey()
+        refreshStatusText()
     }
 
     private func commandLineValue(for flag: String, in arguments: [String]) -> String? {
@@ -907,13 +939,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? Bundle.module
                 .url(forResource: "StatusBarClipboardTemplate", withExtension: "png")
                 .flatMap(NSImage.init(contentsOf:)) {
-            image.isTemplate = false
+            image.isTemplate = true
             image.size = NSSize(width: 19, height: 19)
             image.accessibilityDescription = "ClipShelf"
             return image
         }
 
-        let fallbackImage = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "ClipShelf")
+        let fallbackImage = NSImage(systemSymbolName: "list.clipboard", accessibilityDescription: "ClipShelf")
         fallbackImage?.isTemplate = true
         fallbackImage?.size = NSSize(width: 19, height: 19)
         fallbackImage?.accessibilityDescription = "ClipShelf"
@@ -1057,8 +1089,26 @@ extension AppDelegate {
         showPreferences(nil)
     }
 
+    func smokeClosePreferencesForRealFunctionQA() {
+        preferencesController.close()
+    }
+
     func smokeApplyInitialPresentationForRealFunctionQA(arguments: [String]) {
         applyInitialPresentation(arguments: arguments)
+    }
+
+    func smokeApplyInitialPresentationForRealFunctionQA(
+        arguments: [String],
+        isRunningAsApplicationBundle: Bool
+    ) {
+        applyInitialPresentation(
+            arguments: arguments,
+            isRunningAsApplicationBundle: isRunningAsApplicationBundle
+        )
+    }
+
+    func smokeHandleReopenForRealFunctionQA() {
+        _ = applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false)
     }
 
     func smokeStoredItems() throws -> [RustClipboardItemSummary] {
@@ -1099,6 +1149,10 @@ extension AppDelegate {
 
     var smokePanelIsVisibleForRealFunctionQA: Bool {
         panelController.isVisible
+    }
+
+    var smokePreferencesIsVisibleForRealFunctionQA: Bool {
+        preferencesController.window?.isVisible == true
     }
 
     var smokeStorageStatusTextForRealFunctionQA: String {

@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import ClipboardPanelApp
+import ServiceManagement
 
 enum PanelSnapshotCommand {
     private static let flag = "--render-panel-snapshot"
@@ -743,5 +744,41 @@ enum UIDiagnosticsCommand {
 
     private static func format(_ value: CGFloat) -> String {
         String(format: "%.1f", value)
+    }
+}
+
+enum LaunchAtLoginDiagnosticsCommand {
+    private static let flag = "--print-launch-at-login-diagnostics"
+
+    static func shouldRun(arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
+
+    @MainActor
+    static func run() {
+        let controller = LaunchAtLoginController()
+        let state = controller.currentState()
+
+        print("bundleURL=\(Bundle.main.bundleURL.path)")
+        print("bundleIdentifier=\(Bundle.main.bundleIdentifier ?? "none")")
+        print("serviceStatus=\(serviceStatusDescription(SMAppService.mainApp.status))")
+        print("isOn=\(state.isOn)")
+        print("canChange=\(state.canChange)")
+        print("detail=\(state.detail)")
+    }
+
+    private static func serviceStatusDescription(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .enabled:
+            return "enabled"
+        case .notRegistered:
+            return "notRegistered"
+        case .requiresApproval:
+            return "requiresApproval"
+        case .notFound:
+            return "notFound"
+        @unknown default:
+            return "unknown"
+        }
     }
 }

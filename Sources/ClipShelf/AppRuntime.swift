@@ -12,12 +12,7 @@ func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView 
     let tintColor = ClipShelfTheme.current(for: contentView).panel.backgroundColor
     let hostView: NSView
 
-    if #available(macOS 26.0, *) {
-        let glassView = NSGlassEffectView(frame: contentView.frame)
-        glassView.style = .regular
-        glassView.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
-        glassView.tintColor = tintColor
-        glassView.contentView = contentView
+    if let glassView = makeSystemGlassPanelHostView(contentView: contentView, tintColor: tintColor) {
         hostView = glassView
         contentView.updateBackgroundHostState(.systemGlass(tintAlpha: tintColor.alphaComponent))
     } else {
@@ -38,6 +33,44 @@ func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView 
     contentView.frame = hostView.bounds
     contentView.autoresizingMask = [.width, .height]
     return hostView
+}
+
+@MainActor
+private func makeSystemGlassPanelHostView(
+    contentView: FloatingPanelContentView,
+    tintColor: NSColor
+) -> NSView? {
+    guard #available(macOS 26.0, *),
+          let glassViewClass = NSClassFromString("NSGlassEffectView") as? NSView.Type
+    else {
+        return nil
+    }
+
+    let glassView = glassViewClass.init(frame: contentView.frame)
+    setSystemGlassValue(NSNumber(value: 0), key: "style", on: glassView)
+    setSystemGlassValue(
+        NSNumber(value: Double(FloatingPanelContentView.panelBackgroundCornerRadius)),
+        key: "cornerRadius",
+        on: glassView
+    )
+    setSystemGlassValue(tintColor, key: "tintColor", on: glassView)
+
+    if glassView.responds(to: Selector(("setContentView:"))) {
+        glassView.setValue(contentView, forKey: "contentView")
+    } else {
+        glassView.addSubview(contentView)
+    }
+
+    return glassView
+}
+
+private func setSystemGlassValue(_ value: Any, key: String, on view: NSView) {
+    let setterPrefix = String(key.prefix(1)).uppercased() + key.dropFirst()
+    guard view.responds(to: Selector(("set\(setterPrefix):"))) else {
+        return
+    }
+
+    view.setValue(value, forKey: key)
 }
 
 final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {

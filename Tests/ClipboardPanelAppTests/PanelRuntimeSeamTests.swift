@@ -1391,6 +1391,37 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func appRuntimeShowsPreferencesForPackagedInitialPresentation() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+
+        let delegate = AppDelegate()
+        delegate.smokeApplyInitialPresentationForRealFunctionQA(
+            arguments: ["/Applications/ClipShelf.app/Contents/MacOS/ClipShelf"],
+            isRunningAsApplicationBundle: true
+        )
+
+        #expect(await waitForMainActor { delegate.smokePreferencesIsVisibleForRealFunctionQA })
+        #expect(!delegate.smokePanelIsVisibleForRealFunctionQA)
+        delegate.smokeClosePreferencesForRealFunctionQA()
+    }
+
+    @Test
+    @MainActor
+    func appRuntimeShowsPreferencesWhenApplicationReopens() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+
+        let delegate = AppDelegate()
+        delegate.smokeHandleReopenForRealFunctionQA()
+
+        #expect(await waitForMainActor { delegate.smokePreferencesIsVisibleForRealFunctionQA })
+        #expect(!delegate.smokePanelIsVisibleForRealFunctionQA)
+        delegate.smokeClosePreferencesForRealFunctionQA()
+    }
+
+    @Test
+    @MainActor
     func loadMoreAppendKeepsExistingCardsAndClearsLoadingState() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

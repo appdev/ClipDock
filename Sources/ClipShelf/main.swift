@@ -77,6 +77,11 @@ private func runClipShelfApp() {
         Darwin.exit(0)
     }
 
+    if LaunchAtLoginDiagnosticsCommand.shouldRun(arguments: CommandLine.arguments) {
+        LaunchAtLoginDiagnosticsCommand.run()
+        Darwin.exit(0)
+    }
+
     if let snapshotURL = PanelSnapshotCommand.outputURL(arguments: CommandLine.arguments) {
         do {
             try PanelSnapshotCommand.render(to: snapshotURL, arguments: CommandLine.arguments)

@@ -376,60 +376,6 @@ final class PreferenceStepper: NSStepper {
     }
 }
 
-private enum LocalDocsNavigator {
-    static func open(relativePath: String? = nil) {
-        guard let url = url(relativePath: relativePath) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    static func url(relativePath: String? = nil) -> URL? {
-        guard let rootURL = workspaceRootURL() else { return nil }
-
-        let docsURL = rootURL.appendingPathComponent("docs", isDirectory: true)
-        guard let relativePath, !relativePath.isEmpty else {
-            return docsURL
-        }
-
-        return docsURL.appendingPathComponent(relativePath)
-    }
-
-    private static func workspaceRootURL() -> URL? {
-        let fileManager = FileManager.default
-        let startingPoints = [
-            URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true),
-            Bundle.main.bundleURL,
-            Bundle.main.bundleURL.deletingLastPathComponent(),
-            Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent(),
-            Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent(),
-            Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        ]
-
-        var visitedPaths = Set<String>()
-        for startURL in startingPoints {
-            var currentURL = startURL.standardizedFileURL
-            while true {
-                let path = currentURL.path
-                if visitedPaths.insert(path).inserted {
-                    let docsURL = currentURL.appendingPathComponent("docs", isDirectory: true)
-                    let markerURL = currentURL.appendingPathComponent("AGENTS.md")
-                    if fileManager.fileExists(atPath: docsURL.path),
-                       fileManager.fileExists(atPath: markerURL.path) {
-                        return currentURL
-                    }
-                }
-
-                let parentURL = currentURL.deletingLastPathComponent()
-                if parentURL.path == currentURL.path {
-                    break
-                }
-                currentURL = parentURL
-            }
-        }
-
-        return nil
-    }
-}
-
 typealias LaunchAtLoginState = LaunchAtLoginPresentation
 typealias AccessibilityPermissionState = AccessibilityPermissionPresentation
 
@@ -2452,21 +2398,17 @@ private final class LegacyPreferencesWindowController: NSWindowController {
 @MainActor
 final class AboutWindowController: NSWindowController {
     private enum Layout {
-        static let defaultWindowSize = NSSize(width: 456, height: 520)
+        static let defaultWindowSize = NSSize(width: 456, height: 430)
         static let minimumWindowSize = defaultWindowSize
         static let windowCornerRadius: CGFloat = 16
         static let contentInset: CGFloat = 42
         static let iconSize: CGFloat = 110
-        static let socialButtonSize: CGFloat = 40
     }
 
     private let rootView = AboutRootView()
     private weak var titleLabel: NSTextField?
     private weak var versionLabel: NSTextField?
     private weak var copyrightLabel: NSTextField?
-    private weak var linksSeparatorLabel: NSTextField?
-    private var socialButtons: [AboutIconButton] = []
-    private var linkButtons: [NSButton] = []
     private var theme: AboutWindowTheme {
         AboutWindowTheme(palette: ClipShelfTheme.current(for: window))
     }
@@ -2542,8 +2484,6 @@ final class AboutWindowController: NSWindowController {
             color: theme.secondaryTextColor
         )
         self.versionLabel = versionLabel
-        let socialButtons = makeSocialButtonRow()
-        let linksRow = makeLinksRow()
         let copyrightLabel = makeCenteredLabel(
             "© 2026 ClipShelf\nBuilt with AppKit and Rust.",
             font: .systemFont(ofSize: 12.5, weight: .medium),
@@ -2554,8 +2494,6 @@ final class AboutWindowController: NSWindowController {
         stack.addArrangedSubview(iconView)
         stack.addArrangedSubview(titleLabel)
         stack.addArrangedSubview(versionLabel)
-        stack.addArrangedSubview(socialButtons)
-        stack.addArrangedSubview(linksRow)
         stack.addArrangedSubview(copyrightLabel)
 
         rootView.addSubview(stack)
@@ -2609,81 +2547,6 @@ final class AboutWindowController: NSWindowController {
         return imageView
     }
 
-    private func makeSocialButtonRow() -> NSView {
-        let stack = NSStackView()
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        let buttons: [(String, String, String?)] = [
-            ("book", "文档首页", nil),
-            ("square.stack.3d.up", "架构说明", "architecture.md"),
-            ("checkmark.seal", "UI QA", "ui-qa-review.md"),
-            ("shippingbox", "发布说明", "release.md")
-        ]
-
-        buttons.forEach { symbolName, title, relativePath in
-            stack.addArrangedSubview(
-                makeSocialButton(
-                    symbolName: symbolName,
-                    title: title,
-                    relativePath: relativePath
-                )
-            )
-        }
-
-        return stack
-    }
-
-    private func makeSocialButton(symbolName: String, title: String, relativePath: String?) -> AboutIconButton {
-        let button = AboutIconButton(symbolName: symbolName, accessibilityDescription: title)
-        button.toolTip = title
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.isEnabled = LocalDocsNavigator.url(relativePath: relativePath) != nil
-        button.onPress = {
-            LocalDocsNavigator.open(relativePath: relativePath)
-        }
-        socialButtons.append(button)
-
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: Layout.socialButtonSize),
-            button.heightAnchor.constraint(equalToConstant: Layout.socialButtonSize)
-        ])
-
-        return button
-    }
-
-    private func makeLinksRow() -> NSView {
-        let stack = NSStackView()
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        stack.addArrangedSubview(makeLinkButton(title: "项目文档", relativePath: nil))
-        let separatorLabel = makeCenteredLabel("·", font: .systemFont(ofSize: 14, weight: .medium), color: theme.separatorTextColor)
-        linksSeparatorLabel = separatorLabel
-        stack.addArrangedSubview(separatorLabel)
-        stack.addArrangedSubview(makeLinkButton(title: "发布说明", relativePath: "release.md"))
-
-        return stack
-    }
-
-    private func makeLinkButton(title: String, relativePath: String?) -> NSButton {
-        let button = PreferenceActionButton(title: title, target: nil, action: nil)
-        button.isBordered = false
-        button.bezelStyle = .inline
-        button.font = .systemFont(ofSize: 13, weight: .medium)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.isEnabled = LocalDocsNavigator.url(relativePath: relativePath) != nil
-        button.onPress = {
-            LocalDocsNavigator.open(relativePath: relativePath)
-        }
-        linkButtons.append(button)
-        return button
-    }
-
     private func makeCenteredLabel(_ text: String, font: NSFont, color: NSColor) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = font
@@ -2703,17 +2566,6 @@ final class AboutWindowController: NSWindowController {
         titleLabel?.textColor = theme.titleTextColor
         versionLabel?.textColor = theme.secondaryTextColor
         copyrightLabel?.textColor = theme.mutedTextColor
-        linksSeparatorLabel?.textColor = theme.separatorTextColor
-
-        socialButtons.forEach { button in
-            button.iconTintColor = theme.secondaryTextColor
-            button.buttonBackgroundColor = theme.socialButtonBackgroundColor
-            button.buttonBorderColor = theme.socialButtonBorderColor
-        }
-
-        linkButtons.forEach { button in
-            button.contentTintColor = theme.linkTextColor
-        }
     }
 }
 
@@ -2726,82 +2578,6 @@ private final class AboutRootView: NSView {
     }
 }
 
-private final class AboutIconButton: NSControl {
-    var onPress: (() -> Void)?
-    var buttonBackgroundColor = NSColor.clear {
-        didSet {
-            layer?.backgroundColor = buttonBackgroundColor.cgColor
-        }
-    }
-    var buttonBorderColor = NSColor.clear {
-        didSet {
-            layer?.borderColor = buttonBorderColor.cgColor
-        }
-    }
-    var iconTintColor = NSColor.secondaryLabelColor {
-        didSet {
-            imageView.contentTintColor = iconTintColor
-        }
-    }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: 40, height: 40)
-    }
-
-    private let imageView = NSImageView()
-
-    init(symbolName: String, accessibilityDescription: String) {
-        super.init(frame: .zero)
-
-        wantsLayer = true
-        layer?.cornerCurve = .continuous
-        layer?.borderWidth = 0.7
-
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription)
-        imageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
-        imageView.imageScaling = .scaleProportionallyDown
-        imageView.contentTintColor = iconTintColor
-        addSubview(imageView)
-
-        setAccessibilityRole(.button)
-        setAccessibilityLabel(accessibilityDescription)
-
-        NSLayoutConstraint.activate([
-            imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 20),
-            imageView.heightAnchor.constraint(equalToConstant: 20)
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func layout() {
-        super.layout()
-        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
-        layer?.backgroundColor = buttonBackgroundColor.cgColor
-        layer?.borderColor = buttonBorderColor.cgColor
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard isEnabled else { return }
-        onPress?()
-    }
-
-    override func keyDown(with event: NSEvent) {
-        switch Int(event.keyCode) {
-        case kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter:
-            guard isEnabled else { return }
-            onPress?()
-        default:
-            super.keyDown(with: event)
-        }
-    }
-}
-
 private struct AboutWindowTheme {
     let windowBackgroundColor: NSColor
     let contentBackgroundColor: NSColor
@@ -2809,10 +2585,6 @@ private struct AboutWindowTheme {
     let titleTextColor: NSColor
     let secondaryTextColor: NSColor
     let mutedTextColor: NSColor
-    let separatorTextColor: NSColor
-    let linkTextColor: NSColor
-    let socialButtonBackgroundColor: NSColor
-    let socialButtonBorderColor: NSColor
 
     init(palette: ClipShelfThemePalette) {
         let preferences = palette.preferences
@@ -2823,18 +2595,6 @@ private struct AboutWindowTheme {
         secondaryTextColor = preferences.secondaryTextColor
         mutedTextColor = preferences.secondaryTextColor.withAlphaComponent(
             palette.scheme == .light ? 0.72 : 0.66
-        )
-        separatorTextColor = preferences.secondaryTextColor.withAlphaComponent(
-            palette.scheme == .light ? 0.48 : 0.42
-        )
-        linkTextColor = preferences.secondaryTextColor.withAlphaComponent(
-            palette.scheme == .light ? 0.86 : 0.78
-        )
-        socialButtonBackgroundColor = preferences.cardBackgroundColor.withAlphaComponent(
-            palette.scheme == .light ? 0.82 : 0.54
-        )
-        socialButtonBorderColor = preferences.cardBorderColor.withAlphaComponent(
-            palette.scheme == .light ? 0.70 : 0.84
         )
     }
 }
@@ -2873,17 +2633,18 @@ private enum AppIconDisplayImageProvider {
         let outputSide = max(256, sourceSide)
         let outputSize = NSSize(width: outputSide, height: outputSide)
         let outputImage = NSImage(size: outputSize)
-        let cropInset = sourceSide * 0.052
         let sourceRect = NSRect(
-            x: max(0, (sourceSize.width - sourceSide) / 2 + cropInset),
-            y: max(0, (sourceSize.height - sourceSide) / 2 + cropInset),
-            width: max(1, sourceSide - cropInset * 2),
-            height: max(1, sourceSide - cropInset * 2)
+            x: max(0, (sourceSize.width - sourceSide) / 2),
+            y: max(0, (sourceSize.height - sourceSide) / 2),
+            width: sourceSide,
+            height: sourceSide
         )
         let destinationRect = NSRect(origin: .zero, size: outputSize)
 
         outputImage.lockFocus()
         NSGraphicsContext.current?.imageInterpolation = .high
+        NSColor.clear.setFill()
+        destinationRect.fill()
         NSBezierPath(
             roundedRect: destinationRect,
             xRadius: outputSide * 0.225,

@@ -2,9 +2,26 @@
 .swiftpm/
 DerivedData/
 *.xcuserstate
+*.dSYM/
+*.xcarchive/
 rust/target/
 Generated/ClipboardCoreBridge/RustXcframework.xcframework/
 .DS_Store
+
+# Local secrets and app data
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 
 # Local Codex run outputs
 .codex/
@@ -22,3 +39,5 @@ Screenshots/
 Screen Shot*.png
 Screenshot*.png
 SCR-*.png
+*.app/
+*.dmg
