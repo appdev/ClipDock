@@ -1408,6 +1408,25 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func appRuntimeKeepsPreferencesHiddenForLaunchAtLoginPresentation() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+
+        let delegate = AppDelegate()
+        delegate.smokeApplyInitialPresentationForRealFunctionQA(
+            arguments: [
+                "/Applications/ClipShelf.app/Contents/MacOS/ClipShelf",
+                ClipShelfLaunchArgument.launchedAtLogin
+            ],
+            isRunningAsApplicationBundle: true
+        )
+
+        #expect(!delegate.smokePreferencesIsVisibleForRealFunctionQA)
+        #expect(!delegate.smokePanelIsVisibleForRealFunctionQA)
+    }
+
+    @Test
+    @MainActor
     func appRuntimeShowsPreferencesWhenApplicationReopens() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

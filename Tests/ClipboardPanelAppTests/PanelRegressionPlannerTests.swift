@@ -230,7 +230,7 @@ struct PanelRegressionPlannerTests {
         #expect(LaunchAtLoginPresenter.presentation(
             isRunningAsApplicationBundle: true,
             status: .notFound
-        ) == LaunchAtLoginPresentation(isOn: false, canChange: false, detail: "当前应用包不可注册"))
+        ) == LaunchAtLoginPresentation(isOn: false, canChange: true, detail: "可使用登录代理启动"))
     }
 
     @Test

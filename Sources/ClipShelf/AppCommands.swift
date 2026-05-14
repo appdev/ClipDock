@@ -765,6 +765,16 @@ enum LaunchAtLoginDiagnosticsCommand {
         print("isOn=\(state.isOn)")
         print("canChange=\(state.canChange)")
         print("detail=\(state.detail)")
+        if let bundleIdentifier = Bundle.main.bundleIdentifier,
+           let executableURL = Bundle.main.executableURL,
+           Bundle.main.bundleURL.pathExtension == "app" {
+            let fallbackAgent = LaunchAtLoginFallbackAgent(
+                bundleIdentifier: bundleIdentifier,
+                executableURL: executableURL
+            )
+            print("fallbackPlist=\(fallbackAgent.plistURL.path)")
+            print("fallbackEnabled=\(fallbackAgent.isEnabled)")
+        }
     }
 
     private static func serviceStatusDescription(_ status: SMAppService.Status) -> String {

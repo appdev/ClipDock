@@ -387,6 +387,63 @@ struct LaunchAtLoginError: LocalizedError {
     }
 }
 
+struct LaunchAtLoginFallbackAgent {
+    let label: String
+    let plistURL: URL
+    let executableURL: URL
+    let bundleIdentifier: String
+    var fileManager = FileManager.default
+
+    init(
+        bundleIdentifier: String,
+        executableURL: URL,
+        launchAgentsDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("LaunchAgents", isDirectory: true),
+        fileManager: FileManager = .default
+    ) {
+        let label = "\(bundleIdentifier).launch-at-login"
+        self.label = label
+        self.plistURL = launchAgentsDirectory.appendingPathComponent("\(label).plist")
+        self.executableURL = executableURL
+        self.bundleIdentifier = bundleIdentifier
+        self.fileManager = fileManager
+    }
+
+    var isEnabled: Bool {
+        fileManager.fileExists(atPath: plistURL.path)
+    }
+
+    func register() throws {
+        try fileManager.createDirectory(
+            at: plistURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let plist: [String: Any] = [
+            "AssociatedBundleIdentifiers": [bundleIdentifier],
+            "Label": label,
+            "LimitLoadToSessionType": "Aqua",
+            "ProgramArguments": [
+                executableURL.path,
+                ClipShelfLaunchArgument.launchedAtLogin
+            ],
+            "RunAtLoad": true
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: plist,
+            format: .xml,
+            options: 0
+        )
+        try data.write(to: plistURL, options: .atomic)
+    }
+
+    func unregister() throws {
+        guard isEnabled else { return }
+        try fileManager.removeItem(at: plistURL)
+    }
+}
+
 @MainActor
 final class LaunchAtLoginController {
     func currentState() -> LaunchAtLoginState {
@@ -403,17 +460,24 @@ final class LaunchAtLoginController {
 
         let service = SMAppService.mainApp
         do {
+            let status = service.status
+            let fallbackAgent = currentFallbackAgent()
             if enabled {
-                if service.status != .enabled,
-                   service.status != .requiresApproval {
+                if status == .notFound,
+                   let fallbackAgent {
+                    try fallbackAgent.register()
+                } else if status != .enabled,
+                          status != .requiresApproval {
                     try service.register()
                 }
                 if service.status == .requiresApproval {
                     SMAppService.openSystemSettingsLoginItems()
                 }
-            } else if service.status == .enabled
-                || service.status == .requiresApproval {
-                try service.unregister()
+            } else {
+                if status == .enabled || status == .requiresApproval {
+                    try service.unregister()
+                }
+                try fallbackAgent?.unregister()
             }
 
             return .success(currentState())
@@ -427,14 +491,21 @@ final class LaunchAtLoginController {
             return .unknown
         }
 
+        let fallbackEnabled = currentFallbackAgent()?.isEnabled ?? false
         switch SMAppService.mainApp.status {
         case .enabled:
             return .enabled
         case .notRegistered:
+            if fallbackEnabled {
+                return .enabled
+            }
             return .notRegistered
         case .requiresApproval:
             return .requiresApproval
         case .notFound:
+            if fallbackEnabled {
+                return .enabled
+            }
             return .notFound
         @unknown default:
             return .unknown
@@ -444,6 +515,19 @@ final class LaunchAtLoginController {
     private var isRunningAsApplicationBundle: Bool {
         Bundle.main.bundleURL.pathExtension == "app"
             && Bundle.main.bundleIdentifier != nil
+    }
+
+    private func currentFallbackAgent() -> LaunchAtLoginFallbackAgent? {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier,
+              let executableURL = Bundle.main.executableURL,
+              Bundle.main.bundleURL.pathExtension == "app" else {
+            return nil
+        }
+
+        return LaunchAtLoginFallbackAgent(
+            bundleIdentifier: bundleIdentifier,
+            executableURL: executableURL
+        )
     }
 }
 

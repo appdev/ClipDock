@@ -205,7 +205,7 @@ public enum LaunchAtLoginPresenter {
         case .requiresApproval:
             return LaunchAtLoginPresentation(isOn: true, canChange: true, detail: "需要在系统设置中允许")
         case .notFound:
-            return LaunchAtLoginPresentation(isOn: false, canChange: false, detail: "当前应用包不可注册")
+            return LaunchAtLoginPresentation(isOn: false, canChange: true, detail: "可使用登录代理启动")
         case .unknown:
             return LaunchAtLoginPresentation(isOn: false, canChange: false, detail: "当前系统状态未知")
         }

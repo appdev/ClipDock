@@ -2,6 +2,10 @@ import AppKit
 import Carbon.HIToolbox
 import ClipboardPanelApp
 
+enum ClipShelfLaunchArgument {
+    static let launchedAtLogin = "--launched-at-login"
+}
+
 @MainActor
 protocol CommandVKeystrokeSending {
     func sendCommandVKeystroke()
@@ -166,7 +170,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if arguments.contains("--show-preferences") {
             refreshAccessibilityPermissionState()
             preferencesController.showPreferences()
-        } else if isRunningAsApplicationBundle {
+        } else if isRunningAsApplicationBundle,
+                  !arguments.contains(ClipShelfLaunchArgument.launchedAtLogin) {
             showPreferences(nil)
         }
     }
