@@ -428,10 +428,9 @@ final class ClipboardFilePreviewProvider {
         }
 
         let scale = scaleProvider()
-        let image = await quickLookThumbnail(for: sourceURL, scale: scale)
-            ?? fallbackIcon(for: sourceURL)
-        guard let pngData = image.pngRepresentation(),
-              !pngData.isEmpty
+        guard let preview = await quickLookThumbnailData(for: sourceURL, scale: scale)
+            ?? fallbackIconData(for: sourceURL),
+            !preview.data.isEmpty
         else {
             return nil
         }
@@ -452,7 +451,7 @@ final class ClipboardFilePreviewProvider {
                 at: stagingDirectoryURL,
                 withIntermediateDirectories: true
             )
-            try pngData.write(to: stagingURL, options: .atomic)
+            try preview.data.write(to: stagingURL, options: .atomic)
             try fileManager.moveItem(at: stagingURL, to: thumbnailURL)
         } catch {
             removeFileIfExists(thumbnailURL)
@@ -460,17 +459,16 @@ final class ClipboardFilePreviewProvider {
             return nil
         }
 
-        let dimensions = NSImage(data: pngData)?.pixelDimensions ?? image.pixelDimensions
         return ClipboardStoredFilePreview(
             relativePath: "thumbnails/\(fileStem).png",
             mimeType: "image/png",
-            width: dimensions.width,
-            height: dimensions.height,
-            byteCount: pngData.count
+            width: preview.width,
+            height: preview.height,
+            byteCount: preview.data.count
         )
     }
 
-    private func quickLookThumbnail(for url: URL, scale: CGFloat) async -> NSImage? {
+    private func quickLookThumbnailData(for url: URL, scale: CGFloat) async -> FilePreviewImageData? {
         let request = QLThumbnailGenerator.Request(
             fileAt: url,
             size: Layout.thumbnailPointSize,
@@ -480,9 +478,13 @@ final class ClipboardFilePreviewProvider {
 
         return await withCheckedContinuation { continuation in
             QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
-                continuation.resume(returning: representation?.nsImage)
+                continuation.resume(returning: representation?.nsImage.filePreviewPNGData())
             }
         }
+    }
+
+    private func fallbackIconData(for url: URL) -> FilePreviewImageData? {
+        fallbackIcon(for: url).filePreviewPNGData()
     }
 
     private func fallbackIcon(for url: URL) -> NSImage {
@@ -502,6 +504,12 @@ final class ClipboardFilePreviewProvider {
 
 struct ClipboardCGImageSnapshot: @unchecked Sendable {
     let image: CGImage
+}
+
+fileprivate struct FilePreviewImageData: Sendable {
+    let data: Data
+    let width: Int
+    let height: Int
 }
 
 enum ClipboardBitmapImageSource: Sendable {
@@ -1153,6 +1161,21 @@ extension NSImage {
             quality: nil,
             maxPixelDimension: maxPixelDimension
         )?.data
+    }
+
+    fileprivate func filePreviewPNGData() -> FilePreviewImageData? {
+        guard let data = pngRepresentation(),
+              !data.isEmpty
+        else {
+            return nil
+        }
+
+        let dimensions = pixelDimensions
+        return FilePreviewImageData(
+            data: data,
+            width: dimensions.width,
+            height: dimensions.height
+        )
     }
 
     private func losslessWebPRepresentation(
