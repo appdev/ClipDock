@@ -2,6 +2,12 @@ import RustXcframework
 public func open_core<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CoreOpenResult {
     __swift_bridge__$open_core({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
+public func active_source_icon_header_color_cache_version() -> Int64 {
+    __swift_bridge__$active_source_icon_header_color_cache_version()
+}
+public func encode_webp_lossless_rgba(_ rgba: UnsafeBufferPointer<UInt8>, _ width: Int64, _ height: Int64) -> CoreWebPEncodeResult {
+    __swift_bridge__$encode_webp_lossless_rgba(rgba.toFfiSlice(), width, height).intoSwiftRepr()
+}
 public func run_maintenance<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CoreMaintenanceResult {
     __swift_bridge__$run_maintenance({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
@@ -38,8 +44,23 @@ public func set_item_pinboard_membership<GenericIntoRustString: IntoRustString>(
 public func delete_item<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString) -> CoreItemManagementResult {
     __swift_bridge__$delete_item({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
+public func record_item_copied<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString) -> CoreItemManagementResult {
+    __swift_bridge__$record_item_copied({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func update_source_app_icon_header_color<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ source_app_id: GenericIntoRustString, _ source_app_icon_path: GenericIntoRustString, _ header_color_argb: Int64, _ allow_latest_without_path: Bool) -> CoreItemManagementResult {
+    __swift_bridge__$update_source_app_icon_header_color({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_icon_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), header_color_argb, allow_latest_without_path).intoSwiftRepr()
+}
 public func clear_items<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_type: GenericIntoRustString, _ source_app_id: GenericIntoRustString, _ search_text: GenericIntoRustString) -> CoreItemManagementResult {
     __swift_bridge__$clear_items({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = search_text.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func claim_link_metadata_fetch_batch<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ limit: Int64, _ lease_timeout_ms: Int64) -> CoreLinkMetadataFetchBatchResult {
+    __swift_bridge__$claim_link_metadata_fetch_batch({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), limit, lease_timeout_ms).intoSwiftRepr()
+}
+public func complete_link_metadata_fetch<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CoreItemManagementResult {
+    __swift_bridge__$complete_link_metadata_fetch({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func fail_link_metadata_fetch<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString, _ lease_started_at_ms: Int64, _ failure_code: GenericIntoRustString, _ next_retry_at_ms: Int64) -> CoreItemManagementResult {
+    __swift_bridge__$fail_link_metadata_fetch({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), lease_started_at_ms, { let rustString = failure_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), next_retry_at_ms).intoSwiftRepr()
 }
 public func capture_text<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ text: GenericIntoRustString, _ link_original_text: GenericIntoRustString, _ link_canonical_url: GenericIntoRustString, _ link_display_url: GenericIntoRustString, _ link_host: GenericIntoRustString, _ link_metadata_state: GenericIntoRustString, _ source_bundle_id: GenericIntoRustString, _ source_app_name: GenericIntoRustString, _ source_bundle_path: GenericIntoRustString, _ source_icon_relative_path: GenericIntoRustString, _ source_confidence: GenericIntoRustString, _ pasteboard_change_count: Int64, _ self_write_token: GenericIntoRustString) -> CoreCaptureResult {
     __swift_bridge__$capture_text({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = text.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = link_original_text.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = link_canonical_url.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = link_display_url.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = link_host.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = link_metadata_state.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_name.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_icon_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_confidence.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), pasteboard_change_count, { let rustString = self_write_token.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
@@ -47,8 +68,8 @@ public func capture_text<GenericIntoRustString: IntoRustString>(_ app_support_di
 public func capture_image<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ payload_relative_path: GenericIntoRustString, _ preview_relative_path: GenericIntoRustString, _ mime_type: GenericIntoRustString, _ width: Int64, _ height: Int64, _ byte_count: Int64, _ source_bundle_id: GenericIntoRustString, _ source_app_name: GenericIntoRustString, _ source_bundle_path: GenericIntoRustString, _ source_icon_relative_path: GenericIntoRustString, _ source_confidence: GenericIntoRustString, _ pasteboard_change_count: Int64, _ self_write_token: GenericIntoRustString) -> CoreCaptureResult {
     __swift_bridge__$capture_image({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = payload_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = mime_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), width, height, byte_count, { let rustString = source_bundle_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_name.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_icon_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_confidence.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), pasteboard_change_count, { let rustString = self_write_token.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
-public func capture_files<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ files_json: GenericIntoRustString, _ snapshot_relative_path: GenericIntoRustString, _ snapshot_byte_count: Int64, _ source_bundle_id: GenericIntoRustString, _ source_app_name: GenericIntoRustString, _ source_bundle_path: GenericIntoRustString, _ source_icon_relative_path: GenericIntoRustString, _ source_confidence: GenericIntoRustString, _ pasteboard_change_count: Int64, _ self_write_token: GenericIntoRustString) -> CoreCaptureResult {
-    __swift_bridge__$capture_files({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = files_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = snapshot_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), snapshot_byte_count, { let rustString = source_bundle_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_name.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_icon_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_confidence.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), pasteboard_change_count, { let rustString = self_write_token.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+public func capture_files<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ files_json: GenericIntoRustString, _ preview_relative_path: GenericIntoRustString, _ preview_mime_type: GenericIntoRustString, _ preview_width: Int64, _ preview_height: Int64, _ preview_byte_count: Int64, _ snapshot_relative_path: GenericIntoRustString, _ snapshot_byte_count: Int64, _ source_bundle_id: GenericIntoRustString, _ source_app_name: GenericIntoRustString, _ source_bundle_path: GenericIntoRustString, _ source_icon_relative_path: GenericIntoRustString, _ source_confidence: GenericIntoRustString, _ pasteboard_change_count: Int64, _ self_write_token: GenericIntoRustString) -> CoreCaptureResult {
+    __swift_bridge__$capture_files({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = files_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_mime_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), preview_width, preview_height, preview_byte_count, { let rustString = snapshot_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), snapshot_byte_count, { let rustString = source_bundle_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_name.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_icon_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_confidence.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), pasteboard_change_count, { let rustString = self_write_token.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
 public struct CoreOpenResult {
     public var ok: Bool
@@ -421,6 +442,92 @@ extension __swift_bridge__$Option$CoreItemManagementResult {
             return __swift_bridge__$Option$CoreItemManagementResult(is_some: true, val: v.intoFfiRepr())
         } else {
             return __swift_bridge__$Option$CoreItemManagementResult(is_some: false, val: __swift_bridge__$CoreItemManagementResult())
+        }
+    }
+}
+public struct CoreWebPEncodeResult {
+    public var ok: Bool
+    public var bytes: RustVec<UInt8>
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,bytes: RustVec<UInt8>,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.bytes = bytes
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreWebPEncodeResult {
+        { let val = self; return __swift_bridge__$CoreWebPEncodeResult(ok: val.ok, bytes: { let val = val.bytes; val.isOwned = false; return val.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreWebPEncodeResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreWebPEncodeResult {
+        { let val = self; return CoreWebPEncodeResult(ok: val.ok, bytes: RustVec(ptr: val.bytes), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreWebPEncodeResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreWebPEncodeResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreWebPEncodeResult>) -> __swift_bridge__$Option$CoreWebPEncodeResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreWebPEncodeResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreWebPEncodeResult(is_some: false, val: __swift_bridge__$CoreWebPEncodeResult())
+        }
+    }
+}
+public struct CoreLinkMetadataFetchBatchResult {
+    public var ok: Bool
+    public var candidates_json: RustString
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,candidates_json: RustString,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.candidates_json = candidates_json
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreLinkMetadataFetchBatchResult {
+        { let val = self; return __swift_bridge__$CoreLinkMetadataFetchBatchResult(ok: val.ok, candidates_json: { let rustString = val.candidates_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreLinkMetadataFetchBatchResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreLinkMetadataFetchBatchResult {
+        { let val = self; return CoreLinkMetadataFetchBatchResult(ok: val.ok, candidates_json: RustString(ptr: val.candidates_json), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreLinkMetadataFetchBatchResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreLinkMetadataFetchBatchResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreLinkMetadataFetchBatchResult>) -> __swift_bridge__$Option$CoreLinkMetadataFetchBatchResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreLinkMetadataFetchBatchResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreLinkMetadataFetchBatchResult(is_some: false, val: __swift_bridge__$CoreLinkMetadataFetchBatchResult())
         }
     }
 }

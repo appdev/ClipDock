@@ -1,12 +1,15 @@
 use super::*;
 use crate::error::CoreErrorCode;
+use crate::migrations::MIGRATIONS;
 use crate::time::now_ms;
 use crate::{
-    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest,
-    CapturedFileMetadata, ClipboardItemType, ItemQuery, LinkMetadataState, PageRequest,
-    SourceConfidence, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
+    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureResult,
+    CaptureTextRequest, CapturedFileMetadata, ClipboardItemType, CompleteLinkMetadataFetchRequest,
+    ItemQuery, LinkMetadataState, PageRequest, SourceConfidence,
+    ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
 };
-use rusqlite::params;
+use rusqlite::{params, Connection};
+use sha2::{Digest, Sha256};
 use std::fs;
 use tempfile::TempDir;
 
@@ -14,6 +17,34 @@ fn open_temp_core() -> (TempDir, ClipboardCore) {
     let temp_dir = TempDir::new().expect("temp dir");
     let core = ClipboardCore::open(temp_dir.path()).expect("open core");
     (temp_dir, core)
+}
+
+fn capture_pending_link(core: &mut ClipboardCore, text: &str, url: &str) -> CaptureResult {
+    let host = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("example.com")
+        .to_string();
+    core.capture_text(CaptureTextRequest {
+        text: text.to_string(),
+        detected_link: Some(CaptureDetectedLink {
+            original_text: text.to_string(),
+            canonical_url: url.to_string(),
+            display_url: url.to_string(),
+            host,
+            metadata_state: LinkMetadataState::Pending,
+        }),
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 1,
+        self_write_token: None,
+    })
+    .unwrap()
 }
 
 #[test]
@@ -156,6 +187,198 @@ fn updating_source_icon_replaces_previous_icon_row() {
 }
 
 #[test]
+fn source_app_icon_header_color_roundtrips_after_reopen() {
+    let (temp_dir, mut core) = open_temp_core();
+    core.capture_text(CaptureTextRequest {
+        text: "Header color cache".to_string(),
+        detected_link: None,
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: Some("/Applications/Safari.app".to_string()),
+        source_icon_relative_path: Some("app-icons/safari.tiff".to_string()),
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 20,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let item = &page.items[0];
+    let source_app_id = item.source_app_id.as_deref().unwrap();
+    let source_icon_path = item.source_app_icon_path.as_deref().unwrap();
+    let original_icon_updated_at_ms: i64 = core
+        .connection
+        .query_row(
+            "SELECT updated_at_ms FROM source_app_icons WHERE source_app_id = ?1",
+            params![source_app_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    let color = 0xFF33_6699;
+    let result = core
+        .update_source_app_icon_header_color(source_app_id, source_icon_path, color, false)
+        .unwrap();
+    assert_eq!(result.affected_count, 1);
+
+    let icon_row: (i64, i64, i64) = core
+        .connection
+        .query_row(
+            r#"
+            SELECT header_color_argb, header_color_cache_version, updated_at_ms
+            FROM source_app_icons
+            WHERE source_app_id = ?1
+            "#,
+            params![source_app_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(icon_row.0, color);
+    assert_eq!(icon_row.1, ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION);
+    assert_eq!(icon_row.2, original_icon_updated_at_ms);
+
+    drop(core);
+    let reopened = ClipboardCore::open(temp_dir.path()).unwrap();
+    let item_page = reopened
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(item_page.items[0].source_app_icon_header_color, Some(color));
+
+    let app_page = reopened.list_source_apps(PageRequest::default()).unwrap();
+    assert_eq!(app_page.apps[0].icon_header_color, Some(color));
+}
+
+#[test]
+fn stale_source_app_icon_header_color_version_is_not_surfaced() {
+    let (_, mut core) = open_temp_core();
+    core.capture_text(CaptureTextRequest {
+        text: "Stale header color".to_string(),
+        detected_link: None,
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: Some("app-icons/safari.tiff".to_string()),
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 21,
+        self_write_token: None,
+    })
+    .unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let source_app_id = page.items[0].source_app_id.as_deref().unwrap();
+    let source_icon_path = page.items[0].source_app_icon_path.as_deref().unwrap();
+
+    core.update_source_app_icon_header_color(source_app_id, source_icon_path, 0xFFAA_5500, false)
+        .unwrap();
+    core.connection
+        .execute(
+            "UPDATE source_app_icons SET header_color_cache_version = ?1 WHERE source_app_id = ?2",
+            params![
+                ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION - 1,
+                source_app_id
+            ],
+        )
+        .unwrap();
+
+    let item_page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let app_page = core.list_source_apps(PageRequest::default()).unwrap();
+
+    assert_eq!(item_page.items[0].source_app_icon_header_color, None);
+    assert_eq!(app_page.apps[0].icon_header_color, None);
+}
+
+#[test]
+fn source_app_icon_header_color_write_requires_matching_path() {
+    let (_, mut core) = open_temp_core();
+    core.capture_text(CaptureTextRequest {
+        text: "Mismatched icon path".to_string(),
+        detected_link: None,
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: Some("app-icons/safari.tiff".to_string()),
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 22,
+        self_write_token: None,
+    })
+    .unwrap();
+    let source_app_id = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap()
+        .items[0]
+        .source_app_id
+        .clone()
+        .unwrap();
+
+    let result = core
+        .update_source_app_icon_header_color(
+            &source_app_id,
+            "app-icons/other.tiff",
+            0xFF00_8899,
+            false,
+        )
+        .unwrap();
+    let color_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM source_app_icons WHERE header_color_argb IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(result.affected_count, 0);
+    assert_eq!(color_count, 0);
+}
+
+#[test]
+fn source_app_icon_header_color_accepts_absolute_swift_returned_path() {
+    let (temp_dir, mut core) = open_temp_core();
+    core.capture_text(CaptureTextRequest {
+        text: "Absolute icon path".to_string(),
+        detected_link: None,
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: Some("app-icons/safari.tiff".to_string()),
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 23,
+        self_write_token: None,
+    })
+    .unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let source_app_id = page.items[0].source_app_id.as_deref().unwrap();
+    let absolute_icon_path = temp_dir.path().join("nested/../app-icons/./safari.tiff");
+
+    let result = core
+        .update_source_app_icon_header_color(
+            source_app_id,
+            absolute_icon_path.display().to_string(),
+            0xFF10_2030,
+            false,
+        )
+        .unwrap();
+    let stored_path: String = core
+        .connection
+        .query_row(
+            "SELECT relative_path FROM source_app_icons WHERE header_color_argb = ?1",
+            params![0xFF10_2030_i64],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(result.affected_count, 1);
+    assert_eq!(stored_path, "app-icons/safari.tiff");
+}
+
+#[test]
 fn capture_text_deduplicates_by_content_hash() {
     let (_, mut core) = open_temp_core();
 
@@ -193,6 +416,62 @@ fn capture_text_deduplicates_by_content_hash() {
 }
 
 #[test]
+fn record_item_copied_updates_recent_order_and_copy_count() {
+    let (_, mut core) = open_temp_core();
+    let old = core
+        .capture_text(CaptureTextRequest {
+            text: "Older copied item".to_string(),
+            detected_link: None,
+            source_bundle_id: None,
+            source_app_name: Some("Notes".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 1,
+            self_write_token: None,
+        })
+        .unwrap();
+    core.capture_text(CaptureTextRequest {
+        text: "Newer copied item".to_string(),
+        detected_link: None,
+        source_bundle_id: None,
+        source_app_name: Some("Notes".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 2,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let baseline = now_ms() - 60_000;
+    core.connection
+        .execute(
+            r#"
+            UPDATE clipboard_items
+            SET last_copied_at_ms = CASE summary
+                WHEN 'Older copied item' THEN ?1
+                WHEN 'Newer copied item' THEN ?2
+                ELSE last_copied_at_ms
+            END
+            "#,
+            params![baseline, baseline + 1_000],
+        )
+        .unwrap();
+
+    let result = core.record_item_copied(&old.item_id).unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+
+    assert_eq!(result.affected_count, 1);
+    assert_eq!(page.items[0].id, old.item_id);
+    assert_eq!(page.items[0].summary, "Older copied item");
+    assert_eq!(page.items[0].copy_count, 2);
+    assert!(page.items[0].last_copied_at_ms > baseline + 1_000);
+}
+
+#[test]
 fn capture_detected_link_persists_metadata_summary() {
     let (_, mut core) = open_temp_core();
 
@@ -204,7 +483,7 @@ fn capture_detected_link_persists_metadata_summary() {
                 canonical_url: "https://example.com/docs".to_string(),
                 display_url: "https://example.com/docs".to_string(),
                 host: "example.com".to_string(),
-                metadata_state: LinkMetadataState::Disabled,
+                metadata_state: LinkMetadataState::Pending,
             }),
             source_bundle_id: Some("com.apple.Safari".to_string()),
             source_app_name: Some("Safari".to_string()),
@@ -228,7 +507,124 @@ fn capture_detected_link_persists_metadata_summary() {
     assert_eq!(link_metadata.canonical_url, "https://example.com/docs");
     assert_eq!(link_metadata.display_url, "https://example.com/docs");
     assert_eq!(link_metadata.host, "example.com");
-    assert_eq!(link_metadata.metadata_state, LinkMetadataState::Disabled);
+    assert_eq!(link_metadata.metadata_state, LinkMetadataState::Pending);
+}
+
+#[test]
+fn claim_link_metadata_batch_marks_candidates_fetching() {
+    let (_, mut core) = open_temp_core();
+    let result = capture_pending_link(
+        &mut core,
+        "https://example.com/docs",
+        "https://example.com/docs",
+    );
+
+    let candidates = core
+        .claim_link_metadata_fetch_batch(3, 60_000)
+        .expect("claim batch");
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].item_id, result.item_id);
+    assert_eq!(candidates[0].canonical_url, "https://example.com/docs");
+    assert_eq!(candidates[0].fetch_attempts, 0);
+    assert!(candidates[0].lease_started_at_ms > 0);
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(
+        page.items[0].link_metadata.as_ref().unwrap().metadata_state,
+        LinkMetadataState::Fetching
+    );
+}
+
+#[test]
+fn complete_link_metadata_fetch_requires_matching_lease() {
+    let (_, mut core) = open_temp_core();
+    let result = capture_pending_link(
+        &mut core,
+        "https://example.com/docs",
+        "https://example.com/docs",
+    );
+    let candidate = core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .unwrap()
+        .remove(0);
+
+    let stale = core
+        .complete_link_metadata_fetch(CompleteLinkMetadataFetchRequest {
+            item_id: result.item_id.clone(),
+            lease_started_at_ms: candidate.lease_started_at_ms - 1,
+            canonical_url: "https://example.com/docs".to_string(),
+            display_url: "example.com/docs".to_string(),
+            host: "example.com".to_string(),
+            title: Some("Example Docs".to_string()),
+            site_name: Some("Example".to_string()),
+            icon_relative_path: Some("assets/link-icons/example.png".to_string()),
+            image_relative_path: Some("assets/link-previews/example.jpg".to_string()),
+        })
+        .unwrap();
+    assert_eq!(stale.affected_count, 0);
+
+    let completed = core
+        .complete_link_metadata_fetch(CompleteLinkMetadataFetchRequest {
+            item_id: result.item_id,
+            lease_started_at_ms: candidate.lease_started_at_ms,
+            canonical_url: "https://example.com/docs".to_string(),
+            display_url: "example.com/docs".to_string(),
+            host: "example.com".to_string(),
+            title: Some("Example Docs".to_string()),
+            site_name: Some("Example".to_string()),
+            icon_relative_path: Some("assets/link-icons/example.png".to_string()),
+            image_relative_path: Some("assets/link-previews/example.jpg".to_string()),
+        })
+        .unwrap();
+    assert_eq!(completed.affected_count, 1);
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let metadata = page.items[0].link_metadata.as_ref().unwrap();
+    assert_eq!(metadata.metadata_state, LinkMetadataState::Ready);
+    assert_eq!(metadata.title.as_deref(), Some("Example Docs"));
+    assert_eq!(metadata.display_url, "example.com/docs");
+    assert!(metadata
+        .icon_asset_path
+        .as_deref()
+        .unwrap()
+        .ends_with("assets/link-icons/example.png"));
+}
+
+#[test]
+fn privacy_sensitive_failure_does_not_auto_retry() {
+    let (_, mut core) = open_temp_core();
+    let result = capture_pending_link(
+        &mut core,
+        "https://localhost/token",
+        "https://localhost/token",
+    );
+    let candidate = core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .unwrap()
+        .remove(0);
+
+    let failed = core
+        .fail_link_metadata_fetch(
+            &result.item_id,
+            candidate.lease_started_at_ms,
+            "privacy_sensitive",
+            None,
+        )
+        .unwrap();
+    assert_eq!(failed.affected_count, 1);
+    assert!(core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .unwrap()
+        .is_empty());
+    assert!(core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -323,6 +719,11 @@ fn capture_files_inserts_snapshot_and_source() {
                 "/Users/evan/Desktop/design.sketch".to_string(),
             ],
             file_items: vec![],
+            preview_relative_path: None,
+            preview_mime_type: None,
+            preview_width: None,
+            preview_height: None,
+            preview_byte_count: 0,
             snapshot_relative_path: Some("assets/file-snapshots/files.json".to_string()),
             snapshot_byte_count: 78,
             source_bundle_id: Some("com.apple.finder".to_string()),
@@ -380,8 +781,11 @@ fn capture_files_persists_structured_file_metadata() {
     let (temp_dir, mut core) = open_temp_core();
     let first_file = temp_dir.path().join("frame.png");
     let second_file = temp_dir.path().join("movie.mov");
+    let thumbnail_file = temp_dir.path().join("thumbnails/file-preview.png");
+    fs::create_dir_all(thumbnail_file.parent().unwrap()).expect("thumbnail dir");
     fs::write(&first_file, vec![1_u8; 64]).expect("first file");
     fs::write(&second_file, vec![2_u8; 128]).expect("second file");
+    fs::write(&thumbnail_file, b"file thumbnail").expect("thumbnail file");
     let first_path = first_file.display().to_string();
     let second_path = second_file.display().to_string();
 
@@ -409,6 +813,11 @@ fn capture_files_persists_structured_file_metadata() {
                 content_type: Some("com.apple.quicktime-movie".to_string()),
             },
         ],
+        preview_relative_path: Some("thumbnails/file-preview.png".to_string()),
+        preview_mime_type: Some("image/png".to_string()),
+        preview_width: Some(420),
+        preview_height: Some(320),
+        preview_byte_count: 14,
         snapshot_relative_path: None,
         snapshot_byte_count: 0,
         source_bundle_id: Some("com.apple.finder".to_string()),
@@ -427,6 +836,10 @@ fn capture_files_persists_structured_file_metadata() {
     let item = &page.items[0];
 
     assert_eq!(item.payload_asset_path, None);
+    assert!(item
+        .preview_asset_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with("thumbnails/file-preview.png")));
     assert_eq!(item.size_bytes, 192);
     assert_eq!(item.file_items.len(), 2);
     assert_eq!(item.file_items[0].path, first_path);
@@ -581,7 +994,7 @@ fn list_source_apps_and_filter_items_by_source_app_id() {
 }
 
 #[test]
-fn item_management_pins_and_soft_deletes_single_item() {
+fn item_management_pins_and_deletes_single_item() {
     let (_, mut core) = open_temp_core();
     let pinned = core
         .capture_text(CaptureTextRequest {
@@ -629,10 +1042,10 @@ fn item_management_pins_and_soft_deletes_single_item() {
     let page_after_delete = core
         .list_items(ItemQuery::default(), PageRequest::default())
         .unwrap();
-    let soft_deleted_count: i64 = core
+    let deleted_item_count: i64 = core
         .connection
         .query_row(
-            "SELECT COUNT(*) FROM clipboard_items WHERE id = ?1 AND deleted_at_ms IS NOT NULL",
+            "SELECT COUNT(*) FROM clipboard_items WHERE id = ?1",
             params![pinned.item_id],
             |row| row.get(0),
         )
@@ -640,7 +1053,57 @@ fn item_management_pins_and_soft_deletes_single_item() {
 
     assert_eq!(delete_result.affected_count, 1);
     assert_eq!(page_after_delete.total_count, 1);
-    assert_eq!(soft_deleted_count, 1);
+    assert_eq!(deleted_item_count, 0);
+}
+
+#[test]
+fn deleting_image_item_removes_generated_payload_and_thumbnail_files() {
+    let (temp_dir, mut core) = open_temp_core();
+    let payload_path = temp_dir.path().join("assets/deleted-image.webp");
+    let thumbnail_path = temp_dir.path().join("thumbnails/deleted-image.webp");
+    fs::write(&payload_path, b"deleted image payload").expect("payload");
+    fs::write(&thumbnail_path, b"deleted image thumbnail").expect("thumbnail");
+
+    let image = core
+        .capture_image(CaptureImageRequest {
+            payload_relative_path: "assets/deleted-image.webp".to_string(),
+            preview_relative_path: Some("thumbnails/deleted-image.webp".to_string()),
+            mime_type: Some("image/webp".to_string()),
+            width: 320,
+            height: 180,
+            byte_count: 21,
+            source_bundle_id: Some("com.apple.Preview".to_string()),
+            source_app_name: Some("Preview".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 90,
+            self_write_token: None,
+        })
+        .unwrap();
+
+    let delete_result = core.delete_item(&image.item_id).unwrap();
+
+    let item_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_items WHERE id = ?1",
+            params![image.item_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let asset_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM clipboard_assets", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+
+    assert_eq!(delete_result.affected_count, 1);
+    assert_eq!(item_count, 0);
+    assert_eq!(asset_count, 0);
+    assert!(!payload_path.exists());
+    assert!(!thumbnail_path.exists());
 }
 
 #[test]
@@ -956,7 +1419,7 @@ fn pinned_items_survive_history_retention_and_max_item_pruning() {
 }
 
 #[test]
-fn clear_items_soft_deletes_matching_unpinned_items_only() {
+fn clear_items_deletes_matching_unpinned_items_only() {
     let (_, mut core) = open_temp_core();
     let pinned = core
         .capture_text(CaptureTextRequest {
@@ -1037,7 +1500,6 @@ fn default_preferences_document_is_seeded() {
     assert_eq!(preferences.general.default_panel_height, 320);
     assert_eq!(preferences.history.max_items, 5000);
     assert_eq!(preferences.appearance.mode, "system");
-    assert!(!preferences.link_preview.metadata_enabled);
     assert!(preferences.link_preview.web_preview_enabled);
     assert_eq!(preferences.shortcuts.open_panel.key_code, 9);
     assert_eq!(
@@ -1061,7 +1523,6 @@ fn preferences_update_persists_normalized_document() {
     preferences.history.record_files = true;
     preferences.appearance.mode = "neon".to_string();
     preferences.appearance.item_density = "compact".to_string();
-    preferences.link_preview.metadata_enabled = true;
     preferences.link_preview.web_preview_enabled = false;
     preferences.shortcuts.open_panel.key_code = 11;
     preferences.shortcuts.open_panel.modifiers = vec![
@@ -1095,7 +1556,6 @@ fn preferences_update_persists_normalized_document() {
     assert!(saved.history.record_files);
     assert_eq!(saved.appearance.mode, "system");
     assert_eq!(saved.appearance.item_density, "compact");
-    assert!(saved.link_preview.metadata_enabled);
     assert!(!saved.link_preview.web_preview_enabled);
     assert_eq!(saved.shortcuts.open_panel.key_code, 11);
     assert_eq!(
@@ -1165,7 +1625,6 @@ fn preferences_parse_keeps_backward_compatible_missing_ignore_list() {
     assert_eq!(preferences.history.max_items, 5000);
     assert!(preferences.history.record_images);
     assert!(preferences.history.record_files);
-    assert!(!preferences.link_preview.metadata_enabled);
     assert!(preferences.link_preview.web_preview_enabled);
     assert!(!preferences.shortcuts.paste_directly_to_target);
     assert!(!preferences.ignore_list.skip_unknown_source);
@@ -1323,6 +1782,11 @@ fn retention_update_purges_generated_assets_but_keeps_user_files() {
     core.capture_files(CaptureFilesRequest {
         file_paths: vec![user_file_path.display().to_string()],
         file_items: vec![],
+        preview_relative_path: None,
+        preview_mime_type: None,
+        preview_width: None,
+        preview_height: None,
+        preview_byte_count: 0,
         snapshot_relative_path: Some("assets/file-snapshots/old-files.json".to_string()),
         snapshot_byte_count: 35,
         source_bundle_id: Some("com.apple.finder".to_string()),
@@ -1605,4 +2069,394 @@ fn migration_checksum_mismatch_is_reported() {
         Err(error) => error,
     };
     assert_eq!(error.code, CoreErrorCode::MigrationChecksumMismatch);
+}
+
+#[test]
+fn v7_migration_maps_disabled_link_metadata_states() {
+    let temp_dir = seed_v6_database_with_disabled_link_metadata();
+    let mut core = ClipboardCore::open(temp_dir.path()).expect("migrate core");
+
+    let rows = core
+        .connection
+        .prepare(
+            r#"
+            SELECT item_id, metadata_state, failure_code, fetched_at_ms, next_retry_at_ms, title
+            FROM link_metadata
+            ORDER BY item_id
+            "#,
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+
+    assert_eq!(rows.len(), 3);
+    assert_eq!(
+        rows[0],
+        (
+            "item_pending".to_string(),
+            "pending".to_string(),
+            None,
+            None,
+            None,
+            Some("Pending Cache".to_string())
+        )
+    );
+    assert_eq!(
+        rows[1],
+        (
+            "item_privacy".to_string(),
+            "failed".to_string(),
+            Some("privacy_sensitive".to_string()),
+            None,
+            None,
+            Some("Privacy Cache".to_string())
+        )
+    );
+    assert_eq!(
+        rows[2],
+        (
+            "item_ready".to_string(),
+            "ready".to_string(),
+            None,
+            Some(4_000),
+            None,
+            Some("Ready Cache".to_string())
+        )
+    );
+
+    assert!(core
+        .claim_link_metadata_fetch_batch(10, 60_000)
+        .unwrap()
+        .iter()
+        .all(|candidate| candidate.item_id != "item_privacy"));
+}
+
+#[test]
+fn v7_link_metadata_schema_rejects_disabled_and_keeps_indexes() {
+    let temp_dir = seed_v6_database_with_disabled_link_metadata();
+    let core = ClipboardCore::open(temp_dir.path()).expect("migrate core");
+    let now = now_ms();
+
+    core.connection
+        .execute(
+            r#"
+            INSERT INTO clipboard_items (
+                id,
+                type,
+                summary,
+                primary_text,
+                content_hash,
+                source_confidence,
+                first_copied_at_ms,
+                last_copied_at_ms,
+                created_at_ms,
+                updated_at_ms
+            )
+            VALUES (
+                'new_disabled',
+                'link',
+                'https://example.com/disabled',
+                'https://example.com/disabled',
+                'hash-new-disabled',
+                'high',
+                ?1,
+                ?1,
+                ?1,
+                ?1
+            )
+            "#,
+            params![now],
+        )
+        .unwrap();
+
+    let disabled_insert = core.connection.execute(
+        r#"
+        INSERT INTO link_metadata (
+            item_id,
+            original_text,
+            canonical_url,
+            display_url,
+            host,
+            metadata_state,
+            created_at_ms,
+            updated_at_ms
+        )
+        VALUES (
+            'new_disabled',
+            'https://example.com/disabled',
+            'https://example.com/disabled',
+            'example.com/disabled',
+            'example.com',
+            'disabled',
+            1,
+            1
+        )
+        "#,
+        [],
+    );
+    assert!(disabled_insert.is_err());
+
+    let index_count: i64 = core
+        .connection
+        .query_row(
+            r#"
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'index'
+                AND name IN ('ix_link_metadata_state_retry', 'ix_link_metadata_canonical_url')
+            "#,
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(index_count, 2);
+}
+
+#[test]
+fn v8_migration_adds_nullable_source_icon_header_color_columns() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join(DATABASE_FILE_NAME);
+    let mut connection = Connection::open(&db_path).expect("open v7 db");
+    apply_migrations_through(&mut connection, 7);
+
+    let before_count: i64 = connection
+        .query_row(
+            r#"
+            SELECT COUNT(*)
+            FROM pragma_table_info('source_app_icons')
+            WHERE name IN (
+                'header_color_argb',
+                'header_color_cache_version',
+                'header_color_updated_at_ms'
+            )
+            "#,
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(before_count, 0);
+    drop(connection);
+
+    let core = ClipboardCore::open(temp_dir.path()).expect("migrate v8 db");
+    let columns = core
+        .connection
+        .prepare(
+            r#"
+            SELECT name, type, "notnull"
+            FROM pragma_table_info('source_app_icons')
+            WHERE name IN (
+                'header_color_argb',
+                'header_color_cache_version',
+                'header_color_updated_at_ms'
+            )
+            ORDER BY name
+            "#,
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+
+    assert_eq!(
+        columns,
+        vec![
+            ("header_color_argb".to_string(), "INTEGER".to_string(), 0),
+            (
+                "header_color_cache_version".to_string(),
+                "INTEGER".to_string(),
+                0
+            ),
+            (
+                "header_color_updated_at_ms".to_string(),
+                "INTEGER".to_string(),
+                0
+            ),
+        ]
+    );
+}
+
+fn seed_v6_database_with_disabled_link_metadata() -> TempDir {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join(DATABASE_FILE_NAME);
+    let mut connection = Connection::open(&db_path).expect("open v6 db");
+    apply_migrations_through(&mut connection, 6);
+
+    insert_v6_disabled_link_metadata(
+        &connection,
+        "item_ready",
+        None,
+        Some(4_000),
+        Some(9_000),
+        "Ready Cache",
+    );
+    insert_v6_disabled_link_metadata(
+        &connection,
+        "item_privacy",
+        Some("privacy_sensitive"),
+        None,
+        Some(9_000),
+        "Privacy Cache",
+    );
+    insert_v6_disabled_link_metadata(
+        &connection,
+        "item_pending",
+        Some("provider_error"),
+        None,
+        Some(9_000),
+        "Pending Cache",
+    );
+
+    drop(connection);
+    temp_dir
+}
+
+fn apply_migrations_through(connection: &mut Connection, max_version: i64) {
+    connection
+        .execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                checksum TEXT NOT NULL,
+                applied_at_ms INTEGER NOT NULL
+            );
+            "#,
+        )
+        .unwrap();
+
+    for migration in MIGRATIONS
+        .iter()
+        .filter(|migration| migration.version <= max_version)
+    {
+        connection.execute_batch(migration.sql).unwrap();
+        connection
+            .execute(
+                "INSERT INTO schema_migrations (version, name, checksum, applied_at_ms) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    migration.version,
+                    migration.name,
+                    test_checksum(migration.sql),
+                    now_ms()
+                ],
+            )
+            .unwrap();
+    }
+}
+
+fn insert_v6_disabled_link_metadata(
+    connection: &Connection,
+    item_id: &str,
+    failure_code: Option<&str>,
+    fetched_at_ms: Option<i64>,
+    next_retry_at_ms: Option<i64>,
+    title: &str,
+) {
+    let now = now_ms();
+    connection
+        .execute(
+            r#"
+            INSERT INTO clipboard_items (
+                id,
+                type,
+                summary,
+                primary_text,
+                content_hash,
+                source_confidence,
+                first_copied_at_ms,
+                last_copied_at_ms,
+                created_at_ms,
+                updated_at_ms
+            )
+            VALUES (?1, 'link', ?2, ?2, ?3, 'high', ?4, ?4, ?4, ?4)
+            "#,
+            params![
+                item_id,
+                format!("https://example.com/{item_id}"),
+                format!("hash-{item_id}"),
+                now
+            ],
+        )
+        .unwrap();
+
+    connection
+        .execute(
+            r#"
+            INSERT INTO link_metadata (
+                item_id,
+                original_text,
+                canonical_url,
+                display_url,
+                host,
+                title,
+                site_name,
+                icon_relative_path,
+                image_relative_path,
+                metadata_state,
+                failure_code,
+                fetch_attempts,
+                last_requested_at_ms,
+                fetched_at_ms,
+                next_retry_at_ms,
+                created_at_ms,
+                updated_at_ms
+            )
+            VALUES (
+                ?1,
+                ?2,
+                ?2,
+                ?3,
+                'example.com',
+                ?4,
+                'Example',
+                'assets/link-icons/example.png',
+                'assets/link-previews/example.jpg',
+                'disabled',
+                ?5,
+                2,
+                3000,
+                ?6,
+                ?7,
+                ?8,
+                ?8
+            )
+            "#,
+            params![
+                item_id,
+                format!("https://example.com/{item_id}"),
+                format!("example.com/{item_id}"),
+                title,
+                failure_code,
+                fetched_at_ms,
+                next_retry_at_ms,
+                now
+            ],
+        )
+        .unwrap();
+}
+
+fn test_checksum(sql: &str) -> String {
+    let digest = Sha256::digest(sql.as_bytes());
+    digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
 }

@@ -24,7 +24,8 @@ struct PanelItemCardViewStateTests {
         #expect(state.relativeTimeText == "2m ago")
         #expect(state.isSelected)
         #expect(state.footnoteText == "100 × 100")
-        #expect(state.preview == .image(previewPath: "preview.png", payloadPath: "payload.png", summary: "图片 100 x 100"))
+        #expect(state.preview == .image(previewPath: "preview.png", payloadPath: nil, summary: "图片 100 x 100"))
+        #expect(state.assetRequest.payloadAssetPath == "payload.png")
     }
 
     @Test
@@ -49,7 +50,7 @@ struct PanelItemCardViewStateTests {
         #expect(state.preview == .link(
             title: "",
             host: "example.com",
-            detail: "https://example.com/docs?q=1",
+            detail: "example.com/docs?q=1",
             iconPath: nil,
             imagePath: nil,
             accessibilityLabel: "Preview"
@@ -78,6 +79,40 @@ struct PanelItemCardViewStateTests {
         #expect(state.footnoteText == "/tmp/report.pdf\n/tmp/notes.txt")
         #expect(state.assetRequest.payloadAssetPath == "snapshots/report.json")
         #expect(state.assetRequest.primaryText == "/tmp/report.pdf\n/tmp/notes.txt")
+    }
+
+    @Test
+    func linkMetadataExposesCachedAssets() {
+        let item = makePanelItemCardStateItem(
+            id: "link-ready",
+            itemType: "link",
+            summary: "example.com",
+            primaryText: "https://example.com/docs",
+            linkMetadata: RustLinkMetadataSummary(
+                canonicalURL: "https://example.com/docs",
+                displayURL: "example.com/docs",
+                host: "example.com",
+                title: "Cached title",
+                iconAssetPath: "assets/link-icons/example.png",
+                imageAssetPath: "assets/link-previews/example.jpg",
+                metadataState: "ready"
+            )
+        )
+
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: nil,
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        #expect(state.preview == .link(
+            title: "Cached title",
+            host: "example.com",
+            detail: "example.com/docs",
+            iconPath: "assets/link-icons/example.png",
+            imagePath: "assets/link-previews/example.jpg",
+            accessibilityLabel: "Preview"
+        ))
     }
 
     @Test
@@ -135,7 +170,8 @@ private func makePanelItemCardStateItem(
     summary: String,
     primaryText: String?,
     previewAssetPath: String? = nil,
-    payloadAssetPath: String? = nil
+    payloadAssetPath: String? = nil,
+    linkMetadata: RustLinkMetadataSummary? = nil
 ) -> RustClipboardItemSummary {
     RustClipboardItemSummary(
         id: id,
@@ -154,6 +190,7 @@ private func makePanelItemCardStateItem(
         copyCount: 2,
         isPinned: false,
         sizeBytes: 2048,
-        previewState: "ready"
+        previewState: "ready",
+        linkMetadata: linkMetadata
     )
 }

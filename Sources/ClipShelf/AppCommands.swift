@@ -322,7 +322,7 @@ enum LinkPreviewSmokeCommand {
         }
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
         guard let previewWebViewURL = contentView.smokePreviewWebViewURLString(),
-              previewWebViewURL == linkURL.absoluteString
+              urlsMatchForSmoke(previewWebViewURL, linkURL)
         else {
             throw QAError(message: "链接完整预览未加载指定 URL")
         }
@@ -343,7 +343,6 @@ enum LinkPreviewSmokeCommand {
         print("preview_webview_url=\(linkURL.absoluteString)")
         print("card_contains_webview=false")
         print("preview_contains_webview=true")
-        print("metadata_background_fetch=disabled")
     }
 
     private static func previewURL(arguments: [String]) throws -> URL {
@@ -390,9 +389,299 @@ enum LinkPreviewSmokeCommand {
                 canonicalURL: absoluteString,
                 displayURL: absoluteString,
                 host: host,
-                metadataState: "disabled"
+                metadataState: "pending"
             )
         )
+    }
+
+    private static func urlsMatchForSmoke(_ actualURLString: String, _ expectedURL: URL) -> Bool {
+        guard let actualURL = URL(string: actualURLString) else {
+            return false
+        }
+        return normalizedSmokeURLString(actualURL) == normalizedSmokeURLString(expectedURL)
+    }
+
+    private static func normalizedSmokeURLString(_ url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        if components?.path.isEmpty == true {
+            components?.path = "/"
+        }
+        return components?.url?.absoluteString ?? url.absoluteString
+    }
+
+    private struct QAError: LocalizedError {
+        let message: String
+
+        var errorDescription: String? {
+            message
+        }
+    }
+}
+
+enum PanelReconcileBenchmarkCommand {
+    private static let benchmarkFlag = "--panel-reconcile-benchmark"
+    private static let scrollSmokeFlag = "--panel-scroll-smoke"
+    private static let itemsFlag = "--items"
+
+    static func shouldRunBenchmark(arguments: [String]) -> Bool {
+        arguments.contains(benchmarkFlag)
+    }
+
+    static func shouldRunScrollSmoke(arguments: [String]) -> Bool {
+        arguments.contains(scrollSmokeFlag)
+    }
+
+    @MainActor
+    static func runBenchmark(arguments: [String] = CommandLine.arguments) throws {
+        let itemCount = try parsedItemCount(arguments: arguments)
+        let frame = NSRect(x: 0, y: 0, width: 960, height: 320)
+        let contentView = FloatingPanelContentView(frame: frame)
+        contentView.updateAppSupportDirectory(FileManager.default.temporaryDirectory)
+        contentView.updatePanelHeight(frame.height)
+
+        let baseItems = benchmarkItems(count: itemCount)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: baseItems, totalCount: Int64(baseItems.count), hasMore: false)),
+            isFiltered: false
+        )
+        PanelQAHarness.drainMainRunLoop()
+
+        let clock = ContinuousClock()
+        var samples: [Double] = []
+        var currentItems = baseItems
+        for index in 0..<32 {
+            let nextItems = mutation(of: currentItems, baseItems: baseItems, index: index)
+            let start = clock.now
+            contentView.updateListState(
+                .success(RustCoreListResult(items: nextItems, totalCount: Int64(nextItems.count), hasMore: false)),
+                isFiltered: false
+            )
+            contentView.layoutSubtreeIfNeeded()
+            samples.append(milliseconds(from: start.duration(to: clock.now)))
+            currentItems = nextItems
+        }
+
+        let p50 = percentile(samples, percentile: 0.50)
+        let p95 = percentile(samples, percentile: 0.95)
+        let targetP95 = targetP95Milliseconds(itemCount: itemCount)
+        try emit(BenchmarkReport(
+            command: benchmarkFlag,
+            build: buildConfiguration,
+            itemCount: itemCount,
+            sampleCount: samples.count,
+            p50Ms: p50,
+            p95Ms: p95,
+            targetP95Ms: targetP95,
+            nsCollectionViewMigrationTriggerRaised: p95 > targetP95,
+            machine: machineMetadata,
+            itemMix: "text/link deterministic; reorder/delete/middle-insert/metadata-update mutations"
+        ))
+    }
+
+    @MainActor
+    static func runScrollSmoke(arguments: [String] = CommandLine.arguments) throws {
+        let itemCount = try parsedItemCount(arguments: arguments)
+        let frame = NSRect(x: 0, y: 0, width: 960, height: 320)
+        let contentView = FloatingPanelContentView(frame: frame)
+        contentView.updateListState(
+            .success(RustCoreListResult(
+                items: benchmarkItems(count: itemCount),
+                totalCount: Int64(itemCount),
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        contentView.updatePanelHeight(frame.height)
+        contentView.layoutSubtreeIfNeeded()
+
+        let scrollOriginAtStart = contentView.smokeScrollOriginX
+        contentView.smokeScrollToX(.greatestFiniteMagnitude)
+        let scrollOriginAtEnd = contentView.smokeScrollOriginX
+        try emit(ScrollSmokeReport(
+            command: scrollSmokeFlag,
+            build: buildConfiguration,
+            itemCount: itemCount,
+            machine: machineMetadata,
+            scrollOriginAtStart: Double(scrollOriginAtStart),
+            scrollOriginAtEnd: Double(scrollOriginAtEnd),
+            scrollEdgeOverlaysEnabled: false
+        ))
+    }
+
+    private static func parsedItemCount(arguments: [String]) throws -> Int {
+        guard let flagIndex = arguments.firstIndex(of: itemsFlag) else { return 500 }
+        let valueIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(valueIndex),
+              let count = Int(arguments[valueIndex]),
+              count > 0
+        else {
+            throw QAError(message: "--items 参数必须是正整数")
+        }
+        return count
+    }
+
+    private static func benchmarkItems(count: Int) -> [RustClipboardItemSummary] {
+        PanelQASamples.makePagedPanelItems(count: count)
+    }
+
+    private static func mutation(
+        of currentItems: [RustClipboardItemSummary],
+        baseItems: [RustClipboardItemSummary],
+        index: Int
+    ) -> [RustClipboardItemSummary] {
+        guard !baseItems.isEmpty else { return [] }
+        switch index % 4 {
+        case 0:
+            return Array(currentItems.reversed())
+        case 1:
+            return Array(baseItems.dropLast())
+        case 2:
+            var nextItems = Array(baseItems.prefix(max(1, baseItems.count - 1)))
+            let inserted = benchmarkInsertedItem(index: index)
+            nextItems.insert(inserted, at: min(nextItems.count / 2, nextItems.count))
+            return nextItems
+        default:
+            var nextItems = baseItems
+            let updateIndex = min(max(0, baseItems.count / 3), baseItems.count - 1)
+            nextItems[updateIndex] = linkItemByUpdatingMetadata(nextItems[updateIndex], index: index)
+            return nextItems
+        }
+    }
+
+    private static func benchmarkInsertedItem(index: Int) -> RustClipboardItemSummary {
+        RustClipboardItemSummary(
+            id: "panel-benchmark-inserted-\(index)",
+            itemType: "text",
+            summary: "Benchmark inserted item \(index)",
+            primaryText: "Benchmark inserted item \(index)",
+            contentHash: "panel-benchmark-inserted-\(index)",
+            sourceAppId: nil,
+            sourceAppName: "Benchmark",
+            sourceAppIconPath: nil,
+            previewAssetPath: nil,
+            payloadAssetPath: nil,
+            sourceConfidence: "high",
+            firstCopiedAtMs: 1,
+            lastCopiedAtMs: 1,
+            copyCount: 1,
+            isPinned: false,
+            sizeBytes: 32,
+            previewState: "ready"
+        )
+    }
+
+    private static func linkItemByUpdatingMetadata(
+        _ item: RustClipboardItemSummary,
+        index: Int
+    ) -> RustClipboardItemSummary {
+        RustClipboardItemSummary(
+            id: item.id,
+            itemType: "link",
+            summary: item.summary,
+            primaryText: item.primaryText ?? "https://example.com/reconcile/\(index)",
+            contentHash: item.contentHash,
+            sourceAppId: item.sourceAppId,
+            sourceAppName: item.sourceAppName,
+            sourceAppIconPath: item.sourceAppIconPath,
+            previewAssetPath: item.previewAssetPath,
+            payloadAssetPath: item.payloadAssetPath,
+            sourceConfidence: item.sourceConfidence,
+            firstCopiedAtMs: item.firstCopiedAtMs,
+            lastCopiedAtMs: item.lastCopiedAtMs,
+            copyCount: item.copyCount,
+            isPinned: item.isPinned,
+            sizeBytes: item.sizeBytes,
+            previewState: item.previewState,
+            fileItems: item.fileItems,
+            linkMetadata: RustLinkMetadataSummary(
+                canonicalURL: item.primaryText ?? "https://example.com/reconcile/\(index)",
+                displayURL: "example.com/reconcile/\(index)",
+                host: "example.com",
+                title: "Benchmark metadata \(index)",
+                siteName: "Example",
+                metadataState: "ready",
+                fetchedAtMs: Int64(index)
+            )
+        )
+    }
+
+    private static func milliseconds(from duration: Duration) -> Double {
+        let components = duration.components
+        return Double(components.seconds) * 1_000 + Double(components.attoseconds) / 1_000_000_000_000_000
+    }
+
+    private static func percentile(_ values: [Double], percentile: Double) -> Double {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        let index = min(
+            sorted.count - 1,
+            max(0, Int((Double(sorted.count - 1) * percentile).rounded(.up)))
+        )
+        return sorted[index]
+    }
+
+    private static func targetP95Milliseconds(itemCount: Int) -> Double {
+        if itemCount <= 50 {
+            return 120
+        }
+        if itemCount <= 150 {
+            return 400
+        }
+        return 1_000
+    }
+
+    private static func emit<T: Encodable>(_ value: T) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(value)
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data("\n".utf8))
+    }
+
+    private static var buildConfiguration: String {
+        #if DEBUG
+        "debug"
+        #else
+        "release"
+        #endif
+    }
+
+    private static var machineMetadata: MachineMetadata {
+        let processInfo = ProcessInfo.processInfo
+        return MachineMetadata(
+            operatingSystem: processInfo.operatingSystemVersionString,
+            processorCount: processInfo.activeProcessorCount,
+            physicalMemoryBytes: processInfo.physicalMemory
+        )
+    }
+
+    private struct MachineMetadata: Encodable {
+        let operatingSystem: String
+        let processorCount: Int
+        let physicalMemoryBytes: UInt64
+    }
+
+    private struct BenchmarkReport: Encodable {
+        let command: String
+        let build: String
+        let itemCount: Int
+        let sampleCount: Int
+        let p50Ms: Double
+        let p95Ms: Double
+        let targetP95Ms: Double
+        let nsCollectionViewMigrationTriggerRaised: Bool
+        let machine: MachineMetadata
+        let itemMix: String
+    }
+
+    private struct ScrollSmokeReport: Encodable {
+        let command: String
+        let build: String
+        let itemCount: Int
+        let machine: MachineMetadata
+        let scrollOriginAtStart: Double
+        let scrollOriginAtEnd: Double
+        let scrollEdgeOverlaysEnabled: Bool
     }
 
     private struct QAError: LocalizedError {

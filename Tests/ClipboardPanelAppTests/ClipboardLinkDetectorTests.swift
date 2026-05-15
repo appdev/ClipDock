@@ -8,7 +8,7 @@ struct ClipboardLinkDetectorTests {
         let link = ClipboardLinkDetector().detectPureLink(in: " https://Example.com/docs?q=1 ")
 
         #expect(link?.canonicalURL == "https://example.com/docs?q=1")
-        #expect(link?.displayURL == "https://example.com/docs?q=1")
+        #expect(link?.displayURL == "example.com/docs?q=1")
         #expect(link?.host == "example.com")
     }
 
@@ -17,6 +17,7 @@ struct ClipboardLinkDetectorTests {
         let link = ClipboardLinkDetector().detectPureLink(in: "https://example.com/favicon.svg")
 
         #expect(link?.canonicalURL == "https://example.com/favicon.svg")
+        #expect(link?.displayURL == "example.com/favicon.svg")
         #expect(link?.host == "example.com")
     }
 

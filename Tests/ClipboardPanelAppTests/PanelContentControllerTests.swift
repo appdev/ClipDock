@@ -71,7 +71,7 @@ struct PanelContentControllerTests {
     }
 
     @Test
-    func replacingListReloadsAndClosesPreview() {
+    func replacingListReconcilesAndClosesPreviewIfNeeded() {
         let controller = PanelContentController()
 
         let plan = controller.updateListState(
@@ -84,9 +84,50 @@ struct PanelContentControllerTests {
             append: false
         )
 
-        #expect(plan.instruction == .reloadAll(scrollSelectedItem: true, preserveScrollPosition: false))
-        #expect(plan.shouldClosePreview)
+        #expect(plan.instruction == .reconcileItems([makePanelContentItem(id: "next")], scrollSelectedItem: true, preserveScrollPosition: true))
+        #expect(plan.previewClosePolicy == .closeIfPreviewedItemRemoved)
+        #expect(!plan.shouldClosePreview)
         #expect(plan.viewState.selectedItemID == "next")
+    }
+
+    @Test
+    func nonAppendReconcileCoversReorderDeletionInsertionAndMetadataUpdate() {
+        let first = makePanelContentItem(id: "a")
+        let second = makePanelContentItem(id: "b")
+        let third = makePanelContentItem(id: "c")
+        let controller = PanelContentController(
+            sceneStore: PanelSceneRuntimeController(
+                state: PanelSceneState(selection: PanelSelectionState(selectedItemID: "b"))
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items([first, second, third]),
+                totalCount: 3,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let metadataUpdated = makePanelContentItem(id: "b", linkTitle: "Updated")
+        let inserted = makePanelContentItem(id: "inserted")
+        let nextItems = [third, inserted, metadataUpdated]
+        let plan = controller.updateListState(
+            .success(RustCoreListResult(
+                items: nextItems,
+                totalCount: Int64(nextItems.count),
+                hasMore: false
+            )),
+            isFiltered: false,
+            append: false
+        )
+
+        #expect(plan.instruction == .reconcileItems(
+            nextItems,
+            scrollSelectedItem: true,
+            preserveScrollPosition: true
+        ))
+        #expect(plan.previewClosePolicy == .closeIfPreviewedItemRemoved)
+        #expect(plan.viewState.selectedItemID == "b")
+        #expect(controller.currentItemIDs == ["c", "inserted", "b"])
     }
 
     @Test
@@ -112,12 +153,12 @@ struct PanelContentControllerTests {
     }
 }
 
-private func makePanelContentItem(id: String) -> RustClipboardItemSummary {
+private func makePanelContentItem(id: String, linkTitle: String? = nil) -> RustClipboardItemSummary {
     RustClipboardItemSummary(
         id: id,
-        itemType: "text",
+        itemType: linkTitle == nil ? "text" : "link",
         summary: id,
-        primaryText: id,
+        primaryText: linkTitle == nil ? id : "https://example.com/\(id)",
         contentHash: id,
         sourceAppId: nil,
         sourceAppName: nil,
@@ -130,7 +171,16 @@ private func makePanelContentItem(id: String) -> RustClipboardItemSummary {
         copyCount: 1,
         isPinned: false,
         sizeBytes: 1,
-        previewState: "ready"
+        previewState: "ready",
+        linkMetadata: linkTitle.map {
+            RustLinkMetadataSummary(
+                canonicalURL: "https://example.com/\(id)",
+                displayURL: "example.com/\(id)",
+                host: "example.com",
+                title: $0,
+                metadataState: "ready"
+            )
+        }
     )
 }
 

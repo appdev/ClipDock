@@ -123,6 +123,49 @@ struct PanelInteractionControllerTests {
     }
 
     @Test
+    func copySelectedItemEmitsCopyActionAndClearsCommandHints() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(
+                    selectedItemID: "b",
+                    isCommandHintModeEnabled: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.copySelectedItem)
+
+        #expect(result.viewState.selectedItemID == "b")
+        #expect(!result.viewState.isCommandHintModeEnabled)
+        #expect(result.effects == [
+            .commandHints([:]),
+            .preview(.close),
+            .external(.copyItem(itemID: "b"))
+        ])
+    }
+
+    @Test
+    func deleteSelectedItemEmitsDeleteActionAndClearsCommandHints() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(
+                    selectedItemID: "b",
+                    isCommandHintModeEnabled: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.deleteSelectedItem)
+
+        #expect(!result.viewState.isCommandHintModeEnabled)
+        #expect(result.effects == [
+            .commandHints([:]),
+            .preview(.close),
+            .external(.deleteItem(itemID: "b"))
+        ])
+    }
+
+    @Test
     func managementPreviewUsesActionBoundaryInsteadOfExternalMutation() {
         let items = [makePanelInteractionItem(id: "a"), makePanelInteractionItem(id: "b")]
         let controller = makePanelInteractionController(

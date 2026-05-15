@@ -636,7 +636,6 @@ final class PreferencesWindowController: NSWindowController {
         }
         viewModel.persist { $0.general.showMenuBarItem.toggle() }
         viewModel.persist { $0.appearance.previewPopoverEnabled.toggle() }
-        viewModel.persist { $0.linkPreview.metadataEnabled.toggle() }
         viewModel.persist { $0.linkPreview.webPreviewEnabled.toggle() }
         viewModel.persist { $0.shortcuts.pasteDirectlyToTarget.toggle() }
         viewModel.persist { $0.ignoreList.skipUnknownSource.toggle() }
@@ -1126,19 +1125,6 @@ private struct PreferencePrivacySection: View {
             }
 
             PreferenceSectionGroup(title: "链接预览") {
-                PreferenceRow(title: "生成卡片信息", detail: "后台下载标题、图标和摘要图") {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { model.state.preferences.linkPreview.metadataEnabled },
-                            set: { isOn in model.persist { $0.linkPreview.metadataEnabled = isOn } }
-                        )
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                }
-                PreferenceDivider()
                 PreferenceRow(title: "网页完整预览", detail: "按空格时加载真实网页") {
                     Toggle(
                         "",
@@ -1932,13 +1918,6 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                         )
                     ]),
                     makeSection(title: "链接预览", rows: [
-                        makeSettingRow(
-                            title: "生成卡片信息",
-                            detail: "后台下载标题、图标和摘要图",
-                            control: makeSwitch(isOn: preferences.linkPreview.metadataEnabled) { [weak self] isOn in
-                                self?.persist { $0.linkPreview.metadataEnabled = isOn }
-                            }
-                        ),
                         makeSettingRow(
                             title: "网页完整预览",
                             detail: "按空格时加载真实网页",

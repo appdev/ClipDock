@@ -122,4 +122,55 @@ struct ClipboardFilePreviewResolverTests {
         #expect(preview.fileURLs == [fileURL.standardizedFileURL])
         #expect(preview.imageURL == nil)
     }
+
+    @Test
+    func previewPlannerUsesFileThumbnailWhenOriginalFileIsMissing() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let thumbnailDirectory = tempDirectory.appendingPathComponent("thumbnails", isDirectory: true)
+        try FileManager.default.createDirectory(at: thumbnailDirectory, withIntermediateDirectories: true)
+        let thumbnailURL = thumbnailDirectory.appendingPathComponent("file-thumb.png")
+        try Data("thumbnail".utf8).write(to: thumbnailURL)
+        let missingPath = tempDirectory.appendingPathComponent("deleted.txt").path
+        let item = RustClipboardItemSummary(
+            id: "missing-file-preview",
+            itemType: "file",
+            summary: "deleted.txt",
+            primaryText: missingPath,
+            contentHash: "missing-file-preview",
+            sourceAppId: "com.apple.finder",
+            sourceAppName: "Finder",
+            sourceAppIconPath: nil,
+            previewAssetPath: "thumbnails/file-thumb.png",
+            payloadAssetPath: nil,
+            sourceConfidence: "high",
+            firstCopiedAtMs: 1,
+            lastCopiedAtMs: 1,
+            copyCount: 1,
+            isPinned: false,
+            sizeBytes: 12,
+            previewState: "ready",
+            fileItems: [
+                RustClipboardFileItemSummary(
+                    path: missingPath,
+                    fileName: "deleted.txt",
+                    fileExtension: "txt",
+                    byteCount: 12,
+                    isDirectory: false,
+                    width: nil,
+                    height: nil,
+                    contentType: "public.plain-text"
+                )
+            ]
+        )
+
+        let preview = ClipboardPreviewContentPlanner.preview(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(preview.fileURLs.isEmpty)
+        #expect(preview.imageURL == thumbnailURL)
+        #expect(preview.body == missingPath)
+    }
 }

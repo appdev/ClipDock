@@ -327,6 +327,11 @@ impl ClipboardCore {
             .as_deref()
             .map(normalize_relative_asset_path)
             .transpose()?;
+        let preview_relative_path = request
+            .preview_relative_path
+            .as_deref()
+            .map(normalize_relative_asset_path)
+            .transpose()?;
         let root = self.root_dir()?.to_path_buf();
         let now = now_ms();
         let source_app_id = self.upsert_source_app(
@@ -342,6 +347,7 @@ impl ClipboardCore {
         let source_confidence = request.source_confidence;
         let metadata_byte_count: i64 = file_items.iter().map(|item| item.byte_count.max(0)).sum();
         let size_bytes = metadata_byte_count
+            .max(request.preview_byte_count)
             .max(request.snapshot_byte_count)
             .max(primary_text.len() as i64);
         let transaction = self.connection.transaction()?;
@@ -410,6 +416,30 @@ impl ClipboardCore {
         };
 
         replace_file_items(&transaction, &item_id, &file_items, now)?;
+
+        if let Some(preview_relative_path) = preview_relative_path.as_deref() {
+            let preview_path = root.join(preview_relative_path);
+            let preview_digest = hash_file(&preview_path)?;
+            let preview_byte_count = fs::metadata(&preview_path)?.len() as i64;
+            let preview_mime_type = request
+                .preview_mime_type
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("image/png");
+            insert_asset(
+                &transaction,
+                &item_id,
+                "thumbnail",
+                preview_mime_type,
+                preview_relative_path,
+                preview_byte_count,
+                positive_dimension(request.preview_width.unwrap_or_default()),
+                positive_dimension(request.preview_height.unwrap_or_default()),
+                &preview_digest,
+                now,
+            )?;
+        }
 
         if let Some(snapshot_relative_path) = snapshot_relative_path.as_deref() {
             let snapshot_path = root.join(snapshot_relative_path);
@@ -570,8 +600,6 @@ fn upsert_link_metadata(
             host = excluded.host,
             metadata_state = CASE
                 WHEN link_metadata.metadata_state = 'ready' THEN link_metadata.metadata_state
-                WHEN excluded.metadata_state = 'disabled' THEN 'disabled'
-                WHEN link_metadata.metadata_state = 'disabled' AND excluded.metadata_state = 'pending' THEN 'pending'
                 ELSE link_metadata.metadata_state
             END,
             updated_at_ms = excluded.updated_at_ms

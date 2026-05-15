@@ -175,11 +175,7 @@ public enum PanelItemCardPresenter {
             ?? item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let url = normalizedURL(from: rawText)
         let host = url?.host?.replacingOccurrences(of: "www.", with: "") ?? rawText
-        let detail = url.map { url -> String in
-            let path = url.path.isEmpty ? "/" : url.path
-            let query = url.query.map { "?\($0)" } ?? ""
-            return "\(url.scheme ?? "https")://\(url.host ?? host)\(path)\(query)"
-        }
+        let detail = url.flatMap(LinkDisplayURLFormatter.displayURL(from:))
 
         return (
             host: host.isEmpty ? "网页链接" : host,
@@ -200,16 +196,11 @@ public enum PanelItemCardPresenter {
     private static func compactLinkDisplayText(from text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              let url = URL(string: trimmed),
-              let host = url.host?.replacingOccurrences(of: "www.", with: "")
+              let displayURL = LinkDisplayURLFormatter.displayURL(from: trimmed)
         else {
             return trimmed.isEmpty ? "网页链接" : trimmed
         }
-
-        let path = url.path == "/" ? "" : url.path
-        let query = url.query.map { "?\($0)" } ?? ""
-        let fragment = url.fragment.map { "#\($0)" } ?? ""
-        return "\(host)\(path)\(query)\(fragment)"
+        return displayURL
     }
 
     private static func filePresentation(for item: RustClipboardItemSummary) -> (title: String, detail: String) {

@@ -86,6 +86,7 @@ public struct ClipboardListUpdate: Sendable {
 public enum ClipboardItemMutationRequest: Sendable, Equatable {
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
     case delete(itemID: String)
+    case recordCopied(itemID: String)
     case clear(sourceAppID: String?, normalizedSearch: String)
 }
 
@@ -138,6 +139,9 @@ public actor ClipboardCoreDatabaseWorker {
         case .delete(let itemID):
             client.deleteItem(appSupportDirectory: appSupportURL, itemId: itemID)
 
+        case .recordCopied(let itemID):
+            client.recordItemCopied(appSupportDirectory: appSupportURL, itemId: itemID)
+
         case .clear(let sourceAppID, let normalizedSearch):
             client.clearItems(
                 appSupportDirectory: appSupportURL,
@@ -145,6 +149,23 @@ public actor ClipboardCoreDatabaseWorker {
                 searchText: normalizedSearch.isEmpty ? nil : normalizedSearch
             )
         }
+    }
+
+    public func updateSourceAppIconHeaderColor(
+        client: RustCoreClient,
+        appSupportURL: URL,
+        sourceAppID: String,
+        sourceAppIconPath: String?,
+        headerColorARGB: Int64,
+        allowLatestWithoutPath: Bool = false
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        client.updateSourceAppIconHeaderColor(
+            appSupportDirectory: appSupportURL,
+            sourceAppId: sourceAppID,
+            sourceAppIconPath: sourceAppIconPath,
+            headerColorARGB: headerColorARGB,
+            allowLatestWithoutPath: allowLatestWithoutPath
+        )
     }
 
     public func performPinboardMutation(
@@ -556,6 +577,9 @@ public final class ClipboardListCoordinator {
 
         case .delete:
             return result.affectedCount > 0 ? "条目：已删除" : "条目：未找到"
+
+        case .recordCopied:
+            return result.affectedCount > 0 ? "复制：已更新最近时间" : "条目：未找到"
 
         case .clear:
             return result.affectedCount > 0

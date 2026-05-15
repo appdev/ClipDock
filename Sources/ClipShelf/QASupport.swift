@@ -470,6 +470,46 @@ enum PanelQAHarness {
     }
 
     @MainActor
+    static func sendCommandC(to view: NSView) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "c",
+            charactersIgnoringModifiers: "c",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_C)
+        ) else {
+            return
+        }
+
+        view.keyDown(with: event)
+    }
+
+    @MainActor
+    static func sendDelete(to view: NSView) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "\u{8}",
+            charactersIgnoringModifiers: "\u{8}",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Delete)
+        ) else {
+            return
+        }
+
+        view.keyDown(with: event)
+    }
+
+    @MainActor
     static func sendSpace(to view: NSView) {
         guard let event = NSEvent.keyEvent(
             with: .keyDown,

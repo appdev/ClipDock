@@ -35,7 +35,7 @@ struct PanelItemCardPresentationTests {
         #expect(presentation.summaryText.isEmpty)
         #expect(presentation.footnoteText == "example.com/docs?q=1")
         #expect(presentation.linkHost == "example.com")
-        #expect(presentation.linkDetail == "https://example.com/docs?q=1")
+        #expect(presentation.linkDetail == "example.com/docs?q=1")
         #expect(presentation.linkTitle == nil)
     }
 
@@ -83,6 +83,29 @@ struct PanelItemCardPresentationTests {
         #expect(presentation.linkHost == "github.com")
         #expect(presentation.linkDetail == "https://github.com/")
         #expect(presentation.linkTitle == nil)
+    }
+
+    @Test
+    func presentsCachedLinkMetadataForDisplay() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "link",
+                summary: "GitHub",
+                primaryText: "https://github.com/",
+                linkMetadata: RustLinkMetadataSummary(
+                    canonicalURL: "https://github.com/",
+                    displayURL: "github.com",
+                    host: "github.com",
+                    title: "Cached title",
+                    metadataState: "ready"
+                )
+            )
+        )
+
+        #expect(presentation.footnoteText == "github.com")
+        #expect(presentation.linkHost == "github.com")
+        #expect(presentation.linkDetail == "github.com")
+        #expect(presentation.linkTitle == "Cached title")
     }
 
     @Test

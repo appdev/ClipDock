@@ -30,6 +30,8 @@ public enum PanelInteractionAction: Equatable, Sendable {
     case focusSearch
     case dismissSearch
     case copyItem(itemID: String)
+    case copySelectedItem
+    case deleteSelectedItem
     case selectItem(id: String, scrollIntoView: Bool)
     case selectOffset(Int)
     case activateSelectedPreview
@@ -170,6 +172,31 @@ public final class PanelInteractionController {
             return makeResult(effects: [
                 .preview(.close),
                 .external(.copyItem(itemID: itemID))
+            ])
+
+        case .copySelectedItem:
+            guard let selectedItemID = viewState.selectedItemID else {
+                return makeResult()
+            }
+
+            contentController.setCommandHintMode(enabled: false)
+            contentController.copyItem(itemID: selectedItemID)
+            return makeResult(effects: [
+                .commandHints([:]),
+                .preview(.close),
+                .external(.copyItem(itemID: selectedItemID))
+            ])
+
+        case .deleteSelectedItem:
+            guard let selectedItemID = viewState.selectedItemID else {
+                return makeResult()
+            }
+
+            contentController.setCommandHintMode(enabled: false)
+            return makeResult(effects: [
+                .commandHints([:]),
+                .preview(.close),
+                .external(.deleteItem(itemID: selectedItemID))
             ])
 
         case .selectItem(let id, let scrollIntoView):

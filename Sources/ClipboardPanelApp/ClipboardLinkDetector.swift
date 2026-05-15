@@ -80,11 +80,12 @@ public struct ClipboardLinkDetector: Sendable {
         else {
             return nil
         }
+        let displayURL = LinkDisplayURLFormatter.displayURL(from: resolvedURL) ?? canonicalURL
 
         return ClipboardDetectedLink(
             originalText: originalText,
             canonicalURL: canonicalURL,
-            displayURL: canonicalURL,
+            displayURL: displayURL,
             host: host.lowercased()
         )
     }

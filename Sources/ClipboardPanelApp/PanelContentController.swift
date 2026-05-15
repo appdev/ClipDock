@@ -3,22 +3,45 @@ import Foundation
 public enum PanelContentRenderInstruction: Equatable, Sendable {
     case reloadAll(scrollSelectedItem: Bool, preserveScrollPosition: Bool)
     case appendItems([RustClipboardItemSummary], preserveScrollPosition: Bool)
+    case reconcileItems([RustClipboardItemSummary], scrollSelectedItem: Bool, preserveScrollPosition: Bool)
     case noVisualChange
+}
+
+public enum PanelPreviewClosePolicy: Equatable, Sendable {
+    case keepOpen
+    case close
+    case closeIfPreviewedItemRemoved
 }
 
 public struct PanelContentRenderPlan: Equatable, Sendable {
     public let viewState: PanelViewState
     public let instruction: PanelContentRenderInstruction
-    public let shouldClosePreview: Bool
+    public let previewClosePolicy: PanelPreviewClosePolicy
+
+    public var shouldClosePreview: Bool {
+        previewClosePolicy == .close
+    }
+
+    public init(
+        viewState: PanelViewState,
+        instruction: PanelContentRenderInstruction,
+        previewClosePolicy: PanelPreviewClosePolicy
+    ) {
+        self.viewState = viewState
+        self.instruction = instruction
+        self.previewClosePolicy = previewClosePolicy
+    }
 
     public init(
         viewState: PanelViewState,
         instruction: PanelContentRenderInstruction,
         shouldClosePreview: Bool
     ) {
-        self.viewState = viewState
-        self.instruction = instruction
-        self.shouldClosePreview = shouldClosePreview
+        self.init(
+            viewState: viewState,
+            instruction: instruction,
+            previewClosePolicy: shouldClosePreview ? .close : .keepOpen
+        )
     }
 }
 
@@ -195,13 +218,17 @@ public final class PanelContentController {
         if update.didAppendToExistingItems {
             instruction = .appendItems(update.appendedItems, preserveScrollPosition: true)
         } else {
-            instruction = .reloadAll(scrollSelectedItem: true, preserveScrollPosition: false)
+            instruction = .reconcileItems(
+                update.state.items,
+                scrollSelectedItem: true,
+                preserveScrollPosition: true
+            )
         }
 
         return PanelContentRenderPlan(
             viewState: viewState,
             instruction: instruction,
-            shouldClosePreview: !append
+            previewClosePolicy: append ? .keepOpen : .closeIfPreviewedItemRemoved
         )
     }
 }

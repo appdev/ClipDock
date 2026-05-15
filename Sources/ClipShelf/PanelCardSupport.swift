@@ -9,6 +9,26 @@ struct PanelCardResolvedItem {
     let sourceIconColor: NSColor?
 }
 
+struct SourceAppIconHeaderColorWriteRequest: Hashable, Sendable {
+    let sourceAppID: String
+    let sourceAppIconPath: String
+    let headerColorARGB: Int64
+}
+
+typealias SourceAppIconHeaderColorWriter =
+    @Sendable (SourceAppIconHeaderColorWriteRequest) async -> Void
+
+private struct SourceColorWriteKey: Hashable {
+    let sourceAppID: String
+    let sourceAppIconPath: String
+    let cacheVersion: Int64
+}
+
+private enum SourceIconHeaderColorARGB {
+    static let minimum: Int64 = 4_278_190_080
+    static let maximum: Int64 = 4_294_967_295
+}
+
 struct PanelCardPreviewImageState {
     let paths: [String]
     let image: NSImage?
@@ -21,33 +41,66 @@ struct PanelFilePreviewThumbnailToken: Sendable {
     let callbackID: UUID
 }
 
+struct PanelPreviewImageLoadToken: Sendable {
+    let callbackID: UUID
+}
+
+private struct LoadedPreviewImage: @unchecked Sendable {
+    let image: NSImage
+}
+
 @MainActor
 final class PanelCardAssetResolver {
     private static let imageCache = NSCache<NSString, NSImage>()
     private static let fileThumbnailCache = NSCache<NSString, NSImage>()
     private static var fileThumbnailInFlight: [String: FileThumbnailInFlight] = [:]
+    static var fileThumbnailGenerationDelayForSmoke: Duration?
+    private static var previewImageLoadTasks: [UUID: Task<Void, Never>] = [:]
+    static var previewImageLoadDelayForSmoke: Duration?
+
+    static func previewImageLoadIsActiveForSmoke(_ token: PanelPreviewImageLoadToken) -> Bool {
+        previewImageLoadTasks[token.callbackID] != nil
+    }
     private static let sourceColorCache = NSCache<NSString, NSColor>()
+    private static var sourceColorWriteInFlight: Set<SourceColorWriteKey> = []
     private static let sourceColorContext = CIContext(options: [
         .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB) as Any,
         .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB) as Any
     ])
 
     private let appSupportDirectory: URL?
+    private let sourceIconHeaderColorWriter: SourceAppIconHeaderColorWriter?
+    private let sourceIconImageLoader: @MainActor (String) -> NSImage?
+    private let dominantHeaderColorProvider: @MainActor (NSImage, String?, String?) -> NSColor?
 
-    init(appSupportDirectory: URL?) {
+    init(
+        appSupportDirectory: URL?,
+        sourceIconHeaderColorWriter: SourceAppIconHeaderColorWriter? = nil,
+        sourceIconImageLoader: (@MainActor (String) -> NSImage?)? = nil,
+        dominantHeaderColorProvider: (@MainActor (NSImage, String?, String?) -> NSColor?)? = nil
+    ) {
         self.appSupportDirectory = appSupportDirectory
+        self.sourceIconHeaderColorWriter = sourceIconHeaderColorWriter
+        self.sourceIconImageLoader = sourceIconImageLoader ?? PanelCardAssetResolver.loadCachedImage(path:)
+        self.dominantHeaderColorProvider = dominantHeaderColorProvider
+            ?? PanelCardAssetResolver.dominantHeaderColor(for:cacheKey:fallbackCacheKey:)
     }
 
     func resolvedItem(for request: PanelCardAssetRequest) -> PanelCardResolvedItem {
         let sourceIconImage = sourceIconImage(for: request)
         let sourceColorKey = sourceColorKey(for: request)
         let sourceColorCacheKey = sourceColorKey ?? request.sourceAppIconPath
-        let sourceIconColor = sourceIconImage.flatMap {
-            Self.dominantHeaderColor(
-                for: $0,
-                cacheKey: sourceColorCacheKey,
-                fallbackCacheKey: request.sourceAppIconPath
-            )
+        let sourceIconColor = Self.headerColor(fromOpaqueARGB: request.sourceAppIconHeaderColor)
+            ?? sourceIconImage.flatMap {
+                dominantHeaderColorProvider(
+                    $0,
+                    sourceColorCacheKey,
+                    request.sourceAppIconPath
+                )
+            }
+
+        if request.sourceAppIconHeaderColor == nil, let sourceIconColor {
+            persistComputedHeaderColor(sourceIconColor, for: request)
         }
 
         return PanelCardResolvedItem(
@@ -68,7 +121,40 @@ final class PanelCardAssetResolver {
     }
 
     func sourceIconImage(for request: PanelCardAssetRequest) -> NSImage? {
-        request.sourceAppIconPath.flatMap(Self.loadCachedImage(path:))
+        request.sourceAppIconPath.flatMap(sourceIconImageLoader)
+    }
+
+    private func persistComputedHeaderColor(_ color: NSColor, for request: PanelCardAssetRequest) {
+        guard let sourceIconHeaderColorWriter,
+              let sourceAppID = request.sourceAppId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sourceAppID.isEmpty,
+              let sourceAppIconPath = request.sourceAppIconPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sourceAppIconPath.isEmpty,
+              let headerColorARGB = Self.opaqueARGB(from: color)
+        else {
+            return
+        }
+
+        let cacheVersion = RustCoreClient.activeSourceIconHeaderColorCacheVersion()
+        let key = SourceColorWriteKey(
+            sourceAppID: sourceAppID,
+            sourceAppIconPath: sourceAppIconPath,
+            cacheVersion: cacheVersion
+        )
+        guard !Self.sourceColorWriteInFlight.contains(key) else {
+            return
+        }
+        Self.sourceColorWriteInFlight.insert(key)
+
+        let writeRequest = SourceAppIconHeaderColorWriteRequest(
+            sourceAppID: sourceAppID,
+            sourceAppIconPath: sourceAppIconPath,
+            headerColorARGB: headerColorARGB
+        )
+        Task { @MainActor in
+            await sourceIconHeaderColorWriter(writeRequest)
+            Self.sourceColorWriteInFlight.remove(key)
+        }
     }
 
     func filePreviewImage(
@@ -76,6 +162,12 @@ final class PanelCardAssetResolver {
         maximumSize: NSSize = NSSize(width: 96, height: 96),
         scale: CGFloat = NSScreen.main?.backingScaleFactor ?? 2
     ) -> NSImage? {
+        for path in existingPreviewImagePaths(paths: [request.previewAssetPath]) {
+            if let image = Self.loadCachedImage(path: path) {
+                return image
+            }
+        }
+
         let urls = filePreviewURLs(for: request)
         if let cachedThumbnail = Self.cachedFileThumbnail(
             urls: urls,
@@ -144,6 +236,22 @@ final class PanelCardAssetResolver {
             request: thumbnailRequest,
             completions: [callbackID: completion]
         )
+        if let delay = fileThumbnailGenerationDelayForSmoke {
+            Task { @MainActor in
+                try? await Task.sleep(for: delay)
+                guard fileThumbnailInFlight[requestInfo.cacheKey] != nil else { return }
+                generateFileThumbnail(requestInfo: requestInfo, thumbnailRequest: thumbnailRequest)
+            }
+            return token
+        }
+        generateFileThumbnail(requestInfo: requestInfo, thumbnailRequest: thumbnailRequest)
+        return token
+    }
+
+    private static func generateFileThumbnail(
+        requestInfo: FileThumbnailRequestInfo,
+        thumbnailRequest: QLThumbnailGenerator.Request
+    ) {
         QLThumbnailGenerator.shared.generateBestRepresentation(for: thumbnailRequest) { representation, _ in
             let imageData = representation?.nsImage.tiffRepresentation
             DispatchQueue.main.async {
@@ -159,7 +267,6 @@ final class PanelCardAssetResolver {
                 }
             }
         }
-        return token
     }
 
     static func cancelFilePreviewImageRequest(_ token: PanelFilePreviewThumbnailToken?) {
@@ -178,6 +285,10 @@ final class PanelCardAssetResolver {
         }
     }
 
+    static func filePreviewImageRequestIsActiveForSmoke(_ token: PanelFilePreviewThumbnailToken) -> Bool {
+        fileThumbnailInFlight[token.cacheKey]?.completions[token.callbackID] != nil
+    }
+
     func headerColor(
         forTypeText typeText: String,
         sourceColorKey: String?,
@@ -193,7 +304,7 @@ final class PanelCardAssetResolver {
         }
 
         if let sourceIconColor {
-            return sourceIconColor.withAlphaComponent(isSelected ? 0.98 : 0.90)
+            return sourceIconColor.withAlphaComponent(isSelected ? 1 : 0.96)
         }
 
         if let sourceColorKey,
@@ -216,31 +327,90 @@ final class PanelCardAssetResolver {
         return NSColor.systemBlue.withAlphaComponent(isSelected ? 1 : 0.92)
     }
 
+    @discardableResult
     static func loadPreviewImageAsync(
         paths: [String],
-        completion: @escaping @MainActor (NSImage?) -> Void
-    ) {
-        Task { @MainActor in
-            let loadedData = await Task.detached(priority: .userInitiated) { () -> (String, Data)? in
-                for path in paths {
-                    let url = URL(fileURLWithPath: path)
-                    if let data = try? Data(contentsOf: url) {
-                        return (path, data)
-                    }
-                }
-                return nil
-            }.value
+        completion: @escaping @MainActor @Sendable (NSImage?) -> Void
+    ) -> PanelPreviewImageLoadToken? {
+        guard !paths.isEmpty else {
+            completion(nil)
+            return nil
+        }
 
-            guard let (path, data) = loadedData,
-                  let image = NSImage(data: data)
-            else {
-                completion(nil)
+        let callbackID = UUID()
+        let token = PanelPreviewImageLoadToken(callbackID: callbackID)
+        let task = Task.detached(priority: .userInitiated) {
+            if let delay = await MainActor.run(body: { previewImageLoadDelayForSmoke }) {
+                try? await Task.sleep(for: delay)
+            }
+            guard !Task.isCancelled else { return }
+
+            let loadedImage: (String, LoadedPreviewImage)?
+            do {
+                loadedImage = try Self.loadPreviewImage(paths: paths)
+            } catch {
                 return
             }
+            guard !Task.isCancelled else { return }
 
-            imageCache.setObject(image, forKey: path as NSString)
-            completion(image)
+            await MainActor.run {
+                guard let currentTask = previewImageLoadTasks.removeValue(forKey: callbackID),
+                      !currentTask.isCancelled
+                else {
+                    return
+                }
+
+                guard let (path, loadedImage) = loadedImage else {
+                    completion(nil)
+                    return
+                }
+
+                let image = loadedImage.image
+                imageCache.setObject(image, forKey: path as NSString)
+                completion(image)
+            }
         }
+        previewImageLoadTasks[callbackID] = task
+        return token
+    }
+
+    static func cancelPreviewImageLoad(_ token: PanelPreviewImageLoadToken?) {
+        guard let token,
+              let task = previewImageLoadTasks.removeValue(forKey: token.callbackID)
+        else {
+            return
+        }
+        task.cancel()
+    }
+
+    private nonisolated static func loadPreviewImage(
+        paths: [String]
+    ) throws -> (String, LoadedPreviewImage)? {
+        for path in paths {
+            guard !Task.isCancelled else { throw CancellationError() }
+            let url = URL(fileURLWithPath: path)
+            if let data = try? cancellableData(contentsOf: url),
+               let image = NSImage(data: data) {
+                return (path, LoadedPreviewImage(image: image))
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func cancellableData(contentsOf url: URL) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer {
+            try? handle.close()
+        }
+
+        var data = Data()
+        while true {
+            guard !Task.isCancelled else { throw CancellationError() }
+            let chunk = try handle.read(upToCount: 64 * 1024) ?? Data()
+            guard !chunk.isEmpty else { break }
+            data.append(chunk)
+        }
+        return data
     }
 
     private func existingPreviewImagePaths(paths: [String?]) -> [String] {
@@ -327,6 +497,34 @@ final class PanelCardAssetResolver {
         }
 
         return normalizedColor
+    }
+
+    private static func headerColor(fromOpaqueARGB argb: Int64?) -> NSColor? {
+        guard let argb,
+              (SourceIconHeaderColorARGB.minimum...SourceIconHeaderColorARGB.maximum).contains(argb)
+        else {
+            return nil
+        }
+
+        let red = CGFloat((argb >> 16) & 0xFF) / 255
+        let green = CGFloat((argb >> 8) & 0xFF) / 255
+        let blue = CGFloat(argb & 0xFF) / 255
+        return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
+    }
+
+    private static func opaqueARGB(from color: NSColor) -> Int64? {
+        guard let color = color.usingColorSpace(.sRGB) else {
+            return nil
+        }
+
+        func byte(_ value: CGFloat) -> Int64 {
+            Int64(min(max((value * 255).rounded(), 0), 255))
+        }
+
+        let red = byte(color.redComponent)
+        let green = byte(color.greenComponent)
+        let blue = byte(color.blueComponent)
+        return 0xFF00_0000 + (red << 16) + (green << 8) + blue
     }
 
     private static func coreImageAverageColor(for bitmap: NSBitmapImageRep) -> NSColor? {
@@ -457,13 +655,14 @@ final class PanelCardAssetResolver {
         }
 
         guard totalWeight > 0,
-              chromaWeight / totalWeight > 0.12,
               let selectedBucket = buckets.max(by: {
                   let lhsScore = $0.weight * (0.65 + ($0.weight > 0 ? $0.saturation / $0.weight : 0) * 0.35)
                   let rhsScore = $1.weight * (0.65 + ($1.weight > 0 ? $1.saturation / $1.weight : 0) * 0.35)
                   return lhsScore < rhsScore
               }),
-              selectedBucket.weight > 0
+              selectedBucket.weight > 0,
+              selectedBucket.saturation / selectedBucket.weight >= 0.32,
+              (selectedBucket.weight / totalWeight >= 0.035 || chromaWeight / totalWeight >= 0.08)
         else {
             return fallbackColor
         }
@@ -535,7 +734,7 @@ final class PanelCardAssetResolver {
 
         return NSColor(
             calibratedHue: hue,
-            saturation: min(max(saturation, 0.28), 0.74),
+            saturation: min(max(saturation, 0.78), 0.86),
             brightness: min(max(brightness, 0.58), 0.88),
             alpha: 1
         )

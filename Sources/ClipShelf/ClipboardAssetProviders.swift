@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import ClipboardPanelApp
 import ImageIO
+import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
 @MainActor
@@ -9,7 +10,6 @@ protocol SourceAppIconCaching {
     func cacheIcon(for source: ClipboardCaptureSource?) -> String?
 }
 
-@MainActor
 protocol ClipboardImageAssetCaching {
     func cacheImage(_ capturedImage: ClipboardCapturedImage, changeCount: Int) -> ClipboardStoredImageAsset?
 }
@@ -172,10 +172,16 @@ final class SourceAppIconProvider: SourceAppIconCaching {
 struct CapturedClipboardFiles: Sendable {
     let urls: [URL]
     let fileItems: [ClipboardCapturedFileMetadata]
+    let preview: ClipboardStoredFilePreview?
 
-    init(urls: [URL], fileItems: [ClipboardCapturedFileMetadata] = []) {
+    init(
+        urls: [URL],
+        fileItems: [ClipboardCapturedFileMetadata] = [],
+        preview: ClipboardStoredFilePreview? = nil
+    ) {
         self.urls = urls
         self.fileItems = fileItems
+        self.preview = preview
     }
 
     var paths: [String] {
@@ -235,8 +241,13 @@ struct CapturedClipboardFiles: Sendable {
 
         return CapturedClipboardFiles(
             urls: urls,
-            fileItems: fileItems.compactMap { $0 }
+            fileItems: fileItems.compactMap { $0 },
+            preview: nil
         )
+    }
+
+    func withPreview(_ preview: ClipboardStoredFilePreview?) -> CapturedClipboardFiles {
+        CapturedClipboardFiles(urls: urls, fileItems: fileItems, preview: preview)
     }
 
     private static func normalizedFileURL(_ url: URL) -> URL? {
@@ -382,31 +393,135 @@ final class ClipboardFileSnapshotProvider: ClipboardFileSnapshotCaching {
     }
 }
 
-struct CapturedClipboardImage {
-    let image: NSImage
-    let data: Data
-    let mimeType: String
-    let fileExtension: String
-    let width: Int
-    let height: Int
+@MainActor
+final class ClipboardFilePreviewProvider {
+    private enum Layout {
+        static let thumbnailPointSize = NSSize(width: 640, height: 640)
+        static let fallbackIconPixelSize = 512
+    }
+
+    private let directories: PlatformAssetDirectories
+    private let fileManager: FileManager
+    private let fileStemFactory: PlatformAssetFileStemFactory
+    private let scaleProvider: @MainActor () -> CGFloat
+
+    init(
+        appSupportURL: URL,
+        fileManager: FileManager = .default,
+        fileStemFactory: PlatformAssetFileStemFactory = PlatformAssetFileStemFactory(),
+        scaleProvider: @escaping @MainActor () -> CGFloat = {
+            NSScreen.main?.backingScaleFactor ?? 2
+        }
+    ) {
+        self.directories = PlatformAssetDirectories(appSupportURL: appSupportURL)
+        self.fileManager = fileManager
+        self.fileStemFactory = fileStemFactory
+        self.scaleProvider = scaleProvider
+    }
+
+    func cachePreview(
+        for files: CapturedClipboardFiles,
+        changeCount: Int
+    ) async -> ClipboardStoredFilePreview? {
+        guard let sourceURL = files.urls.first(where: { fileManager.fileExists(atPath: $0.path) }) else {
+            return nil
+        }
+
+        let scale = scaleProvider()
+        let image = await quickLookThumbnail(for: sourceURL, scale: scale)
+            ?? fallbackIcon(for: sourceURL)
+        guard let pngData = image.pngRepresentation(),
+              !pngData.isEmpty
+        else {
+            return nil
+        }
+
+        let fileStem = fileStemFactory.makeFileStem(prefix: "file-thumbnail", changeCount: changeCount)
+        let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).png")
+        let stagingDirectoryURL = directories.appSupportURL
+            .appendingPathComponent(".staging", isDirectory: true)
+            .appendingPathComponent("file-thumbnails", isDirectory: true)
+        let stagingURL = stagingDirectoryURL.appendingPathComponent("\(fileStem).png")
+
+        do {
+            try fileManager.createDirectory(
+                at: directories.imageThumbnailDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: stagingDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try pngData.write(to: stagingURL, options: .atomic)
+            try fileManager.moveItem(at: stagingURL, to: thumbnailURL)
+        } catch {
+            removeFileIfExists(thumbnailURL)
+            removeFileIfExists(stagingURL)
+            return nil
+        }
+
+        let dimensions = NSImage(data: pngData)?.pixelDimensions ?? image.pixelDimensions
+        return ClipboardStoredFilePreview(
+            relativePath: "thumbnails/\(fileStem).png",
+            mimeType: "image/png",
+            width: dimensions.width,
+            height: dimensions.height,
+            byteCount: pngData.count
+        )
+    }
+
+    private func quickLookThumbnail(for url: URL, scale: CGFloat) async -> NSImage? {
+        let request = QLThumbnailGenerator.Request(
+            fileAt: url,
+            size: Layout.thumbnailPointSize,
+            scale: scale,
+            representationTypes: .thumbnail
+        )
+
+        return await withCheckedContinuation { continuation in
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
+                continuation.resume(returning: representation?.nsImage)
+            }
+        }
+    }
+
+    private func fallbackIcon(for url: URL) -> NSImage {
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icon.size = NSSize(
+            width: Layout.fallbackIconPixelSize,
+            height: Layout.fallbackIconPixelSize
+        )
+        return icon
+    }
+
+    private func removeFileIfExists(_ url: URL) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try? fileManager.removeItem(at: url)
+    }
+}
+
+struct ClipboardCGImageSnapshot: @unchecked Sendable {
+    let image: CGImage
+}
+
+enum ClipboardBitmapImageSource: Sendable {
+    case encodedData(Data, typeIdentifier: String)
+    case cgImage(ClipboardCGImageSnapshot)
+}
+
+struct CapturedClipboardImage: Sendable {
+    let source: ClipboardBitmapImageSource
 
     static func read(from pasteboard: NSPasteboard, skipFileURLCheck: Bool = false) -> CapturedClipboardImage? {
         guard skipFileURLCheck || CapturedClipboardFiles.read(from: pasteboard) == nil else {
             return nil
         }
 
-        for type in [
-            NSPasteboard.PasteboardType.png,
-            NSPasteboard.PasteboardType("public.png"),
-            NSPasteboard.PasteboardType.tiff,
-            NSPasteboard.PasteboardType("public.tiff"),
-            NSPasteboard.PasteboardType("public.jpeg"),
-            NSPasteboard.PasteboardType("public.heic")
-        ] {
-            if let data = pasteboard.data(forType: type),
-               let image = NSImage(data: data),
-               let encodedImage = image.preferredClipboardAssetRepresentation() {
-                return make(image: image, encodedImage: encodedImage)
+        for candidate in pasteboardBitmapDataTypes {
+            if let data = pasteboard.data(forType: candidate.pasteboardType), !data.isEmpty {
+                return CapturedClipboardImage(
+                    source: .encodedData(data, typeIdentifier: candidate.typeIdentifier)
+                )
             }
         }
 
@@ -415,61 +530,69 @@ struct CapturedClipboardImage {
             options: nil
         ) as? [NSImage]
         if let image = images?.first,
-           let encodedImage = image.preferredClipboardAssetRepresentation() {
-            return make(image: image, encodedImage: encodedImage)
+           let snapshot = snapshot(from: image) {
+            return snapshot
         }
 
         return nil
     }
 
-    private static func make(image: NSImage, encodedImage: ClipboardImageRepresentation) -> CapturedClipboardImage {
-        let dimensions = image.pixelDimensions
+    static func snapshot(from image: NSImage) -> CapturedClipboardImage? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
         return CapturedClipboardImage(
-            image: image,
-            data: encodedImage.data,
-            mimeType: encodedImage.mimeType,
-            fileExtension: encodedImage.fileExtension,
-            width: dimensions.width,
-            height: dimensions.height
+            source: .cgImage(ClipboardCGImageSnapshot(image: cgImage))
         )
     }
 
+    private static let pasteboardBitmapDataTypes: [(pasteboardType: NSPasteboard.PasteboardType, typeIdentifier: String)] = [
+        (.png, UTType.png.identifier),
+        (NSPasteboard.PasteboardType("public.png"), UTType.png.identifier),
+        (.tiff, UTType.tiff.identifier),
+        (NSPasteboard.PasteboardType("public.tiff"), UTType.tiff.identifier),
+        (NSPasteboard.PasteboardType("public.jpeg"), UTType.jpeg.identifier),
+        (NSPasteboard.PasteboardType("public.heic"), UTType.heic.identifier)
+    ]
 }
 
 extension CapturedClipboardFiles {
     var clipboardCapturedFiles: ClipboardCapturedFiles {
-        ClipboardCapturedFiles(paths: paths, fileItems: fileItems)
+        ClipboardCapturedFiles(paths: paths, fileItems: fileItems, preview: preview)
     }
 }
 
-extension CapturedClipboardImage {
-    var clipboardCapturedImage: ClipboardCapturedImage {
-        let thumbnail = image.preferredClipboardAssetRepresentation(maxPixelDimension: 420)
-        return ClipboardCapturedImage(
-            data: data,
-            thumbnailData: thumbnail?.mimeType == mimeType ? thumbnail?.data ?? data : data,
-            mimeType: mimeType,
-            fileExtension: fileExtension,
-            width: width,
-            height: height
-        )
+final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked Sendable {
+    enum FinalizationError: Error, Equatable {
+        case imageDecodeFailed
+        case rgbaRenderFailed
+        case webPEncodingFailed
+        case assetWriteFailed
     }
-}
 
-@MainActor
-final class ClipboardImageAssetProvider: ClipboardImageAssetCaching {
+    struct PreparedImageAsset: Sendable {
+        let storedImage: ClipboardStoredImageAsset
+        fileprivate let payloadURL: URL
+        fileprivate let thumbnailURL: URL
+        fileprivate let stagingPayloadURL: URL
+        fileprivate let stagingThumbnailURL: URL
+    }
+
     private let directories: PlatformAssetDirectories
     private let fileManager: FileManager
     private let fileStemFactory: PlatformAssetFileStemFactory
+    private let encoder: ClipboardWebPEncoding
 
     init(
         appSupportURL: URL,
         fileManager: FileManager = .default,
-        fileStemFactory: PlatformAssetFileStemFactory = PlatformAssetFileStemFactory()
+        fileStemFactory: PlatformAssetFileStemFactory = PlatformAssetFileStemFactory(),
+        encoder: ClipboardWebPEncoding = RustClipboardWebPEncoder()
     ) {
         self.directories = PlatformAssetDirectories(appSupportURL: appSupportURL)
         self.fileManager = fileManager
         self.fileStemFactory = fileStemFactory
+        self.encoder = encoder
     }
 
     func cacheImage(_ capturedImage: ClipboardCapturedImage, changeCount: Int) -> ClipboardStoredImageAsset? {
@@ -477,6 +600,11 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching {
         let fileExtension = capturedImage.normalizedImageFileExtension
         let payloadURL = directories.imagePayloadDirectoryURL.appendingPathComponent("\(fileStem).\(fileExtension)")
         let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).\(fileExtension)")
+        let stagingDirectoryURL = directories.appSupportURL
+            .appendingPathComponent(".staging", isDirectory: true)
+            .appendingPathComponent("image-captures", isDirectory: true)
+        let stagingPayloadURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-payload.\(fileExtension)")
+        let stagingThumbnailURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-thumbnail.\(fileExtension)")
         let thumbnailData = capturedImage.thumbnailData
 
         do {
@@ -488,9 +616,24 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching {
                 at: directories.imageThumbnailDirectoryURL,
                 withIntermediateDirectories: true
             )
-            try capturedImage.data.write(to: payloadURL, options: .atomic)
-            try thumbnailData.write(to: thumbnailURL, options: .atomic)
+            try fileManager.createDirectory(
+                at: stagingDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try capturedImage.data.write(to: stagingPayloadURL, options: .atomic)
+            try thumbnailData.write(to: stagingThumbnailURL, options: .atomic)
+            try fileManager.moveItem(at: stagingPayloadURL, to: payloadURL)
+            do {
+                try fileManager.moveItem(at: stagingThumbnailURL, to: thumbnailURL)
+            } catch {
+                removeFileIfExists(payloadURL)
+                throw error
+            }
         } catch {
+            removeFileIfExists(payloadURL)
+            removeFileIfExists(thumbnailURL)
+            removeFileIfExists(stagingPayloadURL)
+            removeFileIfExists(stagingThumbnailURL)
             return nil
         }
 
@@ -503,6 +646,256 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching {
             byteCount: capturedImage.data.count
         )
     }
+
+    func prepareImage(
+        _ capturedImage: CapturedClipboardImage,
+        changeCount: Int
+    ) -> Result<PreparedImageAsset, FinalizationError> {
+        let fileStem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
+        let payloadURL = directories.imagePayloadDirectoryURL.appendingPathComponent("\(fileStem).webp")
+        let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).webp")
+        let stagingDirectoryURL = directories.appSupportURL
+            .appendingPathComponent(".staging", isDirectory: true)
+            .appendingPathComponent("image-captures", isDirectory: true)
+        let stagingPayloadURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-payload.webp")
+        let stagingThumbnailURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-thumbnail.webp")
+        let prepared = PreparedImageAsset(
+            storedImage: ClipboardStoredImageAsset(
+                payloadRelativePath: "assets/\(fileStem).webp",
+                previewRelativePath: "thumbnails/\(fileStem).webp",
+                mimeType: "image/webp",
+                width: 0,
+                height: 0,
+                byteCount: 0
+            ),
+            payloadURL: payloadURL,
+            thumbnailURL: thumbnailURL,
+            stagingPayloadURL: stagingPayloadURL,
+            stagingThumbnailURL: stagingThumbnailURL
+        )
+
+        do {
+            try fileManager.createDirectory(
+                at: directories.imagePayloadDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: directories.imageThumbnailDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: stagingDirectoryURL,
+                withIntermediateDirectories: true
+            )
+
+            let fullImage = try renderFullSizeRGBA(from: capturedImage.source)
+            guard let payloadData = encoder.encodeLosslessRGBA(
+                fullImage.data,
+                width: fullImage.width,
+                height: fullImage.height
+            ), !payloadData.isEmpty else {
+                throw FinalizationError.webPEncodingFailed
+            }
+
+            let thumbnailImage = try renderThumbnailRGBA(from: capturedImage.source)
+            guard let thumbnailData = encoder.encodeLosslessRGBA(
+                thumbnailImage.data,
+                width: thumbnailImage.width,
+                height: thumbnailImage.height
+            ), !thumbnailData.isEmpty else {
+                throw FinalizationError.webPEncodingFailed
+            }
+
+            try payloadData.write(to: stagingPayloadURL, options: .atomic)
+            try thumbnailData.write(to: stagingThumbnailURL, options: .atomic)
+            try fileManager.moveItem(at: stagingPayloadURL, to: payloadURL)
+            do {
+                try fileManager.moveItem(at: stagingThumbnailURL, to: thumbnailURL)
+            } catch {
+                removeFileIfExists(payloadURL)
+                throw error
+            }
+
+            return .success(PreparedImageAsset(
+                storedImage: ClipboardStoredImageAsset(
+                    payloadRelativePath: "assets/\(fileStem).webp",
+                    previewRelativePath: "thumbnails/\(fileStem).webp",
+                    mimeType: "image/webp",
+                    width: fullImage.width,
+                    height: fullImage.height,
+                    byteCount: payloadData.count
+                ),
+                payloadURL: payloadURL,
+                thumbnailURL: thumbnailURL,
+                stagingPayloadURL: stagingPayloadURL,
+                stagingThumbnailURL: stagingThumbnailURL
+            ))
+        } catch let error as FinalizationError {
+            removePreparedImage(prepared)
+            return .failure(error)
+        } catch {
+            removePreparedImage(prepared)
+            return .failure(.assetWriteFailed)
+        }
+    }
+
+    func removePreparedImage(_ preparedImage: PreparedImageAsset) {
+        removeFileIfExists(preparedImage.payloadURL)
+        removeFileIfExists(preparedImage.thumbnailURL)
+        removeFileIfExists(preparedImage.stagingPayloadURL)
+        removeFileIfExists(preparedImage.stagingThumbnailURL)
+    }
+
+    private func removeFileIfExists(_ url: URL) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try? fileManager.removeItem(at: url)
+    }
+
+    private func renderFullSizeRGBA(
+        from source: ClipboardBitmapImageSource
+    ) throws -> RenderedClipboardRGBAImage {
+        switch source {
+        case .encodedData(let data, _):
+            let cgImage = try transformedImage(from: data, maxPixelDimension: nil)
+            return try Self.renderRGBA(from: cgImage)
+
+        case .cgImage(let snapshot):
+            return try Self.renderRGBA(from: snapshot.image)
+        }
+    }
+
+    private func renderThumbnailRGBA(
+        from source: ClipboardBitmapImageSource
+    ) throws -> RenderedClipboardRGBAImage {
+        switch source {
+        case .encodedData(let data, _):
+            let cgImage = try transformedImage(from: data, maxPixelDimension: 420)
+            return try Self.renderRGBA(from: cgImage)
+
+        case .cgImage(let snapshot):
+            return try Self.renderRGBA(from: snapshot.image, maxPixelDimension: 420)
+        }
+    }
+
+    private func transformedImage(
+        from data: Data,
+        maxPixelDimension: Int?
+    ) throws -> CGImage {
+        let sourceOptions = [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            throw FinalizationError.imageDecodeFailed
+        }
+
+        var options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCache: false
+        ]
+        if let maxPixelDimension {
+            options[kCGImageSourceThumbnailMaxPixelSize] = maxPixelDimension
+        }
+
+        guard let image = CGImageSourceCreateThumbnailAtIndex(
+            imageSource,
+            0,
+            options as CFDictionary
+        ) else {
+            throw FinalizationError.imageDecodeFailed
+        }
+        return image
+    }
+
+    private struct RenderedClipboardRGBAImage {
+        let data: Data
+        let width: Int
+        let height: Int
+    }
+
+    private static func renderRGBA(
+        from cgImage: CGImage,
+        maxPixelDimension: Int? = nil
+    ) throws -> RenderedClipboardRGBAImage {
+        let sourceWidth = cgImage.width
+        let sourceHeight = cgImage.height
+        guard sourceWidth > 0, sourceHeight > 0 else {
+            throw FinalizationError.rgbaRenderFailed
+        }
+
+        let targetSize = targetPixelSize(
+            width: sourceWidth,
+            height: sourceHeight,
+            maxPixelDimension: maxPixelDimension
+        )
+        let rowByteCount = targetSize.width.multipliedReportingOverflow(by: 4)
+        guard !rowByteCount.overflow else {
+            throw FinalizationError.rgbaRenderFailed
+        }
+        let bytesPerRow = rowByteCount.partialValue
+        let byteCount = bytesPerRow.multipliedReportingOverflow(by: targetSize.height)
+        guard !byteCount.overflow else {
+            throw FinalizationError.rgbaRenderFailed
+        }
+        var data = Data(count: byteCount.partialValue)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        let rendered = data.withUnsafeMutableBytes { bytes in
+            guard let baseAddress = bytes.baseAddress,
+                  let context = CGContext(
+                    data: baseAddress,
+                    width: targetSize.width,
+                    height: targetSize.height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: colorSpace,
+                    bitmapInfo: bitmapInfo
+                  )
+            else {
+                return false
+            }
+
+            context.interpolationQuality = .high
+            context.draw(
+                cgImage,
+                in: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: targetSize.width,
+                    height: targetSize.height
+                )
+            )
+            return true
+        }
+
+        guard rendered else {
+            throw FinalizationError.rgbaRenderFailed
+        }
+        return RenderedClipboardRGBAImage(
+            data: data,
+            width: targetSize.width,
+            height: targetSize.height
+        )
+    }
+
+    private static func targetPixelSize(
+        width: Int,
+        height: Int,
+        maxPixelDimension: Int?
+    ) -> (width: Int, height: Int) {
+        guard let maxPixelDimension,
+              max(width, height) > maxPixelDimension
+        else {
+            return (width, height)
+        }
+
+        let scale = Double(maxPixelDimension) / Double(max(width, height))
+        return (
+            max(Int(Double(width) * scale), 1),
+            max(Int(Double(height) * scale), 1)
+        )
+    }
 }
 
 fileprivate struct ClipboardImageRepresentation {
@@ -511,11 +904,22 @@ fileprivate struct ClipboardImageRepresentation {
     let fileExtension: String
 }
 
-fileprivate struct ClipboardImageEncodingCandidate {
-    let typeIdentifier: String
-    let mimeType: String
-    let fileExtension: String
-    let quality: CGFloat?
+protocol ClipboardWebPEncoding: Sendable {
+    func encodeLosslessRGBA(_ rgbaData: Data, width: Int, height: Int) -> Data?
+}
+
+struct RustClipboardWebPEncoder: ClipboardWebPEncoding {
+    private let client = RustCoreClient()
+
+    func encodeLosslessRGBA(_ rgbaData: Data, width: Int, height: Int) -> Data? {
+        switch client.encodeLosslessWebP(rgbaData: rgbaData, width: width, height: height) {
+        case .success(let data):
+            return data
+
+        case .failure:
+            return nil
+        }
+    }
 }
 
 private extension ClipboardCapturedImage {
@@ -531,6 +935,9 @@ private extension ClipboardCapturedImage {
 }
 
 extension NSImage {
+    private static let clipboardWebPMimeType = "image/webp"
+    private static let clipboardWebPFileExtension = "webp"
+
     var pixelDimensions: (width: Int, height: Int) {
         if let bitmap = representations
             .compactMap({ $0 as? NSBitmapImageRep })
@@ -545,40 +952,7 @@ extension NSImage {
     }
 
     fileprivate func preferredClipboardAssetRepresentation(maxPixelDimension: CGFloat? = nil) -> ClipboardImageRepresentation? {
-        let candidates = [
-            ClipboardImageEncodingCandidate(
-                typeIdentifier: UTType.heic.identifier,
-                mimeType: "image/heic",
-                fileExtension: "heic",
-                quality: 0.88
-            ),
-            ClipboardImageEncodingCandidate(
-                typeIdentifier: UTType.jpeg.identifier,
-                mimeType: "image/jpeg",
-                fileExtension: "jpg",
-                quality: 0.90
-            ),
-            ClipboardImageEncodingCandidate(
-                typeIdentifier: UTType.png.identifier,
-                mimeType: "image/png",
-                fileExtension: "png",
-                quality: nil
-            )
-        ]
-
-        for candidate in candidates {
-            if let representation = encodedRepresentation(
-                typeIdentifier: candidate.typeIdentifier,
-                mimeType: candidate.mimeType,
-                fileExtension: candidate.fileExtension,
-                quality: candidate.quality,
-                maxPixelDimension: maxPixelDimension
-            ) {
-                return representation
-            }
-        }
-
-        return nil
+        losslessWebPRepresentation(maxPixelDimension: maxPixelDimension)
     }
 
     func pngRepresentation(maxPixelDimension: CGFloat? = nil) -> Data? {
@@ -589,6 +963,28 @@ extension NSImage {
             quality: nil,
             maxPixelDimension: maxPixelDimension
         )?.data
+    }
+
+    private func losslessWebPRepresentation(
+        maxPixelDimension: CGFloat?,
+        encoder: ClipboardWebPEncoding = RustClipboardWebPEncoder()
+    ) -> ClipboardImageRepresentation? {
+        guard let rgbaImage = renderedRGBAData(maxPixelDimension: maxPixelDimension),
+              let data = encoder.encodeLosslessRGBA(
+                rgbaImage.data,
+                width: rgbaImage.width,
+                height: rgbaImage.height
+              ),
+              !data.isEmpty
+        else {
+            return nil
+        }
+
+        return ClipboardImageRepresentation(
+            data: data,
+            mimeType: Self.clipboardWebPMimeType,
+            fileExtension: Self.clipboardWebPFileExtension
+        )
     }
 
     private func encodedRepresentation(
@@ -673,5 +1069,51 @@ extension NSImage {
         NSGraphicsContext.restoreGraphicsState()
 
         return bitmap.cgImage
+    }
+
+    private func renderedRGBAData(maxPixelDimension: CGFloat? = nil) -> (data: Data, width: Int, height: Int)? {
+        guard let cgImage = renderedCGImage(maxPixelDimension: maxPixelDimension) else {
+            return nil
+        }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else {
+            return nil
+        }
+
+        let rowByteCount = width.multipliedReportingOverflow(by: 4)
+        guard !rowByteCount.overflow else {
+            return nil
+        }
+        let bytesPerRow = rowByteCount.partialValue
+        let byteCount = bytesPerRow.multipliedReportingOverflow(by: height)
+        guard !byteCount.overflow else {
+            return nil
+        }
+        var data = Data(count: byteCount.partialValue)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        let rendered = data.withUnsafeMutableBytes { bytes in
+            guard let baseAddress = bytes.baseAddress,
+                  let context = CGContext(
+                    data: baseAddress,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: colorSpace,
+                    bitmapInfo: bitmapInfo
+                  )
+            else {
+                return false
+            }
+
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+
+        return rendered ? (data, width, height) : nil
     }
 }

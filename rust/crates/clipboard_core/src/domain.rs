@@ -113,7 +113,6 @@ pub enum LinkMetadataState {
     Fetching,
     Ready,
     Failed,
-    Disabled,
     Stale,
 }
 
@@ -124,7 +123,6 @@ impl LinkMetadataState {
             Self::Fetching => "fetching",
             Self::Ready => "ready",
             Self::Failed => "failed",
-            Self::Disabled => "disabled",
             Self::Stale => "stale",
         }
     }
@@ -135,7 +133,6 @@ impl LinkMetadataState {
             "fetching" => Self::Fetching,
             "ready" => Self::Ready,
             "failed" => Self::Failed,
-            "disabled" => Self::Disabled,
             "stale" => Self::Stale,
             _ => Self::Failed,
         }
@@ -153,6 +150,29 @@ pub struct LinkMetadataSummary {
     pub image_asset_path: Option<String>,
     pub metadata_state: LinkMetadataState,
     pub fetched_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkMetadataFetchCandidate {
+    pub item_id: String,
+    pub canonical_url: String,
+    pub display_url: String,
+    pub host: String,
+    pub fetch_attempts: i64,
+    pub lease_started_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompleteLinkMetadataFetchRequest {
+    pub item_id: String,
+    pub lease_started_at_ms: i64,
+    pub canonical_url: String,
+    pub display_url: String,
+    pub host: String,
+    pub title: Option<String>,
+    pub site_name: Option<String>,
+    pub icon_relative_path: Option<String>,
+    pub image_relative_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +197,7 @@ pub struct ClipboardItemSummary {
     pub source_app_id: Option<String>,
     pub source_app_name: Option<String>,
     pub source_app_icon_path: Option<String>,
+    pub source_app_icon_header_color: Option<i64>,
     pub preview_asset_path: Option<String>,
     pub payload_asset_path: Option<String>,
     pub source_confidence: SourceConfidence,
@@ -196,6 +217,7 @@ pub struct SourceAppSummary {
     pub bundle_id: Option<String>,
     pub name: String,
     pub icon_path: Option<String>,
+    pub icon_header_color: Option<i64>,
     pub item_count: i64,
     pub last_copied_at_ms: i64,
 }
@@ -327,6 +349,11 @@ pub struct CaptureImageRequest {
 pub struct CaptureFilesRequest {
     pub file_paths: Vec<String>,
     pub file_items: Vec<CapturedFileMetadata>,
+    pub preview_relative_path: Option<String>,
+    pub preview_mime_type: Option<String>,
+    pub preview_width: Option<i64>,
+    pub preview_height: Option<i64>,
+    pub preview_byte_count: i64,
     pub snapshot_relative_path: Option<String>,
     pub snapshot_byte_count: i64,
     pub source_bundle_id: Option<String>,
@@ -509,8 +536,6 @@ impl Default for KeyboardShortcut {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkPreviewPreferences {
-    #[serde(default)]
-    pub metadata_enabled: bool,
     #[serde(default = "default_true")]
     pub web_preview_enabled: bool,
 }
@@ -518,7 +543,6 @@ pub struct LinkPreviewPreferences {
 impl Default for LinkPreviewPreferences {
     fn default() -> Self {
         Self {
-            metadata_enabled: false,
             web_preview_enabled: true,
         }
     }

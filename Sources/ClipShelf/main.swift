@@ -29,6 +29,26 @@ private func runClipShelfApp() {
         Darwin.exit(0)
     }
 
+    if PanelReconcileBenchmarkCommand.shouldRunBenchmark(arguments: CommandLine.arguments) {
+        do {
+            try PanelReconcileBenchmarkCommand.runBenchmark(arguments: CommandLine.arguments)
+        } catch {
+            FileHandle.standardError.write(Data("panel reconcile benchmark failed: \(error.localizedDescription)\n".utf8))
+            Darwin.exit(1)
+        }
+        Darwin.exit(0)
+    }
+
+    if PanelReconcileBenchmarkCommand.shouldRunScrollSmoke(arguments: CommandLine.arguments) {
+        do {
+            try PanelReconcileBenchmarkCommand.runScrollSmoke(arguments: CommandLine.arguments)
+        } catch {
+            FileHandle.standardError.write(Data("panel scroll smoke failed: \(error.localizedDescription)\n".utf8))
+            Darwin.exit(1)
+        }
+        Darwin.exit(0)
+    }
+
     if RealFunctionQACommand.shouldRun(arguments: CommandLine.arguments) {
         Task { @MainActor in
             do {

@@ -40,6 +40,16 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "file_items_metadata_schema",
         sql: FILE_ITEMS_METADATA_SCHEMA,
     },
+    Migration {
+        version: 7,
+        name: "link_metadata_without_disabled_state",
+        sql: LINK_METADATA_WITHOUT_DISABLED_STATE,
+    },
+    Migration {
+        version: 8,
+        name: "source_app_icon_header_color_cache",
+        sql: SOURCE_APP_ICON_HEADER_COLOR_CACHE_SCHEMA,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -406,4 +416,102 @@ CREATE INDEX IF NOT EXISTS ix_clipboard_file_items_item
 
 CREATE INDEX IF NOT EXISTS ix_clipboard_file_items_path
     ON clipboard_file_items(path);
+"#;
+
+const LINK_METADATA_WITHOUT_DISABLED_STATE: &str = r#"
+DROP INDEX IF EXISTS ix_link_metadata_state_retry;
+DROP INDEX IF EXISTS ix_link_metadata_canonical_url;
+
+ALTER TABLE link_metadata RENAME TO link_metadata_v6;
+
+CREATE TABLE link_metadata (
+    item_id TEXT PRIMARY KEY REFERENCES clipboard_items(id) ON DELETE CASCADE,
+    original_text TEXT NOT NULL,
+    canonical_url TEXT NOT NULL,
+    display_url TEXT NOT NULL,
+    host TEXT NOT NULL,
+    title TEXT,
+    site_name TEXT,
+    icon_relative_path TEXT,
+    image_relative_path TEXT,
+    metadata_state TEXT NOT NULL DEFAULT 'pending'
+        CHECK (metadata_state IN ('pending', 'fetching', 'ready', 'failed', 'stale')),
+    failure_code TEXT,
+    fetch_attempts INTEGER NOT NULL DEFAULT 0 CHECK (fetch_attempts >= 0),
+    last_requested_at_ms INTEGER,
+    fetched_at_ms INTEGER,
+    next_retry_at_ms INTEGER,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+
+INSERT INTO link_metadata (
+    item_id,
+    original_text,
+    canonical_url,
+    display_url,
+    host,
+    title,
+    site_name,
+    icon_relative_path,
+    image_relative_path,
+    metadata_state,
+    failure_code,
+    fetch_attempts,
+    last_requested_at_ms,
+    fetched_at_ms,
+    next_retry_at_ms,
+    created_at_ms,
+    updated_at_ms
+)
+SELECT
+    item_id,
+    original_text,
+    canonical_url,
+    display_url,
+    host,
+    title,
+    site_name,
+    icon_relative_path,
+    image_relative_path,
+    CASE
+        WHEN metadata_state = 'disabled' AND failure_code = 'privacy_sensitive' THEN 'failed'
+        WHEN metadata_state = 'disabled' AND fetched_at_ms IS NOT NULL AND failure_code IS NULL THEN 'ready'
+        WHEN metadata_state = 'disabled' THEN 'pending'
+        ELSE metadata_state
+    END,
+    CASE
+        WHEN metadata_state = 'disabled' AND failure_code = 'privacy_sensitive' THEN failure_code
+        WHEN metadata_state = 'disabled' THEN NULL
+        ELSE failure_code
+    END,
+    fetch_attempts,
+    last_requested_at_ms,
+    fetched_at_ms,
+    CASE
+        WHEN metadata_state = 'disabled' THEN NULL
+        ELSE next_retry_at_ms
+    END,
+    created_at_ms,
+    updated_at_ms
+FROM link_metadata_v6;
+
+DROP TABLE link_metadata_v6;
+
+CREATE INDEX IF NOT EXISTS ix_link_metadata_state_retry
+    ON link_metadata(metadata_state, next_retry_at_ms, updated_at_ms);
+
+CREATE INDEX IF NOT EXISTS ix_link_metadata_canonical_url
+    ON link_metadata(canonical_url);
+"#;
+
+const SOURCE_APP_ICON_HEADER_COLOR_CACHE_SCHEMA: &str = r#"
+ALTER TABLE source_app_icons
+    ADD COLUMN header_color_argb INTEGER;
+
+ALTER TABLE source_app_icons
+    ADD COLUMN header_color_cache_version INTEGER;
+
+ALTER TABLE source_app_icons
+    ADD COLUMN header_color_updated_at_ms INTEGER;
 "#;

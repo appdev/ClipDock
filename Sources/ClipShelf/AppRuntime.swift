@@ -92,13 +92,13 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         static let resizeHandleHeight: CGFloat = 16
         static let controlBarHeight: CGFloat = 52
         static let sectionSpacing: CGFloat = 12
+        static let horizontalContentInset: CGFloat = 22
         static let defaultItemSide: CGFloat = 218
         static let compactItemSide: CGFloat = 156
         static let imagePreviewMinHeight: CGFloat = 78
         static let imagePreviewMaxHeight: CGFloat = 116
-        static let scrollEdgeInset: CGFloat = 2
         static let panelCornerRadius: CGFloat = 18
-        static let cardCornerRadius: CGFloat = 10
+        static let cardCornerRadius: CGFloat = 15
         static let innerCornerRadius: CGFloat = 8
         static let chipCornerRadius: CGFloat = 15
         static let cardHeaderHeight: CGFloat = 48
@@ -171,13 +171,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             stack.orientation = .horizontal
             stack.alignment = .top
             stack.spacing = 22
+            stack.edgeInsets = NSEdgeInsets(
+                top: 0,
+                left: Layout.horizontalContentInset,
+                bottom: 0,
+                right: Layout.horizontalContentInset
+            )
             stack.userInterfaceLayoutDirection = .leftToRight
             stack.translatesAutoresizingMaskIntoConstraints = false
 
             documentView.addSubview(stack)
             NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor, constant: Layout.scrollEdgeInset),
-                stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor, constant: -Layout.scrollEdgeInset),
+                stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
+                stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
                 stack.topAnchor.constraint(equalTo: documentView.topAnchor),
                 stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor)
             ])
@@ -322,13 +328,17 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private weak var filterRow: NSStackView?
     private weak var toolbarSearchButton: PanelActionButton?
     private var appSupportDirectory: URL?
+    private var sourceIconHeaderColorWriter: SourceAppIconHeaderColorWriter?
     private var linkWebPreviewEnabled = true
     private let interactionController = PanelInteractionController()
     private var commandHintMonitor: Any?
     private var backgroundHostState: BackgroundHostState = .none
     private var blockingPanelOperationDepth = 0
     private var cardAssetResolver: PanelCardAssetResolver {
-        PanelCardAssetResolver(appSupportDirectory: appSupportDirectory)
+        PanelCardAssetResolver(
+            appSupportDirectory: appSupportDirectory,
+            sourceIconHeaderColorWriter: sourceIconHeaderColorWriter
+        )
     }
     private var theme: ClipShelfThemePalette {
         ClipShelfTheme.current(for: self)
@@ -372,6 +382,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var renderedCardStatesByID: [String: PanelItemCardViewState] {
         get { activeListPage.renderedCardStatesByID }
         set { activeListPage.renderedCardStatesByID = newValue }
+    }
+    private var renderedCardViewsByID: [String: ClipboardItemCardBox] {
+        get { activeListPage.renderedCardViewsByID }
+        set { activeListPage.renderedCardViewsByID = newValue }
+    }
+    private var renderedCardArtifactsByID: [String: PanelItemCardRenderArtifacts] {
+        get { activeListPage.renderedCardArtifactsByID }
+        set { activeListPage.renderedCardArtifactsByID = newValue }
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -432,6 +450,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     func updateAppSupportDirectory(_ url: URL) {
         appSupportDirectory = url
+    }
+
+    func updateSourceIconHeaderColorWriter(_ writer: SourceAppIconHeaderColorWriter?) {
+        sourceIconHeaderColorWriter = writer
     }
 
     func updatePinboards(_ pinboards: [RustPinboardSummary]) {
@@ -526,8 +548,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let removableScopes = listPageSurfaces.keys.filter { $0 != currentScope }
         for scope in removableScopes {
             if let page = listPageSurfaces.removeValue(forKey: scope) {
-                NSLayoutConstraint.deactivate(page.hostConstraints)
-                page.scrollView.removeFromSuperview()
+                removeListPageSurface(page)
             }
         }
         listPageAccessOrder.removeAll { $0 != currentScope }
@@ -539,8 +560,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
         for scope in removableScopes {
             if let page = listPageSurfaces.removeValue(forKey: scope) {
-                NSLayoutConstraint.deactivate(page.hostConstraints)
-                page.scrollView.removeFromSuperview()
+                removeListPageSurface(page)
             }
         }
         listPageAccessOrder.removeAll { $0.pinboardID == pinboardID && $0 != currentListScope }
@@ -554,8 +574,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
         for scope in removableScopes {
             if let page = listPageSurfaces.removeValue(forKey: scope) {
-                NSLayoutConstraint.deactivate(page.hostConstraints)
-                page.scrollView.removeFromSuperview()
+                removeListPageSurface(page)
             }
         }
         listPageAccessOrder.removeAll { scope in
@@ -639,7 +658,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let cardCount = max(itemBandStack.arrangedSubviews.count, 1)
         return CGFloat(cardCount) * itemSide
             + CGFloat(max(cardCount - 1, 0)) * itemBandStack.spacing
-            + Layout.scrollEdgeInset * 2
+            + Layout.horizontalContentInset * 2
     }
 
     private func handleItemBandScrollDidChange() {
@@ -713,6 +732,30 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         NSLayoutConstraint.activate(page.hostConstraints)
     }
 
+    private func removeListPageSurface(_ page: ListPageSurface) {
+        for view in page.stack.arrangedSubviews {
+            let itemID = (view as? ClipboardItemCardBox)?.itemID
+            removeCard(
+                view,
+                from: page.stack,
+                artifacts: itemID.flatMap { page.renderedCardArtifactsByID[$0] }
+            )
+        }
+        page.renderedCardStatesByID.removeAll()
+        page.renderedCardViewsByID.removeAll()
+        page.renderedCardArtifactsByID.removeAll()
+        page.itemWidthConstraints.removeAll()
+        page.itemHeightConstraints.removeAll()
+        page.itemPreviewHeightConstraints.removeAll()
+        page.itemPreviewWidthConstraints.removeAll()
+        page.itemImagePreviewViews.removeAll()
+        page.itemBodyLabels.removeAll()
+        NSLayoutConstraint.deactivate(page.hostConstraints)
+        page.hostConstraints.removeAll()
+        page.scrollView.onScrollDidChange = nil
+        page.scrollView.removeFromSuperview()
+    }
+
     private func recordListPageAccess(_ scope: ClipboardListScope) {
         listPageAccessOrder.removeAll { $0 == scope }
         listPageAccessOrder.append(scope)
@@ -727,8 +770,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
         for scope in nonRetainedScopes {
             if let page = listPageSurfaces.removeValue(forKey: scope) {
-                NSLayoutConstraint.deactivate(page.hostConstraints)
-                page.scrollView.removeFromSuperview()
+                removeListPageSurface(page)
             }
             cachedListScopeStates.removeValue(forKey: scope)
             listPageAccessOrder.removeAll { $0 == scope }
@@ -747,8 +789,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             else {
                 continue
             }
-            NSLayoutConstraint.deactivate(page.hostConstraints)
-            page.scrollView.removeFromSuperview()
+            removeListPageSurface(page)
             listPageAccessOrder.removeAll { $0 == scope }
             if listPageSurfaces.keys.filter({ $0.pinboardID != nil && $0 != currentListScope }).count
                 <= Self.maxRetainedPinboardListPages {
@@ -786,8 +827,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             controlBar.topAnchor.constraint(equalTo: topAnchor),
             controlBar.heightAnchor.constraint(equalToConstant: Layout.controlBarHeight),
 
-            itemBand.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.padding),
-            itemBand.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.padding),
+            itemBand.leadingAnchor.constraint(equalTo: leadingAnchor),
+            itemBand.trailingAnchor.constraint(equalTo: trailingAnchor),
             itemBand.topAnchor.constraint(equalTo: controlBar.bottomAnchor, constant: Layout.sectionSpacing),
             itemBand.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.padding)
         ])
@@ -1257,10 +1298,28 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         guard let scrollView = itemBandScrollView else { return }
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
-        let maxX = max(0, itemBandDocumentView.frame.width - scrollView.contentView.bounds.width)
-        let clampedOrigin = NSPoint(x: min(max(0, origin.x), maxX), y: 0)
+        let range = horizontalScrollRange(for: scrollView)
+        let clampedOrigin = NSPoint(
+            x: min(max(range.lowerBound, origin.x), range.upperBound),
+            y: origin.y
+        )
         scrollView.contentView.scroll(to: clampedOrigin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func restoreInitialHorizontalScrollOriginIfNeeded() {
+        guard let scrollView = itemBandScrollView else { return }
+        restoreScrollOriginIfNeeded(NSPoint(
+            x: horizontalScrollRange(for: scrollView).lowerBound,
+            y: scrollView.contentView.bounds.origin.y
+        ))
+    }
+
+    private func horizontalScrollRange(for scrollView: NSScrollView) -> ClosedRange<CGFloat> {
+        let minX: CGFloat = 0
+        let maxX = itemBandDocumentView.frame.width
+            - scrollView.contentView.bounds.width
+        return minX...max(minX, maxX)
     }
 
     private func switchListPage(to scope: ClipboardListScope) {
@@ -1301,16 +1360,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         case .items(let items):
             renderItemCards(items.map(makeItemCard))
         }
-        if preserveScrollPosition, let preservedOrigin, let scrollView = itemBandScrollView {
-            scrollView.contentView.scroll(to: preservedOrigin)
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-        } else if scrollSelectedItem {
+        if preserveScrollPosition, let preservedOrigin {
+            restoreScrollOriginIfNeeded(preservedOrigin)
+        } else {
+            restoreInitialHorizontalScrollOriginIfNeeded()
+        }
+
+        if !preserveScrollPosition, scrollSelectedItem {
             scrollSelectedItemIntoView()
         }
     }
 
     private func applyRenderPlan(_ plan: PanelContentRenderPlan) {
-        if plan.shouldClosePreview {
+        if plan.previewClosePolicy == .close {
             previewPopoverController.close()
         }
 
@@ -1322,9 +1384,98 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             )
         case .appendItems(let items, let preserveScrollPosition):
             appendItemsToRenderedList(items, preserveScrollPosition: preserveScrollPosition)
+        case .reconcileItems(let items, let scrollSelectedItem, let preserveScrollPosition):
+            reconcileRenderedList(
+                items,
+                scrollSelectedItem: scrollSelectedItem,
+                preserveScrollPosition: preserveScrollPosition,
+                previewClosePolicy: plan.previewClosePolicy
+            )
         case .noVisualChange:
             break
         }
+    }
+
+    private func reconcileRenderedList(
+        _ items: [RustClipboardItemSummary],
+        scrollSelectedItem: Bool,
+        preserveScrollPosition: Bool,
+        previewClosePolicy: PanelPreviewClosePolicy
+    ) {
+        let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
+        let previewedItemID = previewPopoverController.previewedItemID
+        let oldViewsByID = renderedCardViewsByID
+        let oldStatesByID = renderedCardStatesByID
+        let oldArtifactsByID = renderedCardArtifactsByID
+
+        let itemStates = items.map { item in
+            (item: item, state: makeItemCardState(item))
+        }
+        let newStatesByID = Dictionary(uniqueKeysWithValues: itemStates.compactMap { entry in
+            entry.state.itemID.map { ($0, entry.state) }
+        })
+
+        var finalCardsByID: [String: PanelRenderedItemCard] = [:]
+        for (item, state) in itemStates {
+            guard let itemID = state.itemID else { continue }
+            let callbacks = makeItemCardCallbacks(for: item)
+            if let card = oldViewsByID[itemID],
+               let previousState = oldStatesByID[itemID],
+               let artifacts = oldArtifactsByID[itemID],
+               reusableCardIdentityState(previousState) == reusableCardIdentityState(state) {
+                finalCardsByID[itemID] = updateReusableCard(
+                    card,
+                    state: state,
+                    artifacts: artifacts,
+                    toolTip: callbacks.toolTip,
+                    onSelect: callbacks.onSelect,
+                    onDoubleClick: callbacks.onDoubleClick,
+                    onContextMenu: callbacks.onContextMenu
+                )
+            } else {
+                finalCardsByID[itemID] = renderCard(
+                    state,
+                    toolTip: callbacks.toolTip,
+                    onSelect: callbacks.onSelect,
+                    onDoubleClick: callbacks.onDoubleClick,
+                    onContextMenu: callbacks.onContextMenu
+                )
+            }
+        }
+
+        for (oldID, oldCard) in oldViewsByID {
+            let shouldRemove = newStatesByID[oldID].map { newState in
+                guard let oldState = oldStatesByID[oldID] else { return true }
+                return reusableCardIdentityState(oldState) != reusableCardIdentityState(newState)
+            } ?? true
+            if shouldRemove {
+                removeRenderedCard(oldCard, artifacts: oldArtifactsByID[oldID])
+            }
+        }
+
+        let orderedRenderedCards = itemStates.compactMap { entry in
+            entry.state.itemID.flatMap { finalCardsByID[$0] }
+        }
+        for (targetIndex, renderedCard) in orderedRenderedCards.enumerated() {
+            moveOrInsertRenderedCard(renderedCard.view, at: targetIndex)
+        }
+
+        let finalViews = Set(orderedRenderedCards.map { ObjectIdentifier($0.view) })
+        for view in itemBandStack.arrangedSubviews where !finalViews.contains(ObjectIdentifier(view)) {
+            removeRenderedCard(view, artifacts: nil)
+        }
+
+        rebuildRenderedCardTracking(from: orderedRenderedCards)
+        activeListPage.hasRenderedContent = true
+        refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
+        if !preserveScrollPosition, scrollSelectedItem {
+            scrollSelectedItemIntoView()
+        }
+        updatePreviewAfterReconcile(
+            previewedItemID: previewedItemID,
+            validItemIDs: Set(items.map(\.id)),
+            closePolicy: previewClosePolicy
+        )
     }
 
     private func appendItemsToRenderedList(
@@ -1355,9 +1506,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         )
         updatePanelHeight(currentPanelHeight)
 
-        if preserveScrollPosition, let preservedOrigin, let scrollView = itemBandScrollView {
-            scrollView.contentView.scroll(to: preservedOrigin)
-            scrollView.reflectScrolledClipView(scrollView.contentView)
+        if preserveScrollPosition, let preservedOrigin {
+            restoreScrollOriginIfNeeded(preservedOrigin)
+        } else {
+            restoreInitialHorizontalScrollOriginIfNeeded()
         }
 
         refreshVisibleCommandHints()
@@ -1368,6 +1520,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
         if commandPressed,
            let character = event.charactersIgnoringModifiers?.lowercased() {
+            if character == "c" {
+                applyInteractionAction(.copySelectedItem)
+                return true
+            }
+
             if character == "f" {
                 applyInteractionAction(.focusSearch)
                 return true
@@ -1394,6 +1551,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         case kVK_LeftArrow:
             clearCommandHintModeIfCommandIsNotPressed(in: event)
             applyInteractionAction(.selectOffset(-1))
+            return true
+        case kVK_Delete, kVK_ForwardDelete:
+            clearCommandHintMode()
+            applyInteractionAction(.deleteSelectedItem)
             return true
         case kVK_Escape:
             clearCommandHintMode()
@@ -1528,6 +1689,24 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         )
     }
 
+    private func updatePreviewAfterReconcile(
+        previewedItemID: String?,
+        validItemIDs: Set<String>,
+        closePolicy: PanelPreviewClosePolicy
+    ) {
+        guard let previewedItemID else { return }
+        if closePolicy == .closeIfPreviewedItemRemoved, !validItemIDs.contains(previewedItemID) {
+            previewPopoverController.close()
+            return
+        }
+        guard validItemIDs.contains(previewedItemID),
+              previewPopoverController.isShown
+        else {
+            return
+        }
+        showPreview(forItemID: previewedItemID)
+    }
+
     private func showManagementMenu(for item: RustClipboardItemSummary, event: NSEvent) {
         applyInteractionAction(.prepareManagementMenu(itemID: item.id))
 
@@ -1660,7 +1839,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
 
         let selectedView = itemBandStack.arrangedSubviews[index]
-        itemBandDocumentView.scrollToVisible(selectedView.frame.insetBy(dx: -24, dy: 0))
+        guard let scrollView = itemBandScrollView else { return }
+        layoutSubtreeIfNeeded()
+        itemBandDocumentView.layoutSubtreeIfNeeded()
+
+        let visibleRect = scrollView.contentView.bounds
+        let targetRect = selectedView.frame.insetBy(dx: -24, dy: 0)
+        var targetX = visibleRect.origin.x
+        if targetRect.minX < visibleRect.minX {
+            targetX = targetRect.minX
+        } else if targetRect.maxX > visibleRect.maxX {
+            targetX = targetRect.maxX - visibleRect.width
+        }
+        restoreScrollOriginIfNeeded(NSPoint(x: targetX, y: visibleRect.origin.y))
     }
 
     private func startCommandHintMonitor() {
@@ -1671,7 +1862,6 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             guard let self else { return event }
             if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) {
                 self.commitInlinePinboardRenameBeforePanelMouseDown(event)
-                self.scheduleSearchDismissalAfterPanelMouseDown(event)
             }
             let commandPressed = event.modifierFlags
                 .intersection(.deviceIndependentFlagsMask)
@@ -1697,32 +1887,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         finishInlinePinboardRename(commit: true)
     }
 
-    private func scheduleSearchDismissalAfterPanelMouseDown(_ event: NSEvent) {
-        guard shouldDismissSearch(for: event) else { return }
-        DispatchQueue.main.async { [weak self] in
-            self?.dismissSearch()
-        }
-    }
-
-    private func shouldDismissSearch(for event: NSEvent) -> Bool {
-        guard event.window === window else { return false }
-        let toolbar = panelViewState().toolbar
-        guard toolbar.isSearchVisible || !toolbar.searchText.isEmpty else { return false }
-        guard !eventLocation(event, isInside: searchField) else { return false }
-        if let toolbarSearchButton, eventLocation(event, isInside: toolbarSearchButton) {
-            return false
-        }
-        return true
-    }
-
     private func eventLocation(_ event: NSEvent, isInside view: NSView) -> Bool {
         guard view.window === event.window else { return false }
         let point = view.convert(event.locationInWindow, from: nil)
         return view.bounds.contains(point)
-    }
-
-    private func dismissSearch() {
-        applyInteractionAction(.dismissSearch)
     }
 
     private func stopCommandHintMonitor() {
@@ -1870,13 +2038,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func renderItemCards(_ cards: [PanelRenderedItemCard]) {
+        let oldArtifactsByID = renderedCardArtifactsByID
         resetItemLayoutTracking()
         renderedCardStatesByID.removeAll()
         activeListPage.renderedCardViewsByID.removeAll()
         activeListPage.renderedCardArtifactsByID.removeAll()
         itemBandStack.arrangedSubviews.forEach { view in
-            itemBandStack.removeArrangedSubview(view)
-            view.removeFromSuperview()
+            let itemID = (view as? ClipboardItemCardBox)?.itemID
+            removeRenderedCard(view, artifacts: itemID.flatMap { oldArtifactsByID[$0] })
         }
 
         cards.forEach(installRenderedCard)
@@ -1906,10 +2075,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func makeItemCard(_ item: RustClipboardItemSummary) -> PanelRenderedItemCard {
-        let state = PanelItemCardViewStateAdapter.makeViewState(
-            for: item,
-            selectedItemID: panelViewState().selectedItemID
-        )
+        let state = makeItemCardState(item)
         let callbacks = makeItemCardCallbacks(for: item)
         return reusableItemCard(
             for: state,
@@ -1923,6 +2089,13 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             onSelect: callbacks.onSelect,
             onDoubleClick: callbacks.onDoubleClick,
             onContextMenu: callbacks.onContextMenu
+        )
+    }
+
+    private func makeItemCardState(_ item: RustClipboardItemSummary) -> PanelItemCardViewState {
+        PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: panelViewState().selectedItemID
         )
     }
 
@@ -1980,7 +2153,27 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return nil
         }
 
-        card.itemID = itemID
+        return updateReusableCard(
+            card,
+            state: state,
+            artifacts: artifacts,
+            toolTip: toolTip,
+            onSelect: onSelect,
+            onDoubleClick: onDoubleClick,
+            onContextMenu: onContextMenu
+        )
+    }
+
+    private func updateReusableCard(
+        _ card: ClipboardItemCardBox,
+        state: PanelItemCardViewState,
+        artifacts: PanelItemCardRenderArtifacts,
+        toolTip: String?,
+        onSelect: (() -> Void)?,
+        onDoubleClick: (() -> Void)?,
+        onContextMenu: ((NSEvent) -> Void)?
+    ) -> PanelRenderedItemCard {
+        card.itemID = state.itemID
         card.toolTip = toolTip
         card.onSelect = onSelect
         card.onDoubleClick = onDoubleClick
@@ -2006,6 +2199,49 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func installRenderedCard(_ renderedCard: PanelRenderedItemCard) {
         itemBandStack.addArrangedSubview(renderedCard.view)
         registerRenderedCard(renderedCard)
+    }
+
+    private func moveOrInsertRenderedCard(_ view: NSView, at targetIndex: Int) {
+        if let currentIndex = itemBandStack.arrangedSubviews.firstIndex(of: view) {
+            guard currentIndex != targetIndex else { return }
+            itemBandStack.removeArrangedSubview(view)
+        }
+        itemBandStack.insertArrangedSubview(
+            view,
+            at: min(targetIndex, itemBandStack.arrangedSubviews.count)
+        )
+    }
+
+    private func removeRenderedCard(_ view: NSView, artifacts: PanelItemCardRenderArtifacts?) {
+        removeCard(view, from: itemBandStack, artifacts: artifacts)
+    }
+
+    private func removeCard(
+        _ view: NSView,
+        from stack: NSStackView,
+        artifacts: PanelItemCardRenderArtifacts?
+    ) {
+        artifacts?.prepareForRemoval()
+        if let card = view as? ClipboardItemCardBox {
+            card.prepareForRemoval()
+        }
+        stack.removeArrangedSubview(view)
+        view.removeFromSuperview()
+    }
+
+    private func rebuildRenderedCardTracking(from renderedCards: [PanelRenderedItemCard]) {
+        resetItemLayoutTracking()
+        renderedCardStatesByID.removeAll()
+        renderedCardViewsByID.removeAll()
+        renderedCardArtifactsByID.removeAll()
+
+        let renderedCardsByView = Dictionary(
+            uniqueKeysWithValues: renderedCards.map { (ObjectIdentifier($0.view), $0) }
+        )
+        for view in itemBandStack.arrangedSubviews {
+            guard let renderedCard = renderedCardsByView[ObjectIdentifier(view)] else { continue }
+            registerRenderedCard(renderedCard)
+        }
     }
 
     private func registerRenderedCard(_ renderedCard: PanelRenderedItemCard) {
@@ -2228,32 +2464,20 @@ extension FloatingPanelContentView {
         controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
     }
 
-    func smokeDismissSearchForPanelClick(at point: NSPoint) -> Bool {
-        guard let window,
-              let event = NSEvent.mouseEvent(
-                with: .leftMouseDown,
-                location: point,
-                modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber,
-                context: nil,
-                eventNumber: 0,
-                clickCount: 1,
-                pressure: 1
-              ),
-              shouldDismissSearch(for: event)
-        else {
-            return false
-        }
-
-        dismissSearch()
-        return true
-    }
-
     func smokeCardBoxes() -> [ClipboardItemCardBox] {
         allSmokeSubviews(of: self)
             .compactMap { $0 as? ClipboardItemCardBox }
             .filter { $0.itemID != nil }
+    }
+
+    func smokeOrderedCardBoxes() -> [ClipboardItemCardBox] {
+        itemBandStack.arrangedSubviews
+            .compactMap { $0 as? ClipboardItemCardBox }
+            .filter { $0.itemID != nil }
+    }
+
+    func smokeOrderedCardItemIDs() -> [String] {
+        smokeOrderedCardBoxes().compactMap(\.itemID)
     }
 
     func smokeCardsContainWebView() -> Bool {
@@ -2263,7 +2487,15 @@ extension FloatingPanelContentView {
     }
 
     func smokeCardBoxObjectIdentifiers() -> [ObjectIdentifier] {
-        smokeCardBoxes().map { ObjectIdentifier($0) }
+        smokeOrderedCardBoxes().map { ObjectIdentifier($0) }
+    }
+
+    var smokeRenderedCardTrackingIsConsistent: Bool {
+        let orderedIDs = smokeOrderedCardItemIDs()
+        return Set(renderedCardStatesByID.keys) == Set(orderedIDs)
+            && Set(renderedCardViewsByID.keys) == Set(orderedIDs)
+            && Set(renderedCardArtifactsByID.keys) == Set(orderedIDs)
+            && renderedCardViewsByID.allSatisfy { itemID, card in card.itemID == itemID }
     }
 
     func smokePinboardFilterButton(pinboardID: String?) -> PinboardChipButton? {
@@ -2327,8 +2559,8 @@ extension FloatingPanelContentView {
 
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
-        let maxX = max(0, itemBandDocumentView.frame.width - scrollView.contentView.bounds.width)
-        scrollView.contentView.scroll(to: NSPoint(x: maxX, y: 0))
+        let maxX = horizontalScrollRange(for: scrollView).upperBound
+        scrollView.contentView.scroll(to: NSPoint(x: maxX, y: scrollView.contentView.bounds.origin.y))
         scrollView.reflectScrolledClipView(scrollView.contentView)
         handleItemBandScrollDidChange()
     }
@@ -2337,12 +2569,98 @@ extension FloatingPanelContentView {
         itemBandScrollView?.contentView.bounds.origin.x ?? 0
     }
 
+    var smokeScrollOrigin: NSPoint {
+        itemBandScrollView?.contentView.bounds.origin ?? .zero
+    }
+
+    func smokeSelectItem(id: String, scrollIntoView: Bool = true) {
+        applyInteractionAction(.selectItem(id: id, scrollIntoView: scrollIntoView))
+    }
+
+    func smokeClickCard(itemID: String) {
+        guard let card = smokeOrderedCardBoxes().first(where: { $0.itemID == itemID }) else { return }
+        let localPoint = NSPoint(x: card.bounds.midX, y: card.bounds.midY)
+        let windowPoint = card.convert(localPoint, to: nil)
+        guard let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: card.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ) else {
+            return
+        }
+        card.mouseDown(with: event)
+    }
+
+    var smokeScrollEdgeOverlayState: (leadingVisible: Bool, trailingVisible: Bool, leadingHitTestNil: Bool, trailingHitTestNil: Bool) {
+        (leadingVisible: false, trailingVisible: false, leadingHitTestNil: true, trailingHitTestNil: true)
+    }
+
+    var smokeItemBandLayoutMetrics: (
+        leadingInset: CGFloat,
+        trailingInset: CGFloat,
+        verticalEdgeInsets: (CGFloat, CGFloat),
+        scrollOriginX: CGFloat,
+        viewportWidth: CGFloat,
+        trailingContentEdgeOriginX: CGFloat?,
+        firstCardVisibleMinX: CGFloat?,
+        lastCardVisibleMaxXAtTrailingEdge: CGFloat?,
+        firstCardDocumentMinX: CGFloat?,
+        lastCardDocumentTrailingInset: CGFloat?
+    ) {
+        layoutSubtreeIfNeeded()
+        itemBandDocumentView.layoutSubtreeIfNeeded()
+        itemBandStack.layoutSubtreeIfNeeded()
+
+        let bandFrame = itemBandContainerView.frame
+        let scrollView = itemBandScrollView
+        let scrollOriginX = scrollView?.contentView.bounds.origin.x ?? 0
+        let viewportWidth = scrollView?.contentView.bounds.width ?? 0
+        let trailingContentEdgeOriginX = scrollView.flatMap { scrollView in
+            itemBandStack.arrangedSubviews.last.map {
+                $0.frame.maxX - scrollView.contentView.bounds.width
+            }
+        }
+        let firstCardMinX = itemBandStack.arrangedSubviews.first?.frame.minX
+        let firstCardVisibleMinX = firstCardMinX.map { $0 - scrollOriginX }
+        let lastCardTrailingInset = itemBandStack.arrangedSubviews.last.map {
+            itemBandDocumentView.frame.width - $0.frame.maxX
+        }
+        let lastCardVisibleMaxXAtTrailingEdge = scrollView.flatMap { scrollView in
+            itemBandStack.arrangedSubviews.last.map { lastCard in
+                let trailingEdgeOrigin = lastCard.frame.maxX - scrollView.contentView.bounds.width
+                return lastCard.frame.maxX - trailingEdgeOrigin
+            }
+        }
+
+        return (
+            leadingInset: bandFrame.minX,
+            trailingInset: bounds.width - bandFrame.maxX,
+            verticalEdgeInsets: (bandFrame.minY, bounds.height - bandFrame.maxY),
+            scrollOriginX: scrollOriginX,
+            viewportWidth: viewportWidth,
+            trailingContentEdgeOriginX: trailingContentEdgeOriginX,
+            firstCardVisibleMinX: firstCardVisibleMinX,
+            lastCardVisibleMaxXAtTrailingEdge: lastCardVisibleMaxXAtTrailingEdge,
+            firstCardDocumentMinX: firstCardMinX,
+            lastCardDocumentTrailingInset: lastCardTrailingInset
+        )
+    }
+
     func smokeScrollToX(_ x: CGFloat) {
         guard let scrollView = itemBandScrollView else { return }
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
-        let maxX = max(0, itemBandDocumentView.frame.width - scrollView.contentView.bounds.width)
-        scrollView.contentView.scroll(to: NSPoint(x: min(max(0, x), maxX), y: 0))
+        let range = horizontalScrollRange(for: scrollView)
+        scrollView.contentView.scroll(to: NSPoint(
+            x: min(max(range.lowerBound, x), range.upperBound),
+            y: scrollView.contentView.bounds.origin.y
+        ))
         scrollView.reflectScrolledClipView(scrollView.contentView)
         handleItemBandScrollDidChange()
     }

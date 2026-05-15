@@ -24,6 +24,10 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
         popover.isShown
     }
 
+    var previewedItemID: String? {
+        popover.isShown ? shownItemID : nil
+    }
+
     var contentRootViewForSmoke: NSView? {
         popover.contentViewController?.view
     }
@@ -281,6 +285,12 @@ private final class ClipboardPreviewViewController: NSViewController {
             return preferredFilePreviewSize(for: fileURL, fileCount: content.fileURLs.count)
         }
 
+        if content.itemType == "file",
+           let image = content.imageURL.flatMap(NSImage.init(contentsOf:)) {
+            let pixelSize = imagePixelSize(for: image) ?? image.size
+            return preferredImagePreviewSize(for: pixelSize)
+        }
+
         return preferredTextPreviewSize(for: content.body)
     }
 
@@ -347,6 +357,10 @@ private final class ClipboardPreviewViewController: NSViewController {
 
         if content.itemType == "file", !content.fileURLs.isEmpty {
             return makeFilePreview() ?? makeTextPreview()
+        }
+
+        if content.itemType == "file", content.imageURL != nil {
+            return makeImagePreview()
         }
 
         if content.itemType == "link",
@@ -428,7 +442,7 @@ private final class ClipboardPreviewViewController: NSViewController {
     }
 
     private func makeTextPreview() -> NSView {
-        let container = makePreviewSurface(backgroundAlpha: 0.76)
+        let container = makeTextPreviewSurface()
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.backgroundColor = .clear
@@ -535,6 +549,13 @@ private final class ClipboardPreviewViewController: NSViewController {
         container.layer?.masksToBounds = true
         container.layer?.borderColor = NSColor.clear.cgColor
         container.layer?.borderWidth = 0
+        return container
+    }
+
+    private func makeTextPreviewSurface() -> NSView {
+        let container = makePreviewSurface(backgroundAlpha: 1)
+        let backgroundColor = theme.preview.surfaceBackgroundColor.withAlphaComponent(1)
+        container.layer?.backgroundColor = backgroundColor.cgColor
         return container
     }
 

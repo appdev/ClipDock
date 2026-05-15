@@ -1,8 +1,8 @@
 use clipboard_core::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest,
-    CapturedFileMetadata, ClipboardCore, ClipboardItemType, ItemManagementResult, ItemQuery,
-    LinkMetadataState, MaintenanceResult, PageRequest, PinboardPage, PreferencesDocument,
-    SourceConfidence,
+    CapturedFileMetadata, ClipboardCore, ClipboardItemType, CompleteLinkMetadataFetchRequest,
+    ItemManagementResult, ItemQuery, LinkMetadataFetchCandidate, LinkMetadataState,
+    MaintenanceResult, PageRequest, PinboardPage, PreferencesDocument, SourceConfidence,
 };
 use serde::Deserialize;
 
@@ -87,8 +87,26 @@ mod ffi {
         message_key: String,
     }
 
+    #[swift_bridge(swift_repr = "struct")]
+    struct CoreWebPEncodeResult {
+        ok: bool,
+        bytes: Vec<u8>,
+        error_code: String,
+        message_key: String,
+    }
+
+    #[swift_bridge(swift_repr = "struct")]
+    struct CoreLinkMetadataFetchBatchResult {
+        ok: bool,
+        candidates_json: String,
+        error_code: String,
+        message_key: String,
+    }
+
     extern "Rust" {
         fn open_core(app_support_dir: String) -> CoreOpenResult;
+        fn active_source_icon_header_color_cache_version() -> i64;
+        fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> CoreWebPEncodeResult;
         fn run_maintenance(app_support_dir: String) -> CoreMaintenanceResult;
         fn get_preferences(app_support_dir: String) -> CorePreferencesResult;
         fn update_preferences(
@@ -136,11 +154,36 @@ mod ffi {
             is_member: bool,
         ) -> CoreItemManagementResult;
         fn delete_item(app_support_dir: String, item_id: String) -> CoreItemManagementResult;
+        fn record_item_copied(app_support_dir: String, item_id: String)
+            -> CoreItemManagementResult;
+        fn update_source_app_icon_header_color(
+            app_support_dir: String,
+            source_app_id: String,
+            source_app_icon_path: String,
+            header_color_argb: i64,
+            allow_latest_without_path: bool,
+        ) -> CoreItemManagementResult;
         fn clear_items(
             app_support_dir: String,
             item_type: String,
             source_app_id: String,
             search_text: String,
+        ) -> CoreItemManagementResult;
+        fn claim_link_metadata_fetch_batch(
+            app_support_dir: String,
+            limit: i64,
+            lease_timeout_ms: i64,
+        ) -> CoreLinkMetadataFetchBatchResult;
+        fn complete_link_metadata_fetch(
+            app_support_dir: String,
+            request_json: String,
+        ) -> CoreItemManagementResult;
+        fn fail_link_metadata_fetch(
+            app_support_dir: String,
+            item_id: String,
+            lease_started_at_ms: i64,
+            failure_code: String,
+            next_retry_at_ms: i64,
         ) -> CoreItemManagementResult;
         fn capture_text(
             app_support_dir: String,
@@ -177,6 +220,11 @@ mod ffi {
         fn capture_files(
             app_support_dir: String,
             files_json: String,
+            preview_relative_path: String,
+            preview_mime_type: String,
+            preview_width: i64,
+            preview_height: i64,
+            preview_byte_count: i64,
             snapshot_relative_path: String,
             snapshot_byte_count: i64,
             source_bundle_id: String,
@@ -367,6 +415,34 @@ fn delete_item(app_support_dir: String, item_id: String) -> ffi::CoreItemManagem
     }
 }
 
+fn record_item_copied(app_support_dir: String, item_id: String) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.record_item_copied(item_id))
+    {
+        Ok(result) => item_management_result(result),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn update_source_app_icon_header_color(
+    app_support_dir: String,
+    source_app_id: String,
+    source_app_icon_path: String,
+    header_color_argb: i64,
+    allow_latest_without_path: bool,
+) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+        core.update_source_app_icon_header_color(
+            source_app_id,
+            source_app_icon_path,
+            header_color_argb,
+            allow_latest_without_path,
+        )
+    }) {
+        Ok(result) => item_management_result(result),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
 fn clear_items(
     app_support_dir: String,
     item_type: String,
@@ -383,6 +459,79 @@ fn clear_items(
     match ClipboardCore::open(app_support_dir).and_then(|mut core| core.clear_items(query)) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
+    }
+}
+
+fn claim_link_metadata_fetch_batch(
+    app_support_dir: String,
+    limit: i64,
+    lease_timeout_ms: i64,
+) -> ffi::CoreLinkMetadataFetchBatchResult {
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.claim_link_metadata_fetch_batch(limit, lease_timeout_ms))
+    {
+        Ok(candidates) => link_metadata_fetch_batch_result(candidates),
+        Err(error) => ffi::CoreLinkMetadataFetchBatchResult {
+            ok: false,
+            candidates_json: "[]".to_string(),
+            error_code: error.code.as_str().to_string(),
+            message_key: error.message_key().to_string(),
+        },
+    }
+}
+
+fn complete_link_metadata_fetch(
+    app_support_dir: String,
+    request_json: String,
+) -> ffi::CoreItemManagementResult {
+    let request = match serde_json::from_str::<CompleteLinkMetadataFetchRequest>(&request_json) {
+        Ok(request) => request,
+        Err(_error) => {
+            return ffi::CoreItemManagementResult {
+                ok: false,
+                affected_count: 0,
+                error_code: "invalid_input".to_string(),
+                message_key: "clipboard.error.invalid_input".to_string(),
+            };
+        }
+    };
+
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.complete_link_metadata_fetch(request))
+    {
+        Ok(result) => item_management_result(result),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn fail_link_metadata_fetch(
+    app_support_dir: String,
+    item_id: String,
+    lease_started_at_ms: i64,
+    failure_code: String,
+    next_retry_at_ms: i64,
+) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+        core.fail_link_metadata_fetch(
+            item_id,
+            lease_started_at_ms,
+            failure_code,
+            optional_i64(next_retry_at_ms),
+        )
+    }) {
+        Ok(result) => item_management_result(result),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn link_metadata_fetch_batch_result(
+    candidates: Vec<LinkMetadataFetchCandidate>,
+) -> ffi::CoreLinkMetadataFetchBatchResult {
+    ffi::CoreLinkMetadataFetchBatchResult {
+        ok: true,
+        candidates_json: serde_json::to_string(&candidates).unwrap_or_else(|_| "[]".to_string()),
+        error_code: String::new(),
+        message_key: String::new(),
     }
 }
 
@@ -432,6 +581,54 @@ fn open_core(app_support_dir: String) -> ffi::CoreOpenResult {
             error_code: error.code.as_str().to_string(),
             message_key: error.message_key().to_string(),
         },
+    }
+}
+
+fn active_source_icon_header_color_cache_version() -> i64 {
+    ClipboardCore::active_source_icon_header_color_cache_version()
+}
+
+fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> ffi::CoreWebPEncodeResult {
+    let width = match u32::try_from(width) {
+        Ok(width) if width > 0 => width,
+        _ => return webp_encode_error("invalid_input"),
+    };
+    let height = match u32::try_from(height) {
+        Ok(height) if height > 0 => height,
+        _ => return webp_encode_error("invalid_input"),
+    };
+    let expected_len = match (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixel_count| pixel_count.checked_mul(4))
+    {
+        Some(expected_len) => expected_len,
+        None => return webp_encode_error("invalid_input"),
+    };
+    if rgba.len() != expected_len {
+        return webp_encode_error("invalid_input");
+    }
+
+    let encoder = webp::Encoder::from_rgba(rgba, width, height);
+    let encoded = encoder.encode_lossless();
+    let bytes = encoded.to_vec();
+    if bytes.is_empty() {
+        return webp_encode_error("encoding_failed");
+    }
+
+    ffi::CoreWebPEncodeResult {
+        ok: true,
+        bytes,
+        error_code: String::new(),
+        message_key: String::new(),
+    }
+}
+
+fn webp_encode_error(code: &str) -> ffi::CoreWebPEncodeResult {
+    ffi::CoreWebPEncodeResult {
+        ok: false,
+        bytes: Vec::new(),
+        error_code: code.to_string(),
+        message_key: "clipboard.error.image_encoding_failed".to_string(),
     }
 }
 
@@ -570,6 +767,11 @@ fn capture_image(
 fn capture_files(
     app_support_dir: String,
     files_json: String,
+    preview_relative_path: String,
+    preview_mime_type: String,
+    preview_width: i64,
+    preview_height: i64,
+    preview_byte_count: i64,
     snapshot_relative_path: String,
     snapshot_byte_count: i64,
     source_bundle_id: String,
@@ -600,6 +802,11 @@ fn capture_files(
         core.capture_files(CaptureFilesRequest {
             file_paths,
             file_items,
+            preview_relative_path: optional_string(preview_relative_path),
+            preview_mime_type: optional_string(preview_mime_type),
+            preview_width: optional_i64(preview_width),
+            preview_height: optional_i64(preview_height),
+            preview_byte_count,
             snapshot_relative_path: optional_string(snapshot_relative_path),
             snapshot_byte_count,
             source_bundle_id: optional_string(source_bundle_id),
@@ -743,7 +950,6 @@ fn parse_link_metadata_state(value: &str) -> LinkMetadataState {
         "fetching" => LinkMetadataState::Fetching,
         "ready" => LinkMetadataState::Ready,
         "failed" => LinkMetadataState::Failed,
-        "disabled" => LinkMetadataState::Disabled,
         "stale" => LinkMetadataState::Stale,
         _ => LinkMetadataState::Pending,
     }

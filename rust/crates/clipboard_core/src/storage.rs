@@ -1,4 +1,5 @@
 mod capture;
+mod link_metadata;
 mod maintenance;
 mod preferences;
 mod queries;

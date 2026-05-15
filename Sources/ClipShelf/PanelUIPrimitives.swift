@@ -265,8 +265,9 @@ final class HorizontalWheelScrollView: NSScrollView {
             return
         }
 
-        let maximumX = max(0, documentView.frame.width - contentView.bounds.width)
-        let targetX = min(max(initialHorizontalOrigin + delta, 0), maximumX)
+        let minimumX: CGFloat = 0
+        let maximumX = max(minimumX, documentView.frame.width - contentView.bounds.width)
+        let targetX = min(max(initialHorizontalOrigin + delta, minimumX), maximumX)
         guard abs(targetX - initialHorizontalOrigin) >= 0.5 else { return }
 
         contentView.scroll(to: NSPoint(x: targetX, y: contentView.bounds.origin.y))
@@ -284,7 +285,6 @@ final class ClipboardItemCardBox: NSBox {
     private weak var timeLabel: NSTextField?
     private weak var commandIndexLabel: NSTextField?
     private var unselectedHeaderColor: NSColor = .clear
-    private var themeBorderColor: NSColor = NSColor.black.withAlphaComponent(0.14)
     private var themeSelectionBorderColor: NSColor = .systemBlue
     private var themeHeaderTextColor: NSColor = .white
     private var themeHeaderSecondaryTextColor: NSColor = NSColor.white.withAlphaComponent(0.80)
@@ -299,8 +299,7 @@ final class ClipboardItemCardBox: NSBox {
 
     override func layout() {
         super.layout()
-        selectionBorderLayer.frame = bounds.insetBy(dx: 1, dy: 1)
-        selectionBorderLayer.cornerRadius = max(0, cornerRadius - 1)
+        updateSelectionBorderLayerLayout()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -316,12 +315,24 @@ final class ClipboardItemCardBox: NSBox {
         onContextMenu?(event)
     }
 
+    func prepareForRemoval() {
+        itemID = nil
+        onSelect = nil
+        onDoubleClick = nil
+        onContextMenu = nil
+        toolTip = nil
+        identifier = nil
+        commandIndexLabel = nil
+        selectionHeaderView = nil
+        typeHeaderLabel = nil
+        timeLabel = nil
+    }
+
     func configureSelectionAppearance(
         headerView: NSView,
         typeHeaderLabel: NSTextField,
         timeLabel: NSTextField,
         unselectedHeaderColor: NSColor,
-        borderColor: NSColor,
         selectionBorderColor: NSColor,
         headerTextColor: NSColor,
         headerSecondaryTextColor: NSColor,
@@ -331,7 +342,6 @@ final class ClipboardItemCardBox: NSBox {
         self.typeHeaderLabel = typeHeaderLabel
         self.timeLabel = timeLabel
         self.unselectedHeaderColor = unselectedHeaderColor
-        self.themeBorderColor = borderColor
         self.themeSelectionBorderColor = selectionBorderColor
         self.themeHeaderTextColor = headerTextColor
         self.themeHeaderSecondaryTextColor = headerSecondaryTextColor
@@ -350,11 +360,13 @@ final class ClipboardItemCardBox: NSBox {
     }
 
     func applySelection(_ isSelected: Bool) {
-        borderColor = themeBorderColor
-        borderWidth = 0.5
-        selectionBorderLayer.isHidden = !isSelected
-        selectionBorderLayer.borderWidth = isSelected ? 2 : 0
-        selectionBorderLayer.borderColor = themeSelectionBorderColor.cgColor
+        borderColor = .clear
+        borderWidth = 0
+        withoutSelectionBorderAnimation {
+            selectionBorderLayer.isHidden = !isSelected
+            selectionBorderLayer.borderWidth = isSelected ? 4 : 0
+            selectionBorderLayer.borderColor = themeSelectionBorderColor.cgColor
+        }
         selectionHeaderView?.layer?.backgroundColor = unselectedHeaderColor.cgColor
         selectionHeaderView?.layer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         typeHeaderLabel?.textColor = themeHeaderTextColor
@@ -364,15 +376,32 @@ final class ClipboardItemCardBox: NSBox {
 
     private func installSelectionBorderLayerIfNeeded() {
         guard selectionBorderLayer.superlayer == nil else { return }
-        selectionBorderLayer.backgroundColor = NSColor.clear.cgColor
-        selectionBorderLayer.masksToBounds = false
-        selectionBorderLayer.zPosition = 100
-        selectionBorderLayer.cornerRadius = cornerRadius
-        selectionBorderLayer.frame = bounds.insetBy(dx: 1, dy: 1)
-        selectionBorderLayer.contentsScale = layer?.contentsScale ?? 2
+        withoutSelectionBorderAnimation {
+            selectionBorderLayer.backgroundColor = NSColor.clear.cgColor
+            selectionBorderLayer.masksToBounds = false
+            selectionBorderLayer.zPosition = 100
+            selectionBorderLayer.cornerRadius = cornerRadius
+            selectionBorderLayer.frame = bounds
+            selectionBorderLayer.contentsScale = layer?.contentsScale ?? 2
+        }
         layer?.addSublayer(selectionBorderLayer)
     }
+
+    private func updateSelectionBorderLayerLayout() {
+        withoutSelectionBorderAnimation {
+            selectionBorderLayer.frame = bounds
+            selectionBorderLayer.cornerRadius = cornerRadius
+        }
+    }
+
+    private func withoutSelectionBorderAnimation(_ updates: () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        updates()
+        CATransaction.commit()
+    }
 }
+
 
 final class ActionMenuItem: NSMenuItem {
     private let handler: () -> Void

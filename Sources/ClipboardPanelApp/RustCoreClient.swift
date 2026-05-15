@@ -221,20 +221,24 @@ public struct RustShortcutsPreferences: Equatable, Codable, Sendable {
 }
 
 public struct RustLinkPreviewPreferences: Equatable, Codable, Sendable {
-    public var metadataEnabled: Bool
     public var webPreviewEnabled: Bool
 
     public init(
-        metadataEnabled: Bool = false,
         webPreviewEnabled: Bool = true
     ) {
-        self.metadataEnabled = metadataEnabled
         self.webPreviewEnabled = webPreviewEnabled
     }
 
     private enum CodingKeys: String, CodingKey {
-        case metadataEnabled = "metadata_enabled"
         case webPreviewEnabled = "web_preview_enabled"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.webPreviewEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .webPreviewEnabled
+        ) ?? true
     }
 }
 
@@ -366,6 +370,86 @@ public struct RustClipboardFileItemSummary: Equatable, Decodable, Sendable {
     }
 }
 
+public struct RustLinkMetadataFetchCandidate: Equatable, Decodable, Sendable {
+    public let itemId: String
+    public let canonicalURL: String
+    public let displayURL: String
+    public let host: String
+    public let fetchAttempts: Int64
+    public let leaseStartedAtMs: Int64
+
+    public init(
+        itemId: String,
+        canonicalURL: String,
+        displayURL: String,
+        host: String,
+        fetchAttempts: Int64,
+        leaseStartedAtMs: Int64
+    ) {
+        self.itemId = itemId
+        self.canonicalURL = canonicalURL
+        self.displayURL = displayURL
+        self.host = host
+        self.fetchAttempts = fetchAttempts
+        self.leaseStartedAtMs = leaseStartedAtMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case itemId = "item_id"
+        case canonicalURL = "canonical_url"
+        case displayURL = "display_url"
+        case host
+        case fetchAttempts = "fetch_attempts"
+        case leaseStartedAtMs = "lease_started_at_ms"
+    }
+}
+
+public struct RustCompleteLinkMetadataFetchRequest: Equatable, Encodable, Sendable {
+    public let itemId: String
+    public let leaseStartedAtMs: Int64
+    public let canonicalURL: String
+    public let displayURL: String
+    public let host: String
+    public let title: String?
+    public let siteName: String?
+    public let iconRelativePath: String?
+    public let imageRelativePath: String?
+
+    public init(
+        itemId: String,
+        leaseStartedAtMs: Int64,
+        canonicalURL: String,
+        displayURL: String,
+        host: String,
+        title: String? = nil,
+        siteName: String? = nil,
+        iconRelativePath: String? = nil,
+        imageRelativePath: String? = nil
+    ) {
+        self.itemId = itemId
+        self.leaseStartedAtMs = leaseStartedAtMs
+        self.canonicalURL = canonicalURL
+        self.displayURL = displayURL
+        self.host = host
+        self.title = title
+        self.siteName = siteName
+        self.iconRelativePath = iconRelativePath
+        self.imageRelativePath = imageRelativePath
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case itemId = "item_id"
+        case leaseStartedAtMs = "lease_started_at_ms"
+        case canonicalURL = "canonical_url"
+        case displayURL = "display_url"
+        case host
+        case title
+        case siteName = "site_name"
+        case iconRelativePath = "icon_relative_path"
+        case imageRelativePath = "image_relative_path"
+    }
+}
+
 public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let id: String
     public let itemType: String
@@ -375,6 +459,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let sourceAppId: String?
     public let sourceAppName: String?
     public let sourceAppIconPath: String?
+    public let sourceAppIconHeaderColor: Int64?
     public let previewAssetPath: String?
     public let payloadAssetPath: String?
     public let sourceConfidence: String
@@ -396,6 +481,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         sourceAppId: String?,
         sourceAppName: String?,
         sourceAppIconPath: String?,
+        sourceAppIconHeaderColor: Int64? = nil,
         previewAssetPath: String?,
         payloadAssetPath: String?,
         sourceConfidence: String,
@@ -416,6 +502,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         self.sourceAppId = sourceAppId
         self.sourceAppName = sourceAppName
         self.sourceAppIconPath = sourceAppIconPath
+        self.sourceAppIconHeaderColor = sourceAppIconHeaderColor
         self.previewAssetPath = previewAssetPath
         self.payloadAssetPath = payloadAssetPath
         self.sourceConfidence = sourceConfidence
@@ -440,6 +527,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
             sourceAppId: try container.decodeIfPresent(String.self, forKey: .sourceAppId),
             sourceAppName: try container.decodeIfPresent(String.self, forKey: .sourceAppName),
             sourceAppIconPath: try container.decodeIfPresent(String.self, forKey: .sourceAppIconPath),
+            sourceAppIconHeaderColor: try container.decodeIfPresent(Int64.self, forKey: .sourceAppIconHeaderColor),
             previewAssetPath: try container.decodeIfPresent(String.self, forKey: .previewAssetPath),
             payloadAssetPath: try container.decodeIfPresent(String.self, forKey: .payloadAssetPath),
             sourceConfidence: try container.decode(String.self, forKey: .sourceConfidence),
@@ -466,6 +554,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         case sourceAppId = "source_app_id"
         case sourceAppName = "source_app_name"
         case sourceAppIconPath = "source_app_icon_path"
+        case sourceAppIconHeaderColor = "source_app_icon_header_color"
         case previewAssetPath = "preview_asset_path"
         case payloadAssetPath = "payload_asset_path"
         case sourceConfidence = "source_confidence"
@@ -485,6 +574,7 @@ public struct RustSourceAppSummary: Equatable, Decodable, Sendable {
     public let bundleId: String?
     public let name: String
     public let iconPath: String?
+    public let iconHeaderColor: Int64?
     public let itemCount: Int64
     public let lastCopiedAtMs: Int64
 
@@ -493,6 +583,7 @@ public struct RustSourceAppSummary: Equatable, Decodable, Sendable {
         case bundleId = "bundle_id"
         case name
         case iconPath = "icon_path"
+        case iconHeaderColor = "icon_header_color"
         case itemCount = "item_count"
         case lastCopiedAtMs = "last_copied_at_ms"
     }
@@ -650,6 +741,11 @@ public typealias RustCaptureImageResult = RustCaptureTextResult
 public struct RustCaptureFilesRequest: Equatable, Sendable {
     public let filePaths: [String]
     public let fileItems: [ClipboardCapturedFileMetadata]
+    public let previewRelativePath: String?
+    public let previewMimeType: String?
+    public let previewWidth: Int64
+    public let previewHeight: Int64
+    public let previewByteCount: Int64
     public let snapshotRelativePath: String?
     public let snapshotByteCount: Int64
     public let sourceBundleId: String?
@@ -663,6 +759,11 @@ public struct RustCaptureFilesRequest: Equatable, Sendable {
     public init(
         filePaths: [String],
         fileItems: [ClipboardCapturedFileMetadata] = [],
+        previewRelativePath: String? = nil,
+        previewMimeType: String? = nil,
+        previewWidth: Int64 = 0,
+        previewHeight: Int64 = 0,
+        previewByteCount: Int64 = 0,
         snapshotRelativePath: String?,
         snapshotByteCount: Int64,
         sourceBundleId: String?,
@@ -675,6 +776,11 @@ public struct RustCaptureFilesRequest: Equatable, Sendable {
     ) {
         self.filePaths = filePaths
         self.fileItems = fileItems
+        self.previewRelativePath = previewRelativePath
+        self.previewMimeType = previewMimeType
+        self.previewWidth = previewWidth
+        self.previewHeight = previewHeight
+        self.previewByteCount = previewByteCount
         self.snapshotRelativePath = snapshotRelativePath
         self.snapshotByteCount = snapshotByteCount
         self.sourceBundleId = sourceBundleId
@@ -698,6 +804,51 @@ public struct RustCoreError: Error, Equatable, Sendable {
 
 public struct RustCoreClient: Sendable {
     public init() {}
+
+    public static func activeSourceIconHeaderColorCacheVersion() -> Int64 {
+        active_source_icon_header_color_cache_version()
+    }
+
+    public func encodeLosslessWebP(
+        rgbaData: Data,
+        width: Int,
+        height: Int
+    ) -> Result<Data, RustCoreError> {
+        let expectedByteCount = width > 0 && height > 0
+            ? width.multipliedReportingOverflow(by: height)
+            : (partialValue: 0, overflow: true)
+        let expectedRGBAByteCount = expectedByteCount.overflow
+            ? (partialValue: 0, overflow: true)
+            : expectedByteCount.partialValue.multipliedReportingOverflow(by: 4)
+        guard !expectedRGBAByteCount.overflow,
+              rgbaData.count == expectedRGBAByteCount.partialValue
+        else {
+            return .failure(Self.makeError(
+                code: "invalid_input",
+                messageKey: "clipboard.error.invalid_input"
+            ))
+        }
+
+        return rgbaData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return .failure(Self.makeError(
+                    code: "invalid_input",
+                    messageKey: "clipboard.error.invalid_input"
+                ))
+            }
+
+            let buffer = UnsafeBufferPointer(start: baseAddress, count: rgbaData.count)
+            let result = encode_webp_lossless_rgba(buffer, Int64(width), Int64(height))
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+
+            return .success(Data(bytes: result.bytes.as_ptr(), count: result.bytes.len()))
+        }
+    }
 
     public func open(appSupportDirectory: URL) -> Result<RustCoreOpenResult, RustCoreError> {
         withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
@@ -898,6 +1049,35 @@ public struct RustCoreClient: Sendable {
         }
     }
 
+    public func recordItemCopied(
+        appSupportDirectory: URL,
+        itemId: String
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = record_item_copied(appSupportPath, itemId)
+            return decodeItemManagementResult(result)
+        }
+    }
+
+    public func updateSourceAppIconHeaderColor(
+        appSupportDirectory: URL,
+        sourceAppId: String,
+        sourceAppIconPath: String?,
+        headerColorARGB: Int64,
+        allowLatestWithoutPath: Bool = false
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = update_source_app_icon_header_color(
+                appSupportPath,
+                sourceAppId,
+                sourceAppIconPath ?? "",
+                headerColorARGB,
+                allowLatestWithoutPath
+            )
+            return decodeItemManagementResult(result)
+        }
+    }
+
     public func clearItems(
         appSupportDirectory: URL,
         sourceAppId: String? = nil,
@@ -909,6 +1089,61 @@ public struct RustCoreClient: Sendable {
                 "",
                 sourceAppId ?? "",
                 searchText ?? ""
+            )
+            return decodeItemManagementResult(result)
+        }
+    }
+
+    public func claimLinkMetadataFetchBatch(
+        appSupportDirectory: URL,
+        limit: Int64 = 3,
+        leaseTimeoutMs: Int64 = 60_000
+    ) -> Result<[RustLinkMetadataFetchCandidate], RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = claim_link_metadata_fetch_batch(appSupportPath, limit, leaseTimeoutMs)
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+
+            return Self.decodeBridgeJSON(
+                result.candidates_json.toString(),
+                as: [RustLinkMetadataFetchCandidate].self
+            )
+        }
+    }
+
+    public func completeLinkMetadataFetch(
+        appSupportDirectory: URL,
+        request: RustCompleteLinkMetadataFetchRequest
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                let result = complete_link_metadata_fetch(appSupportPath, json)
+                return decodeItemManagementResult(result)
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    public func failLinkMetadataFetch(
+        appSupportDirectory: URL,
+        itemId: String,
+        leaseStartedAtMs: Int64,
+        failureCode: String,
+        nextRetryAtMs: Int64? = nil
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = fail_link_metadata_fetch(
+                appSupportPath,
+                itemId,
+                leaseStartedAtMs,
+                failureCode,
+                nextRetryAtMs ?? 0
             )
             return decodeItemManagementResult(result)
         }
@@ -1193,6 +1428,11 @@ public struct RustCoreClient: Sendable {
                 let result = capture_files(
                     appSupportPath,
                     filesJSON,
+                    request.previewRelativePath ?? "",
+                    request.previewMimeType ?? "",
+                    request.previewWidth,
+                    request.previewHeight,
+                    request.previewByteCount,
                     request.snapshotRelativePath ?? "",
                     request.snapshotByteCount,
                     request.sourceBundleId ?? "",

@@ -137,6 +137,7 @@ struct ClipboardListCoordinatorTests {
     func newerRefreshIgnoresOlderInFlightResult() async {
         let requests = QueryRecorder()
         let completedRequests = QueryRecorder()
+        let firstRequestGate = SleepGate()
         var updates: [ClipboardListUpdate] = []
         let coordinator = ClipboardListCoordinator(
             pageSize: 2,
@@ -144,7 +145,7 @@ struct ClipboardListCoordinatorTests {
             pageLoader: { query in
                 await requests.record(query)
                 if query.normalizedSearch == "first" {
-                    await nonCancellableDelay(nanoseconds: 40_000_000)
+                    await firstRequestGate.wait()
                 }
                 await completedRequests.record(query)
 
@@ -168,15 +169,19 @@ struct ClipboardListCoordinatorTests {
 
         let didApplyLatest = await waitUntil(attempts: 400) { updates.count == 1 }
         #expect(didApplyLatest)
-        guard didApplyLatest else { return }
+        guard didApplyLatest else {
+            await firstRequestGate.release()
+            return
+        }
         guard case .success(let firstAppliedResult) = updates[0].result else {
             Issue.record("expected success result for latest query")
+            await firstRequestGate.release()
             return
         }
         #expect(firstAppliedResult.items.map(\.id) == ["second"])
 
+        await firstRequestGate.release()
         #expect(await waitUntil(attempts: 400) { await completedRequests.values().count == 2 })
-        try? await Task.sleep(nanoseconds: 20_000_000)
         #expect(updates.count == 1)
     }
 
@@ -207,6 +212,39 @@ struct ClipboardListCoordinatorTests {
 
         #expect(await waitUntil {
             statusTexts.contains("条目：已删除")
+                && statusTexts.contains("存储：已连接（1 条）")
+        })
+        #expect(await requests.values().count == 1)
+        #expect(await requests.values()[0].offset == 0)
+    }
+
+    @Test
+    @MainActor
+    func recordCopiedMutationReportsStatusAndRefreshesList() async {
+        var statusTexts: [String] = []
+        let requests = QueryRecorder()
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                return .success(RustCoreListResult(
+                    items: [makeItem(id: "item-1")],
+                    totalCount: 1,
+                    hasMore: false
+                ))
+            },
+            mutationPerformer: { mutation in
+                #expect(mutation == .recordCopied(itemID: "item-1"))
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        coordinator.onStatusTextChanged = { statusTexts.append($0) }
+
+        coordinator.performMutation(.recordCopied(itemID: "item-1"))
+
+        #expect(await waitUntil {
+            statusTexts.contains("复制：已更新最近时间")
                 && statusTexts.contains("存储：已连接（1 条）")
         })
         #expect(await requests.values().count == 1)
@@ -258,16 +296,6 @@ private actor SleepGate {
         continuation?.resume()
         continuation = nil
     }
-}
-
-private func nonCancellableDelay(nanoseconds: UInt64) async {
-    await Task.detached {
-        sleepSynchronously(seconds: TimeInterval(nanoseconds) / 1_000_000_000)
-    }.value
-}
-
-private func sleepSynchronously(seconds: TimeInterval) {
-    Thread.sleep(forTimeInterval: seconds)
 }
 
 @MainActor

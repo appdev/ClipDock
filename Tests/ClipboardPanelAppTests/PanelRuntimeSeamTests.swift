@@ -50,7 +50,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func searchDismissesWhenClickingElsewhereInPanel() async throws {
+    func searchResultCopyKeepsSearchActive() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.activate(ignoringOtherApps: true)
@@ -58,28 +58,79 @@ struct PanelRuntimeSeamTests {
         let controller = FloatingPanelController()
         let contentView = controller.smokeContentView
         var queries: [(searchText: String, pinboardID: String?, debounce: Bool)] = []
+        var copiedItemID: String?
+        let item = PanelQASamples.makePagedPanelItems(count: 1)[0]
         controller.onRuntimeAction = { action in
             if case .queryChanged(let searchText, _, let pinboardID, let debounce) = action {
                 queries.append((searchText, pinboardID, debounce))
             }
+            if case .copyItem(let item) = action {
+                copiedItemID = item.id
+            }
         }
 
         controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: [item], totalCount: 1, hasMore: false)),
+            isFiltered: false
+        )
         contentView.layoutSubtreeIfNeeded()
         contentView.smokeOpenSearch(text: "report")
         #expect(contentView.smokeIsSearchVisible)
         #expect(contentView.smokeSearchText == "report")
 
-        let dismissed = contentView.smokeDismissSearchForPanelClick(
-            at: NSPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
-        )
+        let card = try #require(contentView.smokeCardBoxes().first)
+        PanelQAHarness.sendMouseDown(to: card, clickCount: 2)
 
-        #expect(dismissed)
-        #expect(!contentView.smokeIsSearchVisible)
-        #expect(contentView.smokeSearchText.isEmpty)
-        #expect(queries.last?.searchText == "")
+        #expect(copiedItemID == item.id)
+        #expect(contentView.smokeIsSearchVisible)
+        #expect(contentView.smokeSearchText == "report")
+        #expect(!queries.contains { $0.searchText.isEmpty })
+        #expect(queries.last?.searchText == "report")
         #expect(queries.last?.pinboardID == nil)
-        #expect(queries.last?.debounce == false)
+        #expect(queries.last?.debounce == true)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func panelKeyboardShortcutsCopyAndDeleteSelectedItem() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = Array(PanelQASamples.makePagedPanelItems(count: 2))
+        var copiedItemID: String?
+        var deletedItemID: String?
+        controller.onRuntimeAction = { action in
+            switch action {
+            case .copyItem(let item):
+                copiedItemID = item.id
+            case .deleteItem(let item):
+                deletedItemID = item.id
+            default:
+                break
+            }
+        }
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        #expect(contentView.smokeSelectedItemID == items[0].id)
+        PanelQAHarness.sendCommandC(to: contentView)
+        #expect(copiedItemID == items[0].id)
+
+        PanelQAHarness.sendArrow(.right, to: contentView)
+        #expect(contentView.smokeSelectedItemID == items[1].id)
+        PanelQAHarness.sendDelete(to: contentView)
+        #expect(deletedItemID == items[1].id)
 
         controller.hide()
     }
@@ -162,6 +213,246 @@ struct PanelRuntimeSeamTests {
         #expect(contentView.smokeCardBoxObjectIdentifiers() == firstRenderIdentifiers)
 
         controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func reconcileReordersInsertsDeletesAndReplacesChangedCardsWithoutStaleTracking() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = Array(PanelQASamples.makePagedPanelItems(count: 4))
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == items.map(\.id) })
+
+        let firstCardsByID = Dictionary(
+            uniqueKeysWithValues: zip(
+                contentView.smokeOrderedCardItemIDs(),
+                contentView.smokeCardBoxObjectIdentifiers()
+            )
+        )
+        let inserted = makeRuntimeTextItem(id: "runtime-reconcile-inserted", summary: "Inserted")
+        let changed = runtimeLinkItemByUpdatingMetadata(items[1], title: "Changed title")
+        let nextItems = [items[2], inserted, changed]
+
+        contentView.updateListState(
+            .success(RustCoreListResult(items: nextItems, totalCount: Int64(nextItems.count), hasMore: false)),
+            isFiltered: false
+        )
+
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == nextItems.map(\.id) })
+        let nextCardsByID = Dictionary(
+            uniqueKeysWithValues: zip(
+                contentView.smokeOrderedCardItemIDs(),
+                contentView.smokeCardBoxObjectIdentifiers()
+            )
+        )
+        #expect(nextCardsByID[items[2].id] == firstCardsByID[items[2].id])
+        #expect(nextCardsByID[items[1].id] != firstCardsByID[items[1].id])
+        #expect(nextCardsByID[items[0].id] == nil)
+        #expect(nextCardsByID[inserted.id] != nil)
+        #expect(contentView.smokeRenderedCardTrackingIsConsistent)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func reconcilePreservesAndClampsScrollAndKeepsPreviewOnlyForRemainingItem() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 18)
+        controller.setAppSupportDirectory(FileManager.default.temporaryDirectory)
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor { contentView.smokeCurrentItemCount == items.count })
+
+        contentView.smokeScrollToX(720)
+        let scrolledX = contentView.smokeScrollOriginX
+        #expect(scrolledX > 0)
+        #expect(contentView.smokePerformManagementAction(itemID: items[6].id, title: "预览"))
+        #expect(await waitForMainActor { contentView.smokeIsPreviewShown })
+
+        let remainingWithPreview = Array(items[3...9])
+        contentView.updateListState(
+            .success(RustCoreListResult(
+                items: remainingWithPreview,
+                totalCount: Int64(remainingWithPreview.count),
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        #expect(contentView.smokeIsPreviewShown)
+        #expect(contentView.smokeScrollOriginX <= scrolledX)
+        #expect(contentView.smokeRenderedCardTrackingIsConsistent)
+
+        let withoutPreviewedItem = Array(items[10...12])
+        contentView.updateListState(
+            .success(RustCoreListResult(
+                items: withoutPreviewedItem,
+                totalCount: Int64(withoutPreviewedItem.count),
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        #expect(!contentView.smokeIsPreviewShown)
+        #expect(contentView.smokeSelectedItemID == withoutPreviewedItem.first?.id)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func scrollEdgeOverlaysStayRemovedWhileScrolling() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        contentView.updateListState(
+            .success(RustCoreListResult(items: [PanelQASamples.makePagedPanelItems(count: 1)[0]], totalCount: 1, hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+        var overlayState = contentView.smokeScrollEdgeOverlayState
+        #expect(!overlayState.leadingVisible)
+        #expect(!overlayState.trailingVisible)
+        #expect(overlayState.leadingHitTestNil)
+        #expect(overlayState.trailingHitTestNil)
+
+        let items = PanelQASamples.makePagedPanelItems(count: 18)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+        overlayState = contentView.smokeScrollEdgeOverlayState
+        #expect(!overlayState.leadingVisible)
+        #expect(!overlayState.trailingVisible)
+
+        contentView.smokeScrollToX(.greatestFiniteMagnitude)
+        overlayState = contentView.smokeScrollEdgeOverlayState
+        #expect(contentView.smokeScrollOriginX > 0)
+        #expect(!overlayState.leadingVisible)
+        #expect(!overlayState.trailingVisible)
+        #expect(overlayState.leadingHitTestNil)
+        #expect(overlayState.trailingHitTestNil)
+    }
+
+    @Test
+    @MainActor
+    func itemBandUsesOuterVerticalPaddingWithoutPreventingEdgeScroll() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 8)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        let metrics = contentView.smokeItemBandLayoutMetrics
+        let smallestBandVerticalInset = min(abs(metrics.verticalEdgeInsets.0), abs(metrics.verticalEdgeInsets.1))
+        let largestBandVerticalInset = max(metrics.verticalEdgeInsets.0, metrics.verticalEdgeInsets.1)
+
+        #expect(abs(metrics.leadingInset) < 0.5)
+        #expect(abs(metrics.trailingInset) < 0.5)
+        #expect(abs(smallestBandVerticalInset - 22) < 0.5)
+        #expect(abs(largestBandVerticalInset - 64) < 0.5)
+        #expect(abs(metrics.scrollOriginX) < 0.5)
+        #expect(abs((metrics.firstCardVisibleMinX ?? -1) - 22) < 0.5)
+        #expect(abs((metrics.firstCardDocumentMinX ?? -1) - 22) < 0.5)
+        #expect(abs((metrics.lastCardDocumentTrailingInset ?? -1) - 22) < 0.5)
+
+        contentView.smokeScrollToX(22)
+        let leadingEdgeMetrics = contentView.smokeItemBandLayoutMetrics
+        #expect(abs(leadingEdgeMetrics.scrollOriginX - 22) < 0.5)
+        #expect(abs((leadingEdgeMetrics.firstCardVisibleMinX ?? -1)) < 0.5)
+
+        contentView.smokeScrollToX(try #require(metrics.trailingContentEdgeOriginX))
+        let trailingEdgeMetrics = contentView.smokeItemBandLayoutMetrics
+        #expect(abs((trailingEdgeMetrics.lastCardVisibleMaxXAtTrailingEdge ?? -1) - trailingEdgeMetrics.viewportWidth) < 0.5)
+    }
+
+    @Test
+    @MainActor
+    func cardClickSelectionDoesNotMoveHorizontalListVertically() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 12)
+        controller.show()
+        #expect(await waitForMainActor { controller.isVisible })
+
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        let clickedCard = try #require(contentView.smokeOrderedCardBoxes().first { $0.itemID == items[2].id })
+        let clickedFrameBefore = clickedCard.convert(clickedCard.bounds, to: contentView)
+        let scrollOriginBeforeClick = contentView.smokeScrollOrigin
+        contentView.smokeClickCard(itemID: items[2].id)
+        contentView.layoutSubtreeIfNeeded()
+        let clickedFrameAfter = clickedCard.convert(clickedCard.bounds, to: contentView)
+        #expect(contentView.smokeSelectedItemID == items[2].id)
+        #expect(abs(clickedFrameAfter.minY - clickedFrameBefore.minY) < 0.5)
+        #expect(abs(clickedFrameAfter.height - clickedFrameBefore.height) < 0.5)
+        #expect(abs(contentView.smokeScrollOrigin.y - scrollOriginBeforeClick.y) < 0.5)
+
+        let farCard = try #require(contentView.smokeOrderedCardBoxes().first { $0.itemID == items[10].id })
+        contentView.smokeSelectItem(id: items[10].id, scrollIntoView: true)
+        contentView.layoutSubtreeIfNeeded()
+        let farFrameAfter = farCard.convert(farCard.bounds, to: contentView)
+        #expect(contentView.smokeSelectedItemID == items[10].id)
+        #expect(contentView.smokeScrollOrigin.x > 0)
+        #expect(abs(farFrameAfter.minY - clickedFrameBefore.minY) < 0.5)
+        #expect(abs(farFrameAfter.height - clickedFrameBefore.height) < 0.5)
+        #expect(abs(contentView.smokeScrollOrigin.y - scrollOriginBeforeClick.y) < 0.5)
+
+        controller.hide()
+    }
+
+    @Test
+    func cardRenderPathDoesNotUseNetworkOrWebRenderingAPIs() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let cardPathSources = [
+            root.appendingPathComponent("Sources/ClipShelf/PanelItemCardRenderer.swift"),
+            root.appendingPathComponent("Sources/ClipShelf/PanelCardSupport.swift")
+        ]
+        let forbiddenSymbols = [
+            "URLSession",
+            "LPMetadataProvider",
+            "LPLinkView",
+            "WKWebView",
+            "import WebKit",
+            "import LinkPresentation"
+        ]
+        let combinedSource = try cardPathSources
+            .map { try String(contentsOf: $0, encoding: .utf8) }
+            .joined(separator: "\n")
+
+        for forbiddenSymbol in forbiddenSymbols {
+            #expect(!combinedSource.contains(forbiddenSymbol))
+        }
     }
 
     @Test
@@ -713,7 +1004,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func previewPopoverUsesPanelBackgroundWithoutInnerSurfaceFill() async throws {
+    func textPreviewUsesOpaqueContentSurface() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.activate(ignoringOtherApps: true)
@@ -736,9 +1027,73 @@ struct PanelRuntimeSeamTests {
         let expectedBackground = ClipShelfTheme.current(for: contentView).panel.backgroundColor
         let actualBackground = try #require(contentView.smokePreviewRootBackgroundColor())
         #expect(colorAndAlphaDistance(actualBackground, expectedBackground) < 0.001)
-        #expect(contentView.smokePreviewDirectSubviewBackgroundColors().allSatisfy { background in
-            (background.usingColorSpace(.sRGB)?.alphaComponent ?? background.alphaComponent) < 0.001
+        let directSubviewBackgrounds = contentView.smokePreviewDirectSubviewBackgroundColors()
+        let expectedSurface = ClipShelfTheme.current(for: contentView)
+            .preview
+            .surfaceBackgroundColor
+            .withAlphaComponent(1)
+        #expect(directSubviewBackgrounds.contains { background in
+            colorAndAlphaDistance(background, expectedSurface) < 0.001
         })
+        #expect(directSubviewBackgrounds.filter { background in
+            (background.usingColorSpace(.sRGB)?.alphaComponent ?? background.alphaComponent) < 0.001
+        }.count >= 2)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func capturedFileFromStorageOpensQuickLookPreview() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let fileURL = tempDirectory.appendingPathComponent("storage-preview.md")
+        try Data("# Storage preview\n\nQuick Look should open this file.".utf8).write(to: fileURL)
+
+        let client = RustCoreClient()
+        _ = try client.captureFiles(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureFilesRequest(
+                filePaths: [fileURL.path],
+                snapshotRelativePath: nil,
+                snapshotByteCount: 0,
+                sourceBundleId: "com.apple.finder",
+                sourceAppName: "Finder",
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 32
+            )
+        ).get()
+        let item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+        let preview = ClipboardPreviewContentPlanner.preview(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(item.fileItems.map(\.path) == [fileURL.path])
+        #expect(preview.fileURLs == [fileURL.standardizedFileURL])
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        controller.setAppSupportDirectory(tempDirectory)
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(items: [item], totalCount: 1, hasMore: false)),
+            isFiltered: false
+        )
+        PanelQAHarness.drainMainRunLoop()
+
+        PanelQAHarness.sendSpace(to: contentView)
+        PanelQAHarness.drainMainRunLoop()
+
+        #expect(contentView.smokeIsPreviewShown)
+        #expect(contentView.smokePreviewContainsQuickLookView())
 
         controller.hide()
     }
@@ -1024,6 +1379,221 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func removedImageCardCancelsPendingPreviewImageLoad() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let previewURL = tempDirectory.appendingPathComponent("delayed-card-preview.png")
+        try writePNG(to: previewURL, width: 64, height: 64)
+
+        PanelCardAssetResolver.previewImageLoadDelayForSmoke = .milliseconds(100)
+        defer {
+            PanelCardAssetResolver.previewImageLoadDelayForSmoke = nil
+        }
+
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "cancel-image-card",
+            sourceAppName: "Preview",
+            relativeTimeText: "now",
+            symbolName: "photo",
+            typeText: "图片",
+            summaryText: "",
+            footnoteText: "64 × 64",
+            isSelected: true,
+            preview: .image(
+                previewPath: previewURL.path,
+                payloadPath: nil,
+                summary: "图片 64 x 64"
+            ),
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Preview",
+                previewAssetPath: previewURL.path
+            )
+        ))
+
+        let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        let loadToken = try #require(renderedCard.artifacts.previewImageLoadTokensForSmoke().first)
+        #expect(imageView.image == nil)
+        #expect(PanelCardAssetResolver.previewImageLoadIsActiveForSmoke(loadToken))
+
+        renderedCard.artifacts.prepareForRemoval()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.18))
+
+        #expect(!PanelCardAssetResolver.previewImageLoadIsActiveForSmoke(loadToken))
+        #expect(imageView.image == nil)
+    }
+
+    @Test
+    @MainActor
+    func removedLinkCardCancelsPendingPreviewAndIconImageLoads() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let iconURL = tempDirectory.appendingPathComponent("delayed-link-icon.png")
+        let imageURL = tempDirectory.appendingPathComponent("delayed-link-image.png")
+        try writePNG(to: iconURL, width: 32, height: 32)
+        try writePNG(to: imageURL, width: 96, height: 64)
+
+        PanelCardAssetResolver.previewImageLoadDelayForSmoke = .milliseconds(100)
+        defer {
+            PanelCardAssetResolver.previewImageLoadDelayForSmoke = nil
+        }
+
+        let renderedCard = renderLinkCard(
+            itemSide: 218,
+            appSupportDirectory: tempDirectory,
+            sourceAppIconPath: nil,
+            iconPath: iconURL.path,
+            imagePath: imageURL.path
+        )
+
+        let backgroundImageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        let iconView = try #require(renderedCard.artifacts.linkIconViews.first)
+        let loadTokens = renderedCard.artifacts.previewImageLoadTokensForSmoke()
+        #expect(backgroundImageView.image == nil)
+        #expect(loadTokens.count == 2)
+        #expect(loadTokens.allSatisfy { PanelCardAssetResolver.previewImageLoadIsActiveForSmoke($0) })
+
+        renderedCard.artifacts.prepareForRemoval()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.18))
+
+        #expect(loadTokens.allSatisfy { !PanelCardAssetResolver.previewImageLoadIsActiveForSmoke($0) })
+        #expect(backgroundImageView.image == nil)
+        #expect(iconView.image != nil)
+    }
+
+    @Test
+    @MainActor
+    func removedFileCardCancelsPendingThumbnailRequest() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let fileURL = tempDirectory.appendingPathComponent("thumbnail-source.txt")
+        try "thumbnail smoke".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        PanelCardAssetResolver.fileThumbnailGenerationDelayForSmoke = .milliseconds(100)
+        defer {
+            PanelCardAssetResolver.fileThumbnailGenerationDelayForSmoke = nil
+        }
+
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "cancel-file-card",
+            sourceAppName: "Finder",
+            relativeTimeText: "now",
+            symbolName: "doc",
+            typeText: "文件",
+            summaryText: "",
+            footnoteText: fileURL.lastPathComponent,
+            isSelected: true,
+            preview: .file(accessibilityLabel: "Finder"),
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Finder",
+                primaryText: fileURL.path
+            )
+        ))
+
+        let thumbnailToken = try #require(renderedCard.artifacts.filePreviewThumbnailTokensForSmoke().first)
+        #expect(PanelCardAssetResolver.filePreviewImageRequestIsActiveForSmoke(thumbnailToken))
+
+        renderedCard.artifacts.prepareForRemoval()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.18))
+
+        #expect(!PanelCardAssetResolver.filePreviewImageRequestIsActiveForSmoke(thumbnailToken))
+    }
+
+    @Test
+    @MainActor
+    func imageCardRenderDoesNotLoadOriginalPayloadFallback() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let payloadURL = tempDirectory.appendingPathComponent("original-payload.png")
+        try writePNG(to: payloadURL, width: 80, height: 80)
+        let missingPreviewURL = tempDirectory.appendingPathComponent("missing-preview.png")
+
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "payload-fallback-image-card",
+            sourceAppName: "Preview",
+            relativeTimeText: "now",
+            symbolName: "photo",
+            typeText: "图片",
+            summaryText: "",
+            footnoteText: "80 × 80",
+            isSelected: true,
+            preview: .image(
+                previewPath: missingPreviewURL.path,
+                payloadPath: payloadURL.path,
+                summary: "图片 80 x 80"
+            ),
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Preview",
+                previewAssetPath: missingPreviewURL.path,
+                payloadAssetPath: payloadURL.path
+            )
+        ))
+
+        let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        #expect(imageView.image == nil)
+        #expect(renderedCard.artifacts.previewImageLoadTokensForSmoke().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func fileCardUsesPersistedThumbnailWhenOriginalFileIsMissing() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let thumbnailDirectory = tempDirectory.appendingPathComponent("thumbnails", isDirectory: true)
+        try FileManager.default.createDirectory(at: thumbnailDirectory, withIntermediateDirectories: true)
+        let thumbnailURL = thumbnailDirectory.appendingPathComponent("file-thumb.png")
+        try writePNG(to: thumbnailURL, width: 80, height: 60)
+        let missingPath = tempDirectory.appendingPathComponent("deleted.txt").path
+
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "deleted-file-card",
+            sourceAppName: "Finder",
+            relativeTimeText: "now",
+            symbolName: "doc",
+            typeText: "文件",
+            summaryText: "",
+            footnoteText: "deleted.txt",
+            isSelected: true,
+            preview: .file(accessibilityLabel: "Finder"),
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Finder",
+                previewAssetPath: "thumbnails/file-thumb.png",
+                primaryText: missingPath
+            )
+        ))
+
+        let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        #expect(imageView.image != nil)
+        #expect(renderedCard.artifacts.filePreviewThumbnailTokensForSmoke().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func itemCardBaseBorderIsHidden() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+
+        let renderedCard = renderLinkCard(
+            itemSide: 218,
+            appSupportDirectory: tempDirectory,
+            sourceAppIconPath: nil
+        )
+        let cardBox = try #require(renderedCard.view as? NSBox)
+
+        #expect(abs(cardBox.borderWidth) < 0.001)
+        #expect(cardBox.borderColor.alphaComponent < 0.001)
+    }
+
+    @Test
+    @MainActor
     func linkCardPreviewFillsResponsiveContentAreaAndKeepsFooterSeparate() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1046,6 +1616,11 @@ struct PanelRuntimeSeamTests {
 
         let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
         let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.view)
+        let footerBackgroundView = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "LinkFooterBackground"
+        })
+        let footerBackgroundFrame = footerBackgroundView.convert(footerBackgroundView.bounds, to: renderedCard.view)
+        let footerBackgroundColor = try #require(footerBackgroundView.layer?.backgroundColor)
         let linkIconView = try #require(renderedCard.artifacts.linkIconViews.first)
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
 
@@ -1054,8 +1629,41 @@ struct PanelRuntimeSeamTests {
         #expect(abs(previewFrame.minX) <= 1.5)
         #expect(abs(previewFrame.width - 218) <= 1.5)
         #expect(abs(previewFrame.height - 120) <= 1.5)
+        #expect(abs(footerBackgroundFrame.minX) <= 1.5)
+        #expect(abs(footerBackgroundFrame.width - 218) <= 1.5)
+        #expect(colorAndAlphaDistance(NSColor(cgColor: footerBackgroundColor) ?? .clear, .white) < 0.001)
         #expect(linkIconView.toolTip == "github.com")
+        #expect(!linkIconView.isHidden)
         #expect(!renderedCard.view.subviewsRecursiveForSmoke().contains { $0 is WKWebView })
+    }
+
+    @Test
+    @MainActor
+    func linkCardDefaultIconUsesReferenceBackgroundAndMonochromeSafariSymbol() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+
+        let renderedCard = renderLinkCard(
+            itemSide: 218,
+            appSupportDirectory: tempDirectory,
+            sourceAppIconPath: nil,
+            theme: ClipShelfTheme.current(for: NSAppearance(named: .aqua))
+        )
+        let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
+        let linkIconView = try #require(renderedCard.artifacts.linkIconViews.first)
+        let previewBackground = try #require(previewView.layer?.backgroundColor)
+        let iconTintColor = try #require(linkIconView.contentTintColor)
+        let backgroundAlpha = linkIconView.layer?.backgroundColor
+            .flatMap { NSColor(cgColor: $0)?.alphaComponent } ?? 0
+        let expectedPreviewBackground = NSColor(calibratedRed: 0.955, green: 0.963, blue: 0.982, alpha: 1)
+        let expectedIconTint = NSColor(calibratedRed: 0.745, green: 0.745, blue: 0.775, alpha: 1)
+
+        #expect(linkIconView.image?.isTemplate == true)
+        #expect(colorAndAlphaDistance(NSColor(cgColor: previewBackground) ?? .clear, expectedPreviewBackground) < 0.001)
+        #expect(colorAndAlphaDistance(iconTintColor, expectedIconTint) < 0.001)
+        #expect(backgroundAlpha < 0.001)
+        #expect(linkIconView.layer?.borderWidth == 0)
     }
 
     @Test
@@ -1083,6 +1691,42 @@ struct PanelRuntimeSeamTests {
 
         #expect(abs(previewFrame.width - 274) <= 1.5)
         #expect(abs(previewFrame.height - 176) <= 1.5)
+    }
+
+    @Test
+    @MainActor
+    func linkCardWithBackgroundImageHidesIconTile() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let previewDirectory = tempDirectory.appendingPathComponent("assets/link-previews", isDirectory: true)
+        let iconDirectory = tempDirectory.appendingPathComponent("assets/link-icons", isDirectory: true)
+        try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: iconDirectory, withIntermediateDirectories: true)
+        try writePNG(to: previewDirectory.appendingPathComponent("example.png"), width: 120, height: 72)
+        try writePNG(to: iconDirectory.appendingPathComponent("example.png"), width: 24, height: 24)
+
+        let renderedCard = renderLinkCard(
+            itemSide: 218,
+            appSupportDirectory: tempDirectory,
+            sourceAppIconPath: nil,
+            iconPath: "assets/link-icons/example.png",
+            imagePath: "assets/link-previews/example.png"
+        )
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+
+        let backgroundImageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        let linkIconView = try #require(renderedCard.artifacts.linkIconViews.first)
+
+        #expect(await waitForMainActor(attempts: 240) { backgroundImageView.image != nil })
+        host.layoutSubtreeIfNeeded()
+        #expect(!backgroundImageView.isHidden)
+        #expect(linkIconView.isHidden)
     }
 
     @Test
@@ -1251,6 +1895,52 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func missingFilePreviewUsesPersistedThumbnailWhenAvailable() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let thumbnailDirectory = tempDirectory.appendingPathComponent("thumbnails", isDirectory: true)
+        try FileManager.default.createDirectory(at: thumbnailDirectory, withIntermediateDirectories: true)
+        let thumbnailURL = thumbnailDirectory.appendingPathComponent("deleted-file.png")
+        try writePNG(to: thumbnailURL, width: 180, height: 120)
+        let missingPath = tempDirectory.appendingPathComponent("deleted.md").path
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        controller.setAppSupportDirectory(tempDirectory)
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: [
+                    makeRuntimeFileItem(
+                        id: "deleted-file-with-thumbnail",
+                        primaryText: missingPath,
+                        previewAssetPath: "thumbnails/deleted-file.png"
+                    )
+                ],
+                totalCount: 1,
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        PanelQAHarness.drainMainRunLoop()
+
+        PanelQAHarness.sendSpace(to: contentView)
+        PanelQAHarness.drainMainRunLoop()
+
+        #expect(contentView.smokeIsPreviewShown)
+        #expect(!contentView.smokePreviewContainsQuickLookView())
+        #expect(contentView.smokePreviewTextContent().isEmpty)
+        #expect(contentView.smokePreviewScreenFrame?.width ?? 0 > 0)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
     func fileCardHotPathDoesNotReadSnapshotFallback() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1272,6 +1962,105 @@ struct PanelRuntimeSeamTests {
 
         #expect(resolver.filePreviewURLs(for: request).isEmpty)
         #expect(resolver.filePreviewImage(for: request) != nil)
+    }
+
+    @Test
+    @MainActor
+    func sourceIconColorKeepsSmallSaturatedLogoOnPaleIcon() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let iconURL = tempDirectory.appendingPathComponent("small-saturated-logo.png")
+        try writeSourceIconPNG(
+            to: iconURL,
+            width: 100,
+            height: 100,
+            background: NSColor(calibratedRed: 0.96, green: 0.95, blue: 0.92, alpha: 1),
+            accents: [
+                (rect:
+                    NSRect(x: 12, y: 20, width: 10, height: 60),
+                    color: NSColor(calibratedRed: 0.82, green: 0.20, blue: 0.24, alpha: 1)
+                )
+            ]
+        )
+
+        let resolver = PanelCardAssetResolver(appSupportDirectory: tempDirectory)
+        let resolved = resolver.resolvedItem(for: PanelCardAssetRequest(
+            sourceAppId: "com.example.small-saturated-logo.\(UUID().uuidString)",
+            sourceAppName: "Small Saturated Logo",
+            sourceAppIconPath: iconURL.path
+        ))
+        let color = try #require(resolved.sourceIconColor?.usingColorSpace(.sRGB))
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+
+        #expect(saturation >= 0.65)
+        #expect(color.redComponent > color.greenComponent + 0.25)
+        #expect(color.redComponent > color.blueComponent + 0.20)
+        #expect(brightness >= 0.58)
+    }
+
+    @Test
+    @MainActor
+    func sourceIconPersistedHeaderColorSkipsDominantColorComputation() throws {
+        var dominantComputationCount = 0
+        let resolver = PanelCardAssetResolver(
+            appSupportDirectory: nil,
+            sourceIconImageLoader: { _ in NSImage(size: NSSize(width: 4, height: 4)) },
+            dominantHeaderColorProvider: { _, _, _ in
+                dominantComputationCount += 1
+                return NSColor.systemRed
+            }
+        )
+
+        let resolved = resolver.resolvedItem(for: PanelCardAssetRequest(
+            sourceAppId: "source-app",
+            sourceAppName: "Safari",
+            sourceAppIconPath: "/tmp/icon.png",
+            sourceAppIconHeaderColor: 0xFF11_2233
+        ))
+        let color = try #require(resolved.sourceIconColor?.usingColorSpace(.sRGB))
+
+        #expect(dominantComputationCount == 0)
+        #expect(abs(color.redComponent - CGFloat(0x11) / 255) < 0.001)
+        #expect(abs(color.greenComponent - CGFloat(0x22) / 255) < 0.001)
+        #expect(abs(color.blueComponent - CGFloat(0x33) / 255) < 0.001)
+        #expect(color.alphaComponent == 1)
+    }
+
+    @Test
+    @MainActor
+    func sourceIconMissingPersistedHeaderColorComputesAndSchedulesWrite() async throws {
+        var dominantComputationCount = 0
+        let recorder = SourceColorWriteRecorder()
+        let resolver = PanelCardAssetResolver(
+            appSupportDirectory: nil,
+            sourceIconHeaderColorWriter: { request in
+                await recorder.append(request)
+            },
+            sourceIconImageLoader: { _ in NSImage(size: NSSize(width: 4, height: 4)) },
+            dominantHeaderColorProvider: { _, _, _ in
+                dominantComputationCount += 1
+                return NSColor(srgbRed: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+            }
+        )
+
+        let resolved = resolver.resolvedItem(for: PanelCardAssetRequest(
+            sourceAppId: "source-app",
+            sourceAppName: "Safari",
+            sourceAppIconPath: "/tmp/icon.png",
+            sourceAppIconHeaderColor: nil
+        ))
+
+        #expect(resolved.sourceIconColor != nil)
+        #expect(dominantComputationCount == 1)
+        #expect(await waitForMainActor(attempts: 120) { recorder.requests.count == 1 })
+        #expect(recorder.requests.first?.sourceAppID == "source-app")
+        #expect(recorder.requests.first?.sourceAppIconPath == "/tmp/icon.png")
+        #expect(recorder.requests.first?.headerColorARGB == 0xFF33_6699)
     }
 
     @Test
@@ -1597,7 +2386,11 @@ struct PanelRuntimeSeamTests {
     }
 }
 
-private func makeRuntimeFileItem(id: String, primaryText: String) -> RustClipboardItemSummary {
+private func makeRuntimeFileItem(
+    id: String,
+    primaryText: String,
+    previewAssetPath: String? = nil
+) -> RustClipboardItemSummary {
     RustClipboardItemSummary(
         id: id,
         itemType: "file",
@@ -1607,7 +2400,7 @@ private func makeRuntimeFileItem(id: String, primaryText: String) -> RustClipboa
         sourceAppId: "com.apple.finder",
         sourceAppName: "Finder",
         sourceAppIconPath: nil,
-        previewAssetPath: nil,
+        previewAssetPath: previewAssetPath,
         payloadAssetPath: nil,
         sourceConfidence: "high",
         firstCopiedAtMs: 1,
@@ -1616,6 +2409,61 @@ private func makeRuntimeFileItem(id: String, primaryText: String) -> RustClipboa
         isPinned: false,
         sizeBytes: 0,
         previewState: "ready"
+    )
+}
+
+private func makeRuntimeTextItem(id: String, summary: String) -> RustClipboardItemSummary {
+    RustClipboardItemSummary(
+        id: id,
+        itemType: "text",
+        summary: summary,
+        primaryText: summary,
+        contentHash: id,
+        sourceAppId: "com.apple.TextEdit",
+        sourceAppName: "TextEdit",
+        sourceAppIconPath: nil,
+        previewAssetPath: nil,
+        payloadAssetPath: nil,
+        sourceConfidence: "high",
+        firstCopiedAtMs: 1,
+        lastCopiedAtMs: 1,
+        copyCount: 1,
+        isPinned: false,
+        sizeBytes: Int64(summary.utf8.count),
+        previewState: "ready"
+    )
+}
+
+private func runtimeLinkItemByUpdatingMetadata(
+    _ item: RustClipboardItemSummary,
+    title: String
+) -> RustClipboardItemSummary {
+    RustClipboardItemSummary(
+        id: item.id,
+        itemType: "link",
+        summary: item.summary,
+        primaryText: item.primaryText ?? "https://example.com/\(item.id)",
+        contentHash: item.contentHash,
+        sourceAppId: item.sourceAppId,
+        sourceAppName: item.sourceAppName,
+        sourceAppIconPath: item.sourceAppIconPath,
+        previewAssetPath: item.previewAssetPath,
+        payloadAssetPath: item.payloadAssetPath,
+        sourceConfidence: item.sourceConfidence,
+        firstCopiedAtMs: item.firstCopiedAtMs,
+        lastCopiedAtMs: item.lastCopiedAtMs,
+        copyCount: item.copyCount,
+        isPinned: item.isPinned,
+        sizeBytes: item.sizeBytes,
+        previewState: item.previewState,
+        fileItems: item.fileItems,
+        linkMetadata: RustLinkMetadataSummary(
+            canonicalURL: item.primaryText ?? "https://example.com/\(item.id)",
+            displayURL: "example.com/\(item.id)",
+            host: "example.com",
+            title: title,
+            metadataState: "ready"
+        )
     )
 }
 
@@ -1834,17 +2682,57 @@ private func writeTransparentPNG(to url: URL, width: Int, height: Int, opaqueRec
     try data.write(to: url)
 }
 
+private func writeSourceIconPNG(
+    to url: URL,
+    width: Int,
+    height: Int,
+    background: NSColor,
+    accents: [(rect: NSRect, color: NSColor)]
+) throws {
+    let bitmap = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ))
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+    background.setFill()
+    NSRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)).fill()
+    for accent in accents {
+        accent.color.setFill()
+        accent.rect.fill()
+    }
+    NSGraphicsContext.restoreGraphicsState()
+
+    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+    try data.write(to: url)
+}
+
 @MainActor
-private func renderLinkCard(
-    itemSide: CGFloat,
+private final class SourceColorWriteRecorder: @unchecked Sendable {
+    private(set) var requests: [SourceAppIconHeaderColorWriteRequest] = []
+
+    func append(_ request: SourceAppIconHeaderColorWriteRequest) {
+        requests.append(request)
+    }
+}
+
+@MainActor
+private func makeRuntimeCardRenderer(
     appSupportDirectory: URL,
-    sourceAppIconPath: String?,
-    linkTitle: String = "github.com",
-    footnoteText: String = "github.com",
-    primaryText: String = "https://github.com/"
-) -> PanelRenderedItemCard {
+    itemSide: CGFloat,
+    theme: ClipShelfThemePalette? = nil
+) -> PanelItemCardRenderer {
     let app = NSApplication.shared
-    let renderer = PanelItemCardRenderer(
+    let theme = theme ?? ClipShelfTheme.current(for: app.effectiveAppearance)
+    return PanelItemCardRenderer(
         cardAssetResolver: PanelCardAssetResolver(appSupportDirectory: appSupportDirectory),
         metrics: PanelItemCardRendererMetrics(
             defaultItemSide: itemSide,
@@ -1855,9 +2743,28 @@ private func renderLinkCard(
             cardFooterHeight: 17,
             sourceIconSize: 54,
             linkPreviewHeight: 84,
-            theme: ClipShelfTheme.current(for: app.effectiveAppearance)
+            theme: theme
         ),
         backingScaleFactor: NSScreen.main?.backingScaleFactor ?? 2
+    )
+}
+
+@MainActor
+private func renderLinkCard(
+    itemSide: CGFloat,
+    appSupportDirectory: URL,
+    sourceAppIconPath: String?,
+    linkTitle: String = "github.com",
+    footnoteText: String = "github.com",
+    primaryText: String = "https://github.com/",
+    iconPath: String? = nil,
+    imagePath: String? = nil,
+    theme: ClipShelfThemePalette? = nil
+) -> PanelRenderedItemCard {
+    let renderer = makeRuntimeCardRenderer(
+        appSupportDirectory: appSupportDirectory,
+        itemSide: itemSide,
+        theme: theme
     )
 
     return renderer.render(PanelItemCardViewState(
@@ -1873,8 +2780,8 @@ private func renderLinkCard(
             title: linkTitle,
             host: "github.com",
             detail: primaryText,
-            iconPath: nil,
-            imagePath: nil,
+            iconPath: iconPath,
+            imagePath: imagePath,
             accessibilityLabel: "Safari"
         ),
         assetRequest: PanelCardAssetRequest(

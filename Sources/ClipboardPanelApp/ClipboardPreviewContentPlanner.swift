@@ -135,13 +135,24 @@ public enum ClipboardPreviewContentPlanner {
         appSupportDirectory: URL,
         fileManager: FileManager
     ) -> URL? {
-        guard item.itemType == "image" else { return nil }
+        switch item.itemType {
+        case "image":
+            return ClipboardAssetPathResolver.firstExistingURL(
+                for: [item.payloadAssetPath, item.previewAssetPath],
+                appSupportDirectory: appSupportDirectory,
+                fileManager: fileManager
+            )
 
-        return ClipboardAssetPathResolver.firstExistingURL(
-            for: [item.payloadAssetPath, item.previewAssetPath],
-            appSupportDirectory: appSupportDirectory,
-            fileManager: fileManager
-        )
+        case "file":
+            return ClipboardAssetPathResolver.firstExistingURL(
+                for: [item.previewAssetPath],
+                appSupportDirectory: appSupportDirectory,
+                fileManager: fileManager
+            )
+
+        default:
+            return nil
+        }
     }
 
     private static func previewFileURLs(

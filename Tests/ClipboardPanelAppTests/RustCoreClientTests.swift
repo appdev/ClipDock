@@ -10,6 +10,23 @@ struct RustCoreClientTests {
     }
 
     @Test
+    func encodesLosslessWebPThroughSwiftBridge() throws {
+        let rgbaData = Data([
+            255, 0, 0, 255,
+            0, 255, 0, 255,
+            0, 0, 255, 255,
+            255, 255, 255, 255
+        ])
+
+        let webPData = try RustCoreClient()
+            .encodeLosslessWebP(rgbaData: rgbaData, width: 2, height: 2)
+            .get()
+
+        #expect(String(bytes: webPData.prefix(4), encoding: .ascii) == "RIFF")
+        #expect(String(bytes: webPData.dropFirst(8).prefix(4), encoding: .ascii) == "WEBP")
+    }
+
+    @Test
     func opensRustCoreThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -18,7 +35,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 6)
+        #expect(value.schemaVersion == 8)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -84,6 +101,141 @@ struct RustCoreClientTests {
     }
 
     @Test
+    func sourceAppIconHeaderColorRoundTripsThroughSwiftBridgeBinding() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+        _ = try client.captureText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureTextRequest(
+                text: "Header color bridge",
+                sourceBundleId: "com.apple.Safari",
+                sourceAppName: "Safari",
+                sourceBundlePath: "/Applications/Safari.app",
+                sourceIconRelativePath: "app-icons/safari.tiff",
+                sourceConfidence: "high",
+                pasteboardChangeCount: 11
+            )
+        ).get()
+
+        let beforePage = try client.listItems(appSupportDirectory: tempDirectory).get()
+        let item = try #require(beforePage.items.first)
+        let sourceAppID = try #require(item.sourceAppId)
+        let sourceIconPath = try #require(item.sourceAppIconPath)
+        #expect(item.sourceAppIconHeaderColor == nil)
+        #expect(RustCoreClient.activeSourceIconHeaderColorCacheVersion() == 1)
+
+        let color: Int64 = 4_281_553_305
+        let update = try client.updateSourceAppIconHeaderColor(
+            appSupportDirectory: tempDirectory,
+            sourceAppId: sourceAppID,
+            sourceAppIconPath: sourceIconPath,
+            headerColorARGB: color
+        ).get()
+        let afterPage = try client.listItems(appSupportDirectory: tempDirectory).get()
+        let sourceApps = try client.listSourceApps(appSupportDirectory: tempDirectory).get()
+
+        #expect(update.affectedCount == 1)
+        #expect(afterPage.items.first?.sourceAppIconHeaderColor == color)
+        #expect(sourceApps.apps.first?.iconHeaderColor == color)
+    }
+
+    @Test
+    func sourceAppIconHeaderColorDecodesFromBridgeJSONField() throws {
+        let json = """
+        {
+          "id": "item-1",
+          "item_type": "text",
+          "summary": "Example",
+          "primary_text": "Example",
+          "content_hash": "hash",
+          "source_app_id": "source-app",
+          "source_app_name": "Safari",
+          "source_app_icon_path": "/tmp/icon.png",
+          "source_app_icon_header_color": 4281553305,
+          "preview_asset_path": null,
+          "payload_asset_path": null,
+          "source_confidence": "high",
+          "first_copied_at_ms": 1,
+          "last_copied_at_ms": 2,
+          "copy_count": 1,
+          "is_pinned": false,
+          "size_bytes": 12,
+          "preview_state": "ready",
+          "file_items": []
+        }
+        """
+
+        let item = try JSONDecoder().decode(
+            RustClipboardItemSummary.self,
+            from: Data(json.utf8)
+        )
+
+        #expect(item.sourceAppIconHeaderColor == 4_281_553_305)
+    }
+
+    @Test
+    func linkMetadataFetchStateRoundTripsThroughSwiftBridgeBinding() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+        _ = try client.captureText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureTextRequest(
+                text: "https://example.com/docs",
+                sourceBundleId: "com.apple.Safari",
+                sourceAppName: "Safari",
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 3
+            )
+        ).get()
+
+        let candidates = try client.claimLinkMetadataFetchBatch(
+            appSupportDirectory: tempDirectory,
+            limit: 1,
+            leaseTimeoutMs: 60_000
+        ).get()
+        let candidate = try #require(candidates.first)
+        #expect(candidate.canonicalURL == "https://example.com/docs")
+        #expect(candidate.leaseStartedAtMs > 0)
+
+        let stale = try client.completeLinkMetadataFetch(
+            appSupportDirectory: tempDirectory,
+            request: RustCompleteLinkMetadataFetchRequest(
+                itemId: candidate.itemId,
+                leaseStartedAtMs: candidate.leaseStartedAtMs - 1,
+                canonicalURL: "https://example.com/docs",
+                displayURL: "example.com/docs",
+                host: "example.com",
+                title: "Should not land"
+            )
+        ).get()
+        #expect(stale.affectedCount == 0)
+
+        let completed = try client.completeLinkMetadataFetch(
+            appSupportDirectory: tempDirectory,
+            request: RustCompleteLinkMetadataFetchRequest(
+                itemId: candidate.itemId,
+                leaseStartedAtMs: candidate.leaseStartedAtMs,
+                canonicalURL: "https://example.com/docs",
+                displayURL: "example.com/docs",
+                host: "example.com",
+                title: "Example Docs",
+                iconRelativePath: "assets/link-icons/example.png"
+            )
+        ).get()
+        #expect(completed.affectedCount == 1)
+
+        let page = try client.listItems(appSupportDirectory: tempDirectory).get()
+        #expect(page.items[0].linkMetadata?.metadataState == "ready")
+        #expect(page.items[0].linkMetadata?.title == "Example Docs")
+        #expect(page.items[0].linkMetadata?.displayURL == "example.com/docs")
+        #expect(page.items[0].linkMetadata?.iconAssetPath?.hasSuffix("assets/link-icons/example.png") == true)
+    }
+
+    @Test
     func capturesImageThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -133,6 +285,11 @@ struct RustCoreClientTests {
     func capturesFilesThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let thumbnailDirectory = tempDirectory.appendingPathComponent("thumbnails", isDirectory: true)
+        try FileManager.default.createDirectory(at: thumbnailDirectory, withIntermediateDirectories: true)
+        try Data("file thumbnail".utf8).write(
+            to: thumbnailDirectory.appendingPathComponent("files.png")
+        )
         let filePaths = [
             "/Users/evan/Desktop/report.pdf",
             "/Users/evan/Desktop/design.sketch"
@@ -165,6 +322,11 @@ struct RustCoreClientTests {
                         contentType: nil
                     )
                 ],
+                previewRelativePath: "thumbnails/files.png",
+                previewMimeType: "image/png",
+                previewWidth: 420,
+                previewHeight: 320,
+                previewByteCount: 14,
                 snapshotRelativePath: nil,
                 snapshotByteCount: 0,
                 sourceBundleId: "com.apple.finder",
@@ -185,6 +347,7 @@ struct RustCoreClientTests {
         #expect(page.items[0].primaryText?.contains("design.sketch") == true)
         #expect(page.items[0].sourceAppName == "Finder")
         #expect(page.items[0].payloadAssetPath == nil)
+        #expect(page.items[0].previewAssetPath?.hasSuffix("thumbnails/files.png") == true)
         #expect(page.items[0].sizeBytes == 3072)
         #expect(page.items[0].fileItems.map(\.path) == filePaths)
         #expect(page.items[0].fileItems.map(\.byteCount) == [1024, 2048])
@@ -469,7 +632,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 6)
+        #expect(result.schemaVersion == 8)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.history.maxItems == 5000)
@@ -479,7 +642,6 @@ struct RustCoreClientTests {
         #expect(result.preferences.appearance.mode == "system")
         #expect(result.preferences.appearance.itemDensity == "standard")
         #expect(result.preferences.appearance.previewPopoverEnabled)
-        #expect(!result.preferences.linkPreview.metadataEnabled)
         #expect(result.preferences.linkPreview.webPreviewEnabled)
         #expect(result.preferences.shortcuts.openPanel.keyCode == 9)
         #expect(result.preferences.shortcuts.openPanel.modifiers == ["command", "shift"])
@@ -503,7 +665,6 @@ struct RustCoreClientTests {
         preferences.appearance.mode = "neon"
         preferences.appearance.itemDensity = "compact"
         preferences.appearance.previewPopoverEnabled = false
-        preferences.linkPreview.metadataEnabled = true
         preferences.linkPreview.webPreviewEnabled = false
         preferences.shortcuts.openPanel = RustKeyboardShortcut(
             keyCode: 11,
@@ -537,7 +698,6 @@ struct RustCoreClientTests {
         #expect(saved.preferences.appearance.mode == "system")
         #expect(saved.preferences.appearance.itemDensity == "compact")
         #expect(!saved.preferences.appearance.previewPopoverEnabled)
-        #expect(saved.preferences.linkPreview.metadataEnabled)
         #expect(!saved.preferences.linkPreview.webPreviewEnabled)
         #expect(saved.preferences.shortcuts.openPanel.keyCode == 11)
         #expect(saved.preferences.shortcuts.openPanel.modifiers == ["command", "option", "shift"])

@@ -4,6 +4,7 @@ public struct PanelCardAssetRequest: Equatable, Sendable {
     public let sourceAppId: String?
     public let sourceAppName: String?
     public let sourceAppIconPath: String?
+    public let sourceAppIconHeaderColor: Int64?
     public let previewAssetPath: String?
     public let payloadAssetPath: String?
     public let primaryText: String?
@@ -12,6 +13,7 @@ public struct PanelCardAssetRequest: Equatable, Sendable {
         sourceAppId: String? = nil,
         sourceAppName: String? = nil,
         sourceAppIconPath: String? = nil,
+        sourceAppIconHeaderColor: Int64? = nil,
         previewAssetPath: String? = nil,
         payloadAssetPath: String? = nil,
         primaryText: String? = nil
@@ -19,6 +21,7 @@ public struct PanelCardAssetRequest: Equatable, Sendable {
         self.sourceAppId = sourceAppId
         self.sourceAppName = sourceAppName
         self.sourceAppIconPath = sourceAppIconPath
+        self.sourceAppIconHeaderColor = sourceAppIconHeaderColor
         self.previewAssetPath = previewAssetPath
         self.payloadAssetPath = payloadAssetPath
         self.primaryText = primaryText
@@ -107,6 +110,7 @@ public enum PanelItemCardViewStateAdapter {
                 sourceAppId: item.sourceAppId,
                 sourceAppName: item.sourceAppName,
                 sourceAppIconPath: item.sourceAppIconPath,
+                sourceAppIconHeaderColor: item.sourceAppIconHeaderColor,
                 previewAssetPath: item.previewAssetPath,
                 payloadAssetPath: item.payloadAssetPath,
                 primaryText: item.primaryText
@@ -123,7 +127,7 @@ public enum PanelItemCardViewStateAdapter {
         case "image":
             return .image(
                 previewPath: item.previewAssetPath,
-                payloadPath: item.payloadAssetPath,
+                payloadPath: nil,
                 summary: item.summary
             )
         case "link":

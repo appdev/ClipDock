@@ -125,7 +125,12 @@ enum ClipShelfTheme {
             headerTextColor: NSColor.white.withAlphaComponent(0.96),
             headerSecondaryTextColor: NSColor.white.withAlphaComponent(0.82),
             sourceIconBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.72),
-            linkPreviewBackgroundColor: NSColor(calibratedWhite: 0.91, alpha: 0.94),
+            linkPreviewBackgroundColor: NSColor(
+                calibratedRed: 0.955,
+                green: 0.963,
+                blue: 0.982,
+                alpha: 1
+            ),
             appIconTileBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.92)
         ),
         preferences: ClipShelfPreferencesTheme(

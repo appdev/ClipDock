@@ -25,10 +25,16 @@ public struct ClipboardCaptureSource: Equatable, Sendable {
 public struct ClipboardCapturedFiles: Equatable, Sendable {
     public let paths: [String]
     public let fileItems: [ClipboardCapturedFileMetadata]
+    public let preview: ClipboardStoredFilePreview?
 
-    public init(paths: [String], fileItems: [ClipboardCapturedFileMetadata] = []) {
+    public init(
+        paths: [String],
+        fileItems: [ClipboardCapturedFileMetadata] = [],
+        preview: ClipboardStoredFilePreview? = nil
+    ) {
         self.paths = paths
         self.fileItems = fileItems
+        self.preview = preview
     }
 }
 
@@ -153,6 +159,28 @@ public struct ClipboardStoredImageAsset: Equatable, Sendable {
     }
 }
 
+public struct ClipboardStoredFilePreview: Equatable, Sendable {
+    public let relativePath: String
+    public let mimeType: String
+    public let width: Int
+    public let height: Int
+    public let byteCount: Int
+
+    public init(
+        relativePath: String,
+        mimeType: String,
+        width: Int,
+        height: Int,
+        byteCount: Int
+    ) {
+        self.relativePath = relativePath
+        self.mimeType = mimeType
+        self.width = width
+        self.height = height
+        self.byteCount = byteCount
+    }
+}
+
 public struct ClipboardCaptureHandlingResult: Equatable, Sendable {
     public let statusText: String?
     public let shouldRefreshList: Bool
@@ -225,7 +253,7 @@ public final class ClipboardCaptureCoordinator {
                 canonicalURL: link.canonicalURL,
                 displayURL: link.displayURL,
                 host: link.host,
-                metadataState: preferences.linkPreview.metadataEnabled ? "pending" : "disabled"
+                metadataState: "pending"
             )
         }
         let request = RustCaptureTextRequest(
@@ -306,6 +334,48 @@ public final class ClipboardCaptureCoordinator {
         }
     }
 
+    public func capturePreparedImage(
+        _ storedImage: ClipboardStoredImageAsset,
+        changeCount: Int,
+        preferences: RustPreferencesDocument,
+        source: ClipboardCaptureSource?
+    ) -> ClipboardCaptureHandlingResult {
+        if let skipResult = skipResult(for: source, preferences: preferences) {
+            return skipResult
+        }
+
+        let request = RustCaptureImageRequest(
+            payloadRelativePath: storedImage.payloadRelativePath,
+            previewRelativePath: storedImage.previewRelativePath,
+            mimeType: storedImage.mimeType,
+            width: Int64(storedImage.width),
+            height: Int64(storedImage.height),
+            byteCount: Int64(storedImage.byteCount),
+            sourceBundleId: source?.bundleId,
+            sourceAppName: source?.appName,
+            sourceBundlePath: source?.bundlePath,
+            sourceIconRelativePath: cacheIcon(source),
+            sourceConfidence: source == nil ? "unknown" : "high",
+            pasteboardChangeCount: Int64(changeCount)
+        )
+
+        switch captureImage(request) {
+        case .success:
+            return ClipboardCaptureHandlingResult(
+                statusText: nil,
+                shouldRefreshList: true,
+                storageError: nil
+            )
+
+        case .failure(let error):
+            return ClipboardCaptureHandlingResult(
+                statusText: "捕获：\(error.code)",
+                shouldRefreshList: false,
+                storageError: error
+            )
+        }
+    }
+
     public func captureFiles(
         _ files: ClipboardCapturedFiles,
         changeCount: Int,
@@ -319,6 +389,11 @@ public final class ClipboardCaptureCoordinator {
         let request = RustCaptureFilesRequest(
             filePaths: files.paths,
             fileItems: files.fileItems,
+            previewRelativePath: files.preview?.relativePath,
+            previewMimeType: files.preview?.mimeType,
+            previewWidth: Int64(files.preview?.width ?? 0),
+            previewHeight: Int64(files.preview?.height ?? 0),
+            previewByteCount: Int64(files.preview?.byteCount ?? 0),
             snapshotRelativePath: nil,
             snapshotByteCount: 0,
             sourceBundleId: source?.bundleId,
@@ -344,6 +419,13 @@ public final class ClipboardCaptureCoordinator {
                 storageError: error
             )
         }
+    }
+
+    public func preflightCapture(
+        source: ClipboardCaptureSource?,
+        preferences: RustPreferencesDocument
+    ) -> ClipboardCaptureHandlingResult? {
+        skipResult(for: source, preferences: preferences)
     }
 
     private func skipResult(

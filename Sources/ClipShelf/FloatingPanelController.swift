@@ -300,6 +300,10 @@ final class FloatingPanelController {
         contentView.updateAppSupportDirectory(url)
     }
 
+    func setSourceIconHeaderColorWriter(_ writer: SourceAppIconHeaderColorWriter?) {
+        contentView.updateSourceIconHeaderColorWriter(writer)
+    }
+
     func updatePinboards(_ pinboards: [RustPinboardSummary]) {
         contentView.updatePinboards(pinboards)
     }

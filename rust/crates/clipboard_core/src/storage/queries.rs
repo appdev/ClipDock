@@ -5,6 +5,7 @@ use crate::domain::{
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
+use crate::ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION;
 use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Transaction};
 use std::collections::HashMap;
@@ -31,7 +32,7 @@ impl ClipboardCore {
             .pinboard_id
             .as_deref()
             .map(Self::normalize_pinboard_id);
-        let mut sql = String::from(
+        let mut sql = format!(
             r#"
             SELECT
                 i.id,
@@ -42,6 +43,11 @@ impl ClipboardCore {
                 i.source_app_id,
                 COALESCE(s.name, i.source_app_name),
                 ic.relative_path,
+                CASE
+                    WHEN ic.header_color_cache_version == {ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION}
+                    THEN ic.header_color_argb
+                    ELSE NULL
+                END,
                 (
                     SELECT a.relative_path
                     FROM clipboard_assets a
@@ -96,7 +102,7 @@ impl ClipboardCore {
                 LIMIT 1
             )
             LEFT JOIN link_metadata lm ON lm.item_id = i.id
-            "#,
+            "#
         );
 
         let mut filter_params = Vec::new();
@@ -231,6 +237,17 @@ impl ClipboardCore {
                     ORDER BY ic.updated_at_ms DESC
                     LIMIT 1
                 ) AS icon_path,
+                (
+                    SELECT
+                        CASE
+                            WHEN ic.header_color_cache_version == ?3 THEN ic.header_color_argb
+                            ELSE NULL
+                        END
+                    FROM source_app_icons ic
+                    WHERE ic.source_app_id = s.id
+                    ORDER BY ic.updated_at_ms DESC
+                    LIMIT 1
+                ) AS icon_header_color,
                 COUNT(i.id) AS item_count,
                 MAX(i.last_copied_at_ms) AS last_copied_at_ms
             FROM source_apps s
@@ -241,7 +258,14 @@ impl ClipboardCore {
             LIMIT ?1 OFFSET ?2
             "#,
         )?;
-        let rows = statement.query_map(params![page.limit, page.offset], map_source_app_summary)?;
+        let rows = statement.query_map(
+            params![
+                page.limit,
+                page.offset,
+                ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION
+            ],
+            map_source_app_summary,
+        )?;
         let apps = rows
             .collect::<std::result::Result<Vec<_>, _>>()?
             .into_iter()
@@ -435,6 +459,9 @@ impl ClipboardCore {
         )?;
 
         transaction.commit()?;
+        if deleted_item_count > 0 {
+            self.purge_soft_deleted_items_and_assets()?;
+        }
         Ok(ItemManagementResult {
             affected_count: deleted_item_count,
         })
@@ -503,6 +530,27 @@ impl ClipboardCore {
             params![now, item_id],
         )? as i64;
         transaction.commit()?;
+        if affected_count > 0 {
+            self.purge_soft_deleted_items_and_assets()?;
+        }
+
+        Ok(ItemManagementResult { affected_count })
+    }
+
+    pub fn record_item_copied(&mut self, item_id: impl AsRef<str>) -> Result<ItemManagementResult> {
+        let item_id = normalize_item_id(item_id.as_ref())?;
+        let now = now_ms();
+        let affected_count = self.connection.execute(
+            r#"
+            UPDATE clipboard_items
+            SET
+                last_copied_at_ms = ?1,
+                copy_count = copy_count + 1,
+                updated_at_ms = ?1
+            WHERE id = ?2 AND deleted_at_ms IS NULL
+            "#,
+            params![now, item_id],
+        )? as i64;
 
         Ok(ItemManagementResult { affected_count })
     }
@@ -542,6 +590,9 @@ impl ClipboardCore {
         let affected_count = self
             .connection
             .execute(&sql, params_from_iter(params.iter()))? as i64;
+        if affected_count > 0 {
+            self.purge_soft_deleted_items_and_assets()?;
+        }
 
         Ok(ItemManagementResult { affected_count })
     }
@@ -850,24 +901,24 @@ fn make_like_query(search_text: &str) -> String {
 
 fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSummary> {
     let item_type = row.get::<_, String>(1)?;
-    let source_confidence = row.get::<_, String>(10)?;
-    let preview_state = row.get::<_, String>(16)?;
-    let canonical_url = row.get::<_, Option<String>>(17)?;
+    let source_confidence = row.get::<_, String>(11)?;
+    let preview_state = row.get::<_, String>(17)?;
+    let canonical_url = row.get::<_, Option<String>>(18)?;
     let link_metadata = match canonical_url {
         Some(canonical_url) => {
-            let metadata_state = row.get::<_, Option<String>>(24)?;
+            let metadata_state = row.get::<_, Option<String>>(25)?;
             Some(LinkMetadataSummary {
                 canonical_url,
-                display_url: row.get(18)?,
-                host: row.get(19)?,
-                title: row.get(20)?,
-                site_name: row.get(21)?,
-                icon_asset_path: row.get(22)?,
-                image_asset_path: row.get(23)?,
+                display_url: row.get(19)?,
+                host: row.get(20)?,
+                title: row.get(21)?,
+                site_name: row.get(22)?,
+                icon_asset_path: row.get(23)?,
+                image_asset_path: row.get(24)?,
                 metadata_state: LinkMetadataState::from_storage(
                     metadata_state.as_deref().unwrap_or("failed"),
                 ),
-                fetched_at_ms: row.get(25)?,
+                fetched_at_ms: row.get(26)?,
             })
         }
         None => None,
@@ -882,14 +933,15 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
         source_app_id: row.get(5)?,
         source_app_name: row.get(6)?,
         source_app_icon_path: row.get(7)?,
-        preview_asset_path: row.get(8)?,
-        payload_asset_path: row.get(9)?,
+        source_app_icon_header_color: row.get(8)?,
+        preview_asset_path: row.get(9)?,
+        payload_asset_path: row.get(10)?,
         source_confidence: SourceConfidence::from_storage(&source_confidence),
-        first_copied_at_ms: row.get(11)?,
-        last_copied_at_ms: row.get(12)?,
-        copy_count: row.get(13)?,
-        is_pinned: row.get::<_, i64>(14)? == 1,
-        size_bytes: row.get(15)?,
+        first_copied_at_ms: row.get(12)?,
+        last_copied_at_ms: row.get(13)?,
+        copy_count: row.get(14)?,
+        is_pinned: row.get::<_, i64>(15)? == 1,
+        size_bytes: row.get(16)?,
         preview_state: PreviewState::from_storage(&preview_state),
         file_items: Vec::new(),
         link_metadata,
@@ -902,8 +954,9 @@ fn map_source_app_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceApp
         bundle_id: row.get(1)?,
         name: row.get(2)?,
         icon_path: row.get(3)?,
-        item_count: row.get(4)?,
-        last_copied_at_ms: row.get(5)?,
+        icon_header_color: row.get(4)?,
+        item_count: row.get(5)?,
+        last_copied_at_ms: row.get(6)?,
     })
 }
 

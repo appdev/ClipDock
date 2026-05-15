@@ -1,8 +1,15 @@
-use crate::error::Result;
+use crate::domain::ItemManagementResult;
+use crate::error::{CoreError, CoreErrorCode, Result};
+use crate::time::now_ms;
+use crate::ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION;
 use rusqlite::params;
 
 use super::support::stable_hash;
 use super::ClipboardCore;
+use std::path::{Component, Path, PathBuf};
+
+const MIN_OPAQUE_ARGB: i64 = 0xFF00_0000;
+const MAX_OPAQUE_ARGB: i64 = 0xFFFF_FFFF;
 
 pub(super) struct SourceAppInput<'a> {
     pub bundle_id: Option<&'a str>,
@@ -12,6 +19,69 @@ pub(super) struct SourceAppInput<'a> {
 }
 
 impl ClipboardCore {
+    pub fn active_source_icon_header_color_cache_version() -> i64 {
+        ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION
+    }
+
+    pub fn update_source_app_icon_header_color(
+        &mut self,
+        source_app_id: impl AsRef<str>,
+        source_app_icon_path: impl AsRef<str>,
+        header_color_argb: i64,
+        allow_latest_without_path: bool,
+    ) -> Result<ItemManagementResult> {
+        let source_app_id = normalize_source_app_id(source_app_id.as_ref())?;
+        let header_color_argb = normalize_header_color_argb(header_color_argb)?;
+        let expected_relative_path =
+            self.normalize_expected_icon_path(source_app_icon_path.as_ref())?;
+        let now = now_ms();
+
+        let affected_count = match expected_relative_path {
+            Some(relative_path) => self.connection.execute(
+                r#"
+                UPDATE source_app_icons
+                SET
+                    header_color_argb = ?1,
+                    header_color_cache_version = ?2,
+                    header_color_updated_at_ms = ?3
+                WHERE source_app_id = ?4 AND relative_path = ?5
+                "#,
+                params![
+                    header_color_argb,
+                    ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION,
+                    now,
+                    source_app_id,
+                    relative_path
+                ],
+            )?,
+            None if allow_latest_without_path => self.connection.execute(
+                r#"
+                UPDATE source_app_icons
+                SET
+                    header_color_argb = ?1,
+                    header_color_cache_version = ?2,
+                    header_color_updated_at_ms = ?3
+                WHERE id = (
+                    SELECT id
+                    FROM source_app_icons
+                    WHERE source_app_id = ?4
+                    ORDER BY updated_at_ms DESC
+                    LIMIT 1
+                )
+                "#,
+                params![
+                    header_color_argb,
+                    ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION,
+                    now,
+                    source_app_id
+                ],
+            )?,
+            None => 0,
+        } as i64;
+
+        Ok(ItemManagementResult { affected_count })
+    }
+
     pub(super) fn upsert_source_app(
         &self,
         input: SourceAppInput<'_>,
@@ -90,4 +160,126 @@ impl ClipboardCore {
 
         Ok(Some(source_app_id))
     }
+
+    fn normalize_expected_icon_path(&self, value: &str) -> Result<Option<String>> {
+        normalize_expected_icon_path(self.root_dir()?, value)
+    }
+}
+
+fn normalize_source_app_id(value: &str) -> Result<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "source app id cannot be empty",
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn normalize_header_color_argb(value: i64) -> Result<i64> {
+    if (MIN_OPAQUE_ARGB..=MAX_OPAQUE_ARGB).contains(&value) {
+        Ok(value)
+    } else {
+        Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "source app icon header color must be an opaque positive Int64 ARGB value",
+        ))
+    }
+}
+
+fn normalize_expected_icon_path(app_support_dir: &Path, value: &str) -> Result<Option<String>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let input_path = Path::new(trimmed);
+    let relative_path = if input_path.is_absolute() {
+        let root = normalize_absolute_path(app_support_dir)?;
+        let absolute = normalize_absolute_path(input_path)?;
+        let relative = absolute.strip_prefix(&root).map_err(|_| {
+            CoreError::new(
+                CoreErrorCode::InvalidInput,
+                "absolute source app icon path must be under app support directory",
+            )
+        })?;
+        relative_path_to_db_form(relative)?
+    } else {
+        relative_input_to_db_form(trimmed)?
+    };
+
+    if relative_path.is_empty() {
+        return Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "source app icon path cannot resolve to app support root",
+        ));
+    }
+    Ok(Some(relative_path))
+}
+
+fn normalize_absolute_path(path: &Path) -> Result<PathBuf> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::Normal(value) => normalized.push(value),
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err(CoreError::new(
+                        CoreErrorCode::InvalidInput,
+                        "absolute source app icon path cannot escape root",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn relative_path_to_db_form(path: &Path) -> Result<String> {
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(value) => {
+                let value = value.to_str().ok_or_else(|| {
+                    CoreError::new(
+                        CoreErrorCode::InvalidInput,
+                        "source app icon path is not UTF-8",
+                    )
+                })?;
+                parts.push(value.to_string());
+            }
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(CoreError::new(
+                    CoreErrorCode::InvalidInput,
+                    "source app icon path must stay inside app support directory",
+                ));
+            }
+        }
+    }
+    Ok(parts.join("/"))
+}
+
+fn relative_input_to_db_form(value: &str) -> Result<String> {
+    let normalized_separators = value.replace('\\', "/");
+    let mut parts: Vec<&str> = Vec::new();
+    for part in normalized_separators.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                if parts.pop().is_none() {
+                    return Err(CoreError::new(
+                        CoreErrorCode::InvalidInput,
+                        "relative source app icon path cannot escape app support directory",
+                    ));
+                }
+            }
+            value => parts.push(value),
+        }
+    }
+    Ok(parts.join("/"))
 }

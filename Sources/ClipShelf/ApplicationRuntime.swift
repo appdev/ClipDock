@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import ClipboardPanelApp
+import UniformTypeIdentifiers
 
 enum ClipShelfLaunchArgument {
     static let launchedAtLogin = "--launched-at-login"
@@ -32,6 +33,25 @@ final class SystemCommandVKeystrokeSender: CommandVKeystrokeSending {
 }
 
 @MainActor
+final class ClipboardCaptureRegistrationPipeline {
+    private var tailTask: Task<Void, Never>?
+
+    func enqueue(_ operation: @escaping @MainActor @Sendable () async -> Void) {
+        let previousTask = tailTask
+        tailTask = Task { @MainActor [previousTask, operation] in
+            await previousTask?.value
+            guard !Task.isCancelled else { return }
+            await operation()
+        }
+    }
+
+    func cancel() {
+        tailTask?.cancel()
+        tailTask = nil
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum ClipboardWriteResult {
         case success(changeCount: Int)
@@ -56,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let clipboardMonitor = ClipboardMonitor()
     private let commandVKeystrokeSender: CommandVKeystrokeSending = SystemCommandVKeystrokeSender()
     private let databaseWorker = ClipboardCoreDatabaseWorker()
+    private let captureRegistrationPipeline = ClipboardCaptureRegistrationPipeline()
     private var statusItem: NSStatusItem?
     private var togglePanelMenuItem: NSMenuItem?
     private var hotKeyRef: EventHotKeyRef?
@@ -66,14 +87,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var iconProvider: SourceAppIconProvider?
     private var imageAssetProvider: ClipboardImageAssetProvider?
     private var fileSnapshotProvider: ClipboardFileSnapshotProvider?
+    private var filePreviewProvider: ClipboardFilePreviewProvider?
     private var listCoordinator: ClipboardListCoordinator?
     private var pinboardCoordinator: PinboardCoordinator?
     private var captureCoordinator: ClipboardCaptureCoordinator?
+    private var linkMetadataCoordinator: LinkMetadataCoordinator?
     private var preferencesCoordinator: PreferencesCoordinator?
     private var maintenanceCoordinator: StorageMaintenanceCoordinator?
     private var currentPreferences = RustPreferencesDocument()
     private var lastPanelToggleUptime: TimeInterval = 0
-    private var fileCaptureTask: Task<Void, Never>?
     private var directInsertTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
 
@@ -102,8 +124,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         startupTask?.cancel()
-        fileCaptureTask?.cancel()
+        captureRegistrationPipeline.cancel()
         directInsertTask?.cancel()
+        Task { [linkMetadataCoordinator] in
+            await linkMetadataCoordinator?.stop()
+        }
         clipboardMonitor.stop()
         sourceApplicationTracker.stop()
         unregisterGlobalHotKey()
@@ -217,6 +242,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureCoordinators(for appSupportURL: URL) {
         let client = rustCoreClient
         let databaseWorker = databaseWorker
+        panelController.setSourceIconHeaderColorWriter { [client, databaseWorker, appSupportURL] request in
+            _ = await databaseWorker.updateSourceAppIconHeaderColor(
+                client: client,
+                appSupportURL: appSupportURL,
+                sourceAppID: request.sourceAppID,
+                sourceAppIconPath: request.sourceAppIconPath,
+                headerColorARGB: request.headerColorARGB,
+                allowLatestWithoutPath: false
+            )
+        }
 
         let listCoordinator = ClipboardListCoordinator(
             pageLoader: { [client, databaseWorker, appSupportURL] query in
@@ -250,6 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         listCoordinator.onMutationCompleted = { [weak self] mutation, _ in
             switch mutation {
+            case .recordCopied:
+                self?.panelController.invalidateCachedListPages()
             case .setPinboardMembership(_, _, _), .delete(_), .clear:
                 self?.panelController.invalidateCachedListPages()
                 self?.refreshPinboards()
@@ -339,6 +376,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             cacheFileSnapshot: { [weak fileSnapshotProvider] files, changeCount in
                 fileSnapshotProvider?.cacheFiles(files, changeCount: changeCount)
+            }
+        )
+
+        linkMetadataCoordinator = LinkMetadataCoordinator(
+            coreClient: client,
+            appSupportDirectory: appSupportURL,
+            onMetadataChanged: { [weak self] in
+                await MainActor.run {
+                    self?.panelController.invalidateCachedListPages()
+                    self?.refreshClipboardList()
+                }
             }
         )
     }
@@ -468,6 +516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
             storageStatusText = pasteDirectlyToTarget ? "复制：已发送到目标" : "复制：已写入剪贴板"
             refreshStatusText()
+            performItemMutation(.recordCopied(itemID: item.id))
             panelController.hide()
             if pasteDirectlyToTarget {
                 scheduleCommandVToTarget()
@@ -583,6 +632,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for url: URL
     ) -> (primary: NSPasteboard.PasteboardType, aliases: [NSPasteboard.PasteboardType])? {
         switch url.pathExtension.lowercased() {
+        case "webp":
+            return (NSPasteboard.PasteboardType(UTType.webP.identifier), [])
         case "heic":
             return (NSPasteboard.PasteboardType("public.heic"), [])
         case "heif":
@@ -633,6 +684,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         iconProvider = SourceAppIconProvider(appSupportURL: appSupportURL)
         imageAssetProvider = ClipboardImageAssetProvider(appSupportURL: appSupportURL)
         fileSnapshotProvider = ClipboardFileSnapshotProvider(appSupportURL: appSupportURL)
+        filePreviewProvider = ClipboardFilePreviewProvider(appSupportURL: appSupportURL)
         panelController.setAppSupportDirectory(appSupportURL)
         configureCoordinators(for: appSupportURL)
 
@@ -734,6 +786,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.isVisible = result.preferences.general.showMenuBarItem
         updateTogglePanelMenuShortcut(result.preferences.shortcuts.openPanel)
         registerGlobalHotKey()
+        Task { [linkMetadataCoordinator, preferences = result.preferences] in
+            await linkMetadataCoordinator?.apply(preferences: preferences)
+        }
         if updatePreferencesController {
             preferencesController.updatePreferences(result.preferences)
         }
@@ -842,12 +897,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        applyCaptureResult(captureCoordinator.captureText(
-            text,
-            changeCount: changeCount,
-            preferences: currentPreferences,
-            source: sourceApplicationTracker.currentSource()?.clipboardCaptureSource
-        ))
+        let preferences = currentPreferences
+        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
+        if let skipResult = captureCoordinator.preflightCapture(
+            source: source,
+            preferences: preferences
+        ) {
+            applyCaptureResult(skipResult)
+            return
+        }
+
+        enqueueCaptureRegistration { [weak self, text, changeCount, preferences, source] in
+            guard let self,
+                  let captureCoordinator = self.captureCoordinator
+            else {
+                return
+            }
+
+            let result = captureCoordinator.captureText(
+                text,
+                changeCount: changeCount,
+                preferences: preferences,
+                source: source
+            )
+            self.applyCaptureResult(result)
+            if result.shouldRefreshList {
+                Task { [linkMetadataCoordinator = self.linkMetadataCoordinator] in
+                    await linkMetadataCoordinator?.scheduleSoon()
+                }
+            }
+        }
     }
 
     private func captureClipboardImage(_ image: CapturedClipboardImage, changeCount: Int) {
@@ -855,24 +934,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        applyCaptureResult(captureCoordinator.captureImage(
-            image.clipboardCapturedImage,
-            changeCount: changeCount,
-            preferences: currentPreferences,
-            source: sourceApplicationTracker.currentSource()?.clipboardCaptureSource
-        ))
+        let preferences = currentPreferences
+        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
+        if let skipResult = captureCoordinator.preflightCapture(
+            source: source,
+            preferences: preferences
+        ) {
+            applyCaptureResult(skipResult)
+            return
+        }
+
+        enqueueCaptureRegistration { [weak self, image, changeCount, preferences, source] in
+            guard let self,
+                  let imageAssetProvider = self.imageAssetProvider
+            else {
+                return
+            }
+
+            let preparedResult = await Task.detached(priority: .utility) {
+                imageAssetProvider.prepareImage(image, changeCount: changeCount)
+            }.value
+            if Task.isCancelled {
+                if case .success(let preparedImage) = preparedResult {
+                    imageAssetProvider.removePreparedImage(preparedImage)
+                }
+                return
+            }
+
+            switch preparedResult {
+            case .success(let preparedImage):
+                guard let captureCoordinator = self.captureCoordinator else {
+                    imageAssetProvider.removePreparedImage(preparedImage)
+                    return
+                }
+
+                let result = captureCoordinator.capturePreparedImage(
+                    preparedImage.storedImage,
+                    changeCount: changeCount,
+                    preferences: preferences,
+                    source: source
+                )
+                if !result.shouldRefreshList {
+                    imageAssetProvider.removePreparedImage(preparedImage)
+                }
+                self.applyCaptureResult(result)
+
+            case .failure:
+                self.applyCaptureResult(ClipboardCaptureHandlingResult(
+                    statusText: "捕获：图片资产写入失败",
+                    shouldRefreshList: false,
+                    storageError: nil
+                ))
+            }
+        }
     }
 
     private func captureClipboardFiles(_ files: CapturedClipboardFiles, changeCount: Int) {
-        let previousTask = fileCaptureTask
         let preferences = currentPreferences
         let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
+        if let skipResult = captureCoordinator?.preflightCapture(
+            source: source,
+            preferences: preferences
+        ) {
+            applyCaptureResult(skipResult)
+            return
+        }
 
-        fileCaptureTask = Task { [weak self, previousTask, files, changeCount, preferences, source] in
-            await previousTask?.value
-            guard !Task.isCancelled else { return }
-
-            let enrichedFiles = await Task.detached(priority: .utility) {
+        enqueueCaptureRegistration { [weak self, files, changeCount, preferences, source] in
+            var enrichedFiles = await Task.detached(priority: .utility) {
                 await files.collectingMetadata()
             }.value
             guard !Task.isCancelled else { return }
@@ -882,6 +1011,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else {
                 return
             }
+            let preview = await self.filePreviewProvider?.cachePreview(
+                for: enrichedFiles,
+                changeCount: changeCount
+            )
+            enrichedFiles = enrichedFiles.withPreview(preview)
+            guard !Task.isCancelled else { return }
 
             self.applyCaptureResult(captureCoordinator.captureFiles(
                 enrichedFiles.clipboardCapturedFiles,
@@ -890,6 +1025,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 source: source
             ))
         }
+    }
+
+    private func enqueueCaptureRegistration(
+        _ operation: @escaping @MainActor @Sendable () async -> Void
+    ) {
+        captureRegistrationPipeline.enqueue(operation)
     }
 
     private func configureMainMenu() {

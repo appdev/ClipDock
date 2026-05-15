@@ -23,6 +23,28 @@ struct PanelItemCardRenderArtifacts {
     let bodyLabels: [NSTextField]
     let linkPreviewViews: [NSView]
     let linkIconViews: [NSImageView]
+
+    @MainActor
+    func prepareForRemoval() {
+        for imageView in imagePreviewViews + linkIconViews {
+            imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
+            (imageView as? PanelCardAsyncWorkCancellable)?.cancelPanelCardAsyncWork()
+        }
+    }
+
+    @MainActor
+    func previewImageLoadTokensForSmoke() -> [PanelPreviewImageLoadToken] {
+        (imagePreviewViews + linkIconViews).compactMap {
+            ($0 as? PanelCardPreviewImageLoadTokenProviding)?.previewImageLoadToken
+        }
+    }
+
+    @MainActor
+    func filePreviewThumbnailTokensForSmoke() -> [PanelFilePreviewThumbnailToken] {
+        imagePreviewViews.compactMap {
+            ($0 as? PanelCardFilePreviewThumbnailTokenProviding)?.thumbnailToken
+        }
+    }
 }
 
 struct PanelRenderedItemCard {
@@ -70,8 +92,8 @@ final class PanelItemCardRenderer {
 
         let container = ClipboardItemCardBox()
         container.boxType = .custom
-        container.borderColor = metrics.theme.card.borderColor
-        container.borderWidth = 0.5
+        container.borderColor = .clear
+        container.borderWidth = 0
         container.fillColor = metrics.theme.card.backgroundColor
         container.cornerRadius = metrics.cardCornerRadius
         container.contentViewMargins = .zero
@@ -151,7 +173,6 @@ final class PanelItemCardRenderer {
             typeHeaderLabel: typeHeaderLabel,
             timeLabel: timeLabel,
             unselectedHeaderColor: unselectedHeaderColor,
-            borderColor: metrics.theme.card.borderColor,
             selectionBorderColor: metrics.theme.card.selectionBorderColor,
             headerTextColor: metrics.theme.card.headerTextColor,
             headerSecondaryTextColor: metrics.theme.card.headerSecondaryTextColor,
@@ -242,6 +263,7 @@ final class PanelItemCardRenderer {
         }
         let countBadgeView = makeImageFootnoteBadgeView(isHidden: !isImageCard || state.footnoteText.isEmpty)
         let footnoteView: NSView = isImageCard ? countBadgeView : (linkFooterStack ?? countLabel)
+        let linkFooterBackgroundView = makeLinkFooterBackgroundView(isHidden: !isLinkCard)
         let footerRow = NSView()
         footerRow.userInterfaceLayoutDirection = .leftToRight
         footerRow.translatesAutoresizingMaskIntoConstraints = false
@@ -271,6 +293,7 @@ final class PanelItemCardRenderer {
 
         container.contentView?.addSubview(contentContainer)
         container.contentView?.addSubview(headerView)
+        container.contentView?.addSubview(linkFooterBackgroundView)
         container.contentView?.addSubview(footerRow)
 
         let widthConstraint = container.widthAnchor.constraint(equalToConstant: metrics.defaultItemSide)
@@ -320,6 +343,11 @@ final class PanelItemCardRenderer {
             contentTopConstraint,
             contentHeightConstraint,
             contentBottomConstraint,
+
+            linkFooterBackgroundView.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor),
+            linkFooterBackgroundView.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor),
+            linkFooterBackgroundView.topAnchor.constraint(equalTo: footerRow.topAnchor),
+            linkFooterBackgroundView.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor),
 
             footerRow.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: metrics.cardInset),
             footerRow.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -metrics.cardInset),
@@ -447,6 +475,17 @@ final class PanelItemCardRenderer {
         return view
     }
 
+    private func makeLinkFooterBackgroundView(isHidden: Bool) -> NSView {
+        let view = NSView()
+        view.identifier = NSUserInterfaceItemIdentifier("LinkFooterBackground")
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.cgColor
+        view.layer?.contentsScale = backingScaleFactor
+        view.isHidden = isHidden
+        return view
+    }
+
     private func makePreviewBundle(
         _ previewState: PanelCardPreviewState,
         assetRequest: PanelCardAssetRequest
@@ -454,8 +493,8 @@ final class PanelItemCardRenderer {
         switch previewState {
         case .none:
             return PreviewBundle()
-        case .image(let previewPath, let payloadPath, _):
-            return makeImagePreview(previewPath: previewPath, payloadPath: payloadPath)
+        case .image(let previewPath, _, _):
+            return makeImagePreview(previewPath: previewPath)
         case .link(let title, _, _, let iconPath, let imagePath, let accessibilityLabel):
             return makeLinkPreview(
                 title: title,
@@ -471,14 +510,14 @@ final class PanelItemCardRenderer {
         }
     }
 
-    private func makeImagePreview(previewPath: String?, payloadPath: String?) -> PreviewBundle {
+    private func makeImagePreview(previewPath: String?) -> PreviewBundle {
         let container = CheckerboardImagePreviewContainerView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
         let imageView = ProportionalDownImagePreviewView()
         let previewState = cardAssetResolver.previewImageState(
             previewPath: previewPath,
-            payloadPath: payloadPath
+            payloadPath: nil
         )
         imageView.image = previewState.image
         imageView.imageScaling = .scaleProportionallyDown
@@ -505,8 +544,9 @@ final class PanelItemCardRenderer {
 
         if previewState.image == nil, !previewState.paths.isEmpty {
             let loadIdentifier = imageView.identifier
-            PanelCardAssetResolver.loadPreviewImageAsync(paths: previewState.paths) { [weak imageView, weak fallbackLabel] image in
+            imageView.previewImageLoadToken = PanelCardAssetResolver.loadPreviewImageAsync(paths: previewState.paths) { [weak imageView, weak fallbackLabel] image in
                 guard imageView?.identifier == loadIdentifier else { return }
+                imageView?.previewImageLoadToken = nil
                 imageView?.image = image
                 fallbackLabel?.stringValue = image == nil ? "预览不可用" : ""
                 fallbackLabel?.isHidden = image != nil
@@ -555,15 +595,32 @@ final class PanelItemCardRenderer {
         backgroundImageView.isHidden = imagePreviewState.image == nil
         backgroundImageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
 
+        let overlayView = NSView()
+        overlayView.translatesAutoresizingMaskIntoConstraints = false
+        overlayView.wantsLayer = true
+        let overlayLayer = CAGradientLayer()
+        overlayLayer.colors = [
+            NSColor.black.withAlphaComponent(0.02).cgColor,
+            NSColor.black.withAlphaComponent(metrics.theme.scheme == .light ? 0.16 : 0.28).cgColor
+        ]
+        overlayLayer.startPoint = CGPoint(x: 0.5, y: 0.2)
+        overlayLayer.endPoint = CGPoint(x: 0.5, y: 1)
+        overlayView.layer = overlayLayer
+        overlayView.isHidden = imagePreviewState.image == nil
+
+        let usesDefaultBrowserIcon = iconPreviewState.image == nil
         let iconView = makeLinkIconTile(
-            image: iconPreviewState.image ?? NSImage(systemSymbolName: "link", accessibilityDescription: "链接"),
-            accessibilityLabel: title.isEmpty ? accessibilityLabel : title
+            image: iconPreviewState.image ?? defaultLinkBrowserIcon(),
+            accessibilityLabel: title.isEmpty ? accessibilityLabel : title,
+            usesDefaultBrowserIcon: usesDefaultBrowserIcon
         )
         iconView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
 
         container.addSubview(backgroundImageView)
+        container.addSubview(overlayView)
         container.addSubview(iconView)
         container.iconView = iconView
+        container.overlayView = overlayView
         container.hasBackgroundImage = imagePreviewState.image != nil
 
         NSLayoutConstraint.activate([
@@ -571,6 +628,10 @@ final class PanelItemCardRenderer {
             backgroundImageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             backgroundImageView.topAnchor.constraint(equalTo: container.topAnchor),
             backgroundImageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            overlayView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            overlayView.topAnchor.constraint(equalTo: container.topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
 
             iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             iconView.centerYAnchor.constraint(equalTo: container.centerYAnchor)
@@ -578,8 +639,9 @@ final class PanelItemCardRenderer {
 
         if imagePreviewState.image == nil, !imagePreviewState.paths.isEmpty {
             let loadIdentifier = backgroundImageView.identifier
-            PanelCardAssetResolver.loadPreviewImageAsync(paths: imagePreviewState.paths) { [weak backgroundImageView, weak container] image in
+            backgroundImageView.previewImageLoadToken = PanelCardAssetResolver.loadPreviewImageAsync(paths: imagePreviewState.paths) { [weak backgroundImageView, weak container] image in
                 guard backgroundImageView?.identifier == loadIdentifier else { return }
+                backgroundImageView?.previewImageLoadToken = nil
                 backgroundImageView?.image = image
                 backgroundImageView?.isHidden = image == nil
                 container?.hasBackgroundImage = image != nil
@@ -588,10 +650,12 @@ final class PanelItemCardRenderer {
 
         if iconPreviewState.image == nil, !iconPreviewState.paths.isEmpty {
             let loadIdentifier = iconView.identifier
-            PanelCardAssetResolver.loadPreviewImageAsync(paths: iconPreviewState.paths) { [weak iconView] image in
+            (iconView as? LinkIconImagePreviewView)?.previewImageLoadToken = PanelCardAssetResolver.loadPreviewImageAsync(paths: iconPreviewState.paths) { [weak iconView] image in
                 guard iconView?.identifier == loadIdentifier,
                       let image
                 else { return }
+                (iconView as? LinkIconImagePreviewView)?.previewImageLoadToken = nil
+                self.configureLinkIconAppearance(iconView, usesDefaultBrowserIcon: false)
                 iconView?.image = image
             }
         }
@@ -658,7 +722,8 @@ final class PanelItemCardRenderer {
         return PreviewBundle(
             view: container,
             previewHeightConstraints: [heightConstraint],
-            previewWidthConstraints: [widthConstraint]
+            previewWidthConstraints: [widthConstraint],
+            imagePreviewViews: [imageView]
         )
     }
 
@@ -679,23 +744,54 @@ final class PanelItemCardRenderer {
         return imageView
     }
 
-    private func makeLinkIconTile(image: NSImage?, accessibilityLabel: String) -> NSImageView {
-        let imageView = NSImageView()
+    private func makeLinkIconTile(
+        image: NSImage?,
+        accessibilityLabel: String,
+        usesDefaultBrowserIcon: Bool
+    ) -> NSImageView {
+        let imageView = LinkIconImagePreviewView()
         imageView.image = image
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.wantsLayer = true
         imageView.layer?.cornerRadius = 11
         imageView.layer?.masksToBounds = true
-        imageView.layer?.backgroundColor = metrics.theme.card.appIconTileBackgroundColor.cgColor
-        imageView.layer?.borderWidth = 0.5
-        imageView.layer?.borderColor = NSColor.white.withAlphaComponent(metrics.theme.scheme == .light ? 0.78 : 0.20).cgColor
         imageView.toolTip = accessibilityLabel
+        configureLinkIconAppearance(imageView, usesDefaultBrowserIcon: usesDefaultBrowserIcon)
         NSLayoutConstraint.activate([
             imageView.widthAnchor.constraint(equalToConstant: 46),
             imageView.heightAnchor.constraint(equalToConstant: 46)
         ])
         return imageView
+    }
+
+    private func defaultLinkBrowserIcon() -> NSImage? {
+        let image = NSImage(systemSymbolName: "safari", accessibilityDescription: "Safari 浏览器")
+            ?? NSImage(systemSymbolName: "globe", accessibilityDescription: "浏览器")
+        image?.isTemplate = true
+        return image
+    }
+
+    private func configureLinkIconAppearance(
+        _ imageView: NSImageView?,
+        usesDefaultBrowserIcon: Bool
+    ) {
+        guard let imageView else { return }
+        imageView.layer?.contentsScale = backingScaleFactor
+        if usesDefaultBrowserIcon {
+            imageView.image?.isTemplate = true
+            imageView.contentTintColor = metrics.theme.scheme == .light
+                ? NSColor(calibratedRed: 0.745, green: 0.745, blue: 0.775, alpha: 1)
+                : NSColor.white.withAlphaComponent(0.78)
+            imageView.layer?.backgroundColor = NSColor.clear.cgColor
+            imageView.layer?.borderWidth = 0
+            imageView.layer?.borderColor = NSColor.clear.cgColor
+        } else {
+            imageView.contentTintColor = nil
+            imageView.layer?.backgroundColor = metrics.theme.card.appIconTileBackgroundColor.cgColor
+            imageView.layer?.borderWidth = 0.5
+            imageView.layer?.borderColor = NSColor.white.withAlphaComponent(metrics.theme.scheme == .light ? 0.78 : 0.20).cgColor
+        }
     }
 
     private func leftToRightDisplayText(_ text: String) -> String {
@@ -775,6 +871,11 @@ final class PanelItemCardRenderer {
 @MainActor
 private final class ProportionalDownImagePreviewView: NSImageView {
     private var imageGeometry: ProportionalImageGeometry?
+    var previewImageLoadToken: PanelPreviewImageLoadToken? {
+        didSet {
+            PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
+        }
+    }
 
     override var image: NSImage? {
         didSet {
@@ -895,6 +996,11 @@ private final class CheckerboardImagePreviewContainerView: NSView {
 @MainActor
 private final class AspectFillImagePreviewView: NSImageView {
     private var imageGeometry: ImageGeometry?
+    var previewImageLoadToken: PanelPreviewImageLoadToken? {
+        didSet {
+            PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
+        }
+    }
 
     override var image: NSImage? {
         didSet {
@@ -976,8 +1082,23 @@ private final class AspectFillImagePreviewView: NSImageView {
 }
 
 @MainActor
+private final class LinkIconImagePreviewView: NSImageView {
+    var previewImageLoadToken: PanelPreviewImageLoadToken? {
+        didSet {
+            PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
+        }
+    }
+}
+
+@MainActor
 private final class LinkPreviewBlockView: NSView {
     weak var iconView: NSView? {
+        didSet {
+            updateResponsiveVisibility()
+        }
+    }
+
+    weak var overlayView: NSView? {
         didSet {
             updateResponsiveVisibility()
         }
@@ -999,6 +1120,7 @@ private final class LinkPreviewBlockView: NSView {
         let isLaidOut = height > 0
         let compact = isLaidOut && height < 74
         iconView?.isHidden = hasBackgroundImage || compact
+        overlayView?.isHidden = !hasBackgroundImage
     }
 }
 
@@ -1015,5 +1137,49 @@ private final class FilePreviewImageView: NSImageView {
         Task { @MainActor in
             PanelCardAssetResolver.cancelFilePreviewImageRequest(token)
         }
+    }
+}
+
+@MainActor
+private protocol PanelCardAsyncWorkCancellable: AnyObject {
+    func cancelPanelCardAsyncWork()
+}
+
+@MainActor
+private protocol PanelCardPreviewImageLoadTokenProviding: AnyObject {
+    var previewImageLoadToken: PanelPreviewImageLoadToken? { get }
+}
+
+@MainActor
+private protocol PanelCardFilePreviewThumbnailTokenProviding: AnyObject {
+    var thumbnailToken: PanelFilePreviewThumbnailToken? { get }
+}
+
+extension ProportionalDownImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
+extension AspectFillImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
+extension LinkIconImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
+extension FilePreviewImageView: PanelCardFilePreviewThumbnailTokenProviding {}
+
+extension ProportionalDownImagePreviewView: PanelCardAsyncWorkCancellable {
+    func cancelPanelCardAsyncWork() {
+        previewImageLoadToken = nil
+    }
+}
+
+extension AspectFillImagePreviewView: PanelCardAsyncWorkCancellable {
+    func cancelPanelCardAsyncWork() {
+        previewImageLoadToken = nil
+    }
+}
+
+extension LinkIconImagePreviewView: PanelCardAsyncWorkCancellable {
+    func cancelPanelCardAsyncWork() {
+        previewImageLoadToken = nil
+    }
+}
+
+extension FilePreviewImageView: PanelCardAsyncWorkCancellable {
+    func cancelPanelCardAsyncWork() {
+        thumbnailToken = nil
     }
 }
