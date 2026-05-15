@@ -159,6 +159,65 @@ public struct ClipboardStoredImageAsset: Equatable, Sendable {
     }
 }
 
+public struct ClipboardPendingImageAsset: Equatable, Sendable {
+    public let thumbnailRelativePath: String
+    public let reservedPayloadRelativePath: String
+    public let stagedPayloadRelativePath: String
+    public let mimeType: String
+    public let width: Int
+    public let height: Int
+    public let thumbnailWidth: Int
+    public let thumbnailHeight: Int
+    public let thumbnailByteCount: Int
+
+    public init(
+        thumbnailRelativePath: String,
+        reservedPayloadRelativePath: String,
+        stagedPayloadRelativePath: String,
+        mimeType: String,
+        width: Int,
+        height: Int,
+        thumbnailWidth: Int,
+        thumbnailHeight: Int,
+        thumbnailByteCount: Int
+    ) {
+        self.thumbnailRelativePath = thumbnailRelativePath
+        self.reservedPayloadRelativePath = reservedPayloadRelativePath
+        self.stagedPayloadRelativePath = stagedPayloadRelativePath
+        self.mimeType = mimeType
+        self.width = width
+        self.height = height
+        self.thumbnailWidth = thumbnailWidth
+        self.thumbnailHeight = thumbnailHeight
+        self.thumbnailByteCount = thumbnailByteCount
+    }
+}
+
+public struct ClipboardCompletedPendingImageAsset: Equatable, Sendable {
+    public let jobID: String
+    public let stagedPayloadRelativePath: String
+    public let mimeType: String
+    public let width: Int
+    public let height: Int
+    public let byteCount: Int
+
+    public init(
+        jobID: String,
+        stagedPayloadRelativePath: String,
+        mimeType: String,
+        width: Int,
+        height: Int,
+        byteCount: Int
+    ) {
+        self.jobID = jobID
+        self.stagedPayloadRelativePath = stagedPayloadRelativePath
+        self.mimeType = mimeType
+        self.width = width
+        self.height = height
+        self.byteCount = byteCount
+    }
+}
+
 public struct ClipboardStoredFilePreview: Equatable, Sendable {
     public let relativePath: String
     public let mimeType: String
@@ -201,6 +260,12 @@ public typealias ClipboardTextCapturePerformer =
     (RustCaptureTextRequest) -> Result<RustCaptureTextResult, RustCoreError>
 public typealias ClipboardImageCapturePerformer =
     (RustCaptureImageRequest) -> Result<RustCaptureImageResult, RustCoreError>
+public typealias ClipboardPendingImageCapturePerformer =
+    (RustCapturePendingImageRequest) -> Result<RustPendingImageCaptureResult, RustCoreError>
+public typealias ClipboardPendingImageCompletionPerformer =
+    (RustCompletePendingImagePayloadRequest) -> Result<RustPendingImageCompletionResult, RustCoreError>
+public typealias ClipboardPendingImageFailurePerformer =
+    (RustFailPendingImagePayloadRequest) -> Result<RustPendingImageCompletionResult, RustCoreError>
 public typealias ClipboardFilesCapturePerformer =
     (RustCaptureFilesRequest) -> Result<RustCaptureFilesResult, RustCoreError>
 public typealias ClipboardSourceIconCache = (ClipboardCaptureSource?) -> String?
@@ -213,6 +278,9 @@ public typealias ClipboardFileSnapshotCache =
 public final class ClipboardCaptureCoordinator {
     private let captureText: ClipboardTextCapturePerformer
     private let captureImage: ClipboardImageCapturePerformer
+    private let capturePendingImageRequest: ClipboardPendingImageCapturePerformer
+    private let completePendingImagePayloadRequest: ClipboardPendingImageCompletionPerformer
+    private let failPendingImagePayloadRequest: ClipboardPendingImageFailurePerformer
     private let captureFiles: ClipboardFilesCapturePerformer
     private let cacheIcon: ClipboardSourceIconCache
     private let cacheImageAsset: ClipboardImageAssetCache
@@ -222,6 +290,15 @@ public final class ClipboardCaptureCoordinator {
     public init(
         captureText: @escaping ClipboardTextCapturePerformer,
         captureImage: @escaping ClipboardImageCapturePerformer,
+        capturePendingImage: @escaping ClipboardPendingImageCapturePerformer = { _ in
+            .failure(ClipboardCaptureCoordinator.unavailablePendingImageError())
+        },
+        completePendingImagePayload: @escaping ClipboardPendingImageCompletionPerformer = { _ in
+            .failure(ClipboardCaptureCoordinator.unavailablePendingImageError())
+        },
+        failPendingImagePayload: @escaping ClipboardPendingImageFailurePerformer = { _ in
+            .failure(ClipboardCaptureCoordinator.unavailablePendingImageError())
+        },
         captureFiles: @escaping ClipboardFilesCapturePerformer,
         cacheIcon: @escaping ClipboardSourceIconCache,
         cacheImageAsset: @escaping ClipboardImageAssetCache,
@@ -230,6 +307,9 @@ public final class ClipboardCaptureCoordinator {
     ) {
         self.captureText = captureText
         self.captureImage = captureImage
+        self.capturePendingImageRequest = capturePendingImage
+        self.completePendingImagePayloadRequest = completePendingImagePayload
+        self.failPendingImagePayloadRequest = failPendingImagePayload
         self.captureFiles = captureFiles
         self.cacheIcon = cacheIcon
         self.cacheImageAsset = cacheImageAsset
@@ -376,6 +456,63 @@ public final class ClipboardCaptureCoordinator {
         }
     }
 
+    public func capturePendingImage(
+        _ pendingImage: ClipboardPendingImageAsset,
+        changeCount: Int,
+        preferences: RustPreferencesDocument,
+        source: ClipboardCaptureSource?,
+        ownerSessionID: String
+    ) -> Result<RustPendingImageCaptureResult, RustCoreError> {
+        if let skipResult = skipResult(for: source, preferences: preferences) {
+            return .failure(skipResult.storageError ?? Self.unavailablePendingImageError())
+        }
+
+        let request = RustCapturePendingImageRequest(
+            ownerSessionId: ownerSessionID,
+            thumbnailRelativePath: pendingImage.thumbnailRelativePath,
+            reservedPayloadRelativePath: pendingImage.reservedPayloadRelativePath,
+            stagedPayloadRelativePath: pendingImage.stagedPayloadRelativePath,
+            mimeType: pendingImage.mimeType,
+            width: Int64(pendingImage.width),
+            height: Int64(pendingImage.height),
+            thumbnailWidth: Int64(pendingImage.thumbnailWidth),
+            thumbnailHeight: Int64(pendingImage.thumbnailHeight),
+            thumbnailByteCount: Int64(pendingImage.thumbnailByteCount),
+            sourceBundleId: source?.bundleId,
+            sourceAppName: source?.appName,
+            sourceBundlePath: source?.bundlePath,
+            sourceIconRelativePath: cacheIcon(source),
+            sourceConfidence: source == nil ? "unknown" : "high",
+            pasteboardChangeCount: Int64(changeCount)
+        )
+        return capturePendingImageRequest(request)
+    }
+
+    public func completePendingImagePayload(
+        _ completedImage: ClipboardCompletedPendingImageAsset
+    ) -> Result<RustPendingImageCompletionResult, RustCoreError> {
+        completePendingImagePayloadRequest(RustCompletePendingImagePayloadRequest(
+            jobId: completedImage.jobID,
+            stagedPayloadRelativePath: completedImage.stagedPayloadRelativePath,
+            mimeType: completedImage.mimeType,
+            width: Int64(completedImage.width),
+            height: Int64(completedImage.height),
+            byteCount: Int64(completedImage.byteCount)
+        ))
+    }
+
+    public func failPendingImagePayload(
+        jobID: String,
+        stagedPayloadRelativePath: String?,
+        failureCode: String
+    ) -> Result<RustPendingImageCompletionResult, RustCoreError> {
+        failPendingImagePayloadRequest(RustFailPendingImagePayloadRequest(
+            jobId: jobID,
+            stagedPayloadRelativePath: stagedPayloadRelativePath,
+            failureCode: failureCode
+        ))
+    }
+
     public func captureFiles(
         _ files: ClipboardCapturedFiles,
         changeCount: Int,
@@ -477,5 +614,14 @@ public final class ClipboardCaptureCoordinator {
         case nil:
             return "捕获：已按忽略规则跳过"
         }
+    }
+
+    public static func unavailablePendingImageError() -> RustCoreError {
+        RustCoreError(
+            code: "unavailable",
+            messageKey: "clipboard.error.unavailable",
+            recoverable: true,
+            message: "clipboard.error.unavailable"
+        )
     }
 }

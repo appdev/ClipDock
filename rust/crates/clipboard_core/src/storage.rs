@@ -1,6 +1,7 @@
 mod capture;
 mod link_metadata;
 mod maintenance;
+mod pending_images;
 mod preferences;
 mod queries;
 mod source_apps;
@@ -28,7 +29,7 @@ impl ClipboardCore {
         let app_support_dir = app_support_dir.as_ref();
         fs::create_dir_all(app_support_dir)?;
 
-        for directory in ["assets", "thumbnails", "app-icons", "staging"] {
+        for directory in ["assets", "thumbnails", "app-icons", "staging", ".staging"] {
             fs::create_dir_all(app_support_dir.join(directory))?;
         }
 

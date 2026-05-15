@@ -8,6 +8,9 @@ public enum ClipboardOriginalImagePathResolver {
     ) -> [String] {
         switch item.itemType {
         case "image":
+            guard item.payloadState == "ready" else {
+                return []
+            }
             return uniqueResolvedPaths(
                 from: [item.payloadAssetPath],
                 appSupportDirectory: appSupportDirectory

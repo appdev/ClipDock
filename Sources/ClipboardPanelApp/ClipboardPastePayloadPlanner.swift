@@ -47,8 +47,12 @@ public enum ClipboardPastePayloadPlanner {
         appSupportDirectory: URL,
         fileManager: FileManager
     ) -> URL? {
-        ClipboardAssetPathResolver.firstExistingURL(
-            for: [item.payloadAssetPath, item.previewAssetPath],
+        guard item.payloadState == "ready" else {
+            return nil
+        }
+
+        return ClipboardAssetPathResolver.firstExistingURL(
+            for: [item.payloadAssetPath],
             appSupportDirectory: appSupportDirectory,
             fileManager: fileManager
         )

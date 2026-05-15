@@ -50,6 +50,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "source_app_icon_header_color_cache",
         sql: SOURCE_APP_ICON_HEADER_COLOR_CACHE_SCHEMA,
     },
+    Migration {
+        version: 9,
+        name: "pending_image_payload_lifecycle",
+        sql: PENDING_IMAGE_PAYLOAD_LIFECYCLE_SCHEMA,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -514,4 +519,49 @@ ALTER TABLE source_app_icons
 
 ALTER TABLE source_app_icons
     ADD COLUMN header_color_updated_at_ms INTEGER;
+"#;
+
+const PENDING_IMAGE_PAYLOAD_LIFECYCLE_SCHEMA: &str = r#"
+ALTER TABLE clipboard_items
+    ADD COLUMN payload_state TEXT NOT NULL DEFAULT 'ready'
+        CHECK (payload_state IN ('pending', 'ready', 'failed'));
+
+CREATE TABLE IF NOT EXISTS pending_image_jobs (
+    job_id TEXT PRIMARY KEY,
+    requested_item_id TEXT NOT NULL,
+    item_id TEXT REFERENCES clipboard_items(id) ON DELETE SET NULL,
+    effective_item_id TEXT,
+    owner_session_id TEXT NOT NULL,
+    thumbnail_relative_path TEXT NOT NULL,
+    reserved_payload_relative_path TEXT NOT NULL,
+    staged_payload_relative_path TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending', 'ready', 'failed', 'deleted', 'merged')),
+    failure_code TEXT,
+    lease_expires_at_ms INTEGER NOT NULL,
+    cleanup_after_ms INTEGER NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    completed_at_ms INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS ix_pending_image_jobs_state_lease
+    ON pending_image_jobs(state, lease_expires_at_ms);
+
+CREATE INDEX IF NOT EXISTS ix_pending_image_jobs_cleanup
+    ON pending_image_jobs(cleanup_after_ms);
+
+CREATE INDEX IF NOT EXISTS ix_pending_image_jobs_requested_item
+    ON pending_image_jobs(requested_item_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_image_jobs_active_reserved_payload
+    ON pending_image_jobs(reserved_payload_relative_path)
+    WHERE state = 'pending';
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_image_jobs_active_staged_payload
+    ON pending_image_jobs(staged_payload_relative_path)
+    WHERE state = 'pending';
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_image_jobs_active_item
+    ON pending_image_jobs(item_id)
+    WHERE state = 'pending' AND item_id IS NOT NULL;
 "#;

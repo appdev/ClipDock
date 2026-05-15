@@ -68,6 +68,18 @@ public func capture_text<GenericIntoRustString: IntoRustString>(_ app_support_di
 public func capture_image<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ payload_relative_path: GenericIntoRustString, _ preview_relative_path: GenericIntoRustString, _ mime_type: GenericIntoRustString, _ width: Int64, _ height: Int64, _ byte_count: Int64, _ source_bundle_id: GenericIntoRustString, _ source_app_name: GenericIntoRustString, _ source_bundle_path: GenericIntoRustString, _ source_icon_relative_path: GenericIntoRustString, _ source_confidence: GenericIntoRustString, _ pasteboard_change_count: Int64, _ self_write_token: GenericIntoRustString) -> CoreCaptureResult {
     __swift_bridge__$capture_image({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = payload_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = mime_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), width, height, byte_count, { let rustString = source_bundle_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_name.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_icon_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_confidence.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), pasteboard_change_count, { let rustString = self_write_token.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
+public func capture_pending_image<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CorePendingImageResult {
+    __swift_bridge__$capture_pending_image({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func complete_pending_image_payload<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CorePendingImageResult {
+    __swift_bridge__$complete_pending_image_payload({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func fail_pending_image_payload<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CorePendingImageResult {
+    __swift_bridge__$fail_pending_image_payload({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func recover_pending_images<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CoreItemManagementResult {
+    __swift_bridge__$recover_pending_images({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
 public func capture_files<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ files_json: GenericIntoRustString, _ preview_relative_path: GenericIntoRustString, _ preview_mime_type: GenericIntoRustString, _ preview_width: Int64, _ preview_height: Int64, _ preview_byte_count: Int64, _ snapshot_relative_path: GenericIntoRustString, _ snapshot_byte_count: Int64, _ source_bundle_id: GenericIntoRustString, _ source_app_name: GenericIntoRustString, _ source_bundle_path: GenericIntoRustString, _ source_icon_relative_path: GenericIntoRustString, _ source_confidence: GenericIntoRustString, _ pasteboard_change_count: Int64, _ self_write_token: GenericIntoRustString) -> CoreCaptureResult {
     __swift_bridge__$capture_files({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = files_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_mime_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), preview_width, preview_height, preview_byte_count, { let rustString = snapshot_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), snapshot_byte_count, { let rustString = source_bundle_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_name.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_icon_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_confidence.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), pasteboard_change_count, { let rustString = self_write_token.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
@@ -528,6 +540,49 @@ extension __swift_bridge__$Option$CoreLinkMetadataFetchBatchResult {
             return __swift_bridge__$Option$CoreLinkMetadataFetchBatchResult(is_some: true, val: v.intoFfiRepr())
         } else {
             return __swift_bridge__$Option$CoreLinkMetadataFetchBatchResult(is_some: false, val: __swift_bridge__$CoreLinkMetadataFetchBatchResult())
+        }
+    }
+}
+public struct CorePendingImageResult {
+    public var ok: Bool
+    public var result_json: RustString
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,result_json: RustString,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.result_json = result_json
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CorePendingImageResult {
+        { let val = self; return __swift_bridge__$CorePendingImageResult(ok: val.ok, result_json: { let rustString = val.result_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CorePendingImageResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CorePendingImageResult {
+        { let val = self; return CorePendingImageResult(ok: val.ok, result_json: RustString(ptr: val.result_json), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CorePendingImageResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CorePendingImageResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CorePendingImageResult>) -> __swift_bridge__$Option$CorePendingImageResult {
+        if let v = val {
+            return __swift_bridge__$Option$CorePendingImageResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CorePendingImageResult(is_some: false, val: __swift_bridge__$CorePendingImageResult())
         }
     }
 }

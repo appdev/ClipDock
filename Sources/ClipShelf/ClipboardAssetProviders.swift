@@ -578,6 +578,19 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         fileprivate let stagingThumbnailURL: URL
     }
 
+    struct PendingImageAsset: Sendable {
+        let pendingImage: ClipboardPendingImageAsset
+        fileprivate let reservedPayloadURL: URL
+        fileprivate let thumbnailURL: URL
+        fileprivate let stagingPayloadURL: URL
+        fileprivate let stagingThumbnailURL: URL
+    }
+
+    struct CompletedPendingImagePayload: Sendable {
+        let completedImage: ClipboardCompletedPendingImageAsset
+        fileprivate let stagingPayloadURL: URL
+    }
+
     private let directories: PlatformAssetDirectories
     private let fileManager: FileManager
     private let fileStemFactory: PlatformAssetFileStemFactory
@@ -739,11 +752,141 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         }
     }
 
+    func preparePendingImage(
+        _ capturedImage: CapturedClipboardImage,
+        changeCount: Int
+    ) -> Result<PendingImageAsset, FinalizationError> {
+        let fileStem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
+        let reservedPayloadURL = directories.imagePayloadDirectoryURL.appendingPathComponent("\(fileStem).webp")
+        let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).webp")
+        let stagingDirectoryURL = directories.appSupportURL
+            .appendingPathComponent(".staging", isDirectory: true)
+            .appendingPathComponent("image-captures", isDirectory: true)
+        let stagingPayloadURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-payload.webp")
+        let stagingThumbnailURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-thumbnail.webp")
+        let pending = PendingImageAsset(
+            pendingImage: ClipboardPendingImageAsset(
+                thumbnailRelativePath: "thumbnails/\(fileStem).webp",
+                reservedPayloadRelativePath: "assets/\(fileStem).webp",
+                stagedPayloadRelativePath: ".staging/image-captures/\(fileStem)-payload.webp",
+                mimeType: "image/webp",
+                width: 0,
+                height: 0,
+                thumbnailWidth: 0,
+                thumbnailHeight: 0,
+                thumbnailByteCount: 0
+            ),
+            reservedPayloadURL: reservedPayloadURL,
+            thumbnailURL: thumbnailURL,
+            stagingPayloadURL: stagingPayloadURL,
+            stagingThumbnailURL: stagingThumbnailURL
+        )
+
+        do {
+            try fileManager.createDirectory(
+                at: directories.imagePayloadDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: directories.imageThumbnailDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: stagingDirectoryURL,
+                withIntermediateDirectories: true
+            )
+
+            let sourceSize = try sourcePixelSize(from: capturedImage.source)
+            let thumbnailImage = try renderThumbnailRGBA(from: capturedImage.source)
+            guard let thumbnailData = encoder.encodeLosslessRGBA(
+                thumbnailImage.data,
+                width: thumbnailImage.width,
+                height: thumbnailImage.height
+            ), !thumbnailData.isEmpty else {
+                throw FinalizationError.webPEncodingFailed
+            }
+
+            try thumbnailData.write(to: stagingThumbnailURL, options: .atomic)
+            try fileManager.moveItem(at: stagingThumbnailURL, to: thumbnailURL)
+
+            return .success(PendingImageAsset(
+                pendingImage: ClipboardPendingImageAsset(
+                    thumbnailRelativePath: "thumbnails/\(fileStem).webp",
+                    reservedPayloadRelativePath: "assets/\(fileStem).webp",
+                    stagedPayloadRelativePath: ".staging/image-captures/\(fileStem)-payload.webp",
+                    mimeType: "image/webp",
+                    width: sourceSize.width,
+                    height: sourceSize.height,
+                    thumbnailWidth: thumbnailImage.width,
+                    thumbnailHeight: thumbnailImage.height,
+                    thumbnailByteCount: thumbnailData.count
+                ),
+                reservedPayloadURL: reservedPayloadURL,
+                thumbnailURL: thumbnailURL,
+                stagingPayloadURL: stagingPayloadURL,
+                stagingThumbnailURL: stagingThumbnailURL
+            ))
+        } catch let error as FinalizationError {
+            removePendingImage(pending)
+            return .failure(error)
+        } catch {
+            removePendingImage(pending)
+            return .failure(.assetWriteFailed)
+        }
+    }
+
+    func completePendingImagePayload(
+        _ capturedImage: CapturedClipboardImage,
+        pendingImage: PendingImageAsset,
+        jobID: String
+    ) -> Result<CompletedPendingImagePayload, FinalizationError> {
+        do {
+            let fullImage = try renderFullSizeRGBA(from: capturedImage.source)
+            guard let payloadData = encoder.encodeLosslessRGBA(
+                fullImage.data,
+                width: fullImage.width,
+                height: fullImage.height
+            ), !payloadData.isEmpty else {
+                throw FinalizationError.webPEncodingFailed
+            }
+            try fileManager.createDirectory(
+                at: pendingImage.stagingPayloadURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try payloadData.write(to: pendingImage.stagingPayloadURL, options: .atomic)
+
+            return .success(CompletedPendingImagePayload(
+                completedImage: ClipboardCompletedPendingImageAsset(
+                    jobID: jobID,
+                    stagedPayloadRelativePath: pendingImage.pendingImage.stagedPayloadRelativePath,
+                    mimeType: "image/webp",
+                    width: fullImage.width,
+                    height: fullImage.height,
+                    byteCount: payloadData.count
+                ),
+                stagingPayloadURL: pendingImage.stagingPayloadURL
+            ))
+        } catch let error as FinalizationError {
+            removeFileIfExists(pendingImage.stagingPayloadURL)
+            return .failure(error)
+        } catch {
+            removeFileIfExists(pendingImage.stagingPayloadURL)
+            return .failure(.assetWriteFailed)
+        }
+    }
+
     func removePreparedImage(_ preparedImage: PreparedImageAsset) {
         removeFileIfExists(preparedImage.payloadURL)
         removeFileIfExists(preparedImage.thumbnailURL)
         removeFileIfExists(preparedImage.stagingPayloadURL)
         removeFileIfExists(preparedImage.stagingThumbnailURL)
+    }
+
+    func removePendingImage(_ pendingImage: PendingImageAsset) {
+        removeFileIfExists(pendingImage.reservedPayloadURL)
+        removeFileIfExists(pendingImage.thumbnailURL)
+        removeFileIfExists(pendingImage.stagingPayloadURL)
+        removeFileIfExists(pendingImage.stagingThumbnailURL)
     }
 
     private func removeFileIfExists(_ url: URL) {
@@ -774,6 +917,38 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
 
         case .cgImage(let snapshot):
             return try Self.renderRGBA(from: snapshot.image, maxPixelDimension: 420)
+        }
+    }
+
+    private func sourcePixelSize(
+        from source: ClipboardBitmapImageSource
+    ) throws -> (width: Int, height: Int) {
+        switch source {
+        case .encodedData(let data, _):
+            let sourceOptions = [
+                kCGImageSourceShouldCache: false
+            ] as CFDictionary
+            guard let imageSource = CGImageSourceCreateWithData(data as CFData, sourceOptions),
+                  let properties = CGImageSourceCopyPropertiesAtIndex(
+                    imageSource,
+                    0,
+                    sourceOptions
+                  ) as? [CFString: Any],
+                  let width = Self.pixelDimension(properties[kCGImagePropertyPixelWidth]),
+                  let height = Self.pixelDimension(properties[kCGImagePropertyPixelHeight]),
+                  width > 0,
+                  height > 0
+            else {
+                let image = try transformedImage(from: data, maxPixelDimension: nil)
+                return (image.width, image.height)
+            }
+            return (Int(width.rounded()), Int(height.rounded()))
+
+        case .cgImage(let snapshot):
+            guard snapshot.image.width > 0, snapshot.image.height > 0 else {
+                throw FinalizationError.imageDecodeFailed
+            }
+            return (snapshot.image.width, snapshot.image.height)
         }
     }
 
@@ -895,6 +1070,21 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
             max(Int(Double(width) * scale), 1),
             max(Int(Double(height) * scale), 1)
         )
+    }
+
+    private static func pixelDimension(_ value: Any?) -> CGFloat? {
+        switch value {
+        case let number as NSNumber:
+            return CGFloat(truncating: number)
+        case let value as CGFloat:
+            return value
+        case let value as Double:
+            return CGFloat(value)
+        case let value as Int:
+            return CGFloat(value)
+        default:
+            return nil
+        }
     }
 }
 

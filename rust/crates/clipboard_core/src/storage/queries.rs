@@ -1,7 +1,7 @@
 use crate::domain::{
     ClipboardFileItemSummary, ClipboardItemSummary, ClipboardItemType, ItemManagementResult,
     ItemPage, ItemQuery, LinkMetadataState, LinkMetadataSummary, PageRequest, PinboardPage,
-    PinboardSummary, PreviewState, SourceAppPage, SourceAppSummary, SourceConfidence,
+    PinboardSummary, PayloadState, PreviewState, SourceAppPage, SourceAppSummary, SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
@@ -83,6 +83,7 @@ impl ClipboardCore {
                 ) THEN 1 ELSE 0 END,
                 i.size_bytes,
                 i.preview_state,
+                i.payload_state,
                 lm.canonical_url,
                 lm.display_url,
                 lm.host,
@@ -903,22 +904,23 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
     let item_type = row.get::<_, String>(1)?;
     let source_confidence = row.get::<_, String>(11)?;
     let preview_state = row.get::<_, String>(17)?;
-    let canonical_url = row.get::<_, Option<String>>(18)?;
+    let payload_state = row.get::<_, String>(18)?;
+    let canonical_url = row.get::<_, Option<String>>(19)?;
     let link_metadata = match canonical_url {
         Some(canonical_url) => {
-            let metadata_state = row.get::<_, Option<String>>(25)?;
+            let metadata_state = row.get::<_, Option<String>>(26)?;
             Some(LinkMetadataSummary {
                 canonical_url,
-                display_url: row.get(19)?,
-                host: row.get(20)?,
-                title: row.get(21)?,
-                site_name: row.get(22)?,
-                icon_asset_path: row.get(23)?,
-                image_asset_path: row.get(24)?,
+                display_url: row.get(20)?,
+                host: row.get(21)?,
+                title: row.get(22)?,
+                site_name: row.get(23)?,
+                icon_asset_path: row.get(24)?,
+                image_asset_path: row.get(25)?,
                 metadata_state: LinkMetadataState::from_storage(
                     metadata_state.as_deref().unwrap_or("failed"),
                 ),
-                fetched_at_ms: row.get(26)?,
+                fetched_at_ms: row.get(27)?,
             })
         }
         None => None,
@@ -943,6 +945,7 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
         is_pinned: row.get::<_, i64>(15)? == 1,
         size_bytes: row.get(16)?,
         preview_state: PreviewState::from_storage(&preview_state),
+        payload_state: PayloadState::from_storage(&payload_state),
         file_items: Vec::new(),
         link_metadata,
     })

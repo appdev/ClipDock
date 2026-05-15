@@ -179,6 +179,52 @@ struct ClipboardMonitoringTests {
     }
 
     @Test
+    func imageAssetProviderPreparesThumbnailBeforeStagedPayloadCompletion() throws {
+        let appSupportURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let provider = ClipboardImageAssetProvider(
+            appSupportURL: appSupportURL,
+            fileStemFactory: PlatformAssetFileStemFactory(
+                timestampProvider: { 1500 },
+                uuidProvider: { UUID(uuidString: "00000000-0000-0000-0000-000000000003")! }
+            )
+        )
+        let image = CapturedClipboardImage(
+            source: .encodedData(try makePNGData(width: 640, height: 320), typeIdentifier: "public.png")
+        )
+
+        let pending = try provider.preparePendingImage(image, changeCount: 11).get()
+        let reservedPayloadURL = appSupportURL.appendingPathComponent(pending.pendingImage.reservedPayloadRelativePath)
+        let thumbnailURL = appSupportURL.appendingPathComponent(pending.pendingImage.thumbnailRelativePath)
+        let stagedPayloadURL = appSupportURL.appendingPathComponent(pending.pendingImage.stagedPayloadRelativePath)
+
+        #expect(pending.pendingImage.thumbnailRelativePath == "thumbnails/image-11-1500-00000000-0000-0000-0000-000000000003.webp")
+        #expect(pending.pendingImage.reservedPayloadRelativePath == "assets/image-11-1500-00000000-0000-0000-0000-000000000003.webp")
+        #expect(pending.pendingImage.stagedPayloadRelativePath == ".staging/image-captures/image-11-1500-00000000-0000-0000-0000-000000000003-payload.webp")
+        #expect(pending.pendingImage.mimeType == "image/webp")
+        #expect(pending.pendingImage.width == 640)
+        #expect(pending.pendingImage.height == 320)
+        #expect(pending.pendingImage.thumbnailByteCount > 0)
+        #expect(FileManager.default.fileExists(atPath: thumbnailURL.path))
+        #expect(!FileManager.default.fileExists(atPath: reservedPayloadURL.path))
+        #expect(!FileManager.default.fileExists(atPath: stagedPayloadURL.path))
+
+        let completed = try provider.completePendingImagePayload(
+            image,
+            pendingImage: pending,
+            jobID: "job-1"
+        ).get()
+
+        #expect(completed.completedImage.jobID == "job-1")
+        #expect(completed.completedImage.stagedPayloadRelativePath == pending.pendingImage.stagedPayloadRelativePath)
+        #expect(completed.completedImage.width == 640)
+        #expect(completed.completedImage.height == 320)
+        #expect(completed.completedImage.byteCount > 0)
+        #expect(FileManager.default.fileExists(atPath: stagedPayloadURL.path))
+        #expect(!FileManager.default.fileExists(atPath: reservedPayloadURL.path))
+    }
+
+    @Test
     func imageAssetProviderCleansStagingAndPreparedFilesWhenThumbnailEncodingFails() throws {
         let appSupportURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

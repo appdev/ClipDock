@@ -1,8 +1,11 @@
 use clipboard_core::{
-    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureTextRequest,
-    CapturedFileMetadata, ClipboardCore, ClipboardItemType, CompleteLinkMetadataFetchRequest,
-    ItemManagementResult, ItemQuery, LinkMetadataFetchCandidate, LinkMetadataState,
-    MaintenanceResult, PageRequest, PinboardPage, PreferencesDocument, SourceConfidence,
+    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CapturePendingImageRequest,
+    CaptureTextRequest, CapturedFileMetadata, ClipboardCore, ClipboardItemType,
+    CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
+    FailPendingImagePayloadRequest, ItemManagementResult, ItemQuery, LinkMetadataFetchCandidate,
+    LinkMetadataState, MaintenanceResult, PageRequest, PendingImageCaptureResult,
+    PendingImageCompletionResult, PinboardPage, PreferencesDocument, RecoverPendingImagesRequest,
+    SourceConfidence,
 };
 use serde::Deserialize;
 
@@ -99,6 +102,14 @@ mod ffi {
     struct CoreLinkMetadataFetchBatchResult {
         ok: bool,
         candidates_json: String,
+        error_code: String,
+        message_key: String,
+    }
+
+    #[swift_bridge(swift_repr = "struct")]
+    struct CorePendingImageResult {
+        ok: bool,
+        result_json: String,
         error_code: String,
         message_key: String,
     }
@@ -217,6 +228,22 @@ mod ffi {
             pasteboard_change_count: i64,
             self_write_token: String,
         ) -> CoreCaptureResult;
+        fn capture_pending_image(
+            app_support_dir: String,
+            request_json: String,
+        ) -> CorePendingImageResult;
+        fn complete_pending_image_payload(
+            app_support_dir: String,
+            request_json: String,
+        ) -> CorePendingImageResult;
+        fn fail_pending_image_payload(
+            app_support_dir: String,
+            request_json: String,
+        ) -> CorePendingImageResult;
+        fn recover_pending_images(
+            app_support_dir: String,
+            request_json: String,
+        ) -> CoreItemManagementResult;
         fn capture_files(
             app_support_dir: String,
             files_json: String,
@@ -761,6 +788,119 @@ fn capture_image(
             error_code: error.code.as_str().to_string(),
             message_key: error.message_key().to_string(),
         },
+    }
+}
+
+fn capture_pending_image(
+    app_support_dir: String,
+    request_json: String,
+) -> ffi::CorePendingImageResult {
+    let request = match serde_json::from_str::<CapturePendingImageRequest>(&request_json) {
+        Ok(request) => request,
+        Err(_) => return pending_image_error_result("invalid_input"),
+    };
+
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.capture_pending_image(request))
+    {
+        Ok(result) => pending_image_capture_result(result),
+        Err(error) => pending_image_core_error_result(error),
+    }
+}
+
+fn complete_pending_image_payload(
+    app_support_dir: String,
+    request_json: String,
+) -> ffi::CorePendingImageResult {
+    let request = match serde_json::from_str::<CompletePendingImagePayloadRequest>(&request_json) {
+        Ok(request) => request,
+        Err(_) => return pending_image_error_result("invalid_input"),
+    };
+
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.complete_pending_image_payload(request))
+    {
+        Ok(result) => pending_image_completion_result(result),
+        Err(error) => pending_image_core_error_result(error),
+    }
+}
+
+fn fail_pending_image_payload(
+    app_support_dir: String,
+    request_json: String,
+) -> ffi::CorePendingImageResult {
+    let request = match serde_json::from_str::<FailPendingImagePayloadRequest>(&request_json) {
+        Ok(request) => request,
+        Err(_) => return pending_image_error_result("invalid_input"),
+    };
+
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.fail_pending_image_payload(request))
+    {
+        Ok(result) => pending_image_completion_result(result),
+        Err(error) => pending_image_core_error_result(error),
+    }
+}
+
+fn recover_pending_images(
+    app_support_dir: String,
+    request_json: String,
+) -> ffi::CoreItemManagementResult {
+    let request = match serde_json::from_str::<RecoverPendingImagesRequest>(&request_json) {
+        Ok(request) => request,
+        Err(_) => {
+            return ffi::CoreItemManagementResult {
+                ok: false,
+                affected_count: 0,
+                error_code: "invalid_input".to_string(),
+                message_key: "clipboard.error.invalid_input".to_string(),
+            };
+        }
+    };
+
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.recover_pending_images(request))
+    {
+        Ok(result) => item_management_result(result),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn pending_image_capture_result(result: PendingImageCaptureResult) -> ffi::CorePendingImageResult {
+    ffi::CorePendingImageResult {
+        ok: true,
+        result_json: serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()),
+        error_code: String::new(),
+        message_key: String::new(),
+    }
+}
+
+fn pending_image_completion_result(
+    result: PendingImageCompletionResult,
+) -> ffi::CorePendingImageResult {
+    ffi::CorePendingImageResult {
+        ok: true,
+        result_json: serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string()),
+        error_code: String::new(),
+        message_key: String::new(),
+    }
+}
+
+fn pending_image_error_result(code: &str) -> ffi::CorePendingImageResult {
+    ffi::CorePendingImageResult {
+        ok: false,
+        result_json: "{}".to_string(),
+        error_code: code.to_string(),
+        message_key: "clipboard.error.invalid_input".to_string(),
+    }
+}
+
+fn pending_image_core_error_result(error: clipboard_core::CoreError) -> ffi::CorePendingImageResult {
+    ffi::CorePendingImageResult {
+        ok: false,
+        result_json: "{}".to_string(),
+        error_code: error.code.as_str().to_string(),
+        message_key: error.message_key().to_string(),
     }
 }
 

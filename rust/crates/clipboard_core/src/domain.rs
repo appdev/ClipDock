@@ -108,6 +108,33 @@ impl PreviewState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum PayloadState {
+    Pending,
+    Ready,
+    Failed,
+}
+
+impl PayloadState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Ready => "ready",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn from_storage(value: &str) -> Self {
+        match value {
+            "pending" => Self::Pending,
+            "ready" => Self::Ready,
+            "failed" => Self::Failed,
+            _ => Self::Ready,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LinkMetadataState {
     Pending,
     Fetching,
@@ -207,6 +234,7 @@ pub struct ClipboardItemSummary {
     pub is_pinned: bool,
     pub size_bytes: i64,
     pub preview_state: PreviewState,
+    pub payload_state: PayloadState,
     pub file_items: Vec<ClipboardFileItemSummary>,
     pub link_metadata: Option<LinkMetadataSummary>,
 }
@@ -343,6 +371,71 @@ pub struct CaptureImageRequest {
     pub source_confidence: SourceConfidence,
     pub pasteboard_change_count: i64,
     pub self_write_token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapturePendingImageRequest {
+    pub owner_session_id: String,
+    pub thumbnail_relative_path: String,
+    pub reserved_payload_relative_path: String,
+    pub staged_payload_relative_path: String,
+    pub mime_type: String,
+    pub width: i64,
+    pub height: i64,
+    pub thumbnail_width: i64,
+    pub thumbnail_height: i64,
+    pub thumbnail_byte_count: i64,
+    pub source_bundle_id: Option<String>,
+    pub source_app_name: Option<String>,
+    pub source_bundle_path: Option<String>,
+    pub source_icon_relative_path: Option<String>,
+    pub source_confidence: SourceConfidence,
+    pub pasteboard_change_count: i64,
+    pub self_write_token: Option<String>,
+    pub lease_duration_ms: Option<i64>,
+    pub cleanup_after_duration_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingImageCaptureResult {
+    pub job_id: String,
+    pub item_id: String,
+    pub content_hash: String,
+    pub copy_count: i64,
+    pub inserted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompletePendingImagePayloadRequest {
+    pub job_id: String,
+    pub staged_payload_relative_path: String,
+    pub mime_type: String,
+    pub width: i64,
+    pub height: i64,
+    pub byte_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailPendingImagePayloadRequest {
+    pub job_id: String,
+    pub staged_payload_relative_path: Option<String>,
+    pub failure_code: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoverPendingImagesRequest {
+    pub owner_session_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingImageCompletionResult {
+    pub status: String,
+    pub job_id: Option<String>,
+    pub item_id: Option<String>,
+    pub effective_item_id: Option<String>,
+    pub content_hash: Option<String>,
+    pub cleaned_relative_paths: Vec<String>,
+    pub affected_count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

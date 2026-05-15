@@ -469,6 +469,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let isPinned: Bool
     public let sizeBytes: Int64
     public let previewState: String
+    public let payloadState: String
     public let fileItems: [RustClipboardFileItemSummary]
     public let linkMetadata: RustLinkMetadataSummary?
 
@@ -491,6 +492,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         isPinned: Bool,
         sizeBytes: Int64,
         previewState: String,
+        payloadState: String = "ready",
         fileItems: [RustClipboardFileItemSummary] = [],
         linkMetadata: RustLinkMetadataSummary? = nil
     ) {
@@ -512,6 +514,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         self.isPinned = isPinned
         self.sizeBytes = sizeBytes
         self.previewState = previewState
+        self.payloadState = payloadState
         self.fileItems = fileItems
         self.linkMetadata = linkMetadata
     }
@@ -537,6 +540,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
             isPinned: try container.decode(Bool.self, forKey: .isPinned),
             sizeBytes: try container.decode(Int64.self, forKey: .sizeBytes),
             previewState: try container.decode(String.self, forKey: .previewState),
+            payloadState: try container.decodeIfPresent(String.self, forKey: .payloadState) ?? "ready",
             fileItems: try container.decodeIfPresent(
                 [RustClipboardFileItemSummary].self,
                 forKey: .fileItems
@@ -564,6 +568,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         case isPinned = "is_pinned"
         case sizeBytes = "size_bytes"
         case previewState = "preview_state"
+        case payloadState = "payload_state"
         case fileItems = "file_items"
         case linkMetadata = "link_metadata"
     }
@@ -737,6 +742,210 @@ public struct RustCaptureImageRequest: Equatable, Sendable {
 }
 
 public typealias RustCaptureImageResult = RustCaptureTextResult
+
+public struct RustCapturePendingImageRequest: Equatable, Encodable, Sendable {
+    public let ownerSessionId: String
+    public let thumbnailRelativePath: String
+    public let reservedPayloadRelativePath: String
+    public let stagedPayloadRelativePath: String
+    public let mimeType: String
+    public let width: Int64
+    public let height: Int64
+    public let thumbnailWidth: Int64
+    public let thumbnailHeight: Int64
+    public let thumbnailByteCount: Int64
+    public let sourceBundleId: String?
+    public let sourceAppName: String?
+    public let sourceBundlePath: String?
+    public let sourceIconRelativePath: String?
+    public let sourceConfidence: String
+    public let pasteboardChangeCount: Int64
+    public let selfWriteToken: String?
+    public let leaseDurationMs: Int64?
+    public let cleanupAfterDurationMs: Int64?
+
+    public init(
+        ownerSessionId: String,
+        thumbnailRelativePath: String,
+        reservedPayloadRelativePath: String,
+        stagedPayloadRelativePath: String,
+        mimeType: String = "image/webp",
+        width: Int64,
+        height: Int64,
+        thumbnailWidth: Int64,
+        thumbnailHeight: Int64,
+        thumbnailByteCount: Int64,
+        sourceBundleId: String?,
+        sourceAppName: String?,
+        sourceBundlePath: String?,
+        sourceIconRelativePath: String?,
+        sourceConfidence: String,
+        pasteboardChangeCount: Int64,
+        selfWriteToken: String? = nil,
+        leaseDurationMs: Int64? = nil,
+        cleanupAfterDurationMs: Int64? = nil
+    ) {
+        self.ownerSessionId = ownerSessionId
+        self.thumbnailRelativePath = thumbnailRelativePath
+        self.reservedPayloadRelativePath = reservedPayloadRelativePath
+        self.stagedPayloadRelativePath = stagedPayloadRelativePath
+        self.mimeType = mimeType
+        self.width = width
+        self.height = height
+        self.thumbnailWidth = thumbnailWidth
+        self.thumbnailHeight = thumbnailHeight
+        self.thumbnailByteCount = thumbnailByteCount
+        self.sourceBundleId = sourceBundleId
+        self.sourceAppName = sourceAppName
+        self.sourceBundlePath = sourceBundlePath
+        self.sourceIconRelativePath = sourceIconRelativePath
+        self.sourceConfidence = sourceConfidence
+        self.pasteboardChangeCount = pasteboardChangeCount
+        self.selfWriteToken = selfWriteToken
+        self.leaseDurationMs = leaseDurationMs
+        self.cleanupAfterDurationMs = cleanupAfterDurationMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ownerSessionId = "owner_session_id"
+        case thumbnailRelativePath = "thumbnail_relative_path"
+        case reservedPayloadRelativePath = "reserved_payload_relative_path"
+        case stagedPayloadRelativePath = "staged_payload_relative_path"
+        case mimeType = "mime_type"
+        case width
+        case height
+        case thumbnailWidth = "thumbnail_width"
+        case thumbnailHeight = "thumbnail_height"
+        case thumbnailByteCount = "thumbnail_byte_count"
+        case sourceBundleId = "source_bundle_id"
+        case sourceAppName = "source_app_name"
+        case sourceBundlePath = "source_bundle_path"
+        case sourceIconRelativePath = "source_icon_relative_path"
+        case sourceConfidence = "source_confidence"
+        case pasteboardChangeCount = "pasteboard_change_count"
+        case selfWriteToken = "self_write_token"
+        case leaseDurationMs = "lease_duration_ms"
+        case cleanupAfterDurationMs = "cleanup_after_duration_ms"
+    }
+}
+
+public struct RustPendingImageCaptureResult: Equatable, Decodable, Sendable {
+    public let jobId: String
+    public let itemId: String
+    public let contentHash: String
+    public let copyCount: Int64
+    public let inserted: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case itemId = "item_id"
+        case contentHash = "content_hash"
+        case copyCount = "copy_count"
+        case inserted
+    }
+}
+
+public struct RustCompletePendingImagePayloadRequest: Equatable, Encodable, Sendable {
+    public let jobId: String
+    public let stagedPayloadRelativePath: String
+    public let mimeType: String
+    public let width: Int64
+    public let height: Int64
+    public let byteCount: Int64
+
+    public init(
+        jobId: String,
+        stagedPayloadRelativePath: String,
+        mimeType: String = "image/webp",
+        width: Int64,
+        height: Int64,
+        byteCount: Int64
+    ) {
+        self.jobId = jobId
+        self.stagedPayloadRelativePath = stagedPayloadRelativePath
+        self.mimeType = mimeType
+        self.width = width
+        self.height = height
+        self.byteCount = byteCount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case stagedPayloadRelativePath = "staged_payload_relative_path"
+        case mimeType = "mime_type"
+        case width
+        case height
+        case byteCount = "byte_count"
+    }
+}
+
+public struct RustFailPendingImagePayloadRequest: Equatable, Encodable, Sendable {
+    public let jobId: String
+    public let stagedPayloadRelativePath: String?
+    public let failureCode: String
+
+    public init(
+        jobId: String,
+        stagedPayloadRelativePath: String?,
+        failureCode: String
+    ) {
+        self.jobId = jobId
+        self.stagedPayloadRelativePath = stagedPayloadRelativePath
+        self.failureCode = failureCode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case jobId = "job_id"
+        case stagedPayloadRelativePath = "staged_payload_relative_path"
+        case failureCode = "failure_code"
+    }
+}
+
+public struct RustRecoverPendingImagesRequest: Equatable, Encodable, Sendable {
+    public let ownerSessionId: String
+
+    public init(ownerSessionId: String) {
+        self.ownerSessionId = ownerSessionId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ownerSessionId = "owner_session_id"
+    }
+}
+
+public struct RustPendingImageCompletionResult: Equatable, Decodable, Sendable {
+    public let status: String
+    public let jobId: String?
+    public let itemId: String?
+    public let effectiveItemId: String?
+    public let contentHash: String?
+    public let cleanedRelativePaths: [String]
+    public let affectedCount: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case jobId = "job_id"
+        case itemId = "item_id"
+        case effectiveItemId = "effective_item_id"
+        case contentHash = "content_hash"
+        case cleanedRelativePaths = "cleaned_relative_paths"
+        case affectedCount = "affected_count"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.status = try container.decode(String.self, forKey: .status)
+        self.jobId = try container.decodeIfPresent(String.self, forKey: .jobId)
+        self.itemId = try container.decodeIfPresent(String.self, forKey: .itemId)
+        self.effectiveItemId = try container.decodeIfPresent(String.self, forKey: .effectiveItemId)
+        self.contentHash = try container.decodeIfPresent(String.self, forKey: .contentHash)
+        self.cleanedRelativePaths = try container.decodeIfPresent(
+            [String].self,
+            forKey: .cleanedRelativePaths
+        ) ?? []
+        self.affectedCount = try container.decode(Int64.self, forKey: .affectedCount)
+    }
+}
 
 public struct RustCaptureFilesRequest: Equatable, Sendable {
     public let filePaths: [String]
@@ -1413,6 +1622,80 @@ public struct RustCoreClient: Sendable {
                 )
             )
         }
+    }
+
+    public func capturePendingImage(
+        appSupportDirectory: URL,
+        request: RustCapturePendingImageRequest
+    ) -> Result<RustPendingImageCaptureResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                let result = capture_pending_image(appSupportPath, json)
+                return decodePendingImageResult(result, as: RustPendingImageCaptureResult.self)
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    public func completePendingImagePayload(
+        appSupportDirectory: URL,
+        request: RustCompletePendingImagePayloadRequest
+    ) -> Result<RustPendingImageCompletionResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                let result = complete_pending_image_payload(appSupportPath, json)
+                return decodePendingImageResult(result, as: RustPendingImageCompletionResult.self)
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    public func failPendingImagePayload(
+        appSupportDirectory: URL,
+        request: RustFailPendingImagePayloadRequest
+    ) -> Result<RustPendingImageCompletionResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                let result = fail_pending_image_payload(appSupportPath, json)
+                return decodePendingImageResult(result, as: RustPendingImageCompletionResult.self)
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    public func recoverPendingImages(
+        appSupportDirectory: URL,
+        request: RustRecoverPendingImagesRequest
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                let result = recover_pending_images(appSupportPath, json)
+                return decodeItemManagementResult(result)
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    private func decodePendingImageResult<T: Decodable>(
+        _ result: CorePendingImageResult,
+        as type: T.Type
+    ) -> Result<T, RustCoreError> {
+        guard result.ok else {
+            return .failure(Self.makeError(
+                code: result.error_code.toString(),
+                messageKey: result.message_key.toString()
+            ))
+        }
+
+        return Self.decodeBridgeJSON(result.result_json.toString(), as: type)
     }
 
     public func captureFiles(

@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let commandVKeystrokeSender: CommandVKeystrokeSending = SystemCommandVKeystrokeSender()
     private let databaseWorker = ClipboardCoreDatabaseWorker()
     private let captureRegistrationPipeline = ClipboardCaptureRegistrationPipeline()
+    private let imageCaptureSessionID = UUID().uuidString
     private var statusItem: NSStatusItem?
     private var togglePanelMenuItem: NSMenuItem?
     private var hotKeyRef: EventHotKeyRef?
@@ -364,6 +365,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             captureImage: { [client, appSupportURL] request in
                 client.captureImage(appSupportDirectory: appSupportURL, request: request)
+            },
+            capturePendingImage: { [client, appSupportURL] request in
+                client.capturePendingImage(appSupportDirectory: appSupportURL, request: request)
+            },
+            completePendingImagePayload: { [client, appSupportURL] request in
+                client.completePendingImagePayload(appSupportDirectory: appSupportURL, request: request)
+            },
+            failPendingImagePayload: { [client, appSupportURL] request in
+                client.failPendingImagePayload(appSupportDirectory: appSupportURL, request: request)
             },
             captureFiles: { [client, appSupportURL] request in
                 client.captureFiles(appSupportDirectory: appSupportURL, request: request)
@@ -694,6 +704,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .success(let result):
             updateStorageStatus("存储：已连接（\(result.itemCount) 条）")
             loadPreferences()
+            _ = rustCoreClient.recoverPendingImages(
+                appSupportDirectory: appSupportURL,
+                request: RustRecoverPendingImagesRequest(ownerSessionId: imageCaptureSessionID)
+            )
             let maintenanceResult = runLocalMaintenance()
             refreshPinboards()
             refreshClipboardList()
@@ -951,33 +965,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            let preparedResult = await Task.detached(priority: .utility) {
-                imageAssetProvider.prepareImage(image, changeCount: changeCount)
+            let pendingResult = await Task.detached(priority: .utility) {
+                imageAssetProvider.preparePendingImage(image, changeCount: changeCount)
             }.value
             if Task.isCancelled {
-                if case .success(let preparedImage) = preparedResult {
-                    imageAssetProvider.removePreparedImage(preparedImage)
+                if case .success(let pendingImage) = pendingResult {
+                    imageAssetProvider.removePendingImage(pendingImage)
                 }
                 return
             }
 
-            switch preparedResult {
-            case .success(let preparedImage):
+            switch pendingResult {
+            case .success(let pendingImage):
                 guard let captureCoordinator = self.captureCoordinator else {
-                    imageAssetProvider.removePreparedImage(preparedImage)
+                    imageAssetProvider.removePendingImage(pendingImage)
                     return
                 }
 
-                let result = captureCoordinator.capturePreparedImage(
-                    preparedImage.storedImage,
+                let captureResult = captureCoordinator.capturePendingImage(
+                    pendingImage.pendingImage,
                     changeCount: changeCount,
                     preferences: preferences,
-                    source: source
+                    source: source,
+                    ownerSessionID: self.imageCaptureSessionID
                 )
-                if !result.shouldRefreshList {
-                    imageAssetProvider.removePreparedImage(preparedImage)
+                switch captureResult {
+                case .success(let pendingCapture):
+                    self.applyCaptureResult(ClipboardCaptureHandlingResult(
+                        statusText: nil,
+                        shouldRefreshList: true,
+                        storageError: nil
+                    ))
+                    self.schedulePendingImageCompletion(
+                        image,
+                        pendingImage: pendingImage,
+                        jobID: pendingCapture.jobId
+                    )
+
+                case .failure(let error):
+                    imageAssetProvider.removePendingImage(pendingImage)
+                    self.applyCaptureResult(ClipboardCaptureHandlingResult(
+                        statusText: "捕获：\(error.code)",
+                        shouldRefreshList: false,
+                        storageError: error
+                    ))
                 }
-                self.applyCaptureResult(result)
 
             case .failure:
                 self.applyCaptureResult(ClipboardCaptureHandlingResult(
@@ -987,6 +1019,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ))
             }
         }
+    }
+
+    private func schedulePendingImageCompletion(
+        _ image: CapturedClipboardImage,
+        pendingImage: ClipboardImageAssetProvider.PendingImageAsset,
+        jobID: String
+    ) {
+        Task { @MainActor [weak self, image, pendingImage, jobID] in
+            guard let self,
+                  let imageAssetProvider = self.imageAssetProvider,
+                  let captureCoordinator = self.captureCoordinator
+            else {
+                return
+            }
+
+            let payloadResult = await Task.detached(priority: .utility) {
+                imageAssetProvider.completePendingImagePayload(
+                    image,
+                    pendingImage: pendingImage,
+                    jobID: jobID
+                )
+            }.value
+
+            switch payloadResult {
+            case .success(let payload):
+                switch captureCoordinator.completePendingImagePayload(payload.completedImage) {
+                case .success(let result):
+                    self.applyCaptureResult(self.captureHandlingResult(for: result))
+
+                case .failure(let error):
+                    self.failPendingImageCompletion(
+                        jobID: jobID,
+                        stagedPayloadRelativePath: pendingImage.pendingImage.stagedPayloadRelativePath,
+                        failureCode: error.code
+                    )
+                }
+
+            case .failure(let error):
+                self.failPendingImageCompletion(
+                    jobID: jobID,
+                    stagedPayloadRelativePath: pendingImage.pendingImage.stagedPayloadRelativePath,
+                    failureCode: "\(error)"
+                )
+            }
+        }
+    }
+
+    private func failPendingImageCompletion(
+        jobID: String,
+        stagedPayloadRelativePath: String,
+        failureCode: String
+    ) {
+        guard let captureCoordinator else { return }
+
+        switch captureCoordinator.failPendingImagePayload(
+            jobID: jobID,
+            stagedPayloadRelativePath: stagedPayloadRelativePath,
+            failureCode: failureCode
+        ) {
+        case .success(let result):
+            applyCaptureResult(captureHandlingResult(for: result))
+
+        case .failure(let error):
+            applyCaptureResult(ClipboardCaptureHandlingResult(
+                statusText: "捕获：\(error.code)",
+                shouldRefreshList: true,
+                storageError: error
+            ))
+        }
+    }
+
+    private func captureHandlingResult(
+        for result: RustPendingImageCompletionResult
+    ) -> ClipboardCaptureHandlingResult {
+        let shouldRefresh = result.status != "not_pending"
+        let statusText: String? = result.status == "failed" ? "捕获：图片处理失败" : nil
+        return ClipboardCaptureHandlingResult(
+            statusText: statusText,
+            shouldRefreshList: shouldRefresh,
+            storageError: nil
+        )
     }
 
     private func captureClipboardFiles(_ files: CapturedClipboardFiles, changeCount: Int) {

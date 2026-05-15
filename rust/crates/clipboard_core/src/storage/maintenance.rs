@@ -1,20 +1,44 @@
 use crate::domain::MaintenanceResult;
 use crate::error::{CoreError, CoreErrorCode, Result};
+use crate::time::now_ms;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+use super::pending_images::{
+    active_pending_image_staged_paths, mark_pending_jobs_deleted_for_items,
+    purge_expired_pending_image_tombstones, terminal_pending_image_staged_paths,
+};
 use super::support::{normalize_relative_asset_path, unique_strings};
 use super::ClipboardCore;
+
+const UNKNOWN_STAGING_FILE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
 
 impl ClipboardCore {
     pub fn run_maintenance(&mut self) -> Result<MaintenanceResult> {
         let root = self.root_dir()?.to_path_buf();
         let mut result = self.purge_soft_deleted_items_and_assets()?;
+        let now = now_ms();
+        let transaction = self.connection.transaction()?;
+        let terminal_pending_staged_paths = terminal_pending_image_staged_paths(&transaction)?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let active_pending_staged_paths = active_pending_image_staged_paths(&transaction, now)?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let _ = purge_expired_pending_image_tombstones(&transaction, now)?;
+        transaction.commit()?;
 
         let referenced_asset_paths = self.referenced_asset_paths()?;
         for relative_path in collect_maintenance_files(&root)? {
-            if should_remove_unreferenced_file(&relative_path, &referenced_asset_paths) {
+            if should_remove_unreferenced_file(
+                &root,
+                &relative_path,
+                &referenced_asset_paths,
+                &active_pending_staged_paths,
+                &terminal_pending_staged_paths,
+                now,
+            )? {
                 if let Some(byte_count) = delete_relative_file(&root, &relative_path)? {
                     result.deleted_orphan_file_count += 1;
                     result.reclaimed_bytes += byte_count;
@@ -28,6 +52,11 @@ impl ClipboardCore {
 
     pub(super) fn purge_soft_deleted_items_and_assets(&mut self) -> Result<MaintenanceResult> {
         let root = self.root_dir()?.to_path_buf();
+        let now = now_ms();
+        let transaction = self.connection.transaction()?;
+        mark_pending_jobs_deleted_for_items(&transaction, now)?;
+        transaction.commit()?;
+
         let removable_asset_paths = self.removable_asset_paths()?;
         let mut result = MaintenanceResult::default();
 
@@ -176,7 +205,7 @@ fn delete_relative_file(root: &Path, relative_path: &str) -> Result<Option<i64>>
 
 fn collect_maintenance_files(root: &Path) -> Result<Vec<String>> {
     let mut files = Vec::new();
-    for directory in ["assets", "thumbnails", "app-icons", "staging"] {
+    for directory in ["assets", "thumbnails", "app-icons", "staging", ".staging"] {
         collect_files_in_directory(&root.join(directory), directory, &mut files)?;
     }
     Ok(files)
@@ -218,24 +247,57 @@ fn collect_files_in_directory(
 }
 
 fn should_remove_unreferenced_file(
+    root: &Path,
     relative_path: &str,
     referenced_paths: &HashSet<String>,
-) -> bool {
-    if relative_path.starts_with("staging/") {
-        return true;
+    active_pending_staged_paths: &HashSet<String>,
+    terminal_pending_staged_paths: &HashSet<String>,
+    now_ms: i64,
+) -> Result<bool> {
+    if relative_path.starts_with("staging/") || relative_path.starts_with(".staging/") {
+        if active_pending_staged_paths.contains(relative_path) {
+            return Ok(false);
+        }
+        if terminal_pending_staged_paths.contains(relative_path) {
+            return Ok(true);
+        }
+        return Ok(staging_file_is_conservatively_old(
+            &root.join(relative_path),
+            now_ms,
+        )?);
     }
 
-    (relative_path.starts_with("assets/")
+    Ok((relative_path.starts_with("assets/")
         || relative_path.starts_with("thumbnails/")
         || relative_path.starts_with("app-icons/"))
-        && !referenced_paths.contains(relative_path)
+        && !referenced_paths.contains(relative_path))
 }
 
 fn remove_empty_maintenance_directories(root: &Path) -> Result<()> {
-    for directory in ["assets", "thumbnails", "app-icons", "staging"] {
+    for directory in ["assets", "thumbnails", "app-icons", "staging", ".staging"] {
         remove_empty_child_directories(&root.join(directory))?;
     }
     Ok(())
+}
+
+fn staging_file_is_conservatively_old(path: &Path, now_ms: i64) -> Result<bool> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(CoreError::new(CoreErrorCode::IoFailed, error.to_string())
+                .with_detail("path", path.display().to_string()));
+        }
+    };
+    let modified = match metadata.modified() {
+        Ok(modified) => modified,
+        Err(_) => return Ok(false),
+    };
+    let modified_ms = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or(0);
+    Ok(now_ms.saturating_sub(modified_ms) >= UNKNOWN_STAGING_FILE_GRACE_MS)
 }
 
 fn remove_empty_child_directories(directory: &Path) -> Result<()> {

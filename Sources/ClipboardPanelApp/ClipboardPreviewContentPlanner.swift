@@ -137,8 +137,11 @@ public enum ClipboardPreviewContentPlanner {
     ) -> URL? {
         switch item.itemType {
         case "image":
+            guard item.payloadState == "ready" else {
+                return nil
+            }
             return ClipboardAssetPathResolver.firstExistingURL(
-                for: [item.payloadAssetPath, item.previewAssetPath],
+                for: [item.payloadAssetPath],
                 appSupportDirectory: appSupportDirectory,
                 fileManager: fileManager
             )

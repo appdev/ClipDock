@@ -199,6 +199,7 @@ impl ClipboardCore {
                         source_confidence = ?6,
                         size_bytes = ?7,
                         preview_state = 'ready',
+                        payload_state = 'ready',
                         updated_at_ms = ?2
                     WHERE id = ?8
                     "#,
@@ -501,14 +502,14 @@ impl ClipboardCore {
         })
     }
 
-    fn apply_post_capture(&mut self) -> Result<()> {
+    pub(super) fn apply_post_capture(&mut self) -> Result<()> {
         let preferences = self.get_preferences()?;
         self.apply_history_preferences(&preferences)?;
         Ok(())
     }
 }
 
-fn make_item_id(content_hash: &str) -> String {
+pub(super) fn make_item_id(content_hash: &str) -> String {
     format!("item_{}", &content_hash[..24])
 }
 
@@ -758,7 +759,7 @@ fn replace_file_items(
     Ok(())
 }
 
-fn find_existing_item(
+pub(super) fn find_existing_item(
     transaction: &Transaction<'_>,
     content_hash: &str,
 ) -> Result<Option<(String, i64)>> {
@@ -772,7 +773,7 @@ fn find_existing_item(
         .map_err(Into::into)
 }
 
-fn record_capture_event(
+pub(super) fn record_capture_event(
     transaction: &Transaction<'_>,
     item_id: &str,
     source_app_id: Option<&str>,
@@ -803,7 +804,7 @@ fn record_capture_event(
     Ok(())
 }
 
-fn update_search_index(
+pub(super) fn update_search_index(
     transaction: &Transaction<'_>,
     item_id: &str,
     summary: &str,

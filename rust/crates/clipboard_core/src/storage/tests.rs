@@ -3,9 +3,11 @@ use crate::error::CoreErrorCode;
 use crate::migrations::MIGRATIONS;
 use crate::time::now_ms;
 use crate::{
-    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureResult,
-    CaptureTextRequest, CapturedFileMetadata, ClipboardItemType, CompleteLinkMetadataFetchRequest,
-    ItemQuery, LinkMetadataState, PageRequest, SourceConfidence,
+    CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CapturePendingImageRequest,
+    CaptureResult, CaptureTextRequest, CapturedFileMetadata, ClipboardItemType,
+    CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
+    FailPendingImagePayloadRequest, ItemQuery, LinkMetadataState, PageRequest,
+    RecoverPendingImagesRequest, SourceConfidence,
     ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
 };
 use rusqlite::{params, Connection};
@@ -47,6 +49,56 @@ fn capture_pending_link(core: &mut ClipboardCore, text: &str, url: &str) -> Capt
     .unwrap()
 }
 
+fn pending_image_request(
+    owner_session_id: &str,
+    thumbnail_relative_path: &str,
+    reserved_payload_relative_path: &str,
+    staged_payload_relative_path: &str,
+    width: i64,
+    height: i64,
+    thumbnail_byte_count: i64,
+) -> CapturePendingImageRequest {
+    CapturePendingImageRequest {
+        owner_session_id: owner_session_id.to_string(),
+        thumbnail_relative_path: thumbnail_relative_path.to_string(),
+        reserved_payload_relative_path: reserved_payload_relative_path.to_string(),
+        staged_payload_relative_path: staged_payload_relative_path.to_string(),
+        mime_type: "image/webp".to_string(),
+        width,
+        height,
+        thumbnail_width: width.min(420).max(1),
+        thumbnail_height: height.min(420).max(1),
+        thumbnail_byte_count,
+        source_bundle_id: Some("com.apple.Preview".to_string()),
+        source_app_name: Some("Preview".to_string()),
+        source_bundle_path: Some("/System/Applications/Preview.app".to_string()),
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 77,
+        self_write_token: None,
+        lease_duration_ms: Some(60_000),
+        cleanup_after_duration_ms: Some(60_000),
+    }
+}
+
+fn write_test_webp(root: &std::path::Path, relative_path: &str, payload: &[u8]) {
+    let path = root.join(relative_path);
+    fs::create_dir_all(path.parent().unwrap()).expect("webp parent");
+    fs::write(path, test_webp_bytes(payload)).expect("webp file");
+}
+
+fn test_webp_byte_count(payload: &[u8]) -> i64 {
+    test_webp_bytes(payload).len() as i64
+}
+
+fn test_webp_bytes(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = b"RIFF".to_vec();
+    bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(b"WEBP");
+    bytes.extend_from_slice(payload);
+    bytes
+}
+
 #[test]
 fn open_creates_database_schema_and_asset_directories() {
     let (temp_dir, core) = open_temp_core();
@@ -56,6 +108,7 @@ fn open_creates_database_schema_and_asset_directories() {
     assert!(temp_dir.path().join("thumbnails").is_dir());
     assert!(temp_dir.path().join("app-icons").is_dir());
     assert!(temp_dir.path().join("staging").is_dir());
+    assert!(temp_dir.path().join(".staging").is_dir());
     assert_eq!(core.info().unwrap().schema_version, CURRENT_SCHEMA_VERSION);
 
     let migration_count: i64 = core
@@ -700,6 +753,490 @@ fn capture_image_inserts_asset_preview_and_source() {
         )
         .unwrap();
     assert_eq!(fts_count, 1);
+}
+
+#[test]
+fn capture_pending_image_inserts_thumbnail_visible_row_without_payload() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/pending.webp", b"pending thumbnail");
+
+    let result = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/pending.webp",
+            "assets/pending.webp",
+            ".staging/image-captures/pending-payload.webp",
+            640,
+            360,
+            test_webp_byte_count(b"pending thumbnail"),
+        ))
+        .unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+
+    assert!(result.inserted);
+    assert_eq!(page.total_count, 1);
+    assert_eq!(page.items[0].item_type, ClipboardItemType::Image);
+    assert_eq!(page.items[0].payload_state.as_str(), "pending");
+    assert!(page.items[0].payload_asset_path.is_none());
+    assert!(page.items[0]
+        .preview_asset_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with("thumbnails/pending.webp")));
+}
+
+#[test]
+fn capture_pending_image_validates_metadata_and_relative_paths() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/pending-validation.webp", b"thumb");
+
+    let mut bad_mime = pending_image_request(
+        "session-a",
+        "thumbnails/pending-validation.webp",
+        "assets/pending-validation.webp",
+        ".staging/image-captures/pending-validation.webp",
+        20,
+        10,
+        test_webp_byte_count(b"thumb"),
+    );
+    bad_mime.mime_type = "image/png".to_string();
+    assert_eq!(
+        core.capture_pending_image(bad_mime).unwrap_err().code,
+        CoreErrorCode::InvalidInput
+    );
+
+    let mut bad_path = pending_image_request(
+        "session-a",
+        "../pending-validation.webp",
+        "assets/pending-validation.webp",
+        ".staging/image-captures/pending-validation.webp",
+        20,
+        10,
+        test_webp_byte_count(b"thumb"),
+    );
+    bad_path.mime_type = "image/webp".to_string();
+    assert_eq!(
+        core.capture_pending_image(bad_path).unwrap_err().code,
+        CoreErrorCode::InvalidInput
+    );
+
+    let bad_count = pending_image_request(
+        "session-a",
+        "thumbnails/pending-validation.webp",
+        "assets/pending-validation.webp",
+        ".staging/image-captures/pending-validation.webp",
+        20,
+        10,
+        1,
+    );
+    assert_eq!(
+        core.capture_pending_image(bad_count).unwrap_err().code,
+        CoreErrorCode::InvalidInput
+    );
+}
+
+#[test]
+fn complete_pending_image_payload_moves_staged_to_reserved_and_enables_payload() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/ready.webp", b"ready thumbnail");
+    let pending = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/ready.webp",
+            "assets/ready.webp",
+            ".staging/image-captures/ready-payload.webp",
+            640,
+            360,
+            test_webp_byte_count(b"ready thumbnail"),
+        ))
+        .unwrap();
+    write_test_webp(
+        temp_dir.path(),
+        ".staging/image-captures/ready-payload.webp",
+        b"ready payload",
+    );
+
+    let completed = core
+        .complete_pending_image_payload(CompletePendingImagePayloadRequest {
+            job_id: pending.job_id.clone(),
+            staged_payload_relative_path: ".staging/image-captures/ready-payload.webp".to_string(),
+            mime_type: "image/webp".to_string(),
+            width: 640,
+            height: 360,
+            byte_count: test_webp_byte_count(b"ready payload"),
+        })
+        .unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+
+    assert_eq!(completed.status, "ready");
+    assert_eq!(completed.effective_item_id.as_deref(), Some(pending.item_id.as_str()));
+    assert!(completed.content_hash.is_some());
+    assert!(completed.cleaned_relative_paths.is_empty());
+    assert!(temp_dir.path().join("assets/ready.webp").exists());
+    assert!(!temp_dir
+        .path()
+        .join(".staging/image-captures/ready-payload.webp")
+        .exists());
+    assert_eq!(page.items[0].payload_state.as_str(), "ready");
+    assert!(page.items[0]
+        .payload_asset_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with("assets/ready.webp")));
+    assert_eq!(page.items[0].item_type, ClipboardItemType::Image);
+}
+
+#[test]
+fn deleting_pending_image_keeps_tombstone_and_late_completion_deletes_exact_staged_file() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/deleted-pending.webp", b"thumb");
+    let pending = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/deleted-pending.webp",
+            "assets/deleted-pending.webp",
+            ".staging/image-captures/deleted-pending.webp",
+            40,
+            20,
+            test_webp_byte_count(b"thumb"),
+        ))
+        .unwrap();
+
+    core.delete_item(&pending.item_id).unwrap();
+    let job_row: (String, Option<String>) = core
+        .connection
+        .query_row(
+            "SELECT state, item_id FROM pending_image_jobs WHERE job_id = ?1",
+            params![pending.job_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(job_row, ("deleted".to_string(), None));
+
+    write_test_webp(
+        temp_dir.path(),
+        ".staging/image-captures/deleted-pending.webp",
+        b"late payload",
+    );
+    let completed = core
+        .complete_pending_image_payload(CompletePendingImagePayloadRequest {
+            job_id: pending.job_id,
+            staged_payload_relative_path: ".staging/image-captures/deleted-pending.webp"
+                .to_string(),
+            mime_type: "image/webp".to_string(),
+            width: 40,
+            height: 20,
+            byte_count: test_webp_byte_count(b"late payload"),
+        })
+        .unwrap();
+
+    assert_eq!(completed.status, "deleted");
+    assert_eq!(
+        completed.cleaned_relative_paths,
+        vec![".staging/image-captures/deleted-pending.webp".to_string()]
+    );
+    assert!(!temp_dir
+        .path()
+        .join(".staging/image-captures/deleted-pending.webp")
+        .exists());
+    assert!(!temp_dir.path().join("assets/deleted-pending.webp").exists());
+}
+
+#[test]
+fn completion_after_tombstone_purge_deletes_nothing_and_returns_not_pending() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/purged-pending.webp", b"thumb");
+    let pending = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/purged-pending.webp",
+            "assets/purged-pending.webp",
+            ".staging/image-captures/purged-pending.webp",
+            40,
+            20,
+            test_webp_byte_count(b"thumb"),
+        ))
+        .unwrap();
+    core.delete_item(&pending.item_id).unwrap();
+    core.connection
+        .execute(
+            "UPDATE pending_image_jobs SET cleanup_after_ms = 0 WHERE job_id = ?1",
+            params![pending.job_id],
+        )
+        .unwrap();
+    core.run_maintenance().unwrap();
+    write_test_webp(
+        temp_dir.path(),
+        ".staging/image-captures/purged-pending.webp",
+        b"late payload",
+    );
+
+    let completed = core
+        .complete_pending_image_payload(CompletePendingImagePayloadRequest {
+            job_id: pending.job_id,
+            staged_payload_relative_path: ".staging/image-captures/purged-pending.webp"
+                .to_string(),
+            mime_type: "image/webp".to_string(),
+            width: 40,
+            height: 20,
+            byte_count: test_webp_byte_count(b"late payload"),
+        })
+        .unwrap();
+
+    assert_eq!(completed.status, "not_pending");
+    assert!(completed.cleaned_relative_paths.is_empty());
+    assert!(temp_dir
+        .path()
+        .join(".staging/image-captures/purged-pending.webp")
+        .exists());
+}
+
+#[test]
+fn completion_with_staged_path_mismatch_does_not_delete_caller_path() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/mismatch.webp", b"thumb");
+    let pending = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/mismatch.webp",
+            "assets/mismatch.webp",
+            ".staging/image-captures/mismatch.webp",
+            40,
+            20,
+            test_webp_byte_count(b"thumb"),
+        ))
+        .unwrap();
+    write_test_webp(
+        temp_dir.path(),
+        ".staging/image-captures/caller-controlled.webp",
+        b"payload",
+    );
+
+    let completed = core
+        .complete_pending_image_payload(CompletePendingImagePayloadRequest {
+            job_id: pending.job_id,
+            staged_payload_relative_path: ".staging/image-captures/caller-controlled.webp"
+                .to_string(),
+            mime_type: "image/webp".to_string(),
+            width: 40,
+            height: 20,
+            byte_count: test_webp_byte_count(b"payload"),
+        })
+        .unwrap();
+
+    assert_eq!(completed.status, "staged_path_mismatch");
+    assert!(completed.cleaned_relative_paths.is_empty());
+    assert!(temp_dir
+        .path()
+        .join(".staging/image-captures/caller-controlled.webp")
+        .exists());
+}
+
+#[test]
+fn duplicate_pending_image_completion_merges_into_existing_ready_item() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "assets/existing.webp", b"same payload");
+    let existing = core
+        .capture_image(CaptureImageRequest {
+            payload_relative_path: "assets/existing.webp".to_string(),
+            preview_relative_path: None,
+            mime_type: Some("image/webp".to_string()),
+            width: 40,
+            height: 20,
+            byte_count: test_webp_byte_count(b"same payload"),
+            source_bundle_id: Some("com.apple.Preview".to_string()),
+            source_app_name: Some("Preview".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 1,
+            self_write_token: None,
+        })
+        .unwrap();
+    write_test_webp(temp_dir.path(), "thumbnails/duplicate.webp", b"thumb");
+    let pending = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/duplicate.webp",
+            "assets/duplicate.webp",
+            ".staging/image-captures/duplicate.webp",
+            40,
+            20,
+            test_webp_byte_count(b"thumb"),
+        ))
+        .unwrap();
+    write_test_webp(
+        temp_dir.path(),
+        ".staging/image-captures/duplicate.webp",
+        b"same payload",
+    );
+
+    let completed = core
+        .complete_pending_image_payload(CompletePendingImagePayloadRequest {
+            job_id: pending.job_id.clone(),
+            staged_payload_relative_path: ".staging/image-captures/duplicate.webp".to_string(),
+            mime_type: "image/webp".to_string(),
+            width: 40,
+            height: 20,
+            byte_count: test_webp_byte_count(b"same payload"),
+        })
+        .unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let job_row: (String, Option<String>) = core
+        .connection
+        .query_row(
+            "SELECT state, effective_item_id FROM pending_image_jobs WHERE job_id = ?1",
+            params![pending.job_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+
+    assert_eq!(completed.status, "merged");
+    assert_eq!(completed.effective_item_id.as_deref(), Some(existing.item_id.as_str()));
+    assert!(completed.content_hash.is_some());
+    assert_eq!(
+        completed.cleaned_relative_paths,
+        vec![
+            ".staging/image-captures/duplicate.webp".to_string(),
+            "thumbnails/duplicate.webp".to_string(),
+        ]
+    );
+    assert_eq!(job_row, ("merged".to_string(), Some(existing.item_id)));
+    assert_eq!(page.total_count, 1);
+    assert!(!temp_dir.path().join("thumbnails/duplicate.webp").exists());
+    assert!(!temp_dir
+        .path()
+        .join(".staging/image-captures/duplicate.webp")
+        .exists());
+}
+
+#[test]
+fn fail_and_recover_pending_images_mark_payload_failed_and_clean_staged_files() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/failed.webp", b"thumb");
+    let failed_pending = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/failed.webp",
+            "assets/failed.webp",
+            ".staging/image-captures/failed.webp",
+            40,
+            20,
+            test_webp_byte_count(b"thumb"),
+        ))
+        .unwrap();
+    write_test_webp(
+        temp_dir.path(),
+        ".staging/image-captures/failed.webp",
+        b"failed payload",
+    );
+
+    let failed = core
+        .fail_pending_image_payload(FailPendingImagePayloadRequest {
+            job_id: failed_pending.job_id,
+            staged_payload_relative_path: Some(".staging/image-captures/failed.webp".to_string()),
+            failure_code: "encoding_failed".to_string(),
+        })
+        .unwrap();
+    assert_eq!(failed.status, "failed");
+    assert!(!temp_dir
+        .path()
+        .join(".staging/image-captures/failed.webp")
+        .exists());
+
+    write_test_webp(temp_dir.path(), "thumbnails/recover.webp", b"thumb");
+    let recover_pending = core
+        .capture_pending_image(pending_image_request(
+            "old-session",
+            "thumbnails/recover.webp",
+            "assets/recover.webp",
+            ".staging/image-captures/recover.webp",
+            40,
+            20,
+            test_webp_byte_count(b"thumb"),
+        ))
+        .unwrap();
+    core.connection
+        .execute(
+            "UPDATE pending_image_jobs SET lease_expires_at_ms = 0 WHERE job_id = ?1",
+            params![recover_pending.job_id],
+        )
+        .unwrap();
+
+    let recovered = core
+        .recover_pending_images(RecoverPendingImagesRequest {
+            owner_session_id: "new-session".to_string(),
+        })
+        .unwrap();
+    let payload_state: String = core
+        .connection
+        .query_row(
+            "SELECT payload_state FROM clipboard_items WHERE id = ?1",
+            params![recover_pending.item_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(recovered.affected_count, 1);
+    assert_eq!(payload_state, "failed");
+}
+
+#[test]
+fn maintenance_preserves_active_pending_staging_and_purges_terminal_staging_and_tombstones() {
+    let (temp_dir, mut core) = open_temp_core();
+    write_test_webp(temp_dir.path(), "thumbnails/lease.webp", b"thumb");
+    let pending = core
+        .capture_pending_image(pending_image_request(
+            "session-a",
+            "thumbnails/lease.webp",
+            "assets/lease.webp",
+            ".staging/image-captures/lease.webp",
+            40,
+            20,
+            test_webp_byte_count(b"thumb"),
+        ))
+        .unwrap();
+    write_test_webp(
+        temp_dir.path(),
+        ".staging/image-captures/lease.webp",
+        b"active staged payload",
+    );
+
+    core.run_maintenance().unwrap();
+    assert!(temp_dir
+        .path()
+        .join(".staging/image-captures/lease.webp")
+        .exists());
+
+    core.connection
+        .execute(
+            r#"
+            UPDATE pending_image_jobs
+            SET state = 'failed', cleanup_after_ms = 0, completed_at_ms = 1
+            WHERE job_id = ?1
+            "#,
+            params![pending.job_id],
+        )
+        .unwrap();
+    core.run_maintenance().unwrap();
+
+    let job_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM pending_image_jobs WHERE job_id = ?1",
+            params![pending.job_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(job_count, 0);
+    assert!(!temp_dir
+        .path()
+        .join(".staging/image-captures/lease.webp")
+        .exists());
 }
 
 #[test]
@@ -1960,7 +2497,7 @@ fn maintenance_removes_orphan_files_and_keeps_active_assets() {
     assert_eq!(maintenance.purged_item_count, 0);
     assert_eq!(maintenance.deleted_asset_row_count, 0);
     assert_eq!(maintenance.deleted_asset_file_count, 0);
-    assert_eq!(maintenance.deleted_orphan_file_count, 5);
+    assert_eq!(maintenance.deleted_orphan_file_count, 4);
     assert!(payload_path.exists());
     assert!(thumbnail_path.exists());
     assert!(icon_path.exists());
@@ -1968,7 +2505,7 @@ fn maintenance_removes_orphan_files_and_keeps_active_assets() {
     assert!(!orphan_thumbnail.exists());
     assert!(!orphan_icon.exists());
     assert!(!orphan_snapshot.exists());
-    assert!(!staging_file.exists());
+    assert!(staging_file.exists());
 
     let active_page = core
         .list_items(ItemQuery::default(), PageRequest::default())
@@ -2292,6 +2829,61 @@ fn v8_migration_adds_nullable_source_icon_header_color_columns() {
             ),
         ]
     );
+}
+
+#[test]
+fn v9_migration_adds_payload_state_and_pending_image_jobs() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join(DATABASE_FILE_NAME);
+    let mut connection = Connection::open(&db_path).expect("open v8 db");
+    apply_migrations_through(&mut connection, 8);
+    drop(connection);
+
+    let core = ClipboardCore::open(temp_dir.path()).expect("migrate v9 db");
+    let payload_state_column: (String, i64, String) = core
+        .connection
+        .query_row(
+            r#"
+            SELECT type, "notnull", dflt_value
+            FROM pragma_table_info('clipboard_items')
+            WHERE name = 'payload_state'
+            "#,
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let pending_table_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'pending_image_jobs'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let index_count: i64 = core
+        .connection
+        .query_row(
+            r#"
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'index'
+                AND name IN (
+                    'ix_pending_image_jobs_state_lease',
+                    'ix_pending_image_jobs_cleanup',
+                    'ix_pending_image_jobs_requested_item',
+                    'ux_pending_image_jobs_active_reserved_payload',
+                    'ux_pending_image_jobs_active_staged_payload',
+                    'ux_pending_image_jobs_active_item'
+                )
+            "#,
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(payload_state_column, ("TEXT".to_string(), 1, "'ready'".to_string()));
+    assert_eq!(pending_table_count, 1);
+    assert_eq!(index_count, 6);
 }
 
 fn seed_v6_database_with_disabled_link_metadata() -> TempDir {

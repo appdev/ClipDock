@@ -35,7 +35,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 8)
+        #expect(value.schemaVersion == 9)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -175,6 +175,40 @@ struct RustCoreClientTests {
     }
 
     @Test
+    func payloadStateDefaultsToReadyWhenBridgeJSONOmitsField() throws {
+        let json = """
+        {
+          "id": "item-1",
+          "item_type": "image",
+          "summary": "图片",
+          "primary_text": null,
+          "content_hash": "hash",
+          "source_app_id": null,
+          "source_app_name": "Preview",
+          "source_app_icon_path": null,
+          "source_app_icon_header_color": null,
+          "preview_asset_path": "thumbnails/image.webp",
+          "payload_asset_path": "assets/image.webp",
+          "source_confidence": "high",
+          "first_copied_at_ms": 1,
+          "last_copied_at_ms": 2,
+          "copy_count": 1,
+          "is_pinned": false,
+          "size_bytes": 12,
+          "preview_state": "ready",
+          "file_items": []
+        }
+        """
+
+        let item = try JSONDecoder().decode(
+            RustClipboardItemSummary.self,
+            from: Data(json.utf8)
+        )
+
+        #expect(item.payloadState == "ready")
+    }
+
+    @Test
     func linkMetadataFetchStateRoundTripsThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -279,6 +313,83 @@ struct RustCoreClientTests {
         #expect(page.items[0].sourceAppName == "Preview")
         #expect(page.items[0].previewAssetPath?.hasSuffix("thumbnails/sample.png") == true)
         #expect(page.items[0].payloadAssetPath?.hasSuffix("assets/sample.png") == true)
+        #expect(page.items[0].payloadState == "ready")
+    }
+
+    @Test
+    func pendingImageBridgeGatesPayloadSemanticsUntilCompletion() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let thumbnail = try writeBridgeWebP(
+            appSupportDirectory: tempDirectory,
+            relativePath: "thumbnails/pending.webp",
+            payload: Data("pending thumbnail".utf8)
+        )
+        let client = RustCoreClient()
+
+        let pending = try client.capturePendingImage(
+            appSupportDirectory: tempDirectory,
+            request: RustCapturePendingImageRequest(
+                ownerSessionId: "swift-test-session",
+                thumbnailRelativePath: "thumbnails/pending.webp",
+                reservedPayloadRelativePath: "assets/pending.webp",
+                stagedPayloadRelativePath: ".staging/image-captures/pending-payload.webp",
+                width: 640,
+                height: 360,
+                thumbnailWidth: 420,
+                thumbnailHeight: 236,
+                thumbnailByteCount: Int64(thumbnail.byteCount),
+                sourceBundleId: "com.apple.Preview",
+                sourceAppName: "Preview",
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 88
+            )
+        ).get()
+        var item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+
+        #expect(pending.inserted)
+        #expect(item.payloadState == "pending")
+        #expect(item.previewAssetPath?.hasSuffix("thumbnails/pending.webp") == true)
+        #expect(item.payloadAssetPath == nil)
+        #expect(ClipboardPastePayloadPlanner.payload(for: item, appSupportDirectory: tempDirectory) == .unsupported(reason: "missing_image_asset"))
+        #expect(ClipboardPreviewContentPlanner.preview(for: item, appSupportDirectory: tempDirectory).imageURL == nil)
+        #expect(ClipboardOriginalImagePathResolver.originalImagePaths(for: item, appSupportDirectory: tempDirectory).isEmpty)
+        let cardState = PanelItemCardViewStateAdapter.makeViewState(for: item, selectedItemID: nil)
+        guard case .image(let previewPath, _, _) = cardState.preview else {
+            Issue.record("expected thumbnail card preview")
+            return
+        }
+        #expect(previewPath?.hasSuffix("thumbnails/pending.webp") == true)
+
+        let staged = try writeBridgeWebP(
+            appSupportDirectory: tempDirectory,
+            relativePath: ".staging/image-captures/pending-payload.webp",
+            payload: Data("ready payload".utf8)
+        )
+        let completion = try client.completePendingImagePayload(
+            appSupportDirectory: tempDirectory,
+            request: RustCompletePendingImagePayloadRequest(
+                jobId: pending.jobId,
+                stagedPayloadRelativePath: ".staging/image-captures/pending-payload.webp",
+                width: 640,
+                height: 360,
+                byteCount: Int64(staged.byteCount)
+            )
+        ).get()
+        item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+        let payloadURL = tempDirectory.appendingPathComponent("assets/pending.webp")
+
+        #expect(completion.status == "ready")
+        #expect(completion.effectiveItemId == pending.itemId)
+        #expect(completion.contentHash?.isEmpty == false)
+        #expect(completion.cleanedRelativePaths.isEmpty)
+        #expect(item.payloadState == "ready")
+        #expect(item.payloadAssetPath?.hasSuffix("assets/pending.webp") == true)
+        #expect(ClipboardPastePayloadPlanner.payload(for: item, appSupportDirectory: tempDirectory) == .imageFile(payloadURL))
+        #expect(ClipboardPreviewContentPlanner.preview(for: item, appSupportDirectory: tempDirectory).imageURL == payloadURL)
+        #expect(ClipboardOriginalImagePathResolver.originalImagePaths(for: item, appSupportDirectory: tempDirectory) == [payloadURL.path])
     }
 
     @Test
@@ -632,7 +743,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 8)
+        #expect(result.schemaVersion == 9)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.history.maxItems == 5000)
@@ -764,6 +875,10 @@ struct RustCoreClientTests {
         try Data("orphan thumbnail".utf8).write(to: orphanThumbnail)
         try Data("orphan icon".utf8).write(to: orphanIcon)
         try Data("staging leftover".utf8).write(to: stagingFile)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 0)],
+            ofItemAtPath: stagingFile.path
+        )
         let client = RustCoreClient()
 
         let result = try client.runMaintenance(appSupportDirectory: tempDirectory).get()
@@ -1046,4 +1161,25 @@ struct RustCoreClientTests {
         #expect(error.messageKey == "clipboard.error.database_unavailable")
         #expect(error.recoverable)
     }
+}
+
+private struct BridgeWebPFixture {
+    let url: URL
+    let byteCount: Int
+}
+
+private func writeBridgeWebP(
+    appSupportDirectory: URL,
+    relativePath: String,
+    payload: Data
+) throws -> BridgeWebPFixture {
+    let url = appSupportDirectory.appendingPathComponent(relativePath)
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    var data = Data("RIFF0000WEBP".utf8)
+    data.append(payload)
+    try data.write(to: url)
+    return BridgeWebPFixture(url: url, byteCount: data.count)
 }
