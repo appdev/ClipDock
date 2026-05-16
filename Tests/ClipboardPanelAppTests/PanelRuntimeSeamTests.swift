@@ -329,6 +329,8 @@ struct PanelRuntimeSeamTests {
             isFiltered: false
         )
         contentView.layoutSubtreeIfNeeded()
+        let scrollView = try #require(contentView.smokeHorizontalScrollView())
+        #expect(scrollView.horizontalScrollElasticity == .none)
         var overlayState = contentView.smokeScrollEdgeOverlayState
         #expect(!overlayState.leadingVisible)
         #expect(!overlayState.trailingVisible)
@@ -356,7 +358,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func itemBandUsesOuterVerticalPaddingWithoutPreventingEdgeScroll() async throws {
+    func itemBandUsesTransparentSpacersForHorizontalContentPadding() async throws {
         let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
         let items = PanelQASamples.makePagedPanelItems(count: 8)
         contentView.updateListState(
@@ -378,14 +380,67 @@ struct PanelRuntimeSeamTests {
         #expect(abs((metrics.firstCardDocumentMinX ?? -1) - 22) < 0.5)
         #expect(abs((metrics.lastCardDocumentTrailingInset ?? -1) - 22) < 0.5)
 
-        contentView.smokeScrollToX(22)
+        contentView.smokeScrollToX(0)
         let leadingEdgeMetrics = contentView.smokeItemBandLayoutMetrics
-        #expect(abs(leadingEdgeMetrics.scrollOriginX - 22) < 0.5)
-        #expect(abs((leadingEdgeMetrics.firstCardVisibleMinX ?? -1)) < 0.5)
+        #expect(abs(leadingEdgeMetrics.scrollOriginX) < 0.5)
+        #expect(abs((leadingEdgeMetrics.firstCardVisibleMinX ?? -1) - 22) < 0.5)
 
-        contentView.smokeScrollToX(try #require(metrics.trailingContentEdgeOriginX))
+        contentView.smokeScrollToX(.greatestFiniteMagnitude)
         let trailingEdgeMetrics = contentView.smokeItemBandLayoutMetrics
-        #expect(abs((trailingEdgeMetrics.lastCardVisibleMaxXAtTrailingEdge ?? -1) - trailingEdgeMetrics.viewportWidth) < 0.5)
+        #expect(abs((trailingEdgeMetrics.lastCardVisibleMaxXAtTrailingEdge ?? -1) - (trailingEdgeMetrics.viewportWidth - 22)) < 0.5)
+        #expect(abs(trailingEdgeMetrics.scrollOriginX - (try #require(metrics.trailingContentEdgeOriginX))) < 0.5)
+    }
+
+    @Test
+    @MainActor
+    func itemBandWheelScrollIgnoresBoundaryOverscroll() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 12)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        let scrollView = try #require(contentView.smokeHorizontalScrollView())
+        let documentView = try #require(scrollView.documentView)
+        let maxX = max(CGFloat(0), documentView.frame.width - scrollView.contentView.bounds.width)
+        #expect(maxX > 0)
+
+        var callbackCount = 0
+        scrollView.onScrollDidChange = {
+            callbackCount += 1
+        }
+
+        sendWheel(to: scrollView, deltaX: 0, deltaY: 180)
+        PanelQAHarness.drainMainRunLoop()
+        #expect(scrollView.contentView.bounds.origin.x > 0)
+        #expect(callbackCount == 1)
+
+        callbackCount = 0
+        scrollView.contentView.scroll(to: NSPoint(x: maxX, y: scrollView.contentView.bounds.origin.y))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        for _ in 0..<5 {
+            sendWheel(to: scrollView, deltaX: 0, deltaY: 180)
+        }
+        PanelQAHarness.drainMainRunLoop()
+        #expect(abs(scrollView.contentView.bounds.origin.x - maxX) < 0.5)
+        #expect(callbackCount == 0)
+
+        callbackCount = 0
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.origin.y))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        for _ in 0..<5 {
+            sendWheel(to: scrollView, deltaX: 0, deltaY: -180)
+        }
+        PanelQAHarness.drainMainRunLoop()
+        #expect(abs(scrollView.contentView.bounds.origin.x) < 0.5)
+        #expect(callbackCount == 0)
+
+        sendWheel(to: scrollView, deltaX: 180, deltaY: 0)
+        PanelQAHarness.drainMainRunLoop()
+        #expect(scrollView.contentView.bounds.origin.x > 0)
+        #expect(callbackCount == 1)
     }
 
     @Test
@@ -1272,6 +1327,16 @@ struct PanelRuntimeSeamTests {
         #expect(renderedCard.artifacts.previewHeightConstraints.isEmpty)
         #expect(abs(imageFrame.width - itemSide) <= 1.5)
         #expect(abs(imageFrame.height - (itemSide - headerHeight)) <= 1.5)
+
+        let resizedItemSide: CGFloat = 234
+        host.setFrameSize(NSSize(width: resizedItemSide, height: resizedItemSide))
+        renderedCard.artifacts.itemWidthConstraint.constant = resizedItemSide
+        renderedCard.artifacts.itemHeightConstraint.constant = resizedItemSide
+        host.layoutSubtreeIfNeeded()
+
+        let resizedImageFrame = imageView.convert(imageView.bounds, to: renderedCard.view)
+        #expect(abs(resizedImageFrame.width - resizedItemSide) <= 1.5)
+        #expect(abs(resizedImageFrame.height - (resizedItemSide - headerHeight)) <= 1.5)
     }
 
     @Test
@@ -1505,6 +1570,31 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func filePreviewThumbnailCompletionReturnsToMainActor() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let fileURL = tempDirectory.appendingPathComponent("quicklook-thumbnail-source.png")
+        try writePNG(to: fileURL, width: 96, height: 64)
+
+        var didComplete = false
+        var completedOnMainThread = false
+        let token = try #require(PanelCardAssetResolver.loadFilePreviewImageAsync(
+            urls: [fileURL],
+            maximumSize: NSSize(width: 96, height: 96),
+            scale: NSScreen.main?.backingScaleFactor ?? 2
+        ) { _ in
+            didComplete = true
+            completedOnMainThread = Thread.isMainThread
+        })
+
+        #expect(await waitForMainActor(attempts: 400) { didComplete })
+        #expect(completedOnMainThread)
+        #expect(!PanelCardAssetResolver.filePreviewImageRequestIsActiveForSmoke(token))
+    }
+
+    @Test
+    @MainActor
     func imageCardRenderDoesNotLoadOriginalPayloadFallback() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1601,10 +1691,12 @@ struct PanelRuntimeSeamTests {
         let sourceIconURL = tempDirectory.appendingPathComponent("source-icon.png")
         try writePNG(to: sourceIconURL, width: 20, height: 20)
 
+        let theme = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
         let renderedCard = renderLinkCard(
             itemSide: 218,
             appSupportDirectory: tempDirectory,
-            sourceAppIconPath: sourceIconURL.path
+            sourceAppIconPath: sourceIconURL.path,
+            theme: theme
         )
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
         host.addSubview(renderedCard.view)
@@ -1631,10 +1723,43 @@ struct PanelRuntimeSeamTests {
         #expect(abs(previewFrame.height - 120) <= 1.5)
         #expect(abs(footerBackgroundFrame.minX) <= 1.5)
         #expect(abs(footerBackgroundFrame.width - 218) <= 1.5)
-        #expect(colorAndAlphaDistance(NSColor(cgColor: footerBackgroundColor) ?? .clear, .white) < 0.001)
+        #expect(colorAndAlphaDistance(
+            NSColor(cgColor: footerBackgroundColor) ?? .clear,
+            theme.card.linkFooterBackgroundColor
+        ) < 0.001)
         #expect(linkIconView.toolTip == "github.com")
         #expect(!linkIconView.isHidden)
         #expect(!renderedCard.view.subviewsRecursiveForSmoke().contains { $0 is WKWebView })
+    }
+
+    @Test
+    @MainActor
+    func linkCardFooterBackgroundUsesThemePaletteInBothSchemes() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+
+        let lightTheme = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
+        let darkTheme = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+        let lightCard = renderLinkCard(
+            itemSide: 218,
+            appSupportDirectory: tempDirectory,
+            sourceAppIconPath: nil,
+            theme: lightTheme
+        )
+        let darkCard = renderLinkCard(
+            itemSide: 218,
+            appSupportDirectory: tempDirectory,
+            sourceAppIconPath: nil,
+            theme: darkTheme
+        )
+
+        let lightFooterColor = try #require(linkFooterBackgroundColor(in: lightCard))
+        let darkFooterColor = try #require(linkFooterBackgroundColor(in: darkCard))
+
+        #expect(colorAndAlphaDistance(lightFooterColor, lightTheme.card.linkFooterBackgroundColor) < 0.001)
+        #expect(colorAndAlphaDistance(darkFooterColor, darkTheme.card.linkFooterBackgroundColor) < 0.001)
+        #expect(colorAndAlphaDistance(lightFooterColor, darkFooterColor) > 0.2)
     }
 
     @Test
@@ -2792,6 +2917,15 @@ private func renderLinkCard(
     ))
 }
 
+@MainActor
+private func linkFooterBackgroundColor(in renderedCard: PanelRenderedItemCard) -> NSColor? {
+    renderedCard.view.subviewsRecursiveForSmoke()
+        .first { $0.identifier?.rawValue == "LinkFooterBackground" }?
+        .layer?
+        .backgroundColor
+        .flatMap(NSColor.init(cgColor:))
+}
+
 private extension NSView {
     func subviewsRecursiveForSmoke() -> [NSView] {
         subviews + subviews.flatMap { $0.subviewsRecursiveForSmoke() }
@@ -2809,6 +2943,25 @@ private func colorAndAlphaDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
         + abs(lhs.greenComponent - rhs.greenComponent)
         + abs(lhs.blueComponent - rhs.blueComponent)
         + abs(lhs.alphaComponent - rhs.alphaComponent)
+}
+
+@MainActor
+private func sendWheel(to scrollView: NSScrollView, deltaX: Int32, deltaY: Int32) {
+    guard let cgEvent = CGEvent(
+        scrollWheelEvent2Source: nil,
+        units: .pixel,
+        wheelCount: 2,
+        wheel1: deltaY,
+        wheel2: deltaX,
+        wheel3: 0
+    ) else {
+        return
+    }
+    cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(deltaY))
+    cgEvent.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(deltaX))
+
+    guard let event = NSEvent(cgEvent: cgEvent) else { return }
+    scrollView.scrollWheel(with: event)
 }
 
 @MainActor

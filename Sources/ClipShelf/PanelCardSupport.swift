@@ -72,18 +72,21 @@ final class PanelCardAssetResolver {
     private let sourceIconHeaderColorWriter: SourceAppIconHeaderColorWriter?
     private let sourceIconImageLoader: @MainActor (String) -> NSImage?
     private let dominantHeaderColorProvider: @MainActor (NSImage, String?, String?) -> NSColor?
+    private let loadSourceIconsSynchronously: Bool
 
     init(
         appSupportDirectory: URL?,
         sourceIconHeaderColorWriter: SourceAppIconHeaderColorWriter? = nil,
         sourceIconImageLoader: (@MainActor (String) -> NSImage?)? = nil,
-        dominantHeaderColorProvider: (@MainActor (NSImage, String?, String?) -> NSColor?)? = nil
+        dominantHeaderColorProvider: (@MainActor (NSImage, String?, String?) -> NSColor?)? = nil,
+        loadSourceIconsSynchronously: Bool = true
     ) {
         self.appSupportDirectory = appSupportDirectory
         self.sourceIconHeaderColorWriter = sourceIconHeaderColorWriter
         self.sourceIconImageLoader = sourceIconImageLoader ?? PanelCardAssetResolver.loadCachedImage(path:)
         self.dominantHeaderColorProvider = dominantHeaderColorProvider
             ?? PanelCardAssetResolver.dominantHeaderColor(for:cacheKey:fallbackCacheKey:)
+        self.loadSourceIconsSynchronously = loadSourceIconsSynchronously
     }
 
     func resolvedItem(for request: PanelCardAssetRequest) -> PanelCardResolvedItem {
@@ -121,7 +124,11 @@ final class PanelCardAssetResolver {
     }
 
     func sourceIconImage(for request: PanelCardAssetRequest) -> NSImage? {
-        request.sourceAppIconPath.flatMap(sourceIconImageLoader)
+        guard let path = request.sourceAppIconPath else { return nil }
+        guard loadSourceIconsSynchronously else {
+            return Self.cachedImageInMemory(path: path)
+        }
+        return sourceIconImageLoader(path)
     }
 
     private func persistComputedHeaderColor(_ color: NSColor, for request: PanelCardAssetRequest) {
@@ -248,23 +255,20 @@ final class PanelCardAssetResolver {
         return token
     }
 
-    private static func generateFileThumbnail(
+    nonisolated private static func generateFileThumbnail(
         requestInfo: FileThumbnailRequestInfo,
         thumbnailRequest: QLThumbnailGenerator.Request
     ) {
-        QLThumbnailGenerator.shared.generateBestRepresentation(for: thumbnailRequest) { representation, _ in
-            let imageData = representation?.nsImage.tiffRepresentation
-            DispatchQueue.main.async {
+        QuickLookFileThumbnailBridge.generateBestRepresentation(for: thumbnailRequest) { imageData in
+            Task { @MainActor in
                 let image = imageData.flatMap(NSImage.init(data:))
-                MainActor.assumeIsolated {
-                    if let image {
-                        fileThumbnailCache.setObject(image, forKey: requestInfo.cacheKey as NSString)
-                    }
-                    guard let inFlight = fileThumbnailInFlight.removeValue(forKey: requestInfo.cacheKey) else {
-                        return
-                    }
-                    inFlight.completions.values.forEach { $0(image) }
+                if let image {
+                    fileThumbnailCache.setObject(image, forKey: requestInfo.cacheKey as NSString)
                 }
+                guard let inFlight = fileThumbnailInFlight.removeValue(forKey: requestInfo.cacheKey) else {
+                    return
+                }
+                inFlight.completions.values.forEach { $0(image) }
             }
         }
     }
@@ -278,7 +282,7 @@ final class PanelCardAssetResolver {
 
         inFlight.completions[token.callbackID] = nil
         if inFlight.completions.isEmpty {
-            QLThumbnailGenerator.shared.cancel(inFlight.request)
+            QuickLookFileThumbnailBridge.cancel(inFlight.request)
             fileThumbnailInFlight[token.cacheKey] = nil
         } else {
             fileThumbnailInFlight[token.cacheKey] = inFlight
@@ -449,6 +453,10 @@ final class PanelCardAssetResolver {
         }
 
         return image
+    }
+
+    private static func cachedImageInMemory(path: String) -> NSImage? {
+        imageCache.object(forKey: path as NSString)
     }
 
     private static func dominantHeaderColor(
@@ -852,7 +860,22 @@ final class PanelCardAssetResolver {
     }
 }
 
-private struct FileThumbnailRequestInfo {
+private enum QuickLookFileThumbnailBridge {
+    nonisolated static func generateBestRepresentation(
+        for request: QLThumbnailGenerator.Request,
+        completion: @escaping @Sendable (Data?) -> Void
+    ) {
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
+            completion(representation?.nsImage.tiffRepresentation)
+        }
+    }
+
+    nonisolated static func cancel(_ request: QLThumbnailGenerator.Request) {
+        QLThumbnailGenerator.shared.cancel(request)
+    }
+}
+
+private struct FileThumbnailRequestInfo: Sendable {
     let url: URL
     let cacheKey: String
 }

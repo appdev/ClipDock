@@ -147,11 +147,43 @@ public enum PanelItemCardViewStateAdapter {
     }
 
     public static func defaultRelativeTimeText(from milliseconds: Int64) -> String {
-        let seconds = TimeInterval(milliseconds) / 1000
-        let date = Date(timeIntervalSince1970: seconds)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
+        let nowMilliseconds = Int64((Date().timeIntervalSince1970 * 1000).rounded())
+        let elapsedSeconds = max(0, (nowMilliseconds - milliseconds) / 1000)
+
+        if elapsedSeconds < 10 {
+            return "刚刚"
+        }
+        if elapsedSeconds < 60 {
+            return "\(elapsedSeconds) 秒前"
+        }
+
+        let elapsedMinutes = elapsedSeconds / 60
+        if elapsedMinutes < 60 {
+            return "\(elapsedMinutes) 分钟前"
+        }
+
+        let elapsedHours = elapsedMinutes / 60
+        if elapsedHours < 24 {
+            return "\(elapsedHours) 小时前"
+        }
+
+        let elapsedDays = elapsedHours / 24
+        if elapsedDays < 7 {
+            return "\(elapsedDays) 天前"
+        }
+
+        let elapsedWeeks = elapsedDays / 7
+        if elapsedWeeks < 5 {
+            return "\(elapsedWeeks) 周前"
+        }
+
+        let elapsedMonths = elapsedDays / 30
+        if elapsedMonths < 12 {
+            return "\(max(1, elapsedMonths)) 个月前"
+        }
+
+        let elapsedYears = elapsedDays / 365
+        return "\(max(1, elapsedYears)) 年前"
     }
 
     public static func stateBySettingCommandIndexText(

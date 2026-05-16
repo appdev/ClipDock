@@ -12,6 +12,11 @@ struct ClipShelfThemeTests {
         #expect(light.scheme == .light)
         #expect(dark.scheme == .dark)
         #expect(colorDistance(light.card.backgroundColor, dark.card.backgroundColor) > 0.2)
+        #expect(colorDistance(light.card.linkFooterBackgroundColor, dark.card.linkFooterBackgroundColor) > 0.2)
+        #expect(colorDistance(
+            light.card.imagePreviewCheckerboardBackgroundColor,
+            dark.card.imagePreviewCheckerboardBackgroundColor
+        ) > 0.2)
         #expect(colorDistance(light.preferences.contentBackgroundColor, dark.preferences.contentBackgroundColor) > 0.2)
         #expect(colorDistance(light.preview.bodyTextColor, dark.preview.bodyTextColor) > 0.2)
     }
@@ -43,9 +48,24 @@ struct ClipShelfThemeTests {
 
         for palette in palettes {
             #expect(contrastRatio(palette.card.primaryTextColor, palette.card.backgroundColor) >= 4.5)
+            #expect(contrastRatio(palette.card.primaryTextColor, palette.card.linkFooterBackgroundColor) >= 4.5)
             #expect(contrastRatio(palette.preferences.primaryTextColor, palette.preferences.contentBackgroundColor) >= 4.5)
             #expect(contrastRatio(palette.preview.bodyTextColor, palette.preview.surfaceBackgroundColor) >= 4.5)
         }
+    }
+
+    @Test
+    @MainActor
+    func darkLinkCardSurfacesStayInReferenceGrayRange() throws {
+        let card = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua)).card
+        let previewLuminance = relativeLuminance(card.linkPreviewBackgroundColor)
+        let footerLuminance = relativeLuminance(card.linkFooterBackgroundColor)
+
+        #expect(previewLuminance >= 0.012)
+        #expect(previewLuminance <= 0.020)
+        #expect(footerLuminance >= 0.025)
+        #expect(footerLuminance <= 0.040)
+        #expect(footerLuminance > previewLuminance)
     }
 
     @Test

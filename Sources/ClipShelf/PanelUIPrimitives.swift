@@ -142,66 +142,23 @@ final class HorizontalWheelScrollView: NSScrollView {
     var onScrollDidChange: (() -> Void)?
 
     override func scrollWheel(with event: NSEvent) {
-        guard documentView != nil else {
+        guard let documentView else {
             super.scrollWheel(with: event)
             return
         }
 
         let initialHorizontalOrigin = contentView.bounds.origin.x
-        let fallbackDelta = dominantVerticalDelta(from: event)
-        guard let projectedEvent = horizontalOnlyEvent(from: event) else {
-            super.scrollWheel(with: event)
-            applyManualHorizontalFallbackIfNeeded(
-                initialHorizontalOrigin: initialHorizontalOrigin,
-                delta: fallbackDelta
-            )
-            return
-        }
+        let horizontalDelta = horizontalScrollDelta(from: event)
+        guard horizontalDelta != 0 else { return }
 
-        super.scrollWheel(with: projectedEvent)
-        applyManualHorizontalFallbackIfNeeded(
-            initialHorizontalOrigin: initialHorizontalOrigin,
-            delta: fallbackDelta
-        )
+        let minimumX: CGFloat = 0
+        let maximumX = max(minimumX, documentView.frame.width - contentView.bounds.width)
+        let targetX = min(max(initialHorizontalOrigin + horizontalDelta, minimumX), maximumX)
+        guard abs(targetX - initialHorizontalOrigin) >= 0.5 else { return }
+
+        contentView.scroll(to: NSPoint(x: targetX, y: contentView.bounds.origin.y))
+        reflectScrolledClipView(contentView)
         onScrollDidChange?()
-    }
-
-    private func horizontalOnlyEvent(from event: NSEvent) -> NSEvent? {
-        guard let cgEvent = event.cgEvent?.copy() else { return nil }
-
-        let verticalDelta = scrollDelta(
-            for: event,
-            cgEvent: cgEvent,
-            preciseValue: event.scrollingDeltaY,
-            pointField: .scrollWheelEventPointDeltaAxis1,
-            fixedField: .scrollWheelEventFixedPtDeltaAxis1,
-            lineField: .scrollWheelEventDeltaAxis1
-        )
-        let horizontalDelta = scrollDelta(
-            for: event,
-            cgEvent: cgEvent,
-            preciseValue: event.scrollingDeltaX,
-            pointField: .scrollWheelEventPointDeltaAxis2,
-            fixedField: .scrollWheelEventFixedPtDeltaAxis2,
-            lineField: .scrollWheelEventDeltaAxis2
-        )
-        let shouldMapVertical = abs(verticalDelta) > abs(horizontalDelta)
-        if shouldMapVertical {
-            projectScrollAxis(in: cgEvent, from: .scrollWheelEventDeltaAxis1, to: .scrollWheelEventDeltaAxis2)
-            projectScrollAxis(in: cgEvent, from: .scrollWheelEventPointDeltaAxis1, to: .scrollWheelEventPointDeltaAxis2)
-            projectScrollAxis(in: cgEvent, from: .scrollWheelEventFixedPtDeltaAxis1, to: .scrollWheelEventFixedPtDeltaAxis2)
-        }
-
-        clearScrollAxis(in: cgEvent, field: .scrollWheelEventDeltaAxis1)
-        clearScrollAxis(in: cgEvent, field: .scrollWheelEventPointDeltaAxis1)
-        clearScrollAxis(in: cgEvent, field: .scrollWheelEventFixedPtDeltaAxis1)
-        return NSEvent(cgEvent: cgEvent)
-    }
-
-    private func projectScrollAxis(in event: CGEvent, from source: CGEventField, to target: CGEventField) {
-        let value = event.getIntegerValueField(source)
-        guard value != 0 else { return }
-        event.setIntegerValueField(target, value: value)
     }
 
     private func scrollDelta(
@@ -229,12 +186,13 @@ final class HorizontalWheelScrollView: NSScrollView {
         return CGFloat(cgEvent.getIntegerValueField(lineField))
     }
 
-    private func clearScrollAxis(in event: CGEvent, field: CGEventField) {
-        event.setIntegerValueField(field, value: 0)
-    }
+    private func horizontalScrollDelta(from event: NSEvent) -> CGFloat {
+        guard let cgEvent = event.cgEvent else {
+            return abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX)
+                ? event.scrollingDeltaY
+                : event.scrollingDeltaX
+        }
 
-    private func dominantVerticalDelta(from event: NSEvent) -> CGFloat {
-        guard let cgEvent = event.cgEvent else { return event.scrollingDeltaY }
         let verticalDelta = scrollDelta(
             for: event,
             cgEvent: cgEvent,
@@ -243,7 +201,7 @@ final class HorizontalWheelScrollView: NSScrollView {
             fixedField: .scrollWheelEventFixedPtDeltaAxis1,
             lineField: .scrollWheelEventDeltaAxis1
         )
-        let horizontalDelta = scrollDelta(
+        let nativeHorizontalDelta = scrollDelta(
             for: event,
             cgEvent: cgEvent,
             preciseValue: event.scrollingDeltaX,
@@ -251,27 +209,7 @@ final class HorizontalWheelScrollView: NSScrollView {
             fixedField: .scrollWheelEventFixedPtDeltaAxis2,
             lineField: .scrollWheelEventDeltaAxis2
         )
-        return abs(verticalDelta) > abs(horizontalDelta) ? verticalDelta : 0
-    }
-
-    private func applyManualHorizontalFallbackIfNeeded(
-        initialHorizontalOrigin: CGFloat,
-        delta: CGFloat
-    ) {
-        guard abs(contentView.bounds.origin.x - initialHorizontalOrigin) < 0.5,
-              delta != 0,
-              let documentView
-        else {
-            return
-        }
-
-        let minimumX: CGFloat = 0
-        let maximumX = max(minimumX, documentView.frame.width - contentView.bounds.width)
-        let targetX = min(max(initialHorizontalOrigin + delta, minimumX), maximumX)
-        guard abs(targetX - initialHorizontalOrigin) >= 0.5 else { return }
-
-        contentView.scroll(to: NSPoint(x: targetX, y: contentView.bounds.origin.y))
-        reflectScrolledClipView(contentView)
+        return abs(verticalDelta) > abs(nativeHorizontalDelta) ? verticalDelta : nativeHorizontalDelta
     }
 }
 

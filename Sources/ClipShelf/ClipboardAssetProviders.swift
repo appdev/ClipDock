@@ -428,7 +428,7 @@ final class ClipboardFilePreviewProvider {
         }
 
         let scale = scaleProvider()
-        guard let preview = await quickLookThumbnailData(for: sourceURL, scale: scale)
+        guard let preview = await Self.quickLookThumbnailData(for: sourceURL, scale: scale)
             ?? fallbackIconData(for: sourceURL),
             !preview.data.isEmpty
         else {
@@ -468,19 +468,15 @@ final class ClipboardFilePreviewProvider {
         )
     }
 
-    private func quickLookThumbnailData(for url: URL, scale: CGFloat) async -> FilePreviewImageData? {
+    nonisolated private static func quickLookThumbnailData(for url: URL, scale: CGFloat) async -> FilePreviewImageData? {
         let request = QLThumbnailGenerator.Request(
             fileAt: url,
-            size: Layout.thumbnailPointSize,
+            size: NSSize(width: 640, height: 640),
             scale: scale,
             representationTypes: .thumbnail
         )
 
-        return await withCheckedContinuation { continuation in
-            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
-                continuation.resume(returning: representation?.nsImage.filePreviewPNGData())
-            }
-        }
+        return await ClipboardFilePreviewQuickLookBridge.thumbnailData(for: request)
     }
 
     private func fallbackIconData(for url: URL) -> FilePreviewImageData? {
@@ -502,14 +498,24 @@ final class ClipboardFilePreviewProvider {
     }
 }
 
-struct ClipboardCGImageSnapshot: @unchecked Sendable {
-    let image: CGImage
-}
-
 fileprivate struct FilePreviewImageData: Sendable {
     let data: Data
     let width: Int
     let height: Int
+}
+
+private enum ClipboardFilePreviewQuickLookBridge {
+    nonisolated static func thumbnailData(for request: QLThumbnailGenerator.Request) async -> FilePreviewImageData? {
+        await withCheckedContinuation { continuation in
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { representation, _ in
+                continuation.resume(returning: representation?.nsImage.filePreviewPNGData())
+            }
+        }
+    }
+}
+
+struct ClipboardCGImageSnapshot: @unchecked Sendable {
+    let image: CGImage
 }
 
 enum ClipboardBitmapImageSource: Sendable {

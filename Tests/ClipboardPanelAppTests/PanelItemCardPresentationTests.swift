@@ -21,6 +21,21 @@ struct PanelItemCardPresentationTests {
     }
 
     @Test
+    func keepsFullTextCardSummaryWhileFootnoteCountUsesFullText() {
+        let longText = String(repeating: "alpha beta gamma\n", count: 30)
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "text",
+                summary: longText,
+                primaryText: longText
+            )
+        )
+
+        #expect(presentation.summaryText == longText)
+        #expect(presentation.footnoteText == "\(longText.trimmingCharacters(in: .whitespacesAndNewlines).count) 个字符")
+    }
+
+    @Test
     func presentsLinkHostAndDetail() {
         let presentation = PanelItemCardPresenter.presentation(
             for: makeItem(

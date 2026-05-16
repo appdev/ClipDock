@@ -29,7 +29,18 @@ struct ClipShelfCardTheme {
     let headerSecondaryTextColor: NSColor
     let sourceIconBackgroundColor: NSColor
     let linkPreviewBackgroundColor: NSColor
+    let linkPreviewOverlayStartColor: NSColor
+    let linkPreviewOverlayEndColor: NSColor
+    let linkFooterBackgroundColor: NSColor
+    let linkDefaultIconTintColor: NSColor
+    let linkResolvedIconBorderColor: NSColor
     let appIconTileBackgroundColor: NSColor
+    let imageFootnoteBadgeBackgroundColor: NSColor
+    let imageFootnoteBadgeBorderColor: NSColor
+    let imageFootnoteTextColor: NSColor
+    let imageFootnoteBadgeShadowOpacity: Float
+    let imagePreviewCheckerboardBackgroundColor: NSColor
+    let imagePreviewCheckerboardAlternateColor: NSColor
 }
 
 struct ClipShelfPreferencesTheme {
@@ -131,7 +142,23 @@ enum ClipShelfTheme {
                 blue: 0.982,
                 alpha: 1
             ),
-            appIconTileBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.92)
+            linkPreviewOverlayStartColor: NSColor.black.withAlphaComponent(0.02),
+            linkPreviewOverlayEndColor: NSColor.black.withAlphaComponent(0.16),
+            linkFooterBackgroundColor: NSColor.white,
+            linkDefaultIconTintColor: NSColor(
+                calibratedRed: 0.745,
+                green: 0.745,
+                blue: 0.775,
+                alpha: 1
+            ),
+            linkResolvedIconBorderColor: NSColor.white.withAlphaComponent(0.78),
+            appIconTileBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.92),
+            imageFootnoteBadgeBackgroundColor: NSColor(calibratedWhite: 0.90, alpha: 0.92),
+            imageFootnoteBadgeBorderColor: NSColor.white.withAlphaComponent(0.62),
+            imageFootnoteTextColor: NSColor(calibratedWhite: 0.38, alpha: 0.92),
+            imageFootnoteBadgeShadowOpacity: 0.12,
+            imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.96, alpha: 1),
+            imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.88, alpha: 1)
         ),
         preferences: ClipShelfPreferencesTheme(
             windowBackgroundColor: NSColor(calibratedWhite: 0.93, alpha: 1),
@@ -184,8 +211,19 @@ enum ClipShelfTheme {
             headerTextColor: NSColor.white,
             headerSecondaryTextColor: NSColor.white.withAlphaComponent(0.80),
             sourceIconBackgroundColor: NSColor.windowBackgroundColor.withAlphaComponent(0.66),
-            linkPreviewBackgroundColor: NSColor.white.withAlphaComponent(0.08),
-            appIconTileBackgroundColor: NSColor.white.withAlphaComponent(0.90)
+            linkPreviewBackgroundColor: NSColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1),
+            linkPreviewOverlayStartColor: NSColor.black.withAlphaComponent(0.02),
+            linkPreviewOverlayEndColor: NSColor.black.withAlphaComponent(0.18),
+            linkFooterBackgroundColor: NSColor(srgbRed: 0.19, green: 0.19, blue: 0.19, alpha: 1),
+            linkDefaultIconTintColor: NSColor.white.withAlphaComponent(0.38),
+            linkResolvedIconBorderColor: NSColor.white.withAlphaComponent(0.20),
+            appIconTileBackgroundColor: NSColor.white.withAlphaComponent(0.90),
+            imageFootnoteBadgeBackgroundColor: NSColor(calibratedWhite: 0.02, alpha: 0.72),
+            imageFootnoteBadgeBorderColor: NSColor.white.withAlphaComponent(0.18),
+            imageFootnoteTextColor: NSColor.white.withAlphaComponent(0.88),
+            imageFootnoteBadgeShadowOpacity: 0.22,
+            imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.09, alpha: 1),
+            imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.15, alpha: 1)
         ),
         preferences: ClipShelfPreferencesTheme(
             windowBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),

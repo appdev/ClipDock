@@ -20,13 +20,14 @@ struct PanelItemCardRenderArtifacts {
     let previewWidthConstraints: [NSLayoutConstraint]
     let imagePreviewViews: [NSImageView]
     let footnoteBadgeViews: [NSView]
-    let bodyLabels: [NSTextField]
+    let bodyLabels: [PanelItemCardBodyTextView]
     let linkPreviewViews: [NSView]
     let linkIconViews: [NSImageView]
+    let sourceIconViews: [NSImageView]
 
     @MainActor
     func prepareForRemoval() {
-        for imageView in imagePreviewViews + linkIconViews {
+        for imageView in imagePreviewViews + linkIconViews + sourceIconViews {
             imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
             (imageView as? PanelCardAsyncWorkCancellable)?.cancelPanelCardAsyncWork()
         }
@@ -78,12 +79,8 @@ final class PanelItemCardRenderer {
     ) -> PanelRenderedItemCard {
         let resolvedItem = cardAssetResolver.resolvedItem(for: state.assetRequest)
 
-        let iconView = NSImageView()
+        let iconView = SourceIconImageView()
         iconView.image = resolvedItem.sourceIconImage
-            ?? NSImage(
-                systemSymbolName: state.symbolName,
-                accessibilityDescription: state.sourceAppName
-            )
 
         let previewBundle = makePreviewBundle(
             state.preview,
@@ -124,6 +121,19 @@ final class PanelItemCardRenderer {
         iconView.layer?.shadowOffset = CGSize(width: 0, height: -1)
         iconView.layer?.contentsScale = backingScaleFactor
         iconView.toolTip = state.sourceAppName
+        iconView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
+        if resolvedItem.sourceIconImage == nil,
+           let sourceIconPath = state.assetRequest.sourceAppIconPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sourceIconPath.isEmpty {
+            let loadIdentifier = iconView.identifier
+            iconView.previewImageLoadToken = PanelCardAssetResolver.loadPreviewImageAsync(paths: [sourceIconPath]) { [weak iconView] image in
+                guard iconView?.identifier == loadIdentifier,
+                      let image
+                else { return }
+                iconView?.previewImageLoadToken = nil
+                iconView?.image = image
+            }
+        }
 
         let typeHeaderLabel = NSTextField(labelWithString: state.typeText)
         typeHeaderLabel.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -230,7 +240,7 @@ final class PanelItemCardRenderer {
                 ? .systemFont(ofSize: linkFooterTitle == nil ? 13.5 : 12.5, weight: .regular)
                 : .systemFont(ofSize: 10.5, weight: .medium))
         countLabel.textColor = isImageCard
-            ? imageFootnoteTextColor()
+            ? metrics.theme.card.imageFootnoteTextColor
             : (isLinkCard ? metrics.theme.card.secondaryTextColor : metrics.theme.card.footerTextColor)
         countLabel.lineBreakMode = isFileCard ? .byTruncatingMiddle : .byTruncatingTail
         countLabel.maximumNumberOfLines = isFileCard ? 2 : 1
@@ -316,9 +326,7 @@ final class PanelItemCardRenderer {
         } else {
             contentBottomConstraint = contentContainer.bottomAnchor.constraint(lessThanOrEqualTo: footerRow.topAnchor, constant: -5)
         }
-        let contentHeightConstraint = isImageCard
-            ? contentContainer.heightAnchor.constraint(equalToConstant: metrics.defaultItemSide - metrics.cardHeaderHeight)
-            : contentContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 1)
+        let contentHeightConstraint = contentContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 1)
 
         NSLayoutConstraint.activate([
             widthConstraint,
@@ -382,14 +390,15 @@ final class PanelItemCardRenderer {
                 footnoteBadgeViews: isImageCard ? [countBadgeView] : [],
                 bodyLabels: [summaryLabel],
                 linkPreviewViews: previewBundle.linkPreviewViews,
-                linkIconViews: previewBundle.linkIconViews
+                linkIconViews: previewBundle.linkIconViews,
+                sourceIconViews: [iconView]
             )
         )
     }
 
     private func makeCardContentContainer(
         previewView: NSView?,
-        summaryLabel: NSTextField,
+        summaryLabel: PanelItemCardBodyTextView,
         fillsAvailableArea: Bool
     ) -> NSView {
         let container = NSView()
@@ -440,21 +449,14 @@ final class PanelItemCardRenderer {
         return container
     }
 
-    private func makeBodyLabel(_ text: String) -> NSTextField {
-        let label = NSTextField(labelWithString: leftToRightDisplayText(text))
-        label.font = .systemFont(ofSize: 12.5)
-        label.textColor = metrics.theme.card.primaryTextColor
-        label.alignment = .left
-        label.lineBreakMode = .byWordWrapping
-        label.maximumNumberOfLines = 0
-        label.preferredMaxLayoutWidth = metrics.defaultItemSide - metrics.cardInset * 2 - 4
-        label.cell?.wraps = true
-        label.cell?.isScrollable = false
-        label.cell?.lineBreakMode = .byWordWrapping
-        configureLeftToRightText(label, lineSpacing: 2)
+    private func makeBodyLabel(_ text: String) -> PanelItemCardBodyTextView {
+        let label = PanelItemCardBodyTextView(
+            text: leftToRightDisplayText(text),
+            font: .systemFont(ofSize: 12.5),
+            textColor: metrics.theme.card.primaryTextColor
+        )
+        label.preferredTextWidth = metrics.defaultItemSide - metrics.cardInset * 2 - 4
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.setContentCompressionResistancePriority(.defaultHigh, for: .vertical)
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return label
     }
 
@@ -462,12 +464,12 @@ final class PanelItemCardRenderer {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.wantsLayer = true
-        view.layer?.backgroundColor = imageFootnoteBadgeBackgroundColor().cgColor
+        view.layer?.backgroundColor = metrics.theme.card.imageFootnoteBadgeBackgroundColor.cgColor
         view.layer?.cornerRadius = 7
         view.layer?.borderWidth = 0.5
-        view.layer?.borderColor = imageFootnoteBadgeBorderColor().cgColor
+        view.layer?.borderColor = metrics.theme.card.imageFootnoteBadgeBorderColor.cgColor
         view.layer?.shadowColor = NSColor.black.cgColor
-        view.layer?.shadowOpacity = metrics.theme.scheme == .light ? 0.12 : 0.22
+        view.layer?.shadowOpacity = metrics.theme.card.imageFootnoteBadgeShadowOpacity
         view.layer?.shadowRadius = 4
         view.layer?.shadowOffset = CGSize(width: 0, height: -1)
         view.layer?.contentsScale = backingScaleFactor
@@ -480,7 +482,7 @@ final class PanelItemCardRenderer {
         view.identifier = NSUserInterfaceItemIdentifier("LinkFooterBackground")
         view.translatesAutoresizingMaskIntoConstraints = false
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.white.cgColor
+        view.layer?.backgroundColor = metrics.theme.card.linkFooterBackgroundColor.cgColor
         view.layer?.contentsScale = backingScaleFactor
         view.isHidden = isHidden
         return view
@@ -511,10 +513,16 @@ final class PanelItemCardRenderer {
     }
 
     private func makeImagePreview(previewPath: String?) -> PreviewBundle {
-        let container = CheckerboardImagePreviewContainerView()
+        let container = CheckerboardImagePreviewContainerView(
+            checkerboardBackgroundColor: metrics.theme.card.imagePreviewCheckerboardBackgroundColor,
+            checkerboardAlternateColor: metrics.theme.card.imagePreviewCheckerboardAlternateColor
+        )
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let imageView = ProportionalDownImagePreviewView()
+        let imageView = ProportionalDownImagePreviewView(
+            checkerboardBackgroundColor: metrics.theme.card.imagePreviewCheckerboardBackgroundColor,
+            checkerboardAlternateColor: metrics.theme.card.imagePreviewCheckerboardAlternateColor
+        )
         let previewState = cardAssetResolver.previewImageState(
             previewPath: previewPath,
             payloadPath: nil
@@ -587,7 +595,10 @@ final class PanelItemCardRenderer {
             previewPath: iconPath,
             payloadPath: nil
         )
-        let backgroundImageView = AspectFillImagePreviewView()
+        let backgroundImageView = AspectFillImagePreviewView(
+            checkerboardBackgroundColor: metrics.theme.card.imagePreviewCheckerboardBackgroundColor,
+            checkerboardAlternateColor: metrics.theme.card.imagePreviewCheckerboardAlternateColor
+        )
         backgroundImageView.image = imagePreviewState.image
         backgroundImageView.translatesAutoresizingMaskIntoConstraints = false
         backgroundImageView.wantsLayer = true
@@ -600,8 +611,8 @@ final class PanelItemCardRenderer {
         overlayView.wantsLayer = true
         let overlayLayer = CAGradientLayer()
         overlayLayer.colors = [
-            NSColor.black.withAlphaComponent(0.02).cgColor,
-            NSColor.black.withAlphaComponent(metrics.theme.scheme == .light ? 0.16 : 0.28).cgColor
+            metrics.theme.card.linkPreviewOverlayStartColor.cgColor,
+            metrics.theme.card.linkPreviewOverlayEndColor.cgColor
         ]
         overlayLayer.startPoint = CGPoint(x: 0.5, y: 0.2)
         overlayLayer.endPoint = CGPoint(x: 0.5, y: 1)
@@ -780,9 +791,7 @@ final class PanelItemCardRenderer {
         imageView.layer?.contentsScale = backingScaleFactor
         if usesDefaultBrowserIcon {
             imageView.image?.isTemplate = true
-            imageView.contentTintColor = metrics.theme.scheme == .light
-                ? NSColor(calibratedRed: 0.745, green: 0.745, blue: 0.775, alpha: 1)
-                : NSColor.white.withAlphaComponent(0.78)
+            imageView.contentTintColor = metrics.theme.card.linkDefaultIconTintColor
             imageView.layer?.backgroundColor = NSColor.clear.cgColor
             imageView.layer?.borderWidth = 0
             imageView.layer?.borderColor = NSColor.clear.cgColor
@@ -790,7 +799,7 @@ final class PanelItemCardRenderer {
             imageView.contentTintColor = nil
             imageView.layer?.backgroundColor = metrics.theme.card.appIconTileBackgroundColor.cgColor
             imageView.layer?.borderWidth = 0.5
-            imageView.layer?.borderColor = NSColor.white.withAlphaComponent(metrics.theme.scheme == .light ? 0.78 : 0.20).cgColor
+            imageView.layer?.borderColor = metrics.theme.card.linkResolvedIconBorderColor.cgColor
         }
     }
 
@@ -831,33 +840,6 @@ final class PanelItemCardRenderer {
         metrics.theme.card.headerSecondaryTextColor
     }
 
-    private func imageFootnoteBadgeBackgroundColor() -> NSColor {
-        switch metrics.theme.scheme {
-        case .light:
-            return NSColor(calibratedWhite: 0.90, alpha: 0.92)
-        case .dark:
-            return NSColor(calibratedWhite: 0.02, alpha: 0.72)
-        }
-    }
-
-    private func imageFootnoteBadgeBorderColor() -> NSColor {
-        switch metrics.theme.scheme {
-        case .light:
-            return NSColor.white.withAlphaComponent(0.62)
-        case .dark:
-            return NSColor.white.withAlphaComponent(0.18)
-        }
-    }
-
-    private func imageFootnoteTextColor() -> NSColor {
-        switch metrics.theme.scheme {
-        case .light:
-            return NSColor(calibratedWhite: 0.38, alpha: 0.92)
-        case .dark:
-            return NSColor.white.withAlphaComponent(0.88)
-        }
-    }
-
     private struct PreviewBundle {
         var view: NSView?
         var previewHeightConstraints: [NSLayoutConstraint] = []
@@ -869,12 +851,98 @@ final class PanelItemCardRenderer {
 }
 
 @MainActor
+final class PanelItemCardBodyTextView: NSView {
+    private static let lineSpacing: CGFloat = 2
+
+    private let textStorage: NSTextStorage
+    private let layoutManager = NSLayoutManager()
+    private let textContainer = NSTextContainer(size: .zero)
+    private let font: NSFont
+    private let textColor: NSColor
+
+    var preferredTextWidth: CGFloat {
+        didSet {
+            invalidateTextContainer()
+        }
+    }
+
+    init(text: String, font: NSFont, textColor: NSColor) {
+        self.font = font
+        self.textColor = textColor
+        self.preferredTextWidth = 0
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        paragraphStyle.lineSpacing = Self.lineSpacing
+        textStorage = NSTextStorage(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: textColor,
+                .paragraphStyle: paragraphStyle
+            ]
+        )
+        super.init(frame: .zero)
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = .byWordWrapping
+        textContainer.widthTracksTextView = false
+        textContainer.heightTracksTextView = false
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool { true }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    override func layout() {
+        super.layout()
+        invalidateTextContainer()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !bounds.isEmpty else { return }
+        invalidateTextContainer()
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        layoutManager.drawBackground(forGlyphRange: glyphRange, at: .zero)
+        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: .zero)
+    }
+
+    private func invalidateTextContainer() {
+        let width = max(0, min(bounds.width, preferredTextWidth == 0 ? bounds.width : preferredTextWidth))
+        guard width > 0 else { return }
+        let size = NSSize(width: width, height: max(0, bounds.height))
+        guard textContainer.containerSize != size else { return }
+        textContainer.containerSize = size
+        layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length), actualCharacterRange: nil)
+        needsDisplay = true
+    }
+}
+
+@MainActor
 private final class ProportionalDownImagePreviewView: NSImageView {
     private var imageGeometry: ProportionalImageGeometry?
+    private let checkerboardBackgroundColor: NSColor
+    private let checkerboardAlternateColor: NSColor
     var previewImageLoadToken: PanelPreviewImageLoadToken? {
         didSet {
             PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
         }
+    }
+
+    init(checkerboardBackgroundColor: NSColor, checkerboardAlternateColor: NSColor) {
+        self.checkerboardBackgroundColor = checkerboardBackgroundColor
+        self.checkerboardAlternateColor = checkerboardAlternateColor
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
     }
 
     override var image: NSImage? {
@@ -927,11 +995,11 @@ private final class ProportionalDownImagePreviewView: NSImageView {
     }
 
     private func drawCheckerboard(in rect: NSRect) {
-        NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
+        checkerboardBackgroundColor.setFill()
         rect.fill()
 
         let square: CGFloat = 10
-        NSColor(calibratedWhite: 0.88, alpha: 1).setFill()
+        checkerboardAlternateColor.setFill()
         let minX = Int(floor(rect.minX / square))
         let maxX = Int(ceil(rect.maxX / square))
         let minY = Int(floor(rect.minY / square))
@@ -967,14 +1035,27 @@ private final class ProportionalDownImagePreviewView: NSImageView {
 
 @MainActor
 private final class CheckerboardImagePreviewContainerView: NSView {
+    private let checkerboardBackgroundColor: NSColor
+    private let checkerboardAlternateColor: NSColor
+
+    init(checkerboardBackgroundColor: NSColor, checkerboardAlternateColor: NSColor) {
+        self.checkerboardBackgroundColor = checkerboardBackgroundColor
+        self.checkerboardAlternateColor = checkerboardAlternateColor
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
+        checkerboardBackgroundColor.setFill()
         dirtyRect.fill()
 
         let square: CGFloat = 10
-        NSColor(calibratedWhite: 0.88, alpha: 1).setFill()
+        checkerboardAlternateColor.setFill()
         let minX = Int(floor(dirtyRect.minX / square))
         let maxX = Int(ceil(dirtyRect.maxX / square))
         let minY = Int(floor(dirtyRect.minY / square))
@@ -996,10 +1077,22 @@ private final class CheckerboardImagePreviewContainerView: NSView {
 @MainActor
 private final class AspectFillImagePreviewView: NSImageView {
     private var imageGeometry: ImageGeometry?
+    private let checkerboardBackgroundColor: NSColor
+    private let checkerboardAlternateColor: NSColor
     var previewImageLoadToken: PanelPreviewImageLoadToken? {
         didSet {
             PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
         }
+    }
+
+    init(checkerboardBackgroundColor: NSColor, checkerboardAlternateColor: NSColor) {
+        self.checkerboardBackgroundColor = checkerboardBackgroundColor
+        self.checkerboardAlternateColor = checkerboardAlternateColor
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
     }
 
     override var image: NSImage? {
@@ -1043,11 +1136,11 @@ private final class AspectFillImagePreviewView: NSImageView {
     }
 
     private func drawCheckerboard(in rect: NSRect) {
-        NSColor(calibratedWhite: 0.96, alpha: 1).setFill()
+        checkerboardBackgroundColor.setFill()
         rect.fill()
 
         let square: CGFloat = 10
-        NSColor(calibratedWhite: 0.88, alpha: 1).setFill()
+        checkerboardAlternateColor.setFill()
         let minX = Int(floor(rect.minX / square))
         let maxX = Int(ceil(rect.maxX / square))
         let minY = Int(floor(rect.minY / square))
@@ -1083,6 +1176,15 @@ private final class AspectFillImagePreviewView: NSImageView {
 
 @MainActor
 private final class LinkIconImagePreviewView: NSImageView {
+    var previewImageLoadToken: PanelPreviewImageLoadToken? {
+        didSet {
+            PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
+        }
+    }
+}
+
+@MainActor
+private final class SourceIconImageView: NSImageView {
     var previewImageLoadToken: PanelPreviewImageLoadToken? {
         didSet {
             PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
@@ -1158,6 +1260,7 @@ private protocol PanelCardFilePreviewThumbnailTokenProviding: AnyObject {
 extension ProportionalDownImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
 extension AspectFillImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
 extension LinkIconImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
+extension SourceIconImageView: PanelCardPreviewImageLoadTokenProviding {}
 extension FilePreviewImageView: PanelCardFilePreviewThumbnailTokenProviding {}
 
 extension ProportionalDownImagePreviewView: PanelCardAsyncWorkCancellable {
@@ -1173,6 +1276,12 @@ extension AspectFillImagePreviewView: PanelCardAsyncWorkCancellable {
 }
 
 extension LinkIconImagePreviewView: PanelCardAsyncWorkCancellable {
+    func cancelPanelCardAsyncWork() {
+        previewImageLoadToken = nil
+    }
+}
+
+extension SourceIconImageView: PanelCardAsyncWorkCancellable {
     func cancelPanelCardAsyncWork() {
         previewImageLoadToken = nil
     }

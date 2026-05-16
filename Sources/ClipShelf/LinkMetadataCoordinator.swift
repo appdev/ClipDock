@@ -289,17 +289,18 @@ private final class MetadataProviderBox: @unchecked Sendable {
                     let title = Self.nonEmpty(metadata.title)
                     let canonicalURL = metadata.url ?? url
                     let originalURL = metadata.originalURL
+                    let iconProvider = ItemProviderBox(metadata.iconProvider)
                     let imageProvider = ItemProviderBox(metadata.imageProvider)
-                    Self.loadImageData(from: metadata.iconProvider) { iconData in
-                        Self.loadImageData(from: imageProvider.provider) { previewData in
-                            continuation.resume(returning: LinkMetadataFetchPayload(
-                                title: title,
-                                canonicalURL: canonicalURL,
-                                originalURL: originalURL,
-                                iconData: iconData,
-                                previewData: previewData
-                            ))
-                        }
+                    Task {
+                        let iconData = await Self.loadImageData(from: iconProvider.provider)
+                        let previewData = await Self.loadImageData(from: imageProvider.provider)
+                        continuation.resume(returning: LinkMetadataFetchPayload(
+                            title: title,
+                            canonicalURL: canonicalURL,
+                            originalURL: originalURL,
+                            iconData: iconData,
+                            previewData: previewData
+                        ))
                     }
                 }
             }
@@ -308,28 +309,26 @@ private final class MetadataProviderBox: @unchecked Sendable {
         }
     }
 
-    private static func loadImageData(
-        from provider: NSItemProvider?,
-        completion: @escaping @Sendable (LinkMetadataImagePayload?) -> Void
-    ) {
+    private static func loadImageData(from provider: NSItemProvider?) async -> LinkMetadataImagePayload? {
         guard let provider,
               let typeIdentifier = provider.registeredTypeIdentifiers.first(where: { identifier in
                 UTType(identifier)?.conforms(to: .image) == true
               })
         else {
-            completion(nil)
-            return
+            return nil
         }
 
-        provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
-            guard let data, !data.isEmpty else {
-                completion(nil)
-                return
+        return await withCheckedContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
+                guard let data, !data.isEmpty else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: LinkMetadataImagePayload(
+                    data: data,
+                    typeIdentifier: typeIdentifier
+                ))
             }
-            completion(LinkMetadataImagePayload(
-                data: data,
-                typeIdentifier: typeIdentifier
-            ))
         }
     }
 

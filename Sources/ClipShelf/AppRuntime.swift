@@ -143,13 +143,15 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let scrollView: HorizontalWheelScrollView
         let documentView = NSView()
         let stack = NSStackView()
+        let leadingContentPaddingView = NSView()
+        let trailingContentPaddingView = NSView()
         var hostConstraints: [NSLayoutConstraint] = []
         var itemWidthConstraints: [NSLayoutConstraint] = []
         var itemHeightConstraints: [NSLayoutConstraint] = []
         var itemPreviewHeightConstraints: [NSLayoutConstraint] = []
         var itemPreviewWidthConstraints: [NSLayoutConstraint] = []
         var itemImagePreviewViews: [NSImageView] = []
-        var itemBodyLabels: [NSTextField] = []
+        var itemBodyLabels: [PanelItemCardBodyTextView] = []
         var renderedCardStatesByID: [String: PanelItemCardViewState] = [:]
         var renderedCardViewsByID: [String: ClipboardItemCardBox] = [:]
         var renderedCardArtifactsByID: [String: PanelItemCardRenderArtifacts] = [:]
@@ -162,7 +164,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             scrollView.borderType = .noBorder
             scrollView.hasHorizontalScroller = false
             scrollView.hasVerticalScroller = false
-            scrollView.horizontalScrollElasticity = .allowed
+            scrollView.horizontalScrollElasticity = .none
             scrollView.verticalScrollElasticity = .none
             scrollView.automaticallyAdjustsContentInsets = false
             scrollView.usesPredominantAxisScrolling = true
@@ -171,14 +173,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             stack.orientation = .horizontal
             stack.alignment = .top
             stack.spacing = 22
-            stack.edgeInsets = NSEdgeInsets(
-                top: 0,
-                left: Layout.horizontalContentInset,
-                bottom: 0,
-                right: Layout.horizontalContentInset
-            )
+            stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
             stack.userInterfaceLayoutDirection = .leftToRight
             stack.translatesAutoresizingMaskIntoConstraints = false
+
+            for spacerView in [leadingContentPaddingView, trailingContentPaddingView] {
+                spacerView.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    spacerView.widthAnchor.constraint(equalToConstant: Layout.horizontalContentInset),
+                    spacerView.heightAnchor.constraint(equalToConstant: 1)
+                ])
+                stack.addArrangedSubview(spacerView)
+            }
+            stack.setCustomSpacing(0, after: leadingContentPaddingView)
 
             documentView.addSubview(stack)
             NSLayoutConstraint.activate([
@@ -337,7 +344,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var cardAssetResolver: PanelCardAssetResolver {
         PanelCardAssetResolver(
             appSupportDirectory: appSupportDirectory,
-            sourceIconHeaderColorWriter: sourceIconHeaderColorWriter
+            sourceIconHeaderColorWriter: sourceIconHeaderColorWriter,
+            loadSourceIconsSynchronously: false
         )
     }
     private var theme: ClipShelfThemePalette {
@@ -351,6 +359,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
     private var itemBandStack: NSStackView {
         activeListPage.stack
+    }
+    private var leadingContentPaddingView: NSView {
+        activeListPage.leadingContentPaddingView
+    }
+    private var trailingContentPaddingView: NSView {
+        activeListPage.trailingContentPaddingView
     }
     private var itemBandScrollView: HorizontalWheelScrollView? {
         activeListPage.scrollView
@@ -375,7 +389,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         get { activeListPage.itemImagePreviewViews }
         set { activeListPage.itemImagePreviewViews = newValue }
     }
-    private var itemBodyLabels: [NSTextField] {
+    private var itemBodyLabels: [PanelItemCardBodyTextView] {
         get { activeListPage.itemBodyLabels }
         set { activeListPage.itemBodyLabels = newValue }
     }
@@ -636,7 +650,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         itemPreviewHeightConstraints.forEach { $0.constant = previewHeight }
         itemPreviewWidthConstraints.forEach { $0.constant = max(54, itemSide - 72) }
         itemBodyLabels.forEach { label in
-            label.preferredMaxLayoutWidth = bodyTextWidth
+            label.preferredTextWidth = bodyTextWidth
         }
         itemImagePreviewViews.forEach { imageView in
             imageView.needsLayout = true
@@ -655,16 +669,22 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func itemBandDocumentWidth(itemSide: CGFloat) -> CGFloat {
-        let cardCount = max(itemBandStack.arrangedSubviews.count, 1)
+        let cardCount = itemBandCardViews().count
+        guard cardCount > 0 else { return Layout.horizontalContentInset * 2 }
         return CGFloat(cardCount) * itemSide
             + CGFloat(max(cardCount - 1, 0)) * itemBandStack.spacing
             + Layout.horizontalContentInset * 2
     }
 
     private func handleItemBandScrollDidChange() {
+        let reachedLoadMoreThreshold = hasReachedLoadMoreThreshold()
+        guard reachedLoadMoreThreshold || panelViewState().isCommandHintModeEnabled else {
+            return
+        }
+
         applyInteractionAction(.didScroll(
             visibleCommandItemIDs: fullyVisibleCommandItemIDs(),
-            reachedLoadMoreThreshold: hasReachedLoadMoreThreshold()
+            reachedLoadMoreThreshold: reachedLoadMoreThreshold
         ))
     }
 
@@ -1205,6 +1225,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         cacheListState(result, isFiltered: isFiltered, append: append, scope: updateScope)
 
         if shouldReuseRenderedPage {
+            ClipShelfPerformanceLog.event("list.render.reuse", detail: "scope=\(updateScope)")
             updateVisibleSelection(scrollIntoView: false)
             restoreScrollOriginIfNeeded(activeListPage.savedScrollOrigin)
             refreshVisibleCommandHints()
@@ -1296,8 +1317,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func restoreScrollOriginIfNeeded(_ origin: NSPoint) {
         guard let scrollView = itemBandScrollView else { return }
-        layoutSubtreeIfNeeded()
-        itemBandDocumentView.layoutSubtreeIfNeeded()
+        if window?.isVisible == true {
+            layoutSubtreeIfNeeded()
+            itemBandDocumentView.layoutSubtreeIfNeeded()
+        }
         let range = horizontalScrollRange(for: scrollView)
         let clampedOrigin = NSPoint(
             x: min(max(range.lowerBound, origin.x), range.upperBound),
@@ -1352,13 +1375,22 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
         switch panelViewState().list.presentation {
         case .emptyHistory, .filteredEmpty:
-            renderItemCards([])
+            ClipShelfPerformanceLog.measure("list.render.empty") {
+                renderItemCards([])
+            }
             return
         case .databaseError:
-            renderItemCards([makeDatabaseErrorCard()])
+            ClipShelfPerformanceLog.measure("list.render.databaseError") {
+                renderItemCards([makeDatabaseErrorCard()])
+            }
             return
         case .items(let items):
-            renderItemCards(items.map(makeItemCard))
+            let cards = ClipShelfPerformanceLog.measure("list.makeItemCards", detail: "count=\(items.count)") {
+                items.map(makeItemCard)
+            }
+            ClipShelfPerformanceLog.measure("list.renderItemCards", detail: "count=\(cards.count)") {
+                renderItemCards(cards)
+            }
         }
         if preserveScrollPosition, let preservedOrigin {
             restoreScrollOriginIfNeeded(preservedOrigin)
@@ -1408,66 +1440,95 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let oldStatesByID = renderedCardStatesByID
         let oldArtifactsByID = renderedCardArtifactsByID
 
-        let itemStates = items.map { item in
-            (item: item, state: makeItemCardState(item))
+        let itemStates = ClipShelfPerformanceLog.measure("list.reconcile.makeStates", detail: "count=\(items.count)") {
+            items.map { item in
+                (item: item, state: makeItemCardState(item))
+            }
         }
-        let newStatesByID = Dictionary(uniqueKeysWithValues: itemStates.compactMap { entry in
-            entry.state.itemID.map { ($0, entry.state) }
-        })
+        let newStatesByID = ClipShelfPerformanceLog.measure("list.reconcile.indexStates", detail: "count=\(itemStates.count)") {
+            Dictionary(uniqueKeysWithValues: itemStates.compactMap { entry in
+                entry.state.itemID.map { ($0, entry.state) }
+            })
+        }
 
         var finalCardsByID: [String: PanelRenderedItemCard] = [:]
-        for (item, state) in itemStates {
-            guard let itemID = state.itemID else { continue }
-            let callbacks = makeItemCardCallbacks(for: item)
-            if let card = oldViewsByID[itemID],
-               let previousState = oldStatesByID[itemID],
-               let artifacts = oldArtifactsByID[itemID],
-               reusableCardIdentityState(previousState) == reusableCardIdentityState(state) {
-                finalCardsByID[itemID] = updateReusableCard(
-                    card,
-                    state: state,
-                    artifacts: artifacts,
-                    toolTip: callbacks.toolTip,
-                    onSelect: callbacks.onSelect,
-                    onDoubleClick: callbacks.onDoubleClick,
-                    onContextMenu: callbacks.onContextMenu
-                )
-            } else {
-                finalCardsByID[itemID] = renderCard(
-                    state,
-                    toolTip: callbacks.toolTip,
-                    onSelect: callbacks.onSelect,
-                    onDoubleClick: callbacks.onDoubleClick,
-                    onContextMenu: callbacks.onContextMenu
-                )
+        ClipShelfPerformanceLog.measure("list.reconcile.renderOrReuseCards", detail: "count=\(itemStates.count)") {
+            for (item, state) in itemStates {
+                guard let itemID = state.itemID else { continue }
+                let callbacks = makeItemCardCallbacks(for: item)
+                let cardStart = ClipShelfPerformanceLog.mark()
+                if let card = oldViewsByID[itemID],
+                   let previousState = oldStatesByID[itemID],
+                   let artifacts = oldArtifactsByID[itemID],
+                   reusableCardIdentityState(previousState) == reusableCardIdentityState(state) {
+                    finalCardsByID[itemID] = updateReusableCard(
+                        card,
+                        state: state,
+                        artifacts: artifacts,
+                        toolTip: callbacks.toolTip,
+                        onSelect: callbacks.onSelect,
+                        onDoubleClick: callbacks.onDoubleClick,
+                        onContextMenu: callbacks.onContextMenu
+                    )
+                } else {
+                    finalCardsByID[itemID] = renderCard(
+                        state,
+                        toolTip: callbacks.toolTip,
+                        onSelect: callbacks.onSelect,
+                        onDoubleClick: callbacks.onDoubleClick,
+                        onContextMenu: callbacks.onContextMenu
+                    )
+                }
+                let cardDuration = ClipShelfPerformanceLog.milliseconds(since: cardStart)
+                if cardDuration >= 24 {
+                    let sourceName = item.sourceAppName ?? "unknown"
+                    ClipShelfPerformanceLog.event(
+                        "list.reconcile.slowCard",
+                        detail: [
+                            "durationMs=\(ClipShelfPerformanceLog.format(cardDuration))",
+                            "type=\(item.itemType)",
+                            "source=\(sourceName)"
+                        ].joined(separator: " ")
+                    )
+                }
             }
         }
 
-        for (oldID, oldCard) in oldViewsByID {
-            let shouldRemove = newStatesByID[oldID].map { newState in
-                guard let oldState = oldStatesByID[oldID] else { return true }
-                return reusableCardIdentityState(oldState) != reusableCardIdentityState(newState)
-            } ?? true
-            if shouldRemove {
-                removeRenderedCard(oldCard, artifacts: oldArtifactsByID[oldID])
+        ClipShelfPerformanceLog.measure("list.reconcile.removeOldCards", detail: "oldCount=\(oldViewsByID.count)") {
+            for (oldID, oldCard) in oldViewsByID {
+                let shouldRemove = newStatesByID[oldID].map { newState in
+                    guard let oldState = oldStatesByID[oldID] else { return true }
+                    return reusableCardIdentityState(oldState) != reusableCardIdentityState(newState)
+                } ?? true
+                if shouldRemove {
+                    removeRenderedCard(oldCard, artifacts: oldArtifactsByID[oldID])
+                }
             }
         }
 
-        let orderedRenderedCards = itemStates.compactMap { entry in
-            entry.state.itemID.flatMap { finalCardsByID[$0] }
+        let orderedRenderedCards = ClipShelfPerformanceLog.measure("list.reconcile.orderCards", detail: "count=\(itemStates.count)") {
+            itemStates.compactMap { entry in
+                entry.state.itemID.flatMap { finalCardsByID[$0] }
+            }
         }
-        for (targetIndex, renderedCard) in orderedRenderedCards.enumerated() {
-            moveOrInsertRenderedCard(renderedCard.view, at: targetIndex)
+        ClipShelfPerformanceLog.measure("list.reconcile.installOrder", detail: "count=\(orderedRenderedCards.count)") {
+            for (targetIndex, renderedCard) in orderedRenderedCards.enumerated() {
+                moveOrInsertRenderedCard(renderedCard.view, at: targetIndex)
+            }
         }
 
         let finalViews = Set(orderedRenderedCards.map { ObjectIdentifier($0.view) })
-        for view in itemBandStack.arrangedSubviews where !finalViews.contains(ObjectIdentifier(view)) {
-            removeRenderedCard(view, artifacts: nil)
+        ClipShelfPerformanceLog.measure("list.reconcile.pruneStack", detail: "stackCount=\(itemBandCardViews().count)") {
+            for view in itemBandCardViews() where !finalViews.contains(ObjectIdentifier(view)) {
+                removeRenderedCard(view, artifacts: nil)
+            }
         }
 
         rebuildRenderedCardTracking(from: orderedRenderedCards)
         activeListPage.hasRenderedContent = true
-        refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
+        ClipShelfPerformanceLog.measure("list.reconcile.refreshLayout", detail: "count=\(orderedRenderedCards.count)") {
+            refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
+        }
         if !preserveScrollPosition, scrollSelectedItem {
             scrollSelectedItemIntoView()
         }
@@ -1657,8 +1718,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func togglePreview(forItemID itemID: String) {
         guard let appSupportDirectory,
               let item = interactionController.item(withID: itemID),
-              let index = currentItems().firstIndex(where: { $0.id == itemID }),
-              index < itemBandStack.arrangedSubviews.count
+              let cardView = itemBandCardView(forItemID: itemID)
         else {
             return
         }
@@ -1667,15 +1727,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             item: item,
             appSupportDirectory: appSupportDirectory,
             linkWebPreviewEnabled: linkWebPreviewEnabled,
-            relativeTo: itemBandStack.arrangedSubviews[index],
+            relativeTo: cardView,
             returnFocusTo: self
         )
     }
 
     private func showPreview(forItemID itemID: String) {
         guard let item = interactionController.item(withID: itemID),
-              let index = currentItems().firstIndex(where: { $0.id == itemID }),
-              index < itemBandStack.arrangedSubviews.count
+              let cardView = itemBandCardView(forItemID: itemID)
         else {
             return
         }
@@ -1684,7 +1743,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             item: item,
             appSupportDirectory: appSupportDirectory ?? URL(fileURLWithPath: NSHomeDirectory()),
             linkWebPreviewEnabled: linkWebPreviewEnabled,
-            relativeTo: itemBandStack.arrangedSubviews[index],
+            relativeTo: cardView,
             returnFocusTo: self
         )
     }
@@ -1710,12 +1769,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func showManagementMenu(for item: RustClipboardItemSummary, event: NSEvent) {
         applyInteractionAction(.prepareManagementMenu(itemID: item.id))
 
-        guard let index = currentItems().firstIndex(where: { $0.id == item.id }),
-              index < itemBandStack.arrangedSubviews.count
+        guard let cardView = itemBandCardView(forItemID: item.id)
         else { return }
 
         let menu = makeManagementMenu(for: item)
-        let cardView = itemBandStack.arrangedSubviews[index]
         menu.popUp(
             positioning: nil,
             at: cardView.convert(event.locationInWindow, from: nil),
@@ -1807,8 +1864,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func updateVisibleSelection(scrollIntoView: Bool = true) {
         let selectedItemID = panelViewState().selectedItemID
-        for view in itemBandStack.arrangedSubviews {
-            guard let card = view as? ClipboardItemCardBox else { continue }
+        for card in itemBandCardViews() {
             let isSelected = card.itemID == selectedItemID
             card.applySelection(isSelected)
             if let itemID = card.itemID,
@@ -1832,13 +1888,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func scrollSelectedItemIntoView() {
         let viewState = panelViewState()
         guard let selectedItemID = viewState.selectedItemID,
-              let index = currentItems().firstIndex(where: { $0.id == selectedItemID }),
-              index < itemBandStack.arrangedSubviews.count
+              let selectedView = itemBandCardView(forItemID: selectedItemID)
         else {
             return
         }
 
-        let selectedView = itemBandStack.arrangedSubviews[index]
         guard let scrollView = itemBandScrollView else { return }
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
@@ -1925,8 +1979,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func applyCommandHintTexts(_ commandNumbersByID: [String: String]) {
-        for view in itemBandStack.arrangedSubviews {
-            guard let card = view as? ClipboardItemCardBox else { continue }
+        for card in itemBandCardViews() {
             let commandIndexText = card.itemID.flatMap { commandNumbersByID[$0] }
             if let itemID = card.itemID,
                let state = renderedCardStatesByID[itemID] {
@@ -1945,9 +1998,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let visibleMinX = visibleRect.minX - 0.5
         let visibleMaxX = visibleRect.maxX + 0.5
 
-        return itemBandStack.arrangedSubviews.compactMap { view -> String? in
-            guard let card = view as? ClipboardItemCardBox,
-                  let itemID = card.itemID
+        return itemBandCardViews().compactMap { card -> String? in
+            guard let itemID = card.itemID
             else { return nil }
 
             let frame = card.frame
@@ -2043,12 +2095,16 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         renderedCardStatesByID.removeAll()
         activeListPage.renderedCardViewsByID.removeAll()
         activeListPage.renderedCardArtifactsByID.removeAll()
-        itemBandStack.arrangedSubviews.forEach { view in
-            let itemID = (view as? ClipboardItemCardBox)?.itemID
-            removeRenderedCard(view, artifacts: itemID.flatMap { oldArtifactsByID[$0] })
+        ClipShelfPerformanceLog.measure("list.removeOldCards", detail: "count=\(itemBandCardViews().count)") {
+            itemBandCardViews().forEach { view in
+                let itemID = view.itemID
+                removeRenderedCard(view, artifacts: itemID.flatMap { oldArtifactsByID[$0] })
+            }
         }
 
-        cards.forEach(installRenderedCard)
+        ClipShelfPerformanceLog.measure("list.installCards", detail: "count=\(cards.count)") {
+            cards.forEach(installRenderedCard)
+        }
         activeListPage.hasRenderedContent = true
 
         let itemSide = itemSideLength(for: currentPanelHeight)
@@ -2058,8 +2114,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             width: itemBandDocumentWidth(itemSide: itemSide),
             height: itemSide
         )
-        updatePanelHeight(currentPanelHeight)
-        refreshVisibleCommandHints()
+        ClipShelfPerformanceLog.measure("list.updatePanelHeightAfterRender", detail: "count=\(cards.count)") {
+            updatePanelHeight(currentPanelHeight)
+        }
+        ClipShelfPerformanceLog.measure("list.refreshHintsAfterRender", detail: "count=\(cards.count)") {
+            refreshVisibleCommandHints()
+        }
     }
 
     private func makeDatabaseErrorCard() -> PanelRenderedItemCard {
@@ -2197,19 +2257,58 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func installRenderedCard(_ renderedCard: PanelRenderedItemCard) {
-        itemBandStack.addArrangedSubview(renderedCard.view)
+        itemBandStack.insertArrangedSubview(
+            renderedCard.view,
+            at: trailingContentPaddingIndex()
+        )
         registerRenderedCard(renderedCard)
+        refreshItemBandContentPaddingSpacing()
     }
 
     private func moveOrInsertRenderedCard(_ view: NSView, at targetIndex: Int) {
         if let currentIndex = itemBandStack.arrangedSubviews.firstIndex(of: view) {
-            guard currentIndex != targetIndex else { return }
+            let currentCardIndex = max(0, currentIndex - 1)
+            guard currentCardIndex != targetIndex else { return }
             itemBandStack.removeArrangedSubview(view)
         }
+        let insertionIndex = min(
+            max(1, targetIndex + 1),
+            trailingContentPaddingIndex()
+        )
         itemBandStack.insertArrangedSubview(
             view,
-            at: min(targetIndex, itemBandStack.arrangedSubviews.count)
+            at: insertionIndex
         )
+        refreshItemBandContentPaddingSpacing()
+    }
+
+    private func itemBandCardViews() -> [ClipboardItemCardBox] {
+        itemBandStack.arrangedSubviews.compactMap { view in
+            guard let card = view as? ClipboardItemCardBox,
+                  card.itemID != nil
+            else { return nil }
+            return card
+        }
+    }
+
+    private func itemBandCardView(forItemID itemID: String) -> ClipboardItemCardBox? {
+        renderedCardViewsByID[itemID] ?? itemBandCardViews().first { $0.itemID == itemID }
+    }
+
+    private func trailingContentPaddingIndex() -> Int {
+        itemBandStack.arrangedSubviews.firstIndex(of: trailingContentPaddingView)
+            ?? itemBandStack.arrangedSubviews.count
+    }
+
+    private func refreshItemBandContentPaddingSpacing() {
+        itemBandStack.setCustomSpacing(0, after: leadingContentPaddingView)
+        let cards = itemBandCardViews()
+        for card in cards {
+            itemBandStack.setCustomSpacing(itemBandStack.spacing, after: card)
+        }
+        if let lastCard = cards.last {
+            itemBandStack.setCustomSpacing(0, after: lastCard)
+        }
     }
 
     private func removeRenderedCard(_ view: NSView, artifacts: PanelItemCardRenderArtifacts?) {
@@ -2221,12 +2320,16 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         from stack: NSStackView,
         artifacts: PanelItemCardRenderArtifacts?
     ) {
+        guard view !== leadingContentPaddingView,
+              view !== trailingContentPaddingView
+        else { return }
         artifacts?.prepareForRemoval()
         if let card = view as? ClipboardItemCardBox {
             card.prepareForRemoval()
         }
         stack.removeArrangedSubview(view)
         view.removeFromSuperview()
+        refreshItemBandContentPaddingSpacing()
     }
 
     private func rebuildRenderedCardTracking(from renderedCards: [PanelRenderedItemCard]) {
@@ -2238,7 +2341,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let renderedCardsByView = Dictionary(
             uniqueKeysWithValues: renderedCards.map { (ObjectIdentifier($0.view), $0) }
         )
-        for view in itemBandStack.arrangedSubviews {
+        for view in itemBandCardViews() {
             guard let renderedCard = renderedCardsByView[ObjectIdentifier(view)] else { continue }
             registerRenderedCard(renderedCard)
         }
@@ -2621,20 +2724,18 @@ extension FloatingPanelContentView {
         let scrollView = itemBandScrollView
         let scrollOriginX = scrollView?.contentView.bounds.origin.x ?? 0
         let viewportWidth = scrollView?.contentView.bounds.width ?? 0
-        let trailingContentEdgeOriginX = scrollView.flatMap { scrollView in
-            itemBandStack.arrangedSubviews.last.map {
-                $0.frame.maxX - scrollView.contentView.bounds.width
-            }
+        let cardViews = itemBandCardViews()
+        let trailingContentEdgeOriginX = scrollView.map { scrollView in
+            itemBandDocumentView.frame.width - scrollView.contentView.bounds.width
         }
-        let firstCardMinX = itemBandStack.arrangedSubviews.first?.frame.minX
+        let firstCardMinX = cardViews.first?.frame.minX
         let firstCardVisibleMinX = firstCardMinX.map { $0 - scrollOriginX }
-        let lastCardTrailingInset = itemBandStack.arrangedSubviews.last.map {
+        let lastCardTrailingInset = cardViews.last.map {
             itemBandDocumentView.frame.width - $0.frame.maxX
         }
         let lastCardVisibleMaxXAtTrailingEdge = scrollView.flatMap { scrollView in
-            itemBandStack.arrangedSubviews.last.map { lastCard in
-                let trailingEdgeOrigin = lastCard.frame.maxX - scrollView.contentView.bounds.width
-                return lastCard.frame.maxX - trailingEdgeOrigin
+            cardViews.last.map { lastCard in
+                lastCard.frame.maxX - scrollOriginX
             }
         }
 

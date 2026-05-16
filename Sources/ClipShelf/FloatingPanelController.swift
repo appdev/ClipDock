@@ -3,9 +3,9 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 
 private enum PanelPresentationAnimation {
-    static let showDuration: TimeInterval = 0.18
-    static let hideDuration: TimeInterval = 0.18
-    static let frameIntervalNanoseconds: UInt64 = 8_333_333
+    static let showDuration: TimeInterval = 0.12
+    static let hideDuration: TimeInterval = 0.10
+    static let frameIntervalNanoseconds: UInt64 = 16_666_667
 
     static func entranceFrame(for frame: NSRect) -> NSRect {
         offscreenFrame(for: frame)
@@ -129,6 +129,9 @@ final class FloatingPanelController {
     private var isPanelPresented = false
     private var animationGeneration = 0
     private var panelAnimationTask: Task<Void, Never>?
+    private var resizePerformanceStart: TimeInterval?
+    private var resizePerformanceEventCount = 0
+    private var resizePerformanceSlowestFrameMilliseconds = 0.0
 
     var onRuntimeAction: ((PanelRuntimeAction) -> Void)?
 
@@ -161,12 +164,15 @@ final class FloatingPanelController {
     }
 
     func show() {
+        let showStart = ClipShelfPerformanceLog.mark()
         rememberPreviousFocusApplicationIfNeeded()
         guard let screen = targetScreenForPresentation() else { return }
 
         preferredHeight = clampedHeight(preferredHeight, for: screen)
         let finalFrame = targetPanelFrame(on: screen, height: preferredHeight)
-        contentView.updatePanelHeight(preferredHeight)
+        ClipShelfPerformanceLog.measure("panel.show.updateHeight") {
+            contentView.updatePanelHeight(preferredHeight)
+        }
 
         let shouldAnimateEntrance = !panel.isVisible || !isPanelPresented
         isPanelPresented = true
@@ -176,24 +182,33 @@ final class FloatingPanelController {
 
         if shouldAnimateEntrance, !panel.isVisible {
             startFrame = PanelPresentationAnimation.entranceFrame(for: finalFrame)
-            panel.setFrame(startFrame, display: true)
+            ClipShelfPerformanceLog.measure("panel.show.setEntranceFrame") {
+                panel.setFrame(startFrame, display: true)
+            }
         } else {
             startFrame = panel.frame
             panel.alphaValue = 1
         }
 
-        panel.orderFrontRegardless()
-        panel.makeKeyAndOrderFront(nil)
+        ClipShelfPerformanceLog.event(
+            "panel.show.request",
+            detail: "animated=\(shouldAnimateEntrance) alreadyVisible=\(panel.isVisible)"
+        )
+        ClipShelfPerformanceLog.measure("panel.show.orderWindow") {
+            panel.makeKeyAndOrderFront(nil)
+        }
         focusContentView()
         startOutsideClickMonitoring()
 
         guard shouldAnimateEntrance else {
             cancelPanelAnimation()
             panel.setFrame(finalFrame, display: true)
+            ClipShelfPerformanceLog.finish("panel.show.finished", start: showStart, detail: "animated=false")
             return
         }
 
         startPanelFrameAnimation(
+            name: "show",
             from: startFrame,
             to: finalFrame,
             duration: PanelPresentationAnimation.showDuration,
@@ -203,26 +218,34 @@ final class FloatingPanelController {
             guard let self, self.isPanelPresented else { return }
             self.panel.setFrame(finalFrame, display: true)
             self.panel.alphaValue = 1
+            ClipShelfPerformanceLog.finish("panel.show.finished", start: showStart, detail: "animated=true")
         }
     }
 
     func hide(restoresPreviousApplicationFocus: Bool = true) {
+        let hideStart = ClipShelfPerformanceLog.mark()
         let wasPresented = isPanelPresented
         guard wasPresented || panel.isVisible else {
             previousFocusApplication = nil
             stopOutsideClickMonitoring()
+            ClipShelfPerformanceLog.finish("panel.hide.skipped", start: hideStart)
             return
         }
 
         let shouldRestoreFocus = wasPresented && restoresPreviousApplicationFocus
         let focusApplication = shouldRestoreFocus ? previousFocusApplication : nil
         previousFocusApplication = nil
-        contentView.closePreviewPopover()
+        ClipShelfPerformanceLog.measure("panel.hide.closePreview") {
+            contentView.closePreviewPopover()
+        }
         isPanelPresented = false
         stopOutsideClickMonitoring()
-        restoreFocus(to: focusApplication)
+        ClipShelfPerformanceLog.measure("panel.hide.restoreFocus") {
+            restoreFocus(to: focusApplication)
+        }
 
         guard panel.isVisible else {
+            ClipShelfPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "alreadyHidden=true")
             return
         }
 
@@ -233,6 +256,7 @@ final class FloatingPanelController {
         let hiddenFrame = PanelPresentationAnimation.dismissedFrame(for: shownFrame)
 
         startPanelFrameAnimation(
+            name: "hide",
             from: startFrame,
             to: hiddenFrame,
             duration: PanelPresentationAnimation.hideDuration,
@@ -243,6 +267,7 @@ final class FloatingPanelController {
             self.panel.orderOut(nil)
             self.panel.setFrame(shownFrame, display: false)
             self.panel.alphaValue = 1
+            ClipShelfPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "animated=true")
         }
     }
 
@@ -371,6 +396,9 @@ final class FloatingPanelController {
     private func beginHeightResize() {
         resizeStartHeight = panel.frame.height
         resizeScreen = panel.screen ?? targetScreenForPresentation()
+        resizePerformanceStart = ClipShelfPerformanceLog.mark()
+        resizePerformanceEventCount = 0
+        resizePerformanceSlowestFrameMilliseconds = 0
     }
 
     private func resizeHeight(deltaY: CGFloat) {
@@ -381,19 +409,45 @@ final class FloatingPanelController {
             deltaY: deltaY,
             screenHeight: screen.frame.height
         )
+        let frameStart = ClipShelfPerformanceLog.mark()
         applyPanelFrame(on: screen, height: preferredHeight, animate: false)
+        let frameMilliseconds = ClipShelfPerformanceLog.milliseconds(since: frameStart)
+        resizePerformanceEventCount += 1
+        resizePerformanceSlowestFrameMilliseconds = max(
+            resizePerformanceSlowestFrameMilliseconds,
+            frameMilliseconds
+        )
+        if frameMilliseconds >= 24 {
+            ClipShelfPerformanceLog.event(
+                "panel.resize.slowFrame",
+                detail: "durationMs=\(ClipShelfPerformanceLog.format(frameMilliseconds)) height=\(ClipShelfPerformanceLog.format(Double(preferredHeight)))"
+            )
+        }
     }
 
     private func endHeightResize() {
         heightPreferenceStore.preferredPanelHeight = preferredHeight
         resizeScreen = nil
+        if let resizePerformanceStart {
+            let totalMilliseconds = ClipShelfPerformanceLog.milliseconds(since: resizePerformanceStart)
+            ClipShelfPerformanceLog.event(
+                "panel.resize.finished",
+                detail: [
+                    "durationMs=\(ClipShelfPerformanceLog.format(totalMilliseconds))",
+                    "events=\(resizePerformanceEventCount)",
+                    "slowestFrameMs=\(ClipShelfPerformanceLog.format(resizePerformanceSlowestFrameMilliseconds))",
+                    "height=\(ClipShelfPerformanceLog.format(Double(preferredHeight)))"
+                ].joined(separator: " ")
+            )
+        }
+        resizePerformanceStart = nil
     }
 
     private func applyPanelFrame(on screen: NSScreen, height: CGFloat, animate: Bool) {
         let frame = targetPanelFrame(on: screen, height: height)
 
-        panel.setFrame(frame, display: true, animate: animate)
         contentView.updatePanelHeight(height)
+        panel.setFrame(frame, display: true, animate: animate)
     }
 
     private func targetPanelFrameForCurrentPresentation() -> NSRect? {
@@ -414,6 +468,7 @@ final class FloatingPanelController {
     }
 
     private func startPanelFrameAnimation(
+        name: String,
         from startFrame: NSRect,
         to endFrame: NSRect,
         duration: TimeInterval,
@@ -433,6 +488,7 @@ final class FloatingPanelController {
             guard let self else { return }
 
             let startTime = ProcessInfo.processInfo.systemUptime
+            var frameCount = 0
 
             while !Task.isCancelled {
                 let elapsed = ProcessInfo.processInfo.systemUptime - startTime
@@ -443,6 +499,7 @@ final class FloatingPanelController {
                     to: endFrame,
                     progress: progress
                 )
+                frameCount += 1
                 self.panel.setFrame(frame, display: true)
 
                 if linearProgress >= 1 {
@@ -462,6 +519,10 @@ final class FloatingPanelController {
             guard !Task.isCancelled, self.animationGeneration == generation else { return }
             self.panel.setFrame(endFrame, display: true)
             self.panelAnimationTask = nil
+            ClipShelfPerformanceLog.event(
+                "panel.animation.finished",
+                detail: "name=\(name) durationMs=\(ClipShelfPerformanceLog.format((ProcessInfo.processInfo.systemUptime - startTime) * 1_000)) frames=\(frameCount)"
+            )
             completion()
         }
     }
@@ -500,24 +561,33 @@ final class FloatingPanelController {
     }
 
     private func focusContentView() {
-        panel.makeKeyAndOrderFront(nil)
-        panel.orderFrontRegardless()
         panel.makeKey()
         panel.makeFirstResponder(contentView)
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isPanelPresented, self.panel.isVisible else { return }
-            self.panel.makeKeyAndOrderFront(nil)
-            self.panel.orderFrontRegardless()
-            self.panel.makeKey()
-            self.panel.makeFirstResponder(self.contentView)
+            self.repairContentFocusIfNeeded(orderWindow: false)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
             guard let self, self.isPanelPresented, self.panel.isVisible else { return }
-            self.panel.makeKeyAndOrderFront(nil)
-            self.panel.orderFrontRegardless()
-            self.panel.makeKey()
-            self.panel.makeFirstResponder(self.contentView)
+            self.repairContentFocusIfNeeded(orderWindow: true)
         }
+    }
+
+    private func repairContentFocusIfNeeded(orderWindow: Bool) {
+        guard panel.firstResponder !== contentView || !panel.isKeyWindow else { return }
+
+        let start = ClipShelfPerformanceLog.mark()
+        if orderWindow {
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            panel.makeKey()
+        }
+        panel.makeFirstResponder(contentView)
+        ClipShelfPerformanceLog.finish(
+            "panel.focus.repair",
+            start: start,
+            detail: "ordered=\(orderWindow) firstResponderRestored=\(panel.firstResponder === contentView)"
+        )
     }
 
     private func clampedHeight(_ height: CGFloat, for screen: NSScreen) -> CGFloat {
