@@ -27,18 +27,86 @@ enum PanelQASamples {
         return url
     }
 
-    static func makePanelSnapshotItems(imagePath: String) -> [RustClipboardItemSummary] {
+    @MainActor
+    static func makePanelSnapshotChromeIconURL(outputDirectory: URL) throws -> URL {
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        let image = NSImage(size: NSSize(width: 160, height: 160))
+        image.lockFocus()
+
+        NSColor.clear.setFill()
+        NSRect(x: 0, y: 0, width: 160, height: 160).fill()
+
+        let center = NSPoint(x: 80, y: 80)
+        let outerRadius: CGFloat = 68
+        let innerRadius: CGFloat = 29
+        let ring = NSBezierPath()
+        ring.appendOval(in: NSRect(
+            x: center.x - outerRadius,
+            y: center.y - outerRadius,
+            width: outerRadius * 2,
+            height: outerRadius * 2
+        ))
+        ring.appendOval(in: NSRect(
+            x: center.x - innerRadius,
+            y: center.y - innerRadius,
+            width: innerRadius * 2,
+            height: innerRadius * 2
+        ))
+        ring.windingRule = .evenOdd
+        NSColor.systemRed.setFill()
+        ring.fill()
+
+        NSColor.systemGreen.setFill()
+        NSBezierPath(
+            roundedRect: NSRect(x: 19, y: 61, width: 124, height: 70),
+            xRadius: 35,
+            yRadius: 35
+        ).fill()
+
+        NSColor.systemYellow.setFill()
+        NSBezierPath(
+            roundedRect: NSRect(x: 18, y: 28, width: 96, height: 62),
+            xRadius: 31,
+            yRadius: 31
+        ).fill()
+
+        NSColor.white.setFill()
+        NSBezierPath(ovalIn: NSRect(x: 43, y: 43, width: 74, height: 74)).fill()
+        NSColor.systemBlue.setFill()
+        NSBezierPath(ovalIn: NSRect(x: 52, y: 52, width: 56, height: 56)).fill()
+        image.unlockFocus()
+
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:])
+        else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        let url = outputDirectory.appendingPathComponent("panel-runtime-chrome-icon.png")
+        try pngData.write(to: url, options: .atomic)
+        return url
+    }
+
+    static func makePanelSnapshotItems(imagePath: String, chromeIconPath: String? = nil) -> [RustClipboardItemSummary] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let htmlText = """
+        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/react/react-original.svg" height="40" alt="react logo" />
+          <img width="12" />
+          <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/android/android-original.svg" height="40" alt="android logo" />
+        """
         return [
             makeItem(
                 id: "snapshot-text",
                 itemType: "text",
-                summary: "多行文本内容会在真实卡片中换行展示，避免只剩一行。",
-                primaryText: "多行文本内容会在真实卡片中换行展示，避免只剩一行。",
-                sourceAppName: "备忘录",
-                timestamp: now,
+                summary: htmlText,
+                primaryText: htmlText,
+                sourceAppName: "Chrome",
+                timestamp: now - 79_200_000,
                 contentHash: "snapshot-snapshot-text",
-                sizeBytes: 68
+                sourceAppIconPath: chromeIconPath,
+                sourceAppIconHeaderColor: 0xFFF0C928,
+                sizeBytes: Int64(htmlText.utf8.count)
             ),
             makeItem(
                 id: "snapshot-image",
@@ -333,6 +401,8 @@ enum PanelQASamples {
         sourceAppName: String,
         timestamp: Int64,
         contentHash: String,
+        sourceAppIconPath: String? = nil,
+        sourceAppIconHeaderColor: Int64? = nil,
         previewAssetPath: String? = nil,
         payloadAssetPath: String? = nil,
         sizeBytes: Int64
@@ -345,7 +415,8 @@ enum PanelQASamples {
             contentHash: contentHash,
             sourceAppId: nil,
             sourceAppName: sourceAppName,
-            sourceAppIconPath: nil,
+            sourceAppIconPath: sourceAppIconPath,
+            sourceAppIconHeaderColor: sourceAppIconHeaderColor,
             previewAssetPath: previewAssetPath,
             payloadAssetPath: payloadAssetPath,
             sourceConfidence: "high",
@@ -522,6 +593,32 @@ enum PanelQAHarness {
             charactersIgnoringModifiers: " ",
             isARepeat: false,
             keyCode: UInt16(kVK_Space)
+        ) else {
+            return
+        }
+
+        view.keyDown(with: event)
+    }
+
+    @MainActor
+    static func sendPrintable(
+        characters: String,
+        charactersIgnoringModifiers: String? = nil,
+        modifiers: NSEvent.ModifierFlags = [],
+        keyCode: UInt16 = UInt16(kVK_ANSI_A),
+        to view: NSView
+    ) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: charactersIgnoringModifiers ?? characters,
+            isARepeat: false,
+            keyCode: keyCode
         ) else {
             return
         }
@@ -944,6 +1041,10 @@ enum PanelInteractionSmokeScenario {
         try verifyScrolling(in: contentView)
         let menuPreviewShown = try verifyManagementMenu(in: contentView, probe: probe)
         try verifyFilteringAndSearch(in: contentView, probe: probe)
+        try verifySearchCancelButtonClear(in: contentView, probe: probe)
+        try verifyEmptySearchClickAway(in: contentView)
+        contentView.smokeOpenSearch(text: "report")
+        PanelQAHarness.drainMainRunLoop()
         try verifyEscapeHide(in: contentView, controller: controller, probe: probe)
         let doubleClickCopiedItemID = try verifyCopyInteractions(in: contentView, controller: controller, probe: probe)
         let loadMoreCount = try verifyPaging(in: contentView, controller: controller, probe: probe)
@@ -1031,13 +1132,49 @@ enum PanelInteractionSmokeScenario {
         }
         try PanelQAHarness.require(probe.lastQuery?.pinboardID == "default", "固定 chip 未触发默认 Pinboard 查询")
 
-        contentView.smokeSearchField.stringValue = "report"
-        contentView.controlTextDidChange(Notification(
-            name: NSControl.textDidChangeNotification,
-            object: contentView.smokeSearchField
-        ))
+        contentView.smokeOpenSearch(text: "report")
         PanelQAHarness.drainMainRunLoop()
+        try PanelQAHarness.require(contentView.smokeIsSearchVisible, "搜索输入前未打开可见搜索框")
         try PanelQAHarness.require(probe.lastQuery?.searchText == "report", "搜索输入未触发查询回调")
+    }
+
+    private static func verifySearchCancelButtonClear(
+        in contentView: FloatingPanelContentView,
+        probe: PanelInteractionSmokeProbe
+    ) throws {
+        let queryCountBeforeCancel = probe.queries.count
+        try PanelQAHarness.require(
+            contentView.smokeNativeSearchCancelTextChangeBeforeAction(),
+            "搜索框原生清除按钮未命中"
+        )
+        PanelQAHarness.drainMainRunLoop()
+
+        let cancelQueries = Array(probe.queries.dropFirst(queryCountBeforeCancel))
+        try PanelQAHarness.require(cancelQueries.count == 1, "搜索框原生清除按钮应只触发一次查询")
+        try PanelQAHarness.require(
+            cancelQueries.first?.searchText == "" && cancelQueries.first?.debounce == false,
+            "搜索框原生清除按钮应触发一次立即空查询"
+        )
+        try PanelQAHarness.require(
+            !cancelQueries.contains { $0.debounce },
+            "搜索框原生清除按钮不应额外触发 debounce 查询"
+        )
+        try PanelQAHarness.require(contentView.smokeIsSearchVisible, "搜索框原生清除按钮不应关闭搜索框")
+        try PanelQAHarness.require(contentView.smokeFirstResponderIsSearchField, "搜索框原生清除按钮后焦点应保留在搜索框")
+    }
+
+    private static func verifyEmptySearchClickAway(in contentView: FloatingPanelContentView) throws {
+        contentView.closePreviewPopover()
+        contentView.smokeOpenSearch(text: "")
+        PanelQAHarness.drainMainRunLoop()
+        try PanelQAHarness.require(contentView.smokeIsSearchVisible, "空搜索点击外部前搜索框应保持可见")
+        try PanelQAHarness.require(
+            contentView.smokeClickPinboardFilterWithSearchClickAway(pinboardID: nil),
+            "空搜索点击列表 chip 前未安排搜索框关闭: \(contentView.smokeSearchClickAwayDiagnostic)"
+        )
+        PanelQAHarness.drainMainRunLoop()
+        try PanelQAHarness.require(!contentView.smokeIsSearchVisible, "空搜索点击列表 chip 后未关闭搜索框")
+        try PanelQAHarness.require(contentView.smokeActiveListScope == .clipboard, "空搜索点击列表 chip 时原始点击未继续切换列表")
     }
 
     private static func verifyPinboardManagementEntrypoints(in contentView: FloatingPanelContentView) throws {
@@ -1075,11 +1212,19 @@ enum PanelInteractionSmokeScenario {
             overflowItems.allSatisfy { $0.isEnabled && !$0.hasSubmenu && !$0.hasCustomView },
             "更多菜单中的隐藏和偏好设置应为可直接触发的动作"
         )
+        try PanelQAHarness.require(
+            overflowItems.allSatisfy { $0.hasImage },
+            "更多菜单中的动作应统一展示前置图标"
+        )
 
         let pinboardMenuItems = contentView.smokePinboardChipMenuItems(pinboardID: "default")
         try PanelQAHarness.require(
             pinboardMenuItems.map(\.title) == ["重命名", "删除...", "颜色"],
             "Pinboard chip 右键菜单未按 ClipShelf 样式展示重命名、删除和颜色入口"
+        )
+        try PanelQAHarness.require(
+            pinboardMenuItems.allSatisfy { $0.hasImage },
+            "Pinboard chip 右键菜单中的动作应统一展示前置图标"
         )
         try PanelQAHarness.require(
             contentView.smokePinboardRenameUsesInlineEditor(pinboardID: "default"),
@@ -1152,19 +1297,31 @@ enum PanelInteractionSmokeScenario {
             "右键菜单应使用 ClipShelf 风格的固定子菜单"
         )
         try PanelQAHarness.require(
+            managementMenuItems.allSatisfy { $0.hasImage },
+            "右键菜单中的动作应统一展示前置图标"
+        )
+        try PanelQAHarness.require(
             managementMenuItems.first(where: { $0.title == "固定" })?.hasSubmenu == true,
             "固定菜单项应展开 Pinboard 列表"
         )
+        let pinboardSubmenuItems = contentView.smokeManagementSubmenuItems(itemID: "panel-smoke-file", title: "固定")
         try PanelQAHarness.require(
-            contentView.smokeManagementSubmenuItems(itemID: "panel-smoke-file", title: "固定")
-                .map(\.title) == ["固定", "创建 Pinboard..."],
+            pinboardSubmenuItems.map(\.title) == ["固定", "创建 Pinboard..."],
             "固定子菜单应展示默认 Pinboard 和创建入口"
+        )
+        try PanelQAHarness.require(
+            pinboardSubmenuItems.allSatisfy { $0.hasImage },
+            "固定子菜单中的动作应统一展示前置图标"
         )
         let emptyPinboardMenu = contentView.smokeManagementPinboardMenuWithNoPinboards(itemID: "panel-smoke-file")
         try PanelQAHarness.require(
             emptyPinboardMenu?.isEnabled == true
                 && emptyPinboardMenu?.titles == ["创建 Pinboard..."],
             "不存在任何 Pinboard 时固定子菜单仍应可点击并展示创建入口"
+        )
+        try PanelQAHarness.require(
+            emptyPinboardMenu?.allItemsHaveImages == true,
+            "不存在任何 Pinboard 时固定子菜单的创建入口仍应展示前置图标"
         )
         try PanelQAHarness.require(
             managementMenuItems.first(where: { $0.title == "复制" })?.keyEquivalent == "c",
@@ -1198,14 +1355,35 @@ enum PanelInteractionSmokeScenario {
         controller: FloatingPanelController,
         probe: PanelInteractionSmokeProbe
     ) throws {
+        let queryCountBeforeClear = probe.queries.count
         PanelQAHarness.sendEscape(to: contentView)
         PanelQAHarness.drainMainRunLoop()
         try PanelQAHarness.require(probe.lastQuery?.searchText == "", "Escape 未先清空搜索")
+        try PanelQAHarness.require(
+            probe.queries.count == queryCountBeforeClear + 1,
+            "Escape 清空搜索应只发出一次空查询"
+        )
+        try PanelQAHarness.require(contentView.smokeIsSearchVisible, "Escape 清空非空搜索后搜索框应保持可见")
+        try PanelQAHarness.require(controller.isVisible, "Escape 清空搜索时不应隐藏面板")
 
         if let clipboardChip = contentView.smokePinboardFilterButton(pinboardID: nil) {
             PanelQAHarness.sendMouseDown(to: clipboardChip, clickCount: 1)
             PanelQAHarness.drainMainRunLoop()
         }
+        let queryCountBeforeClose = probe.queries.count
+
+        PanelQAHarness.sendEscape(to: contentView)
+        PanelQAHarness.drainMainRunLoop()
+        try PanelQAHarness.require(
+            probe.queries.count == queryCountBeforeClose,
+            "Escape 关闭空搜索框不应重复触发查询"
+        )
+        try PanelQAHarness.require(!contentView.smokeIsSearchVisible, "Escape 未关闭空搜索框")
+        try PanelQAHarness.require(controller.isVisible, "Escape 关闭空搜索框时不应隐藏面板")
+        try PanelQAHarness.require(
+            controller.smokeFirstResponderIsContentView,
+            "Escape 关闭空搜索框后未把焦点还给面板: \(controller.smokeFocusDiagnostic)"
+        )
 
         PanelQAHarness.sendEscape(to: contentView)
         PanelQAHarness.drainMainRunLoop()
@@ -1270,9 +1448,10 @@ enum PanelInteractionSmokeScenario {
         )
         PanelQAHarness.drainMainRunLoop()
         try PanelQAHarness.require(contentView.smokeCurrentItemCount == 50, "第一页分页条目数量不正确")
-        guard let firstPagedCardBeforeAppend = contentView.smokeCardBoxes().first else {
-            throw PanelQAHarness.SmokeError(message: "第一页未渲染可检查的条目卡片")
-        }
+        try PanelQAHarness.require(
+            contentView.smokeOrderedCardItemIDs() == firstPage.map(\.id),
+            "第一页分页条目顺序不正确"
+        )
         contentView.smokeScrollToLoadMoreThreshold()
         PanelQAHarness.drainMainRunLoop()
         try PanelQAHarness.require(
@@ -1294,8 +1473,12 @@ enum PanelInteractionSmokeScenario {
         try PanelQAHarness.require(contentView.smokeCurrentItemCount == 75, "第二页追加后总条目数量不正确")
         try PanelQAHarness.require(!contentView.smokeIsLoadingMoreActive, "第二页追加完成后加载状态未清理")
         try PanelQAHarness.require(
-            contentView.smokeCardBoxes().first === firstPagedCardBeforeAppend,
-            "加载更多后不应重建第一页已有卡片"
+            contentView.smokeOrderedCardItemIDs() == pagedItems.map(\.id),
+            "加载更多后有序条目 ID 未保持分页拼接结果"
+        )
+        try PanelQAHarness.require(
+            contentView.smokeRetainedCollectionSurfaceCount <= contentView.smokeCollectionRetainedCellBound,
+            "加载更多后 collection surface 保留的 cell/card 数量超过可见窗口上界"
         )
         return probe.loadMoreRequestCount - loadMoreCountBeforePaging
     }
@@ -1335,6 +1518,7 @@ final class PanelInteractionSmokeProbe {
         let searchText: String
         let sourceAppID: String?
         let pinboardID: String?
+        let debounce: Bool
     }
 
     private(set) var queries: [Query] = []
@@ -1356,11 +1540,12 @@ final class PanelInteractionSmokeProbe {
             case .hidePanel:
                 self?.hideCount += 1
                 controller?.hide()
-            case .queryChanged(let searchText, let sourceAppID, let pinboardID, _):
+            case .queryChanged(let searchText, _, let sourceAppID, let pinboardID, let debounce):
                 self?.queries.append(Query(
                     searchText: searchText,
                     sourceAppID: sourceAppID,
-                    pinboardID: pinboardID
+                    pinboardID: pinboardID,
+                    debounce: debounce
                 ))
             case .copyItem(let item):
                 self?.copiedItemID = item.id
@@ -1371,7 +1556,7 @@ final class PanelInteractionSmokeProbe {
                 self?.pinboardRequest = (item.id, pinboardID, isMember)
             case .createPinboard, .renamePinboard, .updatePinboardColor, .deletePinboard:
                 break
-            case .deleteItem(let item):
+            case .deleteItem(let item, _):
                 self?.deletedItemID = item.id
             case .loadMore:
                 self?.loadMoreRequestCount += 1

@@ -11,8 +11,8 @@ public enum PreferencesSceneSection: String, CaseIterable, Equatable, Sendable {
     public static var allCases: [PreferencesSceneSection] {
         [
             .general,
-            .shortcuts,
             .rules,
+            .shortcuts,
             .about
         ]
     }

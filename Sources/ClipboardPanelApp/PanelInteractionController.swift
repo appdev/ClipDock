@@ -1,10 +1,10 @@
 import Foundation
 
 public enum PanelExternalAction: Equatable, Sendable {
-    case queryChanged(searchText: String, sourceAppID: String?, pinboardID: String?, debounce: Bool)
+    case queryChanged(searchText: String, itemType: String?, sourceAppID: String?, pinboardID: String?, debounce: Bool)
     case copyItem(itemID: String)
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
-    case deleteItem(itemID: String)
+    case deleteItem(itemID: String, pinboardID: String?)
     case hidePanel
     case loadMore
 }
@@ -24,10 +24,14 @@ public enum PanelManagementAction: Equatable, Sendable {
 
 public enum PanelInteractionAction: Equatable, Sendable {
     case setSearchText(String)
+    case setItemTypeFilter(String?)
+    case setScopeFilters(itemType: String?, pinboardID: String?)
     case setPinboardFilter(String?)
     case clearFilters
+    case clearSearchText
     case toggleSearch
     case focusSearch
+    case startSearch(initialText: String)
     case dismissSearch
     case copyItem(itemID: String)
     case copySelectedItem
@@ -124,6 +128,20 @@ public final class PanelInteractionController {
             contentController.setSearchText(searchText)
             return makeResult(effects: [queryChangedEffect(debounce: true)])
 
+        case .setItemTypeFilter(let itemType):
+            contentController.setItemTypeFilter(itemType)
+            return makeResult(
+                effects: [queryChangedEffect(debounce: false)],
+                shouldSyncToolbar: true
+            )
+
+        case .setScopeFilters(let itemType, let pinboardID):
+            contentController.setScopeFilters(itemType: itemType, pinboardID: pinboardID)
+            return makeResult(
+                effects: [queryChangedEffect(debounce: false)],
+                shouldSyncToolbar: true
+            )
+
         case .setPinboardFilter(let pinboardID):
             contentController.setPinboardFilter(pinboardID)
             return makeResult(
@@ -138,6 +156,19 @@ public final class PanelInteractionController {
                 shouldSyncToolbar: true
             )
 
+        case .clearSearchText:
+            let hadSearchText = !viewState.toolbar.searchText.isEmpty
+            contentController.setSearchText("")
+            let focusResult = contentController.focusSearch()
+            var effects: [PanelInteractionEffect] = [.focus(focusResult.focusTarget)]
+            if hadSearchText {
+                effects.append(queryChangedEffect(debounce: false))
+            }
+            return makeResult(
+                effects: effects,
+                shouldSyncToolbar: true
+            )
+
         case .toggleSearch:
             let result = contentController.toggleSearch()
             return makeResult(
@@ -149,6 +180,16 @@ public final class PanelInteractionController {
             let result = contentController.focusSearch()
             return makeResult(
                 effects: [.focus(result.focusTarget)],
+                shouldSyncToolbar: true
+            )
+
+        case .startSearch(let initialText):
+            let result = contentController.startSearch(initialText: initialText)
+            return makeResult(
+                effects: [
+                    .focus(result.focusTarget),
+                    queryChangedEffect(debounce: true)
+                ],
                 shouldSyncToolbar: true
             )
 
@@ -196,7 +237,10 @@ public final class PanelInteractionController {
             return makeResult(effects: [
                 .commandHints([:]),
                 .preview(.close),
-                .external(.deleteItem(itemID: selectedItemID))
+                .external(.deleteItem(
+                    itemID: selectedItemID,
+                    pinboardID: viewState.toolbar.selectedPinboardID
+                ))
             ])
 
         case .selectItem(let id, let scrollIntoView):
@@ -228,6 +272,12 @@ public final class PanelInteractionController {
                 contentController.setSearchText("")
                 return makeResult(
                     effects: [queryChangedEffect(debounce: false)],
+                    shouldSyncToolbar: true
+                )
+            case .closeSearch:
+                contentController.dismissSearch()
+                return makeResult(
+                    effects: [.focus(.panel)],
                     shouldSyncToolbar: true
                 )
             case .hidePanel:
@@ -287,7 +337,10 @@ public final class PanelInteractionController {
             case .delete:
                 return makeResult(effects: [
                     .preview(.close),
-                    .external(.deleteItem(itemID: itemID))
+                    .external(.deleteItem(
+                        itemID: itemID,
+                        pinboardID: viewState.toolbar.selectedPinboardID
+                    ))
                 ])
 
             case .setPinboardMembership(let pinboardID, let isMember):
@@ -328,6 +381,7 @@ public final class PanelInteractionController {
     private func queryChangedEffect(debounce: Bool) -> PanelInteractionEffect {
         .external(.queryChanged(
             searchText: viewState.toolbar.searchText,
+            itemType: viewState.toolbar.selectedItemType,
             sourceAppID: nil,
             pinboardID: viewState.toolbar.selectedPinboardID,
             debounce: debounce

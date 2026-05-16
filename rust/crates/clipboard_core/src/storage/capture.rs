@@ -12,8 +12,8 @@ use std::path::Path;
 use super::source_apps::SourceAppInput;
 use super::support::{
     classify_text, file_paths_fingerprint, hash_file, insert_asset, normalize_file_paths,
-    normalize_relative_asset_path, normalize_text, positive_dimension, stable_hash,
-    summarize_files, summarize_image, summarize_text,
+    normalize_hex_color, normalize_relative_asset_path, normalize_text, positive_dimension,
+    stable_hash, summarize_files, summarize_image, summarize_text,
 };
 use super::ClipboardCore;
 
@@ -29,18 +29,30 @@ impl ClipboardCore {
 
         let now = now_ms();
         let detected_link = normalized_detected_link(&normalized_text, request.detected_link);
+        let normalized_color = detected_link
+            .is_none()
+            .then(|| normalize_hex_color(&normalized_text))
+            .flatten();
         let item_type = detected_link
             .as_ref()
             .map(|_| crate::domain::ClipboardItemType::Link)
-            .unwrap_or_else(|| classify_text(&normalized_text));
+            .unwrap_or_else(|| {
+                if normalized_color.is_some() {
+                    crate::domain::ClipboardItemType::Color
+                } else {
+                    classify_text(&normalized_text)
+                }
+            });
+        let primary_text = normalized_color.as_deref().unwrap_or(&normalized_text);
         let summary = detected_link
             .as_ref()
             .map(|link| link.display_url.clone())
+            .or_else(|| normalized_color.clone())
             .unwrap_or_else(|| summarize_text(&normalized_text));
         let content_hash = detected_link
             .as_ref()
             .map(|link| stable_hash(&format!("link:{}", link.canonical_url)))
-            .unwrap_or_else(|| stable_hash(&format!("{}:{normalized_text}", item_type.as_str())));
+            .unwrap_or_else(|| stable_hash(&format!("{}:{primary_text}", item_type.as_str())));
         let source_app_id = self.upsert_source_app(
             SourceAppInput {
                 bundle_id: request.source_bundle_id.as_deref(),
@@ -52,7 +64,7 @@ impl ClipboardCore {
         )?;
         let source_app_name = request.source_app_name.as_deref();
         let source_confidence = request.source_confidence;
-        let size_bytes = normalized_text.len() as i64;
+        let size_bytes = primary_text.len() as i64;
         let transaction = self.connection.transaction()?;
 
         let (item_id, copy_count, inserted) = match find_existing_item(&transaction, &content_hash)?
@@ -99,7 +111,7 @@ impl ClipboardCore {
                         item_id,
                         item_type.as_str(),
                         summary,
-                        normalized_text,
+                        primary_text,
                         content_hash,
                         source_app_id.as_deref(),
                         source_app_name,
@@ -125,7 +137,7 @@ impl ClipboardCore {
             &transaction,
             &item_id,
             &summary,
-            &normalized_text,
+            primary_text,
             source_app_name.unwrap_or_default(),
         )?;
         if let Some(detected_link) = detected_link.as_ref() {

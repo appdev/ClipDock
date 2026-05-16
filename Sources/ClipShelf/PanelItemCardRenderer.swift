@@ -78,6 +78,10 @@ final class PanelItemCardRenderer {
         onContextMenu: ((NSEvent) -> Void)? = nil
     ) -> PanelRenderedItemCard {
         let resolvedItem = cardAssetResolver.resolvedItem(for: state.assetRequest)
+        let isTextLikeItem = state.symbolName == "doc.text" || state.symbolName == "doc.richtext"
+        let cardBackgroundColor = isTextLikeItem
+            ? metrics.theme.card.textItemBackgroundColor
+            : metrics.theme.card.backgroundColor
 
         let iconView = SourceIconImageView()
         iconView.image = resolvedItem.sourceIconImage
@@ -91,7 +95,7 @@ final class PanelItemCardRenderer {
         container.boxType = .custom
         container.borderColor = .clear
         container.borderWidth = 0
-        container.fillColor = metrics.theme.card.backgroundColor
+        container.fillColor = cardBackgroundColor
         container.cornerRadius = metrics.cardCornerRadius
         container.contentViewMargins = .zero
         container.wantsLayer = true
@@ -136,6 +140,7 @@ final class PanelItemCardRenderer {
         }
 
         let typeHeaderLabel = NSTextField(labelWithString: state.typeText)
+        typeHeaderLabel.identifier = NSUserInterfaceItemIdentifier("PanelCardTypeLabel")
         typeHeaderLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         typeHeaderLabel.textColor = headerTextColor(isSelected: state.isSelected)
         typeHeaderLabel.lineBreakMode = .byTruncatingTail
@@ -143,6 +148,7 @@ final class PanelItemCardRenderer {
         configureLeftToRightText(typeHeaderLabel)
 
         let timeLabel = NSTextField(labelWithString: state.relativeTimeText)
+        timeLabel.identifier = NSUserInterfaceItemIdentifier("PanelCardTimeLabel")
         timeLabel.font = .systemFont(ofSize: 11)
         timeLabel.textColor = headerSecondaryTextColor(isSelected: state.isSelected)
         timeLabel.lineBreakMode = .byTruncatingTail
@@ -156,6 +162,7 @@ final class PanelItemCardRenderer {
         headerTextStack.userInterfaceLayoutDirection = .leftToRight
 
         let headerView = NSView()
+        headerView.identifier = NSUserInterfaceItemIdentifier("PanelCardHeader")
         headerView.userInterfaceLayoutDirection = .leftToRight
         headerView.wantsLayer = true
         let unselectedHeaderColor = cardAssetResolver.headerColor(
@@ -201,12 +208,25 @@ final class PanelItemCardRenderer {
         } else {
             isLinkCard = false
         }
+        let isColorCard: Bool
+        if case .color = state.preview {
+            isColorCard = true
+        } else {
+            isColorCard = false
+        }
+        let isTextBodyCard = !isImageCard
+            && !isLinkCard
+            && !isColorCard
+            && isTextLikeItem
+            && !state.summaryText.isEmpty
 
         let summaryLabel = makeBodyLabel(state.summaryText)
+        let contentFillsAvailableArea = isImageCard || isLinkCard || isColorCard
         let contentContainer = makeCardContentContainer(
             previewView: previewBundle.view,
             summaryLabel: summaryLabel,
-            fillsAvailableArea: isImageCard || isLinkCard
+            fillsAvailableArea: contentFillsAvailableArea,
+            showsSummary: !isColorCard
         )
         let isFileCard: Bool
         if case .file = state.preview {
@@ -224,8 +244,11 @@ final class PanelItemCardRenderer {
 
         let indexLabel = NSTextField(labelWithString: "")
         indexLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
-        indexLabel.textColor = .tertiaryLabelColor
+        indexLabel.textColor = self.colorSurfaceForegroundColor(for: state.preview) ?? .tertiaryLabelColor
         indexLabel.lineBreakMode = .byTruncatingTail
+        indexLabel.identifier = NSUserInterfaceItemIdentifier(
+            isColorCard ? "ColorCardCommandIndexLabel" : "PanelCardCommandIndexLabel"
+        )
         configureLeftToRightText(indexLabel, alignment: .right)
         indexLabel.setContentHuggingPriority(.required, for: .horizontal)
         indexLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -251,6 +274,7 @@ final class PanelItemCardRenderer {
         configureLeftToRightText(countLabel, alignment: isLinkCard ? .left : .center)
         countLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         countLabel.translatesAutoresizingMaskIntoConstraints = false
+        countLabel.isHidden = isColorCard
 
         let linkTitleLabel = linkFooterTitle.map { title in
             let label = NSTextField(labelWithString: leftToRightDisplayText(title))
@@ -274,6 +298,7 @@ final class PanelItemCardRenderer {
         let countBadgeView = makeImageFootnoteBadgeView(isHidden: !isImageCard || state.footnoteText.isEmpty)
         let footnoteView: NSView = isImageCard ? countBadgeView : (linkFooterStack ?? countLabel)
         let linkFooterBackgroundView = makeLinkFooterBackgroundView(isHidden: !isLinkCard)
+        let textBodyFadeView = makeTextBodyFadeView(isHidden: !isTextBodyCard)
         let footerRow = NSView()
         footerRow.userInterfaceLayoutDirection = .leftToRight
         footerRow.translatesAutoresizingMaskIntoConstraints = false
@@ -294,6 +319,7 @@ final class PanelItemCardRenderer {
         }
         footerRow.addSubview(indexLabel)
         container.configureCommandIndexLabel(indexLabel)
+        container.setCommandIndexText(state.commandIndexText)
         let centeredCountConstraint = footnoteView.centerXAnchor.constraint(equalTo: footerRow.centerXAnchor)
         centeredCountConstraint.priority = isLinkCard ? .fittingSizeCompression : .defaultHigh
         let linkFooterHeight: CGFloat = linkFooterTitle == nil ? 32 : 50
@@ -304,29 +330,35 @@ final class PanelItemCardRenderer {
         container.contentView?.addSubview(contentContainer)
         container.contentView?.addSubview(headerView)
         container.contentView?.addSubview(linkFooterBackgroundView)
+        container.contentView?.addSubview(textBodyFadeView)
         container.contentView?.addSubview(footerRow)
 
         let widthConstraint = container.widthAnchor.constraint(equalToConstant: metrics.defaultItemSide)
         let heightConstraint = container.heightAnchor.constraint(equalToConstant: metrics.defaultItemSide)
 
-        let contentLeadingConstraint = isImageCard || isLinkCard
+        let contentLeadingConstraint = contentFillsAvailableArea
             ? contentContainer.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor)
             : contentContainer.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: metrics.cardInset)
-        let contentTrailingConstraint = isImageCard || isLinkCard
+        let contentTrailingConstraint = contentFillsAvailableArea
             ? contentContainer.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor)
             : contentContainer.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -metrics.cardInset)
-        let contentTopConstraint = isImageCard || isLinkCard
+        let contentTopConstraint = contentFillsAvailableArea
             ? contentContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor)
             : contentContainer.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 10)
         let contentBottomConstraint: NSLayoutConstraint
         if isImageCard {
             contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor)
+        } else if isColorCard {
+            contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor)
         } else if isLinkCard {
             contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: footerRow.topAnchor)
+        } else if isTextBodyCard {
+            contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor)
         } else {
             contentBottomConstraint = contentContainer.bottomAnchor.constraint(lessThanOrEqualTo: footerRow.topAnchor, constant: -5)
         }
         let contentHeightConstraint = contentContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 1)
+        let textFadeHeight = max(footerHeight + 58, 76)
 
         NSLayoutConstraint.activate([
             widthConstraint,
@@ -356,6 +388,11 @@ final class PanelItemCardRenderer {
             linkFooterBackgroundView.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor),
             linkFooterBackgroundView.topAnchor.constraint(equalTo: footerRow.topAnchor),
             linkFooterBackgroundView.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor),
+
+            textBodyFadeView.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor),
+            textBodyFadeView.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor),
+            textBodyFadeView.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor),
+            textBodyFadeView.heightAnchor.constraint(equalToConstant: textFadeHeight),
 
             footerRow.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: metrics.cardInset),
             footerRow.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -metrics.cardInset),
@@ -399,7 +436,8 @@ final class PanelItemCardRenderer {
     private func makeCardContentContainer(
         previewView: NSView?,
         summaryLabel: PanelItemCardBodyTextView,
-        fillsAvailableArea: Bool
+        fillsAvailableArea: Bool,
+        showsSummary: Bool = true
     ) -> NSView {
         let container = NSView()
         container.userInterfaceLayoutDirection = .leftToRight
@@ -410,6 +448,17 @@ final class PanelItemCardRenderer {
         container.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         if let previewView, fillsAvailableArea {
+            summaryLabel.isHidden = true
+            previewView.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(previewView)
+
+            NSLayoutConstraint.activate([
+                previewView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                previewView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                previewView.topAnchor.constraint(equalTo: container.topAnchor),
+                previewView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            ])
+        } else if let previewView, !showsSummary {
             summaryLabel.isHidden = true
             previewView.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(previewView)
@@ -488,6 +537,19 @@ final class PanelItemCardRenderer {
         return view
     }
 
+    private func makeTextBodyFadeView(isHidden: Bool) -> NSView {
+        let view = PanelTextBodyFadeView(
+            topColor: metrics.theme.card.textBodyFadeTopColor,
+            middleColor: metrics.theme.card.textBodyFadeMiddleColor,
+            footerColor: metrics.theme.card.textBodyFadeFooterColor,
+            bottomColor: metrics.theme.card.textBodyFadeBottomColor
+        )
+        view.identifier = NSUserInterfaceItemIdentifier("TextBodyBottomFade")
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = isHidden
+        return view
+    }
+
     private func makePreviewBundle(
         _ previewState: PanelCardPreviewState,
         assetRequest: PanelCardAssetRequest
@@ -509,6 +571,40 @@ final class PanelItemCardRenderer {
                 accessibilityLabel: assetRequest.sourceAppName ?? "文件",
                 assetRequest: assetRequest
             )
+        case .color(let colorValue):
+            return makeColorPreview(colorValue)
+        }
+    }
+
+    private func makeColorPreview(_ colorValue: ClipboardColorValue) -> PreviewBundle {
+        let container = ColorCardSurfaceView(
+            colorValue: colorValue,
+            foregroundColor: colorSurfaceForegroundColor(for: colorValue)
+        )
+        let hexLabel = container.hexLabel
+        configureLeftToRightText(hexLabel, alignment: .center)
+
+        NSLayoutConstraint.activate([
+            hexLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            hexLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            hexLabel.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 14),
+            hexLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -14)
+        ])
+
+        return PreviewBundle(view: container)
+    }
+
+    private func colorSurfaceForegroundColor(for previewState: PanelCardPreviewState) -> NSColor? {
+        guard case .color(let colorValue) = previewState else { return nil }
+        return colorSurfaceForegroundColor(for: colorValue)
+    }
+
+    private func colorSurfaceForegroundColor(for colorValue: ClipboardColorValue) -> NSColor {
+        switch colorValue.surfaceForegroundStyle {
+        case .light:
+            return .white
+        case .dark:
+            return .black
         }
     }
 
@@ -921,6 +1017,91 @@ final class PanelItemCardBodyTextView: NSView {
         textContainer.containerSize = size
         layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length), actualCharacterRange: nil)
         needsDisplay = true
+    }
+}
+
+@MainActor
+private final class PanelTextBodyFadeView: NSView {
+    private let topColor: NSColor
+    private let middleColor: NSColor
+    private let footerColor: NSColor
+    private let bottomColor: NSColor
+
+    init(topColor: NSColor, middleColor: NSColor, footerColor: NSColor, bottomColor: NSColor) {
+        self.topColor = topColor
+        self.middleColor = middleColor
+        self.footerColor = footerColor
+        self.bottomColor = bottomColor
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !bounds.isEmpty else { return }
+        let colors = [
+            topColor.cgColor,
+            middleColor.cgColor,
+            footerColor.cgColor,
+            bottomColor.cgColor
+        ] as CFArray
+        guard let gradient = CGGradient(
+            colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colors: colors,
+            locations: [0, 0.42, 0.72, 1]
+        ), let context = NSGraphicsContext.current?.cgContext else {
+            return
+        }
+
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: bounds.midX, y: bounds.minY),
+            end: CGPoint(x: bounds.midX, y: bounds.maxY),
+            options: []
+        )
+    }
+}
+
+@MainActor
+private final class ColorCardSurfaceView: NSView {
+    let hexLabel: NSTextField
+
+    init(colorValue: ClipboardColorValue, foregroundColor: NSColor) {
+        let color = NSColor(
+            srgbRed: CGFloat(colorValue.red) / 255,
+            green: CGFloat(colorValue.green) / 255,
+            blue: CGFloat(colorValue.blue) / 255,
+            alpha: 1
+        )
+        hexLabel = NSTextField(labelWithString: colorValue.normalizedHex)
+        super.init(frame: .zero)
+        identifier = NSUserInterfaceItemIdentifier("ColorCardSurface")
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.masksToBounds = true
+        layer?.backgroundColor = color.cgColor
+        toolTip = colorValue.normalizedHex
+
+        hexLabel.identifier = NSUserInterfaceItemIdentifier("ColorCardHexLabel")
+        hexLabel.font = .monospacedSystemFont(ofSize: 18, weight: .semibold)
+        hexLabel.textColor = foregroundColor
+        hexLabel.alignment = .center
+        hexLabel.lineBreakMode = .byClipping
+        hexLabel.maximumNumberOfLines = 1
+        hexLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hexLabel)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
     }
 }
 

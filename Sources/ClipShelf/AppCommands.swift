@@ -30,7 +30,11 @@ enum PanelSnapshotCommand {
             pinboardButton.onPress?()
         }
         let previewURL = try PanelQASamples.makePanelSnapshotPreviewImageURL(outputDirectory: outputURL.deletingLastPathComponent())
-        let sampleItems = PanelQASamples.makePanelSnapshotItems(imagePath: previewURL.path)
+        let chromeIconURL = try PanelQASamples.makePanelSnapshotChromeIconURL(outputDirectory: outputURL.deletingLastPathComponent())
+        let sampleItems = PanelQASamples.makePanelSnapshotItems(
+            imagePath: previewURL.path,
+            chromeIconPath: chromeIconURL.path
+        )
         view.updateListState(
             .success(RustCoreListResult(
                 items: sampleItems,
@@ -39,6 +43,7 @@ enum PanelSnapshotCommand {
             )),
             isFiltered: false
         )
+        view.smokeSelectItem(id: "snapshot-text", scrollIntoView: false)
         view.updatePanelHeight(frame.height)
         RunLoop.main.run(until: Date().addingTimeInterval(0.12))
 
@@ -131,6 +136,7 @@ private final class PanelSnapshotBackdropView: NSView {
 enum PreferencesSnapshotCommand {
     private static let flag = "--render-preferences-snapshot"
     private static let sectionFlag = "--preferences-section"
+    private static let appearanceFlag = "--preferences-appearance"
 
     static func outputURL(arguments: [String]) -> URL? {
         guard let flagIndex = arguments.firstIndex(of: flag) else { return nil }
@@ -151,6 +157,7 @@ enum PreferencesSnapshotCommand {
         var preferences = RustPreferencesDocument()
         preferences.general.launchAtLogin = true
         preferences.general.defaultPanelHeight = 360
+        preferences.appearance.mode = appearanceMode(arguments: arguments)
         preferences.ignoreList.ignoredAppIdentifiers = [
             "com.apple.Terminal",
             "Xcode"
@@ -160,6 +167,7 @@ enum PreferencesSnapshotCommand {
             "Private"
         ]
 
+        ClipShelfTheme.applyAppearanceMode(preferences.appearance.mode)
         controller.updatePreferences(preferences)
         controller.showSection(section(arguments: arguments))
         controller.updateLaunchAtLoginState(
@@ -213,6 +221,21 @@ enum PreferencesSnapshotCommand {
             return .about
         default:
             return .general
+        }
+    }
+
+    private static func appearanceMode(arguments: [String]) -> String {
+        guard let flagIndex = arguments.firstIndex(of: appearanceFlag) else { return "system" }
+        let valueIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(valueIndex) else { return "system" }
+
+        switch arguments[valueIndex].lowercased() {
+        case "light":
+            return "light"
+        case "dark":
+            return "dark"
+        default:
+            return "system"
         }
     }
 

@@ -55,6 +55,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "pending_image_payload_lifecycle",
         sql: PENDING_IMAGE_PAYLOAD_LIFECYCLE_SCHEMA,
     },
+    Migration {
+        version: 10,
+        name: "default_privacy_ignore_apps_preference_version",
+        sql: DEFAULT_PRIVACY_IGNORE_APPS_PREFERENCE_VERSION,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -564,4 +569,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_image_jobs_active_staged_payload
 CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_image_jobs_active_item
     ON pending_image_jobs(item_id)
     WHERE state = 'pending' AND item_id IS NOT NULL;
+"#;
+
+const DEFAULT_PRIVACY_IGNORE_APPS_PREFERENCE_VERSION: &str = r#"
+SELECT 1;
 "#;

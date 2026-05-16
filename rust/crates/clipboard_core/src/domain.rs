@@ -641,14 +641,31 @@ impl Default for LinkPreviewPreferences {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IgnoreListPreferences {
-    #[serde(default)]
+    #[serde(default = "default_ignored_app_identifiers")]
     pub ignored_app_identifiers: Vec<String>,
     #[serde(default)]
     pub window_title_keywords: Vec<String>,
     #[serde(default)]
     pub skip_unknown_source: bool,
+}
+
+impl Default for IgnoreListPreferences {
+    fn default() -> Self {
+        Self {
+            ignored_app_identifiers: default_ignored_app_identifiers(),
+            window_title_keywords: Vec::new(),
+            skip_unknown_source: false,
+        }
+    }
+}
+
+fn default_ignored_app_identifiers() -> Vec<String> {
+    vec![
+        "com.apple.Passwords".to_string(),
+        "com.apple.keychainaccess".to_string(),
+    ]
 }
 
 fn default_true() -> bool {

@@ -12,13 +12,13 @@ func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView 
     let tintColor = ClipShelfTheme.current(for: contentView).panel.backgroundColor
     let hostView: NSView
 
-    if let glassView = makeSystemGlassPanelHostView(contentView: contentView, tintColor: tintColor) {
+    if let glassView = makeSystemGlassPanelHostView(contentView: contentView) {
         hostView = glassView
-        contentView.updateBackgroundHostState(.systemGlass(tintAlpha: tintColor.alphaComponent))
+        contentView.updateBackgroundHostState(.systemGlass)
     } else {
         let effectView = NSVisualEffectView(frame: contentView.frame)
         effectView.material = .popover
-        effectView.blendingMode = .behindWindow
+        effectView.blendingMode = .withinWindow
         effectView.state = .active
         effectView.wantsLayer = true
         effectView.layer?.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
@@ -37,8 +37,7 @@ func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView 
 
 @MainActor
 private func makeSystemGlassPanelHostView(
-    contentView: FloatingPanelContentView,
-    tintColor: NSColor
+    contentView: FloatingPanelContentView
 ) -> NSView? {
     guard #available(macOS 26.0, *),
           let glassViewClass = NSClassFromString("NSGlassEffectView") as? NSView.Type
@@ -53,7 +52,8 @@ private func makeSystemGlassPanelHostView(
         key: "cornerRadius",
         on: glassView
     )
-    setSystemGlassValue(tintColor, key: "tintColor", on: glassView)
+    // A tinted NSGlassEffectView visibly changes when a keyable panel loses focus.
+    // Leave tintColor unset so the panel keeps the stable no-tint glass appearance.
 
     if glassView.responds(to: Selector(("setContentView:"))) {
         glassView.setValue(contentView, forKey: "contentView")
@@ -73,12 +73,89 @@ private func setSystemGlassValue(_ value: Any, key: String, on view: NSView) {
     view.setValue(value, forKey: key)
 }
 
+enum PanelTypeToSearchKeyPlanner {
+    static func initialSearchText(for event: NSEvent) -> String? {
+        initialSearchText(
+            characters: event.characters,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+            modifierFlags: event.modifierFlags
+        )
+    }
+
+    static func initialSearchText(
+        characters: String?,
+        charactersIgnoringModifiers: String?,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> String? {
+        let modifiers = modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option) {
+            return nil
+        }
+
+        guard let classificationText = charactersIgnoringModifiers,
+              classificationText.isSinglePrintableNonSpaceGrapheme,
+              let seedText = characters,
+              seedText.isSinglePrintableNonSpaceGrapheme
+        else {
+            return nil
+        }
+
+        return seedText
+    }
+}
+
+private extension String {
+    var isSinglePrintableNonSpaceGrapheme: Bool {
+        guard count == 1,
+              !unicodeScalars.isEmpty
+        else {
+            return false
+        }
+
+        return unicodeScalars.allSatisfy { scalar in
+            !CharacterSet.whitespacesAndNewlines.contains(scalar)
+                && !CharacterSet.controlCharacters.contains(scalar)
+                && !(0xF700...0xF8FF).contains(Int(scalar.value))
+        }
+    }
+}
+
+final class PanelSearchField: NSSearchField {
+    var onCancelButtonMouseDown: (() -> Bool)?
+    var onCancelButtonClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        let shouldHandleCancel = event.type == .leftMouseDown
+            && isCancelButtonHit(event)
+            && (onCancelButtonMouseDown?() ?? false)
+
+        super.mouseDown(with: event)
+
+        if shouldHandleCancel {
+            onCancelButtonClick?()
+        }
+    }
+
+    func isCancelButtonHit(_ event: NSEvent) -> Bool {
+        guard event.window === window else { return false }
+        let point = convert(event.locationInWindow, from: nil)
+        return cancelButtonBounds.contains(point)
+    }
+
+    func cancelButtonCenterInWindowForSmoke() -> NSPoint? {
+        guard window != nil else { return nil }
+        let rect = cancelButtonBounds
+        guard !rect.isEmpty else { return nil }
+        return convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+    }
+}
+
 final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     static let panelBackgroundCornerRadius: CGFloat = 26
 
     enum BackgroundHostState {
         case none
-        case systemGlass(tintAlpha: CGFloat)
+        case systemGlass
         case legacyVisualEffect(tintAlpha: CGFloat)
     }
 
@@ -92,6 +169,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         static let resizeHandleHeight: CGFloat = 16
         static let controlBarHeight: CGFloat = 52
         static let sectionSpacing: CGFloat = 12
+        static let searchFieldWidth: CGFloat = 330
+        static let searchFieldHeight: CGFloat = 48
+        static let searchFieldAnimationDuration: TimeInterval = 0.14
         static let horizontalContentInset: CGFloat = 22
         static let defaultItemSide: CGFloat = 218
         static let compactItemSide: CGFloat = 156
@@ -138,72 +218,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let itemCount: Int64
     }
 
-    @MainActor
-    private final class ListPageSurface {
-        let scrollView: HorizontalWheelScrollView
-        let documentView = NSView()
-        let stack = NSStackView()
-        let leadingContentPaddingView = NSView()
-        let trailingContentPaddingView = NSView()
-        var hostConstraints: [NSLayoutConstraint] = []
-        var itemWidthConstraints: [NSLayoutConstraint] = []
-        var itemHeightConstraints: [NSLayoutConstraint] = []
-        var itemPreviewHeightConstraints: [NSLayoutConstraint] = []
-        var itemPreviewWidthConstraints: [NSLayoutConstraint] = []
-        var itemImagePreviewViews: [NSImageView] = []
-        var itemBodyLabels: [PanelItemCardBodyTextView] = []
-        var renderedCardStatesByID: [String: PanelItemCardViewState] = [:]
-        var renderedCardViewsByID: [String: ClipboardItemCardBox] = [:]
-        var renderedCardArtifactsByID: [String: PanelItemCardRenderArtifacts] = [:]
-        var hasRenderedContent = false
-        var savedScrollOrigin = NSPoint.zero
-
-        init(onScrollDidChange: @escaping () -> Void) {
-            scrollView = HorizontalWheelScrollView()
-            scrollView.drawsBackground = false
-            scrollView.borderType = .noBorder
-            scrollView.hasHorizontalScroller = false
-            scrollView.hasVerticalScroller = false
-            scrollView.horizontalScrollElasticity = .none
-            scrollView.verticalScrollElasticity = .none
-            scrollView.automaticallyAdjustsContentInsets = false
-            scrollView.usesPredominantAxisScrolling = true
-            scrollView.onScrollDidChange = onScrollDidChange
-
-            stack.orientation = .horizontal
-            stack.alignment = .top
-            stack.spacing = 22
-            stack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-            stack.userInterfaceLayoutDirection = .leftToRight
-            stack.translatesAutoresizingMaskIntoConstraints = false
-
-            for spacerView in [leadingContentPaddingView, trailingContentPaddingView] {
-                spacerView.translatesAutoresizingMaskIntoConstraints = false
-                NSLayoutConstraint.activate([
-                    spacerView.widthAnchor.constraint(equalToConstant: Layout.horizontalContentInset),
-                    spacerView.heightAnchor.constraint(equalToConstant: 1)
-                ])
-                stack.addArrangedSubview(spacerView)
-            }
-            stack.setCustomSpacing(0, after: leadingContentPaddingView)
-
-            documentView.addSubview(stack)
-            NSLayoutConstraint.activate([
-                stack.leadingAnchor.constraint(equalTo: documentView.leadingAnchor),
-                stack.trailingAnchor.constraint(equalTo: documentView.trailingAnchor),
-                stack.topAnchor.constraint(equalTo: documentView.topAnchor),
-                stack.bottomAnchor.constraint(equalTo: documentView.bottomAnchor)
-            ])
-
-            scrollView.documentView = documentView
-        }
-    }
-
-    private struct CachedListScopeState {
-        var result: RustCoreListResult
-        var isFiltered: Bool
-        var selectedItemID: String?
-    }
+    private typealias ListPageSurface = PanelItemCollectionSurface
 
     private final class PinboardColorSwatchButton: NSButton {
         let colorCode: Int64
@@ -252,6 +267,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private final class PinboardColorSwatchRowView: NSView {
         private let onSelect: (Int64) -> Void
+        private let iconView = NSImageView()
         private var buttons: [PinboardColorSwatchButton] = []
         private var titlesByColorCode: [Int64: String] = [:]
 
@@ -263,6 +279,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         ) {
             self.onSelect = onSelect
             super.init(frame: NSRect(x: 0, y: 0, width: 252, height: 38))
+            iconView.image = MenuIcon.image(named: "paintpalette", title: "颜色")
+            iconView.imageScaling = .scaleProportionallyDown
+            addSubview(iconView)
             titlesByColorCode = Dictionary(uniqueKeysWithValues: options.map { ($0.colorCode, $0.title) })
             buttons = options.map { option in
                 PinboardColorSwatchButton(
@@ -290,7 +309,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             super.layout()
             let buttonSide: CGFloat = 24
             let spacing: CGFloat = 7
-            var x = (bounds.width - CGFloat(buttons.count) * buttonSide - CGFloat(max(buttons.count - 1, 0)) * spacing) / 2
+            let iconSide: CGFloat = 16
+            iconView.frame = NSRect(
+                x: 16,
+                y: (bounds.height - iconSide) / 2,
+                width: iconSide,
+                height: iconSide
+            )
+
+            let leadingIconColumnWidth: CGFloat = 42
+            let trailingInset: CGFloat = 12
+            let buttonGroupWidth = CGFloat(buttons.count) * buttonSide + CGFloat(max(buttons.count - 1, 0)) * spacing
+            let availableWidth = max(0, bounds.width - leadingIconColumnWidth - trailingInset)
+            var x = leadingIconColumnWidth + max(0, (availableWidth - buttonGroupWidth) / 2)
             let y = (bounds.height - buttonSide) / 2
             for button in buttons {
                 button.frame = NSRect(x: x, y: y, width: buttonSide, height: buttonSide)
@@ -313,14 +344,22 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
     }
 
-    private let searchField = NSSearchField()
+    private struct PendingEmptySearchClose {
+        let generation: Int
+        let locationInWindow: NSPoint
+        let windowNumber: Int
+        let blockingGeneration: Int
+    }
+
+    private let searchField = PanelSearchField()
     private let previewPopoverController = ClipboardPreviewPopoverController()
     private let itemBandContainerView = NSView()
     private static let maxRetainedPinboardListPages = 3
     private var currentListScope: ClipboardListScope = .clipboard
     private var listPageSurfaces: [ClipboardListScope: ListPageSurface] = [:]
     private var listPageAccessOrder: [ClipboardListScope] = [.clipboard]
-    private var cachedListScopeStates: [ClipboardListScope: CachedListScopeState] = [:]
+    private var listScopeCache = PanelListScopeCache()
+    private var suppressedLoadMoreLoadedCountByScope: [ClipboardListScope: Int] = [:]
     private var currentPanelHeight: CGFloat = BottomPanelGeometryPlanner.defaultHeight
     private var pinboardButtons: [PinboardChipButton] = []
     private var toolbarIconButtons: [PanelActionButton] = []
@@ -332,6 +371,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var activeRenameOriginalTitle: String?
     private var isInstallingRenameField = false
     private var searchFieldWidthConstraint: NSLayoutConstraint?
+    private var searchFieldVisibilityTarget = false
+    private var searchFieldVisibilityGeneration = 0
+    private var searchCancelButtonClickArmed = false
+    private var searchCancelTextChangeSuppressionDepth = 0
+    private var emptySearchClickAwayGeneration = 0
+    private var pendingEmptySearchClose: PendingEmptySearchClose?
+    private var menuTrackingDepth = 0
+    private var blockingPanelOperationGeneration = 0
     private weak var filterRow: NSStackView?
     private weak var toolbarSearchButton: PanelActionButton?
     private var appSupportDirectory: URL?
@@ -355,55 +402,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         pageSurface(for: currentListScope)
     }
     private var itemBandDocumentView: NSView {
-        activeListPage.documentView
-    }
-    private var itemBandStack: NSStackView {
-        activeListPage.stack
-    }
-    private var leadingContentPaddingView: NSView {
-        activeListPage.leadingContentPaddingView
-    }
-    private var trailingContentPaddingView: NSView {
-        activeListPage.trailingContentPaddingView
+        activeListPage.collectionView
     }
     private var itemBandScrollView: HorizontalWheelScrollView? {
         activeListPage.scrollView
-    }
-    private var itemWidthConstraints: [NSLayoutConstraint] {
-        get { activeListPage.itemWidthConstraints }
-        set { activeListPage.itemWidthConstraints = newValue }
-    }
-    private var itemHeightConstraints: [NSLayoutConstraint] {
-        get { activeListPage.itemHeightConstraints }
-        set { activeListPage.itemHeightConstraints = newValue }
-    }
-    private var itemPreviewHeightConstraints: [NSLayoutConstraint] {
-        get { activeListPage.itemPreviewHeightConstraints }
-        set { activeListPage.itemPreviewHeightConstraints = newValue }
-    }
-    private var itemPreviewWidthConstraints: [NSLayoutConstraint] {
-        get { activeListPage.itemPreviewWidthConstraints }
-        set { activeListPage.itemPreviewWidthConstraints = newValue }
-    }
-    private var itemImagePreviewViews: [NSImageView] {
-        get { activeListPage.itemImagePreviewViews }
-        set { activeListPage.itemImagePreviewViews = newValue }
-    }
-    private var itemBodyLabels: [PanelItemCardBodyTextView] {
-        get { activeListPage.itemBodyLabels }
-        set { activeListPage.itemBodyLabels = newValue }
-    }
-    private var renderedCardStatesByID: [String: PanelItemCardViewState] {
-        get { activeListPage.renderedCardStatesByID }
-        set { activeListPage.renderedCardStatesByID = newValue }
-    }
-    private var renderedCardViewsByID: [String: ClipboardItemCardBox] {
-        get { activeListPage.renderedCardViewsByID }
-        set { activeListPage.renderedCardViewsByID = newValue }
-    }
-    private var renderedCardArtifactsByID: [String: PanelItemCardRenderArtifacts] {
-        get { activeListPage.renderedCardArtifactsByID }
-        set { activeListPage.renderedCardArtifactsByID = newValue }
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -450,7 +452,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     func updateStorageState(_ result: Result<RustCoreOpenResult, RustCoreError>) {
         applyRenderPlan(interactionController.updateStorageState(result))
         if case .success(let openResult) = result {
-            cachedListScopeStates[.clipboard] = CachedListScopeState(
+            listScopeCache[.clipboard] = PanelCachedListScopeState(
                 result: RustCoreListResult(
                     items: openResult.items,
                     totalCount: openResult.itemCount,
@@ -558,7 +560,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     func invalidateCachedListPages() {
         let currentScope = currentListScope
-        cachedListScopeStates = cachedListScopeStates.filter { $0.key == currentScope }
+        listScopeCache.keepOnly(currentScope)
         let removableScopes = listPageSurfaces.keys.filter { $0 != currentScope }
         for scope in removableScopes {
             if let page = listPageSurfaces.removeValue(forKey: scope) {
@@ -566,6 +568,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             }
         }
         listPageAccessOrder.removeAll { $0 != currentScope }
+    }
+
+    func invalidateCachedPinboardListPages(pinboardID: String) {
+        removeCachedPinboardPages(pinboardID: pinboardID)
     }
 
     private func removeCachedPinboardPages(pinboardID: String) {
@@ -578,7 +584,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             }
         }
         listPageAccessOrder.removeAll { $0.pinboardID == pinboardID && $0 != currentListScope }
-        cachedListScopeStates = cachedListScopeStates.filter { $0.key.pinboardID != pinboardID || $0.key == currentListScope }
+        listScopeCache.removePinboard(pinboardID, keeping: currentListScope)
     }
 
     private func pruneCachedPinboardPages(validPinboardIDs: Set<String>) {
@@ -595,10 +601,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             guard let pinboardID = scope.pinboardID else { return false }
             return !validPinboardIDs.contains(pinboardID) && scope != currentListScope
         }
-        cachedListScopeStates = cachedListScopeStates.filter { scope, _ in
-            guard let pinboardID = scope.pinboardID else { return true }
-            return validPinboardIDs.contains(pinboardID) || scope == currentListScope
-        }
+        listScopeCache.pruneInvalidPinboards(
+            validPinboardIDs: validPinboardIDs,
+            keeping: currentListScope
+        )
     }
 
     private func beginInlinePinboardRenameAfterCreation(pinboardID: String) {
@@ -626,6 +632,13 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return
         }
 
+        if canStartSearchFromPrintableKey(),
+           let initialText = PanelTypeToSearchKeyPlanner.initialSearchText(for: event) {
+            clearCommandHintMode()
+            applyInteractionAction(.startSearch(initialText: initialText))
+            return
+        }
+
         super.keyDown(with: event)
     }
 
@@ -636,29 +649,39 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         super.flagsChanged(with: event)
     }
 
+    private func canStartSearchFromPrintableKey() -> Bool {
+        guard !hasBlockingPanelOperation,
+              !previewPopoverController.isShown,
+              activeRenameField == nil
+        else {
+            return false
+        }
+
+        guard let firstResponder = window?.firstResponder else {
+            return true
+        }
+
+        if firstResponder === self {
+            return true
+        }
+
+        if firstResponder === searchField || firstResponder === activeRenameField {
+            return false
+        }
+
+        if firstResponder is NSTextView
+            || firstResponder is NSTextField
+            || firstResponder is NSSearchField {
+            return false
+        }
+
+        return false
+    }
+
     func updatePanelHeight(_ panelHeight: CGFloat) {
         currentPanelHeight = panelHeight
         let itemSide = itemSideLength(for: panelHeight)
-        let previewHeight = min(
-            Layout.imagePreviewMaxHeight,
-            max(Layout.imagePreviewMinHeight, itemSide * 0.48)
-        )
-        let bodyTextWidth = max(80, itemSide - Layout.cardInset * 2 - 4)
-
-        itemWidthConstraints.forEach { $0.constant = itemSide }
-        itemHeightConstraints.forEach { $0.constant = itemSide }
-        itemPreviewHeightConstraints.forEach { $0.constant = previewHeight }
-        itemPreviewWidthConstraints.forEach { $0.constant = max(54, itemSide - 72) }
-        itemBodyLabels.forEach { label in
-            label.preferredTextWidth = bodyTextWidth
-        }
-        itemImagePreviewViews.forEach { imageView in
-            imageView.needsLayout = true
-        }
-        itemBandDocumentView.setFrameSize(
-            NSSize(width: itemBandDocumentWidth(itemSide: itemSide), height: itemSide)
-        )
-        itemBandDocumentView.needsLayout = true
+        activeListPage.updatePanelHeight(itemSide)
     }
 
     private func itemSideLength(for panelHeight: CGFloat) -> CGFloat {
@@ -668,23 +691,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         )
     }
 
-    private func itemBandDocumentWidth(itemSide: CGFloat) -> CGFloat {
-        let cardCount = itemBandCardViews().count
-        guard cardCount > 0 else { return Layout.horizontalContentInset * 2 }
-        return CGFloat(cardCount) * itemSide
-            + CGFloat(max(cardCount - 1, 0)) * itemBandStack.spacing
-            + Layout.horizontalContentInset * 2
-    }
-
     private func handleItemBandScrollDidChange() {
-        let reachedLoadMoreThreshold = hasReachedLoadMoreThreshold()
+        activeListPage.savedScrollOrigin = activeListPage.saveScrollOrigin()
+        let reachedLoadMoreThreshold = activeListPage.hasReachedLoadMoreThreshold()
         guard reachedLoadMoreThreshold || panelViewState().isCommandHintModeEnabled else {
             return
         }
 
+        let shouldEmitLoadMore = shouldEmitLoadMoreForCurrentThreshold(
+            reachedLoadMoreThreshold: reachedLoadMoreThreshold
+        )
         applyInteractionAction(.didScroll(
             visibleCommandItemIDs: fullyVisibleCommandItemIDs(),
-            reachedLoadMoreThreshold: reachedLoadMoreThreshold
+            reachedLoadMoreThreshold: shouldEmitLoadMore
         ))
     }
 
@@ -723,57 +742,65 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return page
         }
 
-        let page = ListPageSurface { [weak self] in
-            self?.handleItemBandScrollDidChange()
-        }
+        let page = ListPageSurface(
+            metrics: itemCollectionLayoutMetrics(),
+            rendererProvider: { [weak self] in
+                guard let self else {
+                    return PanelItemCardRenderer(
+                        cardAssetResolver: PanelCardAssetResolver(
+                            appSupportDirectory: nil,
+                            sourceIconHeaderColorWriter: nil,
+                            loadSourceIconsSynchronously: false
+                        ),
+                        metrics: PanelItemCardRendererMetrics(
+                            defaultItemSide: Layout.defaultItemSide,
+                            cardCornerRadius: Layout.cardCornerRadius,
+                            innerCornerRadius: Layout.innerCornerRadius,
+                            cardHeaderHeight: Layout.cardHeaderHeight,
+                            cardInset: Layout.cardInset,
+                            cardFooterHeight: Layout.cardFooterHeight,
+                            sourceIconSize: Layout.sourceIconSize,
+                            linkPreviewHeight: Layout.linkPreviewHeight,
+                            theme: ClipShelfTheme.current(for: NSView())
+                        ),
+                        backingScaleFactor: NSScreen.main?.backingScaleFactor ?? 2
+                    )
+                }
+                return self.cardRenderer()
+            },
+            onScrollDidChange: { [weak self] in
+                self?.handleItemBandScrollDidChange()
+            },
+            onTailPrefetch: { [weak self] in
+                self?.handleItemBandScrollDidChange()
+            }
+        )
         listPageSurfaces[scope] = page
         return page
     }
 
+    private func itemCollectionLayoutMetrics() -> PanelItemCollectionLayoutMetrics {
+        PanelItemCollectionLayoutMetrics(
+            itemSide: itemSideLength(for: currentPanelHeight),
+            itemSpacing: 22,
+            horizontalContentInset: Layout.horizontalContentInset,
+            imagePreviewMinHeight: Layout.imagePreviewMinHeight,
+            imagePreviewMaxHeight: Layout.imagePreviewMaxHeight,
+            cardInset: Layout.cardInset
+        )
+    }
+
     private func attachListPage(_ page: ListPageSurface) {
         for cachedPage in listPageSurfaces.values {
-            cachedPage.savedScrollOrigin = cachedPage.scrollView.contentView.bounds.origin
+            cachedPage.savedScrollOrigin = cachedPage.saveScrollOrigin()
             cachedPage.scrollView.isHidden = cachedPage !== page
         }
 
-        guard page.scrollView.superview !== itemBandContainerView else {
-            page.scrollView.isHidden = false
-            return
-        }
-
-        page.scrollView.translatesAutoresizingMaskIntoConstraints = false
-        itemBandContainerView.addSubview(page.scrollView)
-        page.hostConstraints = [
-            page.scrollView.leadingAnchor.constraint(equalTo: itemBandContainerView.leadingAnchor),
-            page.scrollView.trailingAnchor.constraint(equalTo: itemBandContainerView.trailingAnchor),
-            page.scrollView.topAnchor.constraint(equalTo: itemBandContainerView.topAnchor),
-            page.scrollView.bottomAnchor.constraint(equalTo: itemBandContainerView.bottomAnchor)
-        ]
-        NSLayoutConstraint.activate(page.hostConstraints)
+        page.attach(to: itemBandContainerView)
     }
 
     private func removeListPageSurface(_ page: ListPageSurface) {
-        for view in page.stack.arrangedSubviews {
-            let itemID = (view as? ClipboardItemCardBox)?.itemID
-            removeCard(
-                view,
-                from: page.stack,
-                artifacts: itemID.flatMap { page.renderedCardArtifactsByID[$0] }
-            )
-        }
-        page.renderedCardStatesByID.removeAll()
-        page.renderedCardViewsByID.removeAll()
-        page.renderedCardArtifactsByID.removeAll()
-        page.itemWidthConstraints.removeAll()
-        page.itemHeightConstraints.removeAll()
-        page.itemPreviewHeightConstraints.removeAll()
-        page.itemPreviewWidthConstraints.removeAll()
-        page.itemImagePreviewViews.removeAll()
-        page.itemBodyLabels.removeAll()
-        NSLayoutConstraint.deactivate(page.hostConstraints)
-        page.hostConstraints.removeAll()
-        page.scrollView.onScrollDidChange = nil
-        page.scrollView.removeFromSuperview()
+        page.detach()
     }
 
     private func recordListPageAccess(_ scope: ClipboardListScope) {
@@ -786,13 +813,13 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let nonRetainedScopes = listPageSurfaces.keys.filter {
             $0 != .clipboard
                 && $0 != currentListScope
-                && (!$0.normalizedSearch.isEmpty || $0.sourceAppID != nil)
+                && $0.sourceAppID != nil
         }
         for scope in nonRetainedScopes {
             if let page = listPageSurfaces.removeValue(forKey: scope) {
                 removeListPageSurface(page)
             }
-            cachedListScopeStates.removeValue(forKey: scope)
+            listScopeCache.remove(scope)
             listPageAccessOrder.removeAll { $0 == scope }
         }
 
@@ -853,8 +880,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             itemBand.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.padding)
         ])
 
-        resetItemLayoutTracking()
-        renderItemCards([])
+        renderItemEntries([])
         updatePanelHeight(currentPanelHeight)
     }
 
@@ -867,7 +893,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchField.delegate = self
         searchField.target = nil
         searchField.action = nil
+        searchField.onCancelButtonMouseDown = { [weak self] in
+            self?.armSearchCancelButtonClick() ?? false
+        }
+        searchField.onCancelButtonClick = { [weak self] in
+            self?.handleSearchCancelButtonClick()
+        }
         searchField.isHidden = true
+        searchField.alphaValue = 0
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
         let searchButton = makeToolbarIconButton(
@@ -900,13 +933,13 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let row = NSStackView(views: [searchButton, searchField] + chips + [addButton])
         row.orientation = NSUserInterfaceLayoutOrientation.horizontal
         row.alignment = NSLayoutConstraint.Attribute.centerY
-        row.spacing = 18
+        row.spacing = 9
         row.userInterfaceLayoutDirection = NSUserInterfaceLayoutDirection.leftToRight
         row.translatesAutoresizingMaskIntoConstraints = false
         filterRow = row
 
         container.addSubview(row)
-        searchFieldWidthConstraint = searchField.widthAnchor.constraint(equalToConstant: 220)
+        searchFieldWidthConstraint = searchField.widthAnchor.constraint(equalToConstant: 0)
         searchFieldWidthConstraint?.isActive = true
 
         let leadingConstraint = row.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor)
@@ -920,7 +953,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             row.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             leadingConstraint,
             row.trailingAnchor.constraint(lessThanOrEqualTo: moreButton.leadingAnchor, constant: -Layout.sectionSpacing),
-            searchField.heightAnchor.constraint(equalToConstant: 28),
+            searchField.heightAnchor.constraint(equalToConstant: Layout.searchFieldHeight),
             moreButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             moreButton.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
@@ -929,11 +962,15 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func makeFilterChips() -> [PinboardChipButton] {
-        [makePinboardChip(title: "剪贴板", pinboardID: nil, dotColor: .clear)]
+        [
+            makePinboardChip(title: "剪贴板", pinboardID: nil, itemType: nil, symbolName: "clock.arrow.circlepath", dotColor: .clear)
+        ]
             + pinboardFilters.map { pinboard in
                 makePinboardChip(
                     title: pinboard.title,
                     pinboardID: pinboard.id,
+                    itemType: nil,
+                    symbolName: nil,
                     dotColor: pinboardDotColor(colorCode: pinboard.colorCode)
                 )
             }
@@ -970,11 +1007,13 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func showPanelOverflowMenu(from sourceView: NSView) {
         let menu = makePanelOverflowMenu()
-        menu.popUp(
-            positioning: nil,
-            at: NSPoint(x: sourceView.bounds.midX, y: sourceView.bounds.minY),
-            in: sourceView
-        )
+        withPanelMenuTracking {
+            menu.popUp(
+                positioning: nil,
+                at: NSPoint(x: sourceView.bounds.midX, y: sourceView.bounds.minY),
+                in: sourceView
+            )
+        }
     }
 
     private func makePanelOverflowMenu() -> NSMenu {
@@ -998,6 +1037,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func makePinboardColorRowMenuItem(for pinboard: PinboardFilterEntry) -> NSMenuItem {
         let item = NSMenuItem(title: "颜色", action: nil, keyEquivalent: "")
+        item.image = MenuIcon.image(named: "paintpalette", title: "颜色")
         item.view = PinboardColorSwatchRowView(
             options: Self.pinboardColorOptions,
             selectedColorCode: pinboard.colorCode,
@@ -1181,10 +1221,31 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     @discardableResult
     private func runBlockingPanelModal(_ modal: () -> NSApplication.ModalResponse) -> NSApplication.ModalResponse {
         blockingPanelOperationDepth += 1
+        blockingPanelOperationGeneration += 1
+        pendingEmptySearchClose = nil
         defer {
             blockingPanelOperationDepth -= 1
         }
         return modal()
+    }
+
+    private func withPanelMenuTracking(_ body: () -> Void) {
+        menuTrackingDepth += 1
+        defer {
+            menuTrackingDepth -= 1
+            processPendingEmptySearchCloseAfterMenuTracking()
+        }
+        body()
+    }
+
+    private func processPendingEmptySearchCloseAfterMenuTracking() {
+        guard menuTrackingDepth == 0,
+              pendingEmptySearchClose != nil
+        else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.processPendingEmptySearchClose()
+        }
     }
 
     private func pinboardDeletionRequiresConfirmation(_ pinboard: PinboardFilterEntry) -> Bool {
@@ -1203,9 +1264,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         scope: ClipboardListScope? = nil
     ) {
         let updateScope = scope ?? currentListScope
+        let loadedCountBeforeUpdate = currentItems().count
         if updateScope != currentListScope {
             let activeQueryScope = ClipboardListScope(
                 searchText: panelViewState().toolbar.searchText,
+                itemType: panelViewState().toolbar.selectedItemType,
                 sourceAppID: nil,
                 pinboardID: panelViewState().toolbar.selectedPinboardID
             )
@@ -1221,22 +1284,78 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             append: append,
             scope: updateScope
         )
-        let plan = interactionController.updateListState(result, isFiltered: isFiltered, append: append)
-        cacheListState(result, isFiltered: isFiltered, append: append, scope: updateScope)
-
         if shouldReuseRenderedPage {
             ClipShelfPerformanceLog.event("list.render.reuse", detail: "scope=\(updateScope)")
+            updateLoadMoreSuppressionAfterListUpdate(
+                result: result,
+                append: append,
+                scope: updateScope,
+                loadedCountBeforeUpdate: loadedCountBeforeUpdate
+            )
             updateVisibleSelection(scrollIntoView: false)
             restoreScrollOriginIfNeeded(activeListPage.savedScrollOrigin)
             refreshVisibleCommandHints()
             return
         }
 
+        let plan = interactionController.updateListState(result, isFiltered: isFiltered, append: append)
+        cacheListState(result, isFiltered: isFiltered, append: append, scope: updateScope)
+        updateLoadMoreSuppressionAfterListUpdate(
+            result: result,
+            append: append,
+            scope: updateScope,
+            loadedCountBeforeUpdate: loadedCountBeforeUpdate
+        )
+
         applyRenderPlan(plan)
     }
 
     func updateLoadingMoreState(_ isLoading: Bool) {
+        let wasLoading = interactionController.isLoadingMoreItems
         interactionController.updateLoadingMoreState(isLoading)
+        if wasLoading, !isLoading {
+            suppressedLoadMoreLoadedCountByScope.removeValue(forKey: currentListScope)
+        }
+    }
+
+    private func shouldEmitLoadMoreForCurrentThreshold(reachedLoadMoreThreshold: Bool) -> Bool {
+        guard reachedLoadMoreThreshold else { return false }
+        let viewState = panelViewState()
+        let loadedItemCount = currentItems().count
+        guard viewState.list.hasMoreItems,
+              !viewState.list.isLoadingMoreItems,
+              loadedItemCount > 0,
+              suppressedLoadMoreLoadedCountByScope[currentListScope] != loadedItemCount
+        else {
+            return false
+        }
+
+        suppressedLoadMoreLoadedCountByScope[currentListScope] = loadedItemCount
+        return true
+    }
+
+    private func updateLoadMoreSuppressionAfterListUpdate(
+        result: Result<RustCoreListResult, RustCoreError>,
+        append: Bool,
+        scope: ClipboardListScope,
+        loadedCountBeforeUpdate: Int
+    ) {
+        guard append else {
+            suppressedLoadMoreLoadedCountByScope.removeValue(forKey: scope)
+            return
+        }
+
+        switch result {
+        case .success:
+            let loadedCountAfterUpdate = scope == currentListScope
+                ? currentItems().count
+                : (listScopeCache[scope]?.result.items.count ?? loadedCountBeforeUpdate)
+            if loadedCountAfterUpdate > loadedCountBeforeUpdate || !panelViewState().list.hasMoreItems {
+                suppressedLoadMoreLoadedCountByScope.removeValue(forKey: scope)
+            }
+        case .failure:
+            suppressedLoadMoreLoadedCountByScope.removeValue(forKey: scope)
+        }
     }
 
     private func shouldReuseRenderedPage(
@@ -1246,7 +1365,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     ) -> Bool {
         guard !append,
               activeListPage.hasRenderedContent,
-              let cachedState = cachedListScopeStates[scope],
+              let cachedState = listScopeCache[scope],
               case .success(let listResult) = result
         else {
             return false
@@ -1261,41 +1380,22 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         append: Bool,
         scope: ClipboardListScope
     ) {
-        guard case .success(let listResult) = result else {
-            cachedListScopeStates.removeValue(forKey: scope)
-            return
-        }
-
-        let cachedResult: RustCoreListResult
-        if append, let previous = cachedListScopeStates[scope]?.result {
-            let existingIDs = Set(previous.items.map(\.id))
-            let appendedItems = listResult.items.filter { !existingIDs.contains($0.id) }
-            cachedResult = RustCoreListResult(
-                items: previous.items + appendedItems,
-                totalCount: listResult.totalCount,
-                hasMore: listResult.hasMore
-            )
-        } else {
-            cachedResult = listResult
-        }
-
-        cachedListScopeStates[scope] = CachedListScopeState(
-            result: cachedResult,
+        listScopeCache.store(
+            result,
             isFiltered: isFiltered,
-            selectedItemID: panelViewState().selectedItemID
+            append: append,
+            selectedItemID: panelViewState().selectedItemID,
+            scope: scope
         )
     }
 
     private func saveCurrentListPageState() {
-        activeListPage.savedScrollOrigin = itemBandScrollView?.contentView.bounds.origin ?? .zero
-        if var cachedState = cachedListScopeStates[currentListScope] {
-            cachedState.selectedItemID = panelViewState().selectedItemID
-            cachedListScopeStates[currentListScope] = cachedState
-        }
+        activeListPage.savedScrollOrigin = activeListPage.saveScrollOrigin()
+        listScopeCache.updateSelectedItemID(panelViewState().selectedItemID, for: currentListScope)
     }
 
     private func restoreCachedListState(for scope: ClipboardListScope) {
-        guard let cachedState = cachedListScopeStates[scope] else { return }
+        guard let cachedState = listScopeCache[scope] else { return }
         let plan = interactionController.updateListState(
             .success(cachedState.result),
             isFiltered: cachedState.isFiltered,
@@ -1316,45 +1416,28 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func restoreScrollOriginIfNeeded(_ origin: NSPoint) {
-        guard let scrollView = itemBandScrollView else { return }
         if window?.isVisible == true {
             layoutSubtreeIfNeeded()
             itemBandDocumentView.layoutSubtreeIfNeeded()
         }
-        let range = horizontalScrollRange(for: scrollView)
-        let clampedOrigin = NSPoint(
-            x: min(max(range.lowerBound, origin.x), range.upperBound),
-            y: origin.y
-        )
-        scrollView.contentView.scroll(to: clampedOrigin)
-        scrollView.reflectScrolledClipView(scrollView.contentView)
+        activeListPage.restoreScrollOrigin(origin)
     }
 
     private func restoreInitialHorizontalScrollOriginIfNeeded() {
-        guard let scrollView = itemBandScrollView else { return }
-        restoreScrollOriginIfNeeded(NSPoint(
-            x: horizontalScrollRange(for: scrollView).lowerBound,
-            y: scrollView.contentView.bounds.origin.y
-        ))
-    }
-
-    private func horizontalScrollRange(for scrollView: NSScrollView) -> ClosedRange<CGFloat> {
-        let minX: CGFloat = 0
-        let maxX = itemBandDocumentView.frame.width
-            - scrollView.contentView.bounds.width
-        return minX...max(minX, maxX)
+        activeListPage.scrollToLeadingEdge()
     }
 
     private func switchListPage(to scope: ClipboardListScope) {
         guard scope != currentListScope else { return }
 
         saveCurrentListPageState()
+        suppressedLoadMoreLoadedCountByScope.removeValue(forKey: scope)
         currentListScope = scope
         let page = activeListPage
         attachListPage(page)
         recordListPageAccess(scope)
         updatePanelHeight(currentPanelHeight)
-        if cachedListScopeStates[scope] != nil {
+        if listScopeCache[scope] != nil {
             restoreCachedListState(for: scope)
         } else if !page.hasRenderedContent {
             let emptyResult = RustCoreListResult(items: [], totalCount: 0, hasMore: false)
@@ -1376,20 +1459,20 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         switch panelViewState().list.presentation {
         case .emptyHistory, .filteredEmpty:
             ClipShelfPerformanceLog.measure("list.render.empty") {
-                renderItemCards([])
+                renderItemEntries([])
             }
             return
         case .databaseError:
             ClipShelfPerformanceLog.measure("list.render.databaseError") {
-                renderItemCards([makeDatabaseErrorCard()])
+                renderItemEntries([])
             }
             return
         case .items(let items):
-            let cards = ClipShelfPerformanceLog.measure("list.makeItemCards", detail: "count=\(items.count)") {
-                items.map(makeItemCard)
+            let entries = ClipShelfPerformanceLog.measure("list.makeItemEntries", detail: "count=\(items.count)") {
+                items.map(makeItemEntry)
             }
-            ClipShelfPerformanceLog.measure("list.renderItemCards", detail: "count=\(cards.count)") {
-                renderItemCards(cards)
+            ClipShelfPerformanceLog.measure("list.renderItemEntries", detail: "count=\(entries.count)") {
+                renderItemEntries(entries)
             }
         }
         if preserveScrollPosition, let preservedOrigin {
@@ -1436,97 +1519,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     ) {
         let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
         let previewedItemID = previewPopoverController.previewedItemID
-        let oldViewsByID = renderedCardViewsByID
-        let oldStatesByID = renderedCardStatesByID
-        let oldArtifactsByID = renderedCardArtifactsByID
-
-        let itemStates = ClipShelfPerformanceLog.measure("list.reconcile.makeStates", detail: "count=\(items.count)") {
-            items.map { item in
-                (item: item, state: makeItemCardState(item))
-            }
+        let entries = ClipShelfPerformanceLog.measure("list.reconcile.makeEntries", detail: "count=\(items.count)") {
+            items.map(makeItemEntry)
         }
-        let newStatesByID = ClipShelfPerformanceLog.measure("list.reconcile.indexStates", detail: "count=\(itemStates.count)") {
-            Dictionary(uniqueKeysWithValues: itemStates.compactMap { entry in
-                entry.state.itemID.map { ($0, entry.state) }
-            })
-        }
-
-        var finalCardsByID: [String: PanelRenderedItemCard] = [:]
-        ClipShelfPerformanceLog.measure("list.reconcile.renderOrReuseCards", detail: "count=\(itemStates.count)") {
-            for (item, state) in itemStates {
-                guard let itemID = state.itemID else { continue }
-                let callbacks = makeItemCardCallbacks(for: item)
-                let cardStart = ClipShelfPerformanceLog.mark()
-                if let card = oldViewsByID[itemID],
-                   let previousState = oldStatesByID[itemID],
-                   let artifacts = oldArtifactsByID[itemID],
-                   reusableCardIdentityState(previousState) == reusableCardIdentityState(state) {
-                    finalCardsByID[itemID] = updateReusableCard(
-                        card,
-                        state: state,
-                        artifacts: artifacts,
-                        toolTip: callbacks.toolTip,
-                        onSelect: callbacks.onSelect,
-                        onDoubleClick: callbacks.onDoubleClick,
-                        onContextMenu: callbacks.onContextMenu
-                    )
-                } else {
-                    finalCardsByID[itemID] = renderCard(
-                        state,
-                        toolTip: callbacks.toolTip,
-                        onSelect: callbacks.onSelect,
-                        onDoubleClick: callbacks.onDoubleClick,
-                        onContextMenu: callbacks.onContextMenu
-                    )
-                }
-                let cardDuration = ClipShelfPerformanceLog.milliseconds(since: cardStart)
-                if cardDuration >= 24 {
-                    let sourceName = item.sourceAppName ?? "unknown"
-                    ClipShelfPerformanceLog.event(
-                        "list.reconcile.slowCard",
-                        detail: [
-                            "durationMs=\(ClipShelfPerformanceLog.format(cardDuration))",
-                            "type=\(item.itemType)",
-                            "source=\(sourceName)"
-                        ].joined(separator: " ")
-                    )
-                }
-            }
-        }
-
-        ClipShelfPerformanceLog.measure("list.reconcile.removeOldCards", detail: "oldCount=\(oldViewsByID.count)") {
-            for (oldID, oldCard) in oldViewsByID {
-                let shouldRemove = newStatesByID[oldID].map { newState in
-                    guard let oldState = oldStatesByID[oldID] else { return true }
-                    return reusableCardIdentityState(oldState) != reusableCardIdentityState(newState)
-                } ?? true
-                if shouldRemove {
-                    removeRenderedCard(oldCard, artifacts: oldArtifactsByID[oldID])
-                }
-            }
-        }
-
-        let orderedRenderedCards = ClipShelfPerformanceLog.measure("list.reconcile.orderCards", detail: "count=\(itemStates.count)") {
-            itemStates.compactMap { entry in
-                entry.state.itemID.flatMap { finalCardsByID[$0] }
-            }
-        }
-        ClipShelfPerformanceLog.measure("list.reconcile.installOrder", detail: "count=\(orderedRenderedCards.count)") {
-            for (targetIndex, renderedCard) in orderedRenderedCards.enumerated() {
-                moveOrInsertRenderedCard(renderedCard.view, at: targetIndex)
-            }
-        }
-
-        let finalViews = Set(orderedRenderedCards.map { ObjectIdentifier($0.view) })
-        ClipShelfPerformanceLog.measure("list.reconcile.pruneStack", detail: "stackCount=\(itemBandCardViews().count)") {
-            for view in itemBandCardViews() where !finalViews.contains(ObjectIdentifier(view)) {
-                removeRenderedCard(view, artifacts: nil)
-            }
-        }
-
-        rebuildRenderedCardTracking(from: orderedRenderedCards)
-        activeListPage.hasRenderedContent = true
-        ClipShelfPerformanceLog.measure("list.reconcile.refreshLayout", detail: "count=\(orderedRenderedCards.count)") {
+        ClipShelfPerformanceLog.measure("list.reconcile.collection", detail: "count=\(entries.count)") {
+            activeListPage.reconcile(entries: entries)
             refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
         }
         if !preserveScrollPosition, scrollSelectedItem {
@@ -1550,7 +1547,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return
         }
 
-        items.map(makeItemCard).forEach(installRenderedCard)
+        activeListPage.append(entries: items.map(makeItemEntry))
         refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
     }
 
@@ -1559,13 +1556,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         preserveScrollPosition: Bool
     ) {
         let itemSide = itemSideLength(for: currentPanelHeight)
-        itemBandDocumentView.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: itemBandDocumentWidth(itemSide: itemSide),
-            height: itemSide
-        )
-        updatePanelHeight(currentPanelHeight)
+        activeListPage.updatePanelHeight(itemSide)
 
         if preserveScrollPosition, let preservedOrigin {
             restoreScrollOriginIfNeeded(preservedOrigin)
@@ -1653,16 +1644,70 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func syncToolbarFromViewState() {
         let viewState = panelViewState()
-        searchField.stringValue = viewState.toolbar.searchText
-        searchField.isHidden = !viewState.toolbar.isSearchVisible
+        if searchField.stringValue != viewState.toolbar.searchText {
+            searchField.stringValue = viewState.toolbar.searchText
+        }
+        setSearchFieldVisible(viewState.toolbar.isSearchVisible, animated: true)
         updatePinboardChipAppearance()
+    }
+
+    private func setSearchFieldVisible(_ visible: Bool, animated: Bool) {
+        guard searchFieldVisibilityTarget != visible else {
+            applySearchFieldVisibilityFinalState(visible)
+            return
+        }
+
+        searchFieldVisibilityTarget = visible
+        searchFieldVisibilityGeneration += 1
+        let generation = searchFieldVisibilityGeneration
+
+        if visible {
+            searchField.isHidden = false
+        }
+
+        let targetWidth = visible ? Layout.searchFieldWidth : 0
+        let targetAlpha: CGFloat = visible ? 1 : 0
+        guard animated, window != nil else {
+            applySearchFieldVisibilityFinalState(visible)
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Layout.searchFieldAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            searchFieldWidthConstraint?.animator().constant = targetWidth
+            searchField.animator().alphaValue = targetAlpha
+            filterRow?.layoutSubtreeIfNeeded()
+            filterRow?.superview?.layoutSubtreeIfNeeded()
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.searchFieldVisibilityGeneration == generation,
+                      self.searchFieldVisibilityTarget == visible
+                else {
+                    return
+                }
+
+                self.applySearchFieldVisibilityFinalState(visible)
+            }
+        }
+    }
+
+    private func applySearchFieldVisibilityFinalState(_ visible: Bool) {
+        let targetWidth = visible ? Layout.searchFieldWidth : 0
+        searchFieldWidthConstraint?.constant = targetWidth
+        searchField.alphaValue = visible ? 1 : 0
+        searchField.isHidden = !visible
+        filterRow?.layoutSubtreeIfNeeded()
+        filterRow?.superview?.layoutSubtreeIfNeeded()
     }
 
     private func emitRuntimeAction(_ action: PanelExternalAction) {
         switch action {
-        case .queryChanged(let searchText, let sourceAppID, let pinboardID, let debounce):
+        case .queryChanged(let searchText, let itemType, let sourceAppID, let pinboardID, let debounce):
             let scope = ClipboardListScope(
                 searchText: searchText,
+                itemType: itemType,
                 sourceAppID: sourceAppID,
                 pinboardID: pinboardID
             )
@@ -1671,6 +1716,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             }
             onRuntimeAction?(.queryChanged(
                 searchText: searchText,
+                itemType: itemType,
                 sourceAppID: sourceAppID,
                 pinboardID: pinboardID,
                 debounce: debounce
@@ -1685,9 +1731,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 pinboardID: pinboardID,
                 isMember: isMember
             ))
-        case .deleteItem(let itemID):
+        case .deleteItem(let itemID, let pinboardID):
             guard let item = interactionController.item(withID: itemID) else { return }
-            onRuntimeAction?(.deleteItem(item))
+            onRuntimeAction?(.deleteItem(item, pinboardID: pinboardID))
         case .hidePanel:
             onRuntimeAction?(.hidePanel)
         case .loadMore:
@@ -1717,9 +1763,27 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func togglePreview(forItemID itemID: String) {
         guard let appSupportDirectory,
-              let item = interactionController.item(withID: itemID),
-              let cardView = itemBandCardView(forItemID: itemID)
+              let item = interactionController.item(withID: itemID)
         else {
+            return
+        }
+
+        guard let cardView = itemBandCardView(forItemID: itemID) else {
+            activeListPage.scrollItemIntoView(itemID: itemID) { [weak self] in
+                guard let self,
+                      let cardView = self.itemBandCardView(forItemID: itemID)
+                else {
+                    self?.previewPopoverController.close()
+                    return
+                }
+                self.previewPopoverController.toggle(
+                    item: item,
+                    appSupportDirectory: appSupportDirectory,
+                    linkWebPreviewEnabled: self.linkWebPreviewEnabled,
+                    relativeTo: cardView,
+                    returnFocusTo: self
+                )
+            }
             return
         }
 
@@ -1733,9 +1797,27 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func showPreview(forItemID itemID: String) {
-        guard let item = interactionController.item(withID: itemID),
-              let cardView = itemBandCardView(forItemID: itemID)
+        guard let item = interactionController.item(withID: itemID)
         else {
+            return
+        }
+
+        guard let cardView = itemBandCardView(forItemID: itemID) else {
+            activeListPage.scrollItemIntoView(itemID: itemID) { [weak self] in
+                guard let self,
+                      let cardView = self.itemBandCardView(forItemID: itemID)
+                else {
+                    self?.previewPopoverController.close()
+                    return
+                }
+                self.previewPopoverController.show(
+                    item: item,
+                    appSupportDirectory: self.appSupportDirectory ?? URL(fileURLWithPath: NSHomeDirectory()),
+                    linkWebPreviewEnabled: self.linkWebPreviewEnabled,
+                    relativeTo: cardView,
+                    returnFocusTo: self
+                )
+            }
             return
         }
 
@@ -1763,7 +1845,23 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         else {
             return
         }
-        showPreview(forItemID: previewedItemID)
+        guard activeListPage.itemIsFullyVisible(previewedItemID) else {
+            previewPopoverController.close()
+            return
+        }
+        guard let item = interactionController.item(withID: previewedItemID),
+              let cardView = itemBandCardView(forItemID: previewedItemID)
+        else {
+            previewPopoverController.close()
+            return
+        }
+        previewPopoverController.show(
+            item: item,
+            appSupportDirectory: appSupportDirectory ?? URL(fileURLWithPath: NSHomeDirectory()),
+            linkWebPreviewEnabled: linkWebPreviewEnabled,
+            relativeTo: cardView,
+            returnFocusTo: self
+        )
     }
 
     private func showManagementMenu(for item: RustClipboardItemSummary, event: NSEvent) {
@@ -1773,31 +1871,29 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         else { return }
 
         let menu = makeManagementMenu(for: item)
-        menu.popUp(
-            positioning: nil,
-            at: cardView.convert(event.locationInWindow, from: nil),
-            in: cardView
-        )
+        withPanelMenuTracking {
+            NSMenu.popUpContextMenu(menu, with: event, for: cardView)
+        }
     }
 
     private func makeManagementMenu(for item: RustClipboardItemSummary) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(ActionMenuItem(title: "复制", keyEquivalent: "c", modifierMask: [.command]) { [weak self] in
+        menu.addItem(ActionMenuItem(title: "复制", imageName: "doc.on.doc", keyEquivalent: "c", modifierMask: [.command]) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .copy))
         })
         if let pathText = originalImagePathText(for: item) {
-            menu.addItem(ActionMenuItem(title: "复制路径") { [weak self] in
+            menu.addItem(ActionMenuItem(title: "复制路径", imageName: "folder") { [weak self] in
                 self?.onRuntimeAction?(.copyPath(pathText))
             })
         }
-        menu.addItem(ActionMenuItem(title: "删除", keyEquivalent: "\u{8}", modifierMask: []) { [weak self] in
+        menu.addItem(ActionMenuItem(title: "删除", imageName: "trash", keyEquivalent: "\u{8}", modifierMask: []) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .delete))
         })
         menu.addItem(.separator())
         menu.addItem(makePinboardMenuItem(for: item))
         menu.addItem(.separator())
-        menu.addItem(ActionMenuItem(title: "预览", keyEquivalent: " ", modifierMask: []) { [weak self] in
+        menu.addItem(ActionMenuItem(title: "预览", imageName: "eye", keyEquivalent: " ", modifierMask: []) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .preview))
         })
         return menu
@@ -1814,7 +1910,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func makePinboardMenuItem(for item: RustClipboardItemSummary) -> NSMenuItem {
         let menuItem = NSMenuItem(title: "固定", action: nil, keyEquivalent: "")
-        menuItem.image = NSImage(systemSymbolName: "pin", accessibilityDescription: "固定")
+        menuItem.image = MenuIcon.image(named: "pin", title: "固定")
 
         let submenu = NSMenu()
         let selectedPinboardID = panelViewState().toolbar.selectedPinboardID
@@ -1839,7 +1935,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         if !pinboardFilters.isEmpty {
             submenu.addItem(.separator())
         }
-        submenu.addItem(ActionMenuItem(title: "创建 Pinboard...") { [weak self] in
+        submenu.addItem(ActionMenuItem(title: "创建 Pinboard...", imageName: "plus") { [weak self] in
             self?.showCreatePinboardDialog()
         })
 
@@ -1863,20 +1959,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func updateVisibleSelection(scrollIntoView: Bool = true) {
-        let selectedItemID = panelViewState().selectedItemID
-        for card in itemBandCardViews() {
-            let isSelected = card.itemID == selectedItemID
-            card.applySelection(isSelected)
-            if let itemID = card.itemID,
-               let state = renderedCardStatesByID[itemID] {
-                renderedCardStatesByID[itemID] = PanelItemCardViewStateAdapter
-                    .stateBySettingTransientDecorations(
-                        state,
-                        isSelected: isSelected,
-                        commandIndexText: state.commandIndexText
-                    )
-            }
-        }
+        listScopeCache.updateSelectedItemID(panelViewState().selectedItemID, for: currentListScope)
+        activeListPage.updateSelection(selectedItemID: panelViewState().selectedItemID)
 
         if scrollIntoView {
             scrollSelectedItemIntoView()
@@ -1887,25 +1971,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func scrollSelectedItemIntoView() {
         let viewState = panelViewState()
-        guard let selectedItemID = viewState.selectedItemID,
-              let selectedView = itemBandCardView(forItemID: selectedItemID)
+        guard let selectedItemID = viewState.selectedItemID
         else {
             return
         }
-
-        guard let scrollView = itemBandScrollView else { return }
-        layoutSubtreeIfNeeded()
-        itemBandDocumentView.layoutSubtreeIfNeeded()
-
-        let visibleRect = scrollView.contentView.bounds
-        let targetRect = selectedView.frame.insetBy(dx: -24, dy: 0)
-        var targetX = visibleRect.origin.x
-        if targetRect.minX < visibleRect.minX {
-            targetX = targetRect.minX
-        } else if targetRect.maxX > visibleRect.maxX {
-            targetX = targetRect.maxX - visibleRect.width
-        }
-        restoreScrollOriginIfNeeded(NSPoint(x: targetX, y: visibleRect.origin.y))
+        activeListPage.scrollItemIntoView(itemID: selectedItemID)
     }
 
     private func startCommandHintMonitor() {
@@ -1915,6 +1985,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         ) { [weak self] event in
             guard let self else { return event }
             if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) {
+                if event.type == .leftMouseDown {
+                    self.scheduleEmptySearchCloseIfNeeded(for: event)
+                }
                 self.commitInlinePinboardRenameBeforePanelMouseDown(event)
             }
             let commandPressed = event.modifierFlags
@@ -1931,6 +2004,83 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
     }
 
+    @discardableResult
+    private func scheduleEmptySearchCloseIfNeeded(for event: NSEvent) -> Bool {
+        guard shouldScheduleEmptySearchClose(for: event) else { return false }
+
+        emptySearchClickAwayGeneration += 1
+        pendingEmptySearchClose = PendingEmptySearchClose(
+            generation: emptySearchClickAwayGeneration,
+            locationInWindow: event.locationInWindow,
+            windowNumber: event.window?.windowNumber ?? 0,
+            blockingGeneration: blockingPanelOperationGeneration
+        )
+
+        DispatchQueue.main.async { [weak self] in
+            self?.processPendingEmptySearchClose()
+        }
+        return true
+    }
+
+    private func shouldScheduleEmptySearchClose(for event: NSEvent) -> Bool {
+        guard event.type == .leftMouseDown,
+              eventMatchesPanelWindow(event),
+              panelViewState().toolbar.isSearchVisible,
+              panelViewState().toolbar.searchText.isEmpty,
+              activeRenameField == nil,
+              !hasBlockingPanelOperation,
+              !previewPopoverController.isShown,
+              menuTrackingDepth == 0,
+              !eventLocation(event, isInside: searchField)
+        else {
+            return false
+        }
+
+        if let toolbarSearchButton,
+           eventLocation(event, isInside: toolbarSearchButton) {
+            return false
+        }
+
+        return true
+    }
+
+    private func processPendingEmptySearchClose() {
+        guard let pending = pendingEmptySearchClose else { return }
+
+        if menuTrackingDepth > 0 {
+            return
+        }
+
+        guard pending.generation == emptySearchClickAwayGeneration,
+              pending.blockingGeneration == blockingPanelOperationGeneration,
+              let window,
+              window.isVisible,
+              window.windowNumber == pending.windowNumber,
+              panelViewState().toolbar.isSearchVisible,
+              panelViewState().toolbar.searchText.isEmpty,
+              activeRenameField == nil,
+              !hasBlockingPanelOperation,
+              !previewPopoverController.isShown
+        else {
+            pendingEmptySearchClose = nil
+            return
+        }
+
+        if pointInWindow(pending.locationInWindow, isInside: searchField) {
+            pendingEmptySearchClose = nil
+            return
+        }
+
+        if let toolbarSearchButton,
+           pointInWindow(pending.locationInWindow, isInside: toolbarSearchButton) {
+            pendingEmptySearchClose = nil
+            return
+        }
+
+        pendingEmptySearchClose = nil
+        applyInteractionAction(.escape(isPreviewShown: false))
+    }
+
     private func commitInlinePinboardRenameBeforePanelMouseDown(_ event: NSEvent) {
         guard let activeRenameField,
               event.window === window
@@ -1942,8 +2092,20 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func eventLocation(_ event: NSEvent, isInside view: NSView) -> Bool {
-        guard view.window === event.window else { return false }
-        let point = view.convert(event.locationInWindow, from: nil)
+        guard event.window === view.window
+                || (event.window == nil && event.windowNumber == view.window?.windowNumber)
+        else { return false }
+        return pointInWindow(event.locationInWindow, isInside: view)
+    }
+
+    private func eventMatchesPanelWindow(_ event: NSEvent) -> Bool {
+        event.window === window
+            || (event.window == nil && event.windowNumber == window?.windowNumber)
+    }
+
+    private func pointInWindow(_ pointInWindow: NSPoint, isInside view: NSView) -> Bool {
+        guard view.window === window else { return false }
+        let point = view.convert(pointInWindow, from: nil)
         return view.bounds.contains(point)
     }
 
@@ -1979,50 +2141,15 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func applyCommandHintTexts(_ commandNumbersByID: [String: String]) {
-        for card in itemBandCardViews() {
-            let commandIndexText = card.itemID.flatMap { commandNumbersByID[$0] }
-            if let itemID = card.itemID,
-               let state = renderedCardStatesByID[itemID] {
-                renderedCardStatesByID[itemID] = PanelItemCardViewStateAdapter.stateBySettingCommandIndexText(
-                    state,
-                    commandIndexText: commandIndexText
-                )
-            }
-            card.setCommandIndexText(commandIndexText)
-        }
+        activeListPage.applyCommandHintTexts(commandNumbersByID)
     }
 
     private func fullyVisibleCommandItemIDs(limit: Int = 9) -> [String] {
-        guard let scrollView = itemBandScrollView else { return [] }
-        let visibleRect = scrollView.contentView.bounds
-        let visibleMinX = visibleRect.minX - 0.5
-        let visibleMaxX = visibleRect.maxX + 0.5
-
-        return itemBandCardViews().compactMap { card -> String? in
-            guard let itemID = card.itemID
-            else { return nil }
-
-            let frame = card.frame
-            guard frame.minX >= visibleMinX, frame.maxX <= visibleMaxX else {
-                return nil
-            }
-
-            return itemID
-        }
-        .prefix(limit)
-        .map { $0 }
+        activeListPage.visibleCommandItemIDs(limit: limit)
     }
 
     private func refreshVisibleCommandHints() {
         applyInteractionAction(.visibleCommandItemsChanged(fullyVisibleCommandItemIDs()))
-    }
-
-    private func hasReachedLoadMoreThreshold() -> Bool {
-        guard let scrollView = itemBandScrollView else { return false }
-        let visibleRect = scrollView.contentView.bounds
-        let documentWidth = itemBandDocumentView.frame.width
-        let threshold = max(itemSideLength(for: currentPanelHeight) * 4, visibleRect.width * 1.2)
-        return visibleRect.maxX >= documentWidth - threshold
     }
 
     private func currentItems() -> [RustClipboardItemSummary] {
@@ -2037,8 +2164,40 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         interactionController.viewState
     }
 
+    private func armSearchCancelButtonClick() -> Bool {
+        guard panelViewState().toolbar.isSearchVisible,
+              !searchField.isHidden,
+              !searchField.stringValue.isEmpty
+        else {
+            searchCancelButtonClickArmed = false
+            return false
+        }
+
+        searchCancelButtonClickArmed = true
+        return true
+    }
+
+    private func handleSearchCancelButtonClick() {
+        guard searchCancelButtonClickArmed else { return }
+        searchCancelButtonClickArmed = false
+        searchCancelTextChangeSuppressionDepth += 1
+        applyInteractionAction(.clearSearchText)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.searchCancelTextChangeSuppressionDepth = max(0, self.searchCancelTextChangeSuppressionDepth - 1)
+        }
+    }
+
+    private func shouldSuppressSearchTextChangeForCancelButton() -> Bool {
+        guard searchField.stringValue.isEmpty else { return false }
+        return searchCancelButtonClickArmed || searchCancelTextChangeSuppressionDepth > 0
+    }
+
     func controlTextDidChange(_ obj: Notification) {
         if obj.object as? NSSearchField === searchField {
+            if shouldSuppressSearchTextChangeForCancelButton() {
+                return
+            }
             applyInteractionAction(.setSearchText(searchField.stringValue))
             return
         }
@@ -2058,6 +2217,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         textView: NSTextView,
         doCommandBy commandSelector: Selector
     ) -> Bool {
+        if control === searchField,
+           commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            applyInteractionAction(.escape(isPreviewShown: previewPopoverController.isShown))
+            return true
+        }
+
         guard control === activeRenameField else { return false }
 
         switch commandSelector {
@@ -2073,82 +2238,61 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func pinboardChipPressed(_ sender: PinboardChipButton) {
-        applyInteractionAction(.setPinboardFilter(sender.pinboardID))
+        if sender.itemType != nil {
+            applyInteractionAction(.setItemTypeFilter(sender.itemType))
+        } else if sender.pinboardID == nil {
+            applyInteractionAction(.setScopeFilters(itemType: nil, pinboardID: nil))
+        } else {
+            applyInteractionAction(.setPinboardFilter(sender.pinboardID))
+        }
     }
 
     private func toggleSearchField() {
         applyInteractionAction(.toggleSearch)
     }
 
-    private func resetItemLayoutTracking() {
-        itemWidthConstraints.removeAll()
-        itemHeightConstraints.removeAll()
-        itemPreviewHeightConstraints.removeAll()
-        itemPreviewWidthConstraints.removeAll()
-        itemImagePreviewViews.removeAll()
-        itemBodyLabels.removeAll()
-    }
-
-    private func renderItemCards(_ cards: [PanelRenderedItemCard]) {
-        let oldArtifactsByID = renderedCardArtifactsByID
-        resetItemLayoutTracking()
-        renderedCardStatesByID.removeAll()
-        activeListPage.renderedCardViewsByID.removeAll()
-        activeListPage.renderedCardArtifactsByID.removeAll()
-        ClipShelfPerformanceLog.measure("list.removeOldCards", detail: "count=\(itemBandCardViews().count)") {
-            itemBandCardViews().forEach { view in
-                let itemID = view.itemID
-                removeRenderedCard(view, artifacts: itemID.flatMap { oldArtifactsByID[$0] })
-            }
-        }
-
-        ClipShelfPerformanceLog.measure("list.installCards", detail: "count=\(cards.count)") {
-            cards.forEach(installRenderedCard)
-        }
-        activeListPage.hasRenderedContent = true
-
-        let itemSide = itemSideLength(for: currentPanelHeight)
-        itemBandDocumentView.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: itemBandDocumentWidth(itemSide: itemSide),
-            height: itemSide
-        )
-        ClipShelfPerformanceLog.measure("list.updatePanelHeightAfterRender", detail: "count=\(cards.count)") {
+    private func renderItemEntries(_ entries: [PanelItemCollectionEntry]) {
+        activeListPage.reload(entries: entries)
+        ClipShelfPerformanceLog.measure("list.updatePanelHeightAfterRender", detail: "count=\(entries.count)") {
             updatePanelHeight(currentPanelHeight)
         }
-        ClipShelfPerformanceLog.measure("list.refreshHintsAfterRender", detail: "count=\(cards.count)") {
+        ClipShelfPerformanceLog.measure("list.refreshHintsAfterRender", detail: "count=\(entries.count)") {
             refreshVisibleCommandHints()
         }
     }
 
-    private func makeDatabaseErrorCard() -> PanelRenderedItemCard {
-        renderCard(
-            statusCardState(
+    private func makeDatabaseErrorEntry() -> PanelItemCollectionEntry {
+        PanelItemCollectionEntry(
+            id: "__clipshelf_database_error__",
+            state: statusCardState(
+                itemID: "__clipshelf_database_error__",
                 sourceAppName: "数据库不可用",
                 relativeTimeText: "可重试",
                 symbolName: "exclamationmark.triangle",
                 typeText: "错误",
                 summaryText: "本地历史暂时无法读取"
+            ),
+            callbacks: PanelItemCollectionCallbacks(
+                toolTip: nil,
+                onSelect: nil,
+                onDoubleClick: nil,
+                onContextMenu: nil
             )
         )
     }
 
-    private func makeItemCard(_ item: RustClipboardItemSummary) -> PanelRenderedItemCard {
+    private func makeItemEntry(_ item: RustClipboardItemSummary) -> PanelItemCollectionEntry {
         let state = makeItemCardState(item)
         let callbacks = makeItemCardCallbacks(for: item)
-        return reusableItemCard(
-            for: state,
-            toolTip: callbacks.toolTip,
-            onSelect: callbacks.onSelect,
-            onDoubleClick: callbacks.onDoubleClick,
-            onContextMenu: callbacks.onContextMenu
-        ) ?? renderCard(
-            state,
-            toolTip: callbacks.toolTip,
-            onSelect: callbacks.onSelect,
-            onDoubleClick: callbacks.onDoubleClick,
-            onContextMenu: callbacks.onContextMenu
+        return PanelItemCollectionEntry(
+            id: item.id,
+            state: state,
+            callbacks: PanelItemCollectionCallbacks(
+                toolTip: callbacks.toolTip,
+                onSelect: callbacks.onSelect,
+                onDoubleClick: callbacks.onDoubleClick,
+                onContextMenu: callbacks.onContextMenu
+            )
         )
     }
 
@@ -2156,22 +2300,6 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         PanelItemCardViewStateAdapter.makeViewState(
             for: item,
             selectedItemID: panelViewState().selectedItemID
-        )
-    }
-
-    private func renderCard(
-        _ state: PanelItemCardViewState,
-        toolTip: String? = nil,
-        onSelect: (() -> Void)? = nil,
-        onDoubleClick: (() -> Void)? = nil,
-        onContextMenu: ((NSEvent) -> Void)? = nil
-    ) -> PanelRenderedItemCard {
-        cardRenderer().render(
-            state,
-            toolTip: toolTip,
-            onSelect: onSelect,
-            onDoubleClick: onDoubleClick,
-            onContextMenu: onContextMenu
         )
     }
 
@@ -2197,174 +2325,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         )
     }
 
-    private func reusableItemCard(
-        for state: PanelItemCardViewState,
-        toolTip: String?,
-        onSelect: (() -> Void)?,
-        onDoubleClick: (() -> Void)?,
-        onContextMenu: ((NSEvent) -> Void)?
-    ) -> PanelRenderedItemCard? {
-        guard let itemID = state.itemID,
-              let card = activeListPage.renderedCardViewsByID[itemID],
-              let previousState = activeListPage.renderedCardStatesByID[itemID],
-              let artifacts = activeListPage.renderedCardArtifactsByID[itemID],
-              reusableCardIdentityState(previousState) == reusableCardIdentityState(state)
-        else {
-            return nil
-        }
-
-        return updateReusableCard(
-            card,
-            state: state,
-            artifacts: artifacts,
-            toolTip: toolTip,
-            onSelect: onSelect,
-            onDoubleClick: onDoubleClick,
-            onContextMenu: onContextMenu
-        )
-    }
-
-    private func updateReusableCard(
-        _ card: ClipboardItemCardBox,
-        state: PanelItemCardViewState,
-        artifacts: PanelItemCardRenderArtifacts,
-        toolTip: String?,
-        onSelect: (() -> Void)?,
-        onDoubleClick: (() -> Void)?,
-        onContextMenu: ((NSEvent) -> Void)?
-    ) -> PanelRenderedItemCard {
-        card.itemID = state.itemID
-        card.toolTip = toolTip
-        card.onSelect = onSelect
-        card.onDoubleClick = onDoubleClick
-        card.onContextMenu = onContextMenu
-        card.applySelection(state.isSelected)
-        card.setCommandIndexText(state.commandIndexText)
-
-        return PanelRenderedItemCard(
-            state: state,
-            view: card,
-            artifacts: artifacts
-        )
-    }
-
-    private func reusableCardIdentityState(_ state: PanelItemCardViewState) -> PanelItemCardViewState {
-        PanelItemCardViewStateAdapter.stateBySettingTransientDecorations(
-            state,
-            isSelected: false,
-            commandIndexText: nil
-        )
-    }
-
-    private func installRenderedCard(_ renderedCard: PanelRenderedItemCard) {
-        itemBandStack.insertArrangedSubview(
-            renderedCard.view,
-            at: trailingContentPaddingIndex()
-        )
-        registerRenderedCard(renderedCard)
-        refreshItemBandContentPaddingSpacing()
-    }
-
-    private func moveOrInsertRenderedCard(_ view: NSView, at targetIndex: Int) {
-        if let currentIndex = itemBandStack.arrangedSubviews.firstIndex(of: view) {
-            let currentCardIndex = max(0, currentIndex - 1)
-            guard currentCardIndex != targetIndex else { return }
-            itemBandStack.removeArrangedSubview(view)
-        }
-        let insertionIndex = min(
-            max(1, targetIndex + 1),
-            trailingContentPaddingIndex()
-        )
-        itemBandStack.insertArrangedSubview(
-            view,
-            at: insertionIndex
-        )
-        refreshItemBandContentPaddingSpacing()
-    }
-
     private func itemBandCardViews() -> [ClipboardItemCardBox] {
-        itemBandStack.arrangedSubviews.compactMap { view in
-            guard let card = view as? ClipboardItemCardBox,
-                  card.itemID != nil
-            else { return nil }
-            return card
-        }
+        activeListPage.visibleCards()
     }
 
     private func itemBandCardView(forItemID itemID: String) -> ClipboardItemCardBox? {
-        renderedCardViewsByID[itemID] ?? itemBandCardViews().first { $0.itemID == itemID }
-    }
-
-    private func trailingContentPaddingIndex() -> Int {
-        itemBandStack.arrangedSubviews.firstIndex(of: trailingContentPaddingView)
-            ?? itemBandStack.arrangedSubviews.count
-    }
-
-    private func refreshItemBandContentPaddingSpacing() {
-        itemBandStack.setCustomSpacing(0, after: leadingContentPaddingView)
-        let cards = itemBandCardViews()
-        for card in cards {
-            itemBandStack.setCustomSpacing(itemBandStack.spacing, after: card)
-        }
-        if let lastCard = cards.last {
-            itemBandStack.setCustomSpacing(0, after: lastCard)
-        }
-    }
-
-    private func removeRenderedCard(_ view: NSView, artifacts: PanelItemCardRenderArtifacts?) {
-        removeCard(view, from: itemBandStack, artifacts: artifacts)
-    }
-
-    private func removeCard(
-        _ view: NSView,
-        from stack: NSStackView,
-        artifacts: PanelItemCardRenderArtifacts?
-    ) {
-        guard view !== leadingContentPaddingView,
-              view !== trailingContentPaddingView
-        else { return }
-        artifacts?.prepareForRemoval()
-        if let card = view as? ClipboardItemCardBox {
-            card.prepareForRemoval()
-        }
-        stack.removeArrangedSubview(view)
-        view.removeFromSuperview()
-        refreshItemBandContentPaddingSpacing()
-    }
-
-    private func rebuildRenderedCardTracking(from renderedCards: [PanelRenderedItemCard]) {
-        resetItemLayoutTracking()
-        renderedCardStatesByID.removeAll()
-        renderedCardViewsByID.removeAll()
-        renderedCardArtifactsByID.removeAll()
-
-        let renderedCardsByView = Dictionary(
-            uniqueKeysWithValues: renderedCards.map { (ObjectIdentifier($0.view), $0) }
-        )
-        for view in itemBandCardViews() {
-            guard let renderedCard = renderedCardsByView[ObjectIdentifier(view)] else { continue }
-            registerRenderedCard(renderedCard)
-        }
-    }
-
-    private func registerRenderedCard(_ renderedCard: PanelRenderedItemCard) {
-        if let itemID = renderedCard.state.itemID {
-            renderedCardStatesByID[itemID] = renderedCard.state
-            if let card = renderedCard.view as? ClipboardItemCardBox {
-                activeListPage.renderedCardViewsByID[itemID] = card
-                activeListPage.renderedCardArtifactsByID[itemID] = renderedCard.artifacts
-            }
-        }
-        registerRenderedCardArtifacts(renderedCard.artifacts)
-    }
-
-    private func registerRenderedCardArtifacts(_ artifacts: PanelItemCardRenderArtifacts) {
-        itemWidthConstraints.append(artifacts.itemWidthConstraint)
-        itemHeightConstraints.append(artifacts.itemHeightConstraint)
-        itemPreviewHeightConstraints.append(contentsOf: artifacts.previewHeightConstraints)
-        itemPreviewWidthConstraints.append(contentsOf: artifacts.previewWidthConstraints)
-        itemImagePreviewViews.append(contentsOf: artifacts.imagePreviewViews)
-        itemBodyLabels.append(contentsOf: artifacts.bodyLabels)
+        activeListPage.visibleCardView(for: itemID)
     }
 
     private func cardRenderer() -> PanelItemCardRenderer {
@@ -2443,6 +2409,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makePinboardChip(
         title: String,
         pinboardID: String? = nil,
+        itemType: String? = nil,
+        symbolName: String? = nil,
         dotColor: NSColor
     ) -> PinboardChipButton {
         let button = PinboardChipButton()
@@ -2451,16 +2419,17 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         button.target = nil
         button.action = nil
         button.pinboardID = pinboardID
+        button.itemType = itemType
         button.chipTitleText = title
         button.chipDotColor = dotColor
-        button.chipSymbolName = pinboardID == nil ? "clock.arrow.circlepath" : nil
+        button.chipSymbolName = symbolName
         button.chipDrawsSelectionPill = true
         button.chipHeight = 28
         button.chipFontSize = 14
         button.chipDotDiameter = 11
         button.chipIconSide = 16
         button.chipMarkerTextSpacing = 6
-        button.chipHorizontalPadding = pinboardID == nil ? 11 : 9
+        button.chipHorizontalPadding = (pinboardID == nil || itemType != nil) ? 11 : 9
         button.onPress = { [weak self, weak button] in
             guard let button else { return }
             self?.pinboardChipPressed(button)
@@ -2472,11 +2441,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                   let pinboard = self.pinboardFilters.first(where: { $0.id == pinboardID })
             else { return }
             let menu = self.makePinboardChipManagementMenu(for: pinboard)
-            menu.popUp(
-                positioning: nil,
-                at: button.convert(event.locationInWindow, from: nil),
-                in: button
-            )
+            self.withPanelMenuTracking {
+                NSMenu.popUpContextMenu(menu, with: event, for: button)
+            }
         }
         button.toolTip = pinboardID != nil
             ? "查看固定内容，右键管理"
@@ -2493,7 +2460,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
         NSLayoutConstraint.activate([
             button.heightAnchor.constraint(equalToConstant: 30),
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: pinboardID == nil ? 88 : 40)
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: (pinboardID == nil || itemType != nil) ? 64 : 40)
         ])
 
         return button
@@ -2501,10 +2468,16 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func updatePinboardChipAppearance() {
         let selectedPinboardID = panelViewState().toolbar.selectedPinboardID
+        let selectedItemType = panelViewState().toolbar.selectedItemType
         pinboardButtons.forEach { button in
-            let isSelected = button.pinboardID != nil
-                ? button.pinboardID == selectedPinboardID
-                : selectedPinboardID == nil
+            let isSelected: Bool
+            if let itemType = button.itemType {
+                isSelected = itemType == selectedItemType
+            } else if button.pinboardID != nil {
+                isSelected = button.pinboardID == selectedPinboardID
+            } else {
+                isSelected = selectedItemType == nil && selectedPinboardID == nil
+            }
             button.layer?.backgroundColor = NSColor.clear.cgColor
             button.layer?.borderWidth = 0
             button.layer?.shadowOpacity = 0
@@ -2526,10 +2499,28 @@ extension FloatingPanelContentView {
         panelViewState().selectedItemID
     }
 
+    var smokeActiveListScope: ClipboardListScope {
+        currentListScope
+    }
+
     func smokePanelUsesLightBlurredBackground() -> Bool {
         switch backgroundHostState {
-        case .systemGlass(let tintAlpha), .legacyVisualEffect(let tintAlpha):
+        case .systemGlass:
+            return true
+        case .legacyVisualEffect(let tintAlpha):
             return tintAlpha >= 0.30
+        case .none:
+            return false
+        }
+    }
+
+    func smokePanelUsesWindowLocalBackdropBlend() -> Bool {
+        switch backgroundHostState {
+        case .systemGlass:
+            return true
+        case .legacyVisualEffect:
+            guard let effectView = superview as? NSVisualEffectView else { return false }
+            return effectView.blendingMode == .withinWindow && effectView.state == .active
         case .none:
             return false
         }
@@ -2553,6 +2544,11 @@ extension FloatingPanelContentView {
         searchField
     }
 
+    var smokeFirstResponderIsSearchField: Bool {
+        window?.firstResponder === searchField
+            || window?.firstResponder === searchField.currentEditor()
+    }
+
     var smokeIsSearchVisible: Bool {
         panelViewState().toolbar.isSearchVisible && !searchField.isHidden
     }
@@ -2561,26 +2557,162 @@ extension FloatingPanelContentView {
         panelViewState().toolbar.searchText
     }
 
+    var smokeSearchFieldWidth: CGFloat {
+        searchFieldWidthConstraint?.constant ?? searchField.frame.width
+    }
+
+    var smokeSearchFieldAlpha: CGFloat {
+        searchField.alphaValue
+    }
+
+    var smokeSearchFieldIsHidden: Bool {
+        searchField.isHidden
+    }
+
+    var smokeSearchClickAwayDiagnostic: String {
+        let toolbar = panelViewState().toolbar
+        return "visible=\(toolbar.isSearchVisible) text=\(toolbar.searchText.debugDescription) fieldHidden=\(searchField.isHidden) rename=\(activeRenameField != nil) blocking=\(hasBlockingPanelOperation) preview=\(previewPopoverController.isShown) menuDepth=\(menuTrackingDepth) window=\(window?.windowNumber ?? 0)"
+    }
+
     func smokeOpenSearch(text: String) {
         applyInteractionAction(.focusSearch)
         searchField.stringValue = text
         controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
     }
 
+    @discardableResult
+    func smokeNativeSearchCancelTextChangeBeforeAction() -> Bool {
+        guard smokeArmSearchCancelButtonClick() else { return false }
+        searchField.stringValue = ""
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        handleSearchCancelButtonClick()
+        return true
+    }
+
+    @discardableResult
+    func smokeNativeSearchCancelActionBeforeTextChange() -> Bool {
+        guard smokeArmSearchCancelButtonClick() else { return false }
+        handleSearchCancelButtonClick()
+        searchField.stringValue = ""
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        return true
+    }
+
+    @discardableResult
+    func smokeClickNativeSearchCancelButton() -> Bool {
+        guard let event = smokeSearchCancelMouseDownEvent() else { return false }
+        searchField.mouseDown(with: event)
+        return true
+    }
+
+    private func smokeArmSearchCancelButtonClick() -> Bool {
+        guard let event = smokeSearchCancelMouseDownEvent(),
+              searchField.isCancelButtonHit(event)
+        else { return false }
+        return armSearchCancelButtonClick()
+    }
+
+    private func smokeSearchCancelMouseDownEvent() -> NSEvent? {
+        guard let windowPoint = searchField.cancelButtonCenterInWindowForSmoke() else { return nil }
+        return NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: searchField.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        )
+    }
+
+    @discardableResult
+    func smokeCancelSearchOperation() -> Bool {
+        control(
+            searchField,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))
+        )
+    }
+
+    @discardableResult
+    func smokeClickCardWithSearchClickAway(itemID: String) -> Bool {
+        guard let card = smokeOrderedCardBoxes().first(where: { $0.itemID == itemID }),
+              let event = smokeMouseDownEvent(centeredIn: card)
+        else { return false }
+        let didSchedule = scheduleEmptySearchCloseIfNeeded(for: event)
+        card.mouseDown(with: event)
+        return didSchedule
+    }
+
+    func smokeClickFirstCardWithSearchClickAway() -> String? {
+        guard let card = smokeOrderedCardBoxes().first,
+              let event = smokeMouseDownEvent(centeredIn: card)
+        else { return nil }
+        guard scheduleEmptySearchCloseIfNeeded(for: event) else { return nil }
+        card.mouseDown(with: event)
+        return card.itemID
+    }
+
+    @discardableResult
+    func smokeClickPinboardFilterWithSearchClickAway(pinboardID: String?) -> Bool {
+        guard let button = smokePinboardFilterButton(pinboardID: pinboardID),
+              let event = smokeMouseDownEvent(centeredIn: button)
+        else { return false }
+        let didSchedule = scheduleEmptySearchCloseIfNeeded(for: event)
+        button.mouseDown(with: event)
+        return didSchedule
+    }
+
+    func smokeMenuTrackingDefersEmptySearchClickAway(
+        makeSearchNonEmptyBeforeExit: Bool
+    ) -> (pendingDuringTracking: Bool, searchVisibleDuringTracking: Bool) {
+        guard let sourceView = toolbarIconButtons.first(where: { $0.toolTip == "更多功能" }),
+              let event = smokeMouseDownEvent(centeredIn: sourceView)
+        else {
+            return (pendingDuringTracking: false, searchVisibleDuringTracking: smokeIsSearchVisible)
+        }
+
+        scheduleEmptySearchCloseIfNeeded(for: event)
+        var result = (pendingDuringTracking: false, searchVisibleDuringTracking: false)
+        withPanelMenuTracking {
+            result.pendingDuringTracking = pendingEmptySearchClose != nil
+            result.searchVisibleDuringTracking = smokeIsSearchVisible
+            if makeSearchNonEmptyBeforeExit {
+                searchField.stringValue = "menu"
+                controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+            }
+        }
+        return result
+    }
+
+    private func smokeMouseDownEvent(centeredIn view: NSView) -> NSEvent? {
+        let localPoint = NSPoint(x: view.bounds.midX, y: view.bounds.midY)
+        let windowPoint = view.convert(localPoint, to: nil)
+        return NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: view.window?.windowNumber ?? 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        )
+    }
+
     func smokeCardBoxes() -> [ClipboardItemCardBox] {
-        allSmokeSubviews(of: self)
-            .compactMap { $0 as? ClipboardItemCardBox }
-            .filter { $0.itemID != nil }
+        activeListPage.visibleCards()
     }
 
     func smokeOrderedCardBoxes() -> [ClipboardItemCardBox] {
-        itemBandStack.arrangedSubviews
-            .compactMap { $0 as? ClipboardItemCardBox }
-            .filter { $0.itemID != nil }
+        activeListPage.visibleCards()
     }
 
     func smokeOrderedCardItemIDs() -> [String] {
-        smokeOrderedCardBoxes().compactMap(\.itemID)
+        activeListPage.activeOrderedIDs()
     }
 
     func smokeCardsContainWebView() -> Bool {
@@ -2595,14 +2727,29 @@ extension FloatingPanelContentView {
 
     var smokeRenderedCardTrackingIsConsistent: Bool {
         let orderedIDs = smokeOrderedCardItemIDs()
-        return Set(renderedCardStatesByID.keys) == Set(orderedIDs)
-            && Set(renderedCardViewsByID.keys) == Set(orderedIDs)
-            && Set(renderedCardArtifactsByID.keys) == Set(orderedIDs)
-            && renderedCardViewsByID.allSatisfy { itemID, card in card.itemID == itemID }
+        return Set(orderedIDs).count == orderedIDs.count
+    }
+
+    var smokeRetainedCollectionSurfaceCount: Int {
+        activeListPage.totalRetainedReusableCellOrHostedCardCount()
+    }
+
+    var smokeCollectionRetainedCellBound: Int {
+        let viewportWidth = itemBandScrollView?.contentView.bounds.width ?? bounds.width
+        let itemSide = itemSideLength(for: currentPanelHeight)
+        return Int(ceil((viewportWidth + 22) / (itemSide + 22))) + 8
+    }
+
+    func smokeVisibleCommandItemIDs(limit: Int = 9) -> [String] {
+        fullyVisibleCommandItemIDs(limit: limit)
     }
 
     func smokePinboardFilterButton(pinboardID: String?) -> PinboardChipButton? {
         pinboardButtons.first { $0.pinboardID == pinboardID }
+    }
+
+    func smokeItemTypeFilterButton(itemType: String) -> PinboardChipButton? {
+        pinboardButtons.first { $0.itemType == itemType }
     }
 
     func smokePinboardChipAllowsLongIntrinsicWidth() -> Bool {
@@ -2662,7 +2809,7 @@ extension FloatingPanelContentView {
 
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
-        let maxX = horizontalScrollRange(for: scrollView).upperBound
+        let maxX = activeListPage.horizontalScrollRange().upperBound
         scrollView.contentView.scroll(to: NSPoint(x: maxX, y: scrollView.contentView.bounds.origin.y))
         scrollView.reflectScrolledClipView(scrollView.contentView)
         handleItemBandScrollDidChange()
@@ -2718,25 +2865,20 @@ extension FloatingPanelContentView {
     ) {
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
-        itemBandStack.layoutSubtreeIfNeeded()
 
         let bandFrame = itemBandContainerView.frame
         let scrollView = itemBandScrollView
         let scrollOriginX = scrollView?.contentView.bounds.origin.x ?? 0
         let viewportWidth = scrollView?.contentView.bounds.width ?? 0
-        let cardViews = itemBandCardViews()
         let trailingContentEdgeOriginX = scrollView.map { scrollView in
-            itemBandDocumentView.frame.width - scrollView.contentView.bounds.width
+            activeListPage.collectionDocumentWidth() - scrollView.contentView.bounds.width
         }
-        let firstCardMinX = cardViews.first?.frame.minX
+        let firstCardMinX = activeListPage.firstItemFrame()?.minX
         let firstCardVisibleMinX = firstCardMinX.map { $0 - scrollOriginX }
-        let lastCardTrailingInset = cardViews.last.map {
-            itemBandDocumentView.frame.width - $0.frame.maxX
-        }
+        let lastFrame = activeListPage.lastItemFrame()
+        let lastCardTrailingInset = lastFrame.map { activeListPage.collectionDocumentWidth() - $0.maxX }
         let lastCardVisibleMaxXAtTrailingEdge = scrollView.flatMap { scrollView in
-            cardViews.last.map { lastCard in
-                lastCard.frame.maxX - scrollOriginX
-            }
+            lastFrame.map { $0.maxX - scrollOriginX }
         }
 
         return (
@@ -2757,7 +2899,7 @@ extension FloatingPanelContentView {
         guard let scrollView = itemBandScrollView else { return }
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
-        let range = horizontalScrollRange(for: scrollView)
+        let range = activeListPage.horizontalScrollRange()
         scrollView.contentView.scroll(to: NSPoint(
             x: min(max(range.lowerBound, x), range.upperBound),
             y: scrollView.contentView.bounds.origin.y
@@ -2901,7 +3043,9 @@ extension FloatingPanelContentView {
         }
     }
 
-    func smokeManagementSubmenuItems(itemID: String, title: String) -> [(title: String, isEnabled: Bool, isSelected: Bool)] {
+    func smokeManagementSubmenuItems(itemID: String, title: String) -> [
+        (title: String, isEnabled: Bool, isSelected: Bool, hasImage: Bool)
+    ] {
         guard let item = currentItems().first(where: { $0.id == itemID }) else { return [] }
         guard let submenu = makeManagementMenu(for: item).items.first(where: { $0.title == title })?.submenu else {
             return []
@@ -2912,12 +3056,17 @@ extension FloatingPanelContentView {
             return (
                 title: menuItem.title,
                 isEnabled: menuItem.isEnabled,
-                isSelected: menuItem.state == .on
+                isSelected: menuItem.state == .on,
+                hasImage: menuItem.image != nil
             )
         }
     }
 
-    func smokeManagementPinboardMenuWithNoPinboards(itemID: String) -> (isEnabled: Bool, titles: [String])? {
+    func smokeManagementPinboardMenuWithNoPinboards(itemID: String) -> (
+        isEnabled: Bool,
+        titles: [String],
+        allItemsHaveImages: Bool
+    )? {
         guard let item = currentItems().first(where: { $0.id == itemID }) else { return nil }
         let previousPinboards = pinboardFilters
         pinboardFilters = []
@@ -2933,7 +3082,10 @@ extension FloatingPanelContentView {
         let titles = pinboardMenuItem.submenu?.items.compactMap { item in
             item.isSeparatorItem ? nil : item.title
         } ?? []
-        return (isEnabled: pinboardMenuItem.isEnabled, titles: titles)
+        let allItemsHaveImages = pinboardMenuItem.submenu?.items.allSatisfy { item in
+            item.isSeparatorItem || item.image != nil
+        } ?? true
+        return (isEnabled: pinboardMenuItem.isEnabled, titles: titles, allItemsHaveImages: allItemsHaveImages)
     }
 
     func smokePinboardDeleteRequiresConfirmation(pinboardID: String) -> Bool? {
@@ -3128,8 +3280,10 @@ extension FloatingPanelContentView {
               let pinboard = pinboardFilters.first(where: { $0.id == pinboardID })
         else { return false }
 
-        makePinboardChipManagementMenu(for: pinboard)
-            .popUp(positioning: nil, at: NSPoint(x: button.bounds.midX, y: button.bounds.midY), in: button)
+        let menu = makePinboardChipManagementMenu(for: pinboard)
+        withPanelMenuTracking {
+            menu.popUp(positioning: nil, at: NSPoint(x: button.bounds.midX, y: button.bounds.midY), in: button)
+        }
         return true
     }
 
@@ -3207,14 +3361,17 @@ extension FloatingPanelContentView {
             .compactMap { ($0 as? PanelActionButton)?.toolTip }
     }
 
-    func smokePanelOverflowMenuItems() -> [(title: String, isEnabled: Bool, hasSubmenu: Bool, hasCustomView: Bool)] {
+    func smokePanelOverflowMenuItems() -> [
+        (title: String, isEnabled: Bool, hasSubmenu: Bool, hasCustomView: Bool, hasImage: Bool)
+    ] {
         makePanelOverflowMenu().items.compactMap { menuItem in
             guard !menuItem.isSeparatorItem else { return nil }
             return (
                 title: menuItem.title,
                 isEnabled: menuItem.isEnabled,
                 hasSubmenu: menuItem.submenu != nil,
-                hasCustomView: menuItem.view != nil
+                hasCustomView: menuItem.view != nil,
+                hasImage: menuItem.image != nil
             )
         }
     }
@@ -3225,7 +3382,9 @@ extension FloatingPanelContentView {
         return true
     }
 
-    func smokePinboardChipMenuItems(pinboardID: String) -> [(title: String, isEnabled: Bool, hasSubmenu: Bool, hasCustomView: Bool)] {
+    func smokePinboardChipMenuItems(pinboardID: String) -> [
+        (title: String, isEnabled: Bool, hasSubmenu: Bool, hasCustomView: Bool, hasImage: Bool)
+    ] {
         guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }) else { return [] }
         return makePinboardChipManagementMenu(for: pinboard).items.compactMap { menuItem in
             guard !menuItem.isSeparatorItem else { return nil }
@@ -3233,7 +3392,8 @@ extension FloatingPanelContentView {
                 title: menuItem.title,
                 isEnabled: menuItem.isEnabled,
                 hasSubmenu: menuItem.submenu != nil,
-                hasCustomView: menuItem.view != nil
+                hasCustomView: menuItem.view != nil,
+                hasImage: menuItem.image != nil
             )
         }
     }

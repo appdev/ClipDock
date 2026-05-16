@@ -279,6 +279,10 @@ private final class ClipboardPreviewViewController: NSViewController {
             return preferredImagePreviewSize(for: pixelSize)
         }
 
+        if content.itemType == "color", content.colorValue != nil {
+            return NSSize(width: 360, height: 430)
+        }
+
         if content.itemType == "file",
            let fileURL = content.fileURLs.first,
            FileManager.default.fileExists(atPath: fileURL.path) {
@@ -355,6 +359,10 @@ private final class ClipboardPreviewViewController: NSViewController {
             return makeImagePreview()
         }
 
+        if content.itemType == "color", content.colorValue != nil {
+            return makeColorPreview()
+        }
+
         if content.itemType == "file", !content.fileURLs.isEmpty {
             return makeFilePreview() ?? makeTextPreview()
         }
@@ -370,6 +378,84 @@ private final class ClipboardPreviewViewController: NSViewController {
         }
 
         return makeTextPreview()
+    }
+
+    private func makeColorPreview() -> NSView {
+        guard let colorValue = content.colorValue else {
+            return makeTextPreview()
+        }
+
+        let container = makePreviewSurface(backgroundAlpha: 1)
+        container.layer?.backgroundColor = theme.preview.surfaceBackgroundColor.cgColor
+
+        let swatch = PreviewColorSwatchView(colorValue: colorValue)
+        swatch.translatesAutoresizingMaskIntoConstraints = false
+
+        let hexLabel = NSTextField(labelWithString: colorValue.normalizedHex)
+        hexLabel.font = .monospacedSystemFont(ofSize: 26, weight: .semibold)
+        hexLabel.textColor = theme.preview.bodyTextColor
+        hexLabel.alignment = .center
+        hexLabel.lineBreakMode = .byClipping
+        hexLabel.maximumNumberOfLines = 1
+        hexLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let rows = [
+            ("HEX", colorValue.normalizedHex),
+            ("RGB", colorValue.rgbText.replacingOccurrences(of: "RGB ", with: "")),
+            ("HSL", colorValue.hslText.replacingOccurrences(of: "HSL ", with: "")),
+            ("HSB", colorValue.hsbText.replacingOccurrences(of: "HSB ", with: ""))
+        ]
+        let rowStack = NSStackView(views: rows.map(makeColorFormatRow))
+        rowStack.orientation = .vertical
+        rowStack.alignment = .leading
+        rowStack.spacing = 7
+        rowStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [swatch, hexLabel, rowStack])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 15
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            swatch.widthAnchor.constraint(equalToConstant: 160),
+            swatch.heightAnchor.constraint(equalToConstant: 118),
+            rowStack.widthAnchor.constraint(equalToConstant: 220),
+
+            stack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20)
+        ])
+
+        return container
+    }
+
+    private func makeColorFormatRow(title: String, value: String) -> NSView {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
+        titleLabel.textColor = theme.preview.footerTextColor
+        titleLabel.alignment = .right
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let valueLabel = NSTextField(labelWithString: value)
+        valueLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        valueLabel.textColor = theme.preview.bodyTextColor
+        valueLabel.lineBreakMode = .byTruncatingTail
+        valueLabel.maximumNumberOfLines = 1
+        valueLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let row = NSStackView(views: [titleLabel, valueLabel])
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            titleLabel.widthAnchor.constraint(equalToConstant: 34)
+        ])
+        return row
     }
 
     private func makeLinkWebPreview() -> NSView {
@@ -655,6 +741,10 @@ private final class ClipboardPreviewViewController: NSViewController {
                 return ["\(content.fileURLs.count) 个文件", content.fileURLs[0].path]
             }
             return [content.fileURLs[0].path]
+        }
+
+        if content.itemType == "color", let colorValue = content.colorValue {
+            return [colorValue.normalizedHex, colorValue.rgbText]
         }
 
         if content.itemType == "text" || content.itemType == "rich_text" || content.itemType == "link" {
@@ -1238,5 +1328,29 @@ private final class PreviewImageDocumentView: NSView {
             at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
             withAttributes: attributes
         )
+    }
+}
+
+@MainActor
+private final class PreviewColorSwatchView: NSView {
+    init(colorValue: ClipboardColorValue) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(
+            srgbRed: CGFloat(colorValue.red) / 255,
+            green: CGFloat(colorValue.green) / 255,
+            blue: CGFloat(colorValue.blue) / 255,
+            alpha: 1
+        ).cgColor
+        layer?.cornerRadius = 14
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        layer?.borderWidth = 0.5
+        layer?.borderColor = NSColor.black.withAlphaComponent(0.18).cgColor
+        toolTip = colorValue.normalizedHex
+    }
+
+    required init?(coder: NSCoder) {
+        nil
     }
 }

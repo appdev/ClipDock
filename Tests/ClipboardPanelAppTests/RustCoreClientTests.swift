@@ -35,7 +35,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 9)
+        #expect(value.schemaVersion == 10)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -53,6 +53,56 @@ struct RustCoreClientTests {
         #expect(value.totalCount == 0)
         #expect(!value.hasMore)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
+    }
+
+    @Test
+    func listItemsFiltersColorTypeThroughSwiftBridgeBinding() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+
+        _ = try client.captureText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureTextRequest(
+                text: "#ff00aa",
+                sourceBundleId: "com.example.Color",
+                sourceAppName: "Color",
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 1
+            )
+        ).get()
+        _ = try client.captureText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureTextRequest(
+                text: "text #FF00AA",
+                sourceBundleId: "com.example.Notes",
+                sourceAppName: "Notes",
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 2
+            )
+        ).get()
+
+        let colorPage = try client.listItems(
+            appSupportDirectory: tempDirectory,
+            itemType: "color",
+            searchText: "#FF00AA"
+        ).get()
+        let textPage = try client.listItems(
+            appSupportDirectory: tempDirectory,
+            itemType: "text",
+            searchText: "#FF00AA"
+        ).get()
+
+        #expect(colorPage.totalCount == 1)
+        #expect(colorPage.items[0].itemType == "color")
+        #expect(colorPage.items[0].summary == "#FF00AA")
+        #expect(colorPage.items[0].primaryText == "#FF00AA")
+        #expect(textPage.totalCount == 1)
+        #expect(textPage.items[0].itemType == "text")
     }
 
     @Test
@@ -743,7 +793,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 9)
+        #expect(result.schemaVersion == 10)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.history.maxItems == 5000)
@@ -757,7 +807,7 @@ struct RustCoreClientTests {
         #expect(result.preferences.shortcuts.openPanel.keyCode == 9)
         #expect(result.preferences.shortcuts.openPanel.modifiers == ["command", "shift"])
         #expect(!result.preferences.shortcuts.pasteDirectlyToTarget)
-        #expect(result.preferences.ignoreList.ignoredAppIdentifiers.isEmpty)
+        #expect(result.preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)
         #expect(result.preferences.ignoreList.windowTitleKeywords.isEmpty)
         #expect(!result.preferences.ignoreList.skipUnknownSource)
     }
@@ -848,6 +898,7 @@ struct RustCoreClientTests {
         )
 
         #expect(preferences.ignoreList == RustIgnoreListPreferences())
+        #expect(preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)
         #expect(preferences.shortcuts == RustShortcutsPreferences())
         #expect(!preferences.shortcuts.pasteDirectlyToTarget)
         #expect(preferences.history.maxItems == 5000)
@@ -1068,6 +1119,45 @@ struct RustCoreClientTests {
         #expect(item.summary.count < longText.count)
         #expect(item.primaryText == longText)
         #expect(preview.body == longText)
+    }
+
+    @Test
+    func keepsCopyAndDetailFullTextWhenCardPreviewIsBounded() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+        let lateToken = "LATE_TOKEN_AFTER_UI_PREVIEW_500"
+        let longText = "\(String(repeating: "a", count: 520)) \(lateToken)"
+
+        _ = try client.captureText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureTextRequest(
+                text: longText,
+                sourceBundleId: "com.apple.TextEdit",
+                sourceAppName: "TextEdit",
+                sourceBundlePath: "/System/Applications/TextEdit.app",
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 8
+            )
+        ).get()
+        let item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+
+        let presentation = PanelItemCardPresenter.presentation(for: item)
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+        let preview = ClipboardPreviewContentPlanner.preview(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect((presentation.summaryText as NSString).length <= 500)
+        #expect(!presentation.summaryText.contains(lateToken))
+        #expect(payload == .text(longText))
+        #expect(preview.body == longText)
+        #expect(preview.body.contains(lateToken))
     }
 
     @Test

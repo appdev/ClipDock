@@ -166,6 +166,14 @@ public final class PanelContentController {
         sceneStore.setPinboardFilter(pinboardID)
     }
 
+    public func setItemTypeFilter(_ itemType: String?) {
+        sceneStore.setItemTypeFilter(itemType)
+    }
+
+    public func setScopeFilters(itemType: String?, pinboardID: String?) {
+        sceneStore.setScopeFilters(itemType: itemType, pinboardID: pinboardID)
+    }
+
     public func clearFilters() {
         sceneStore.clearFilters()
     }
@@ -176,6 +184,10 @@ public final class PanelContentController {
 
     public func focusSearch() -> PanelSearchFocusResult {
         sceneStore.focusSearch()
+    }
+
+    public func startSearch(initialText: String) -> PanelStartSearchResult {
+        sceneStore.startSearch(initialText: initialText)
     }
 
     public func dismissSearch() {

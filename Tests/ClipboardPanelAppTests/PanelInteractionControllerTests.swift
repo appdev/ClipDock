@@ -10,7 +10,7 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.toolbar.searchText == "report")
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "report", sourceAppID: nil, pinboardID: nil, debounce: true))
+            .external(.queryChanged(searchText: "report", itemType: nil, sourceAppID: nil, pinboardID: nil, debounce: true))
         ])
         #expect(!result.shouldSyncToolbar)
     }
@@ -23,8 +23,186 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.toolbar.selectedPinboardID == "default")
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: "default", debounce: false))
+            .external(.queryChanged(searchText: "", itemType: nil, sourceAppID: nil, pinboardID: "default", debounce: false))
         ])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func itemTypeFilterComposesWithSearchAndPinboard() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "#FF00AA",
+                    pinboardID: "default",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.setItemTypeFilter("color"))
+
+        #expect(result.viewState.toolbar.searchText == "#FF00AA")
+        #expect(result.viewState.toolbar.selectedItemType == "color")
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [
+            .external(.queryChanged(
+                searchText: "#FF00AA",
+                itemType: "color",
+                sourceAppID: nil,
+                pinboardID: "default",
+                debounce: false
+            ))
+        ])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func scopeFilterClearsItemTypeAndPinboardWithoutClearingSearch() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "#FF00AA",
+                    itemType: "color",
+                    pinboardID: "default",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.setScopeFilters(itemType: nil, pinboardID: nil))
+
+        #expect(result.viewState.toolbar.searchText == "#FF00AA")
+        #expect(result.viewState.toolbar.selectedItemType == nil)
+        #expect(result.viewState.toolbar.selectedPinboardID == nil)
+        #expect(result.effects == [
+            .external(.queryChanged(
+                searchText: "#FF00AA",
+                itemType: nil,
+                sourceAppID: nil,
+                pinboardID: nil,
+                debounce: false
+            ))
+        ])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func startSearchReplacesHiddenTextFocusesSearchAndEmitsDebouncedQueryWithFilters() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "rep",
+                    itemType: "text",
+                    pinboardID: "default",
+                    isSearchVisible: false
+                )
+            )
+        )
+
+        let result = controller.dispatch(.startSearch(initialText: "A"))
+
+        #expect(result.viewState.toolbar.searchText == "A")
+        #expect(result.viewState.toolbar.isSearchVisible)
+        #expect(result.viewState.toolbar.selectedItemType == "text")
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [
+            .focus(.searchField),
+            .external(.queryChanged(
+                searchText: "A",
+                itemType: "text",
+                sourceAppID: nil,
+                pinboardID: "default",
+                debounce: true
+            ))
+        ])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func startSearchAppendsVisibleTextFocusesSearchAndEmitsDebouncedQueryWithFilters() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "rep",
+                    itemType: "text",
+                    pinboardID: "default",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.startSearch(initialText: "A"))
+
+        #expect(result.viewState.toolbar.searchText == "repA")
+        #expect(result.viewState.toolbar.isSearchVisible)
+        #expect(result.viewState.toolbar.selectedItemType == "text")
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [
+            .focus(.searchField),
+            .external(.queryChanged(
+                searchText: "repA",
+                itemType: "text",
+                sourceAppID: nil,
+                pinboardID: "default",
+                debounce: true
+            ))
+        ])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func clearSearchTextClearsNonEmptySearchKeepsVisibleFocusedAndEmitsImmediateQuery() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "report",
+                    itemType: "text",
+                    pinboardID: "default",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.clearSearchText)
+
+        #expect(result.viewState.toolbar.searchText.isEmpty)
+        #expect(result.viewState.toolbar.isSearchVisible)
+        #expect(result.viewState.toolbar.selectedItemType == "text")
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [
+            .focus(.searchField),
+            .external(.queryChanged(
+                searchText: "",
+                itemType: "text",
+                sourceAppID: nil,
+                pinboardID: "default",
+                debounce: false
+            ))
+        ])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func clearSearchTextWhenEmptyKeepsVisibleFocusedWithoutQuery() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "",
+                    itemType: "text",
+                    pinboardID: "default",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.clearSearchText)
+
+        #expect(result.viewState.toolbar.searchText.isEmpty)
+        #expect(result.viewState.toolbar.isSearchVisible)
+        #expect(result.viewState.toolbar.selectedItemType == "text")
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [.focus(.searchField)])
         #expect(result.shouldSyncToolbar)
     }
 
@@ -161,7 +339,25 @@ struct PanelInteractionControllerTests {
         #expect(result.effects == [
             .commandHints([:]),
             .preview(.close),
-            .external(.deleteItem(itemID: "b"))
+            .external(.deleteItem(itemID: "b", pinboardID: nil))
+        ])
+    }
+
+    @Test
+    func deleteSelectedItemInPinboardCarriesCurrentPinboardScope() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(pinboardID: "board-a"),
+                selection: PanelSelectionState(selectedItemID: "b")
+            )
+        )
+
+        let result = controller.dispatch(.deleteSelectedItem)
+
+        #expect(result.effects == [
+            .commandHints([:]),
+            .preview(.close),
+            .external(.deleteItem(itemID: "b", pinboardID: "board-a"))
         ])
     }
 
@@ -206,10 +402,42 @@ struct PanelInteractionControllerTests {
         let result = controller.dispatch(.escape(isPreviewShown: false))
 
         #expect(result.viewState.toolbar.searchText.isEmpty)
+        #expect(result.viewState.toolbar.isSearchVisible)
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: nil, debounce: false))
+            .external(.queryChanged(searchText: "", itemType: nil, sourceAppID: nil, pinboardID: nil, debounce: false))
         ])
         #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func escapeClosesVisibleEmptySearchFocusesPanelWithoutReloadingQuery() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                query: PanelQueryState(
+                    searchText: "",
+                    pinboardID: "default",
+                    isSearchVisible: true
+                )
+            )
+        )
+
+        let result = controller.dispatch(.escape(isPreviewShown: false))
+
+        #expect(result.viewState.toolbar.searchText.isEmpty)
+        #expect(!result.viewState.toolbar.isSearchVisible)
+        #expect(result.viewState.toolbar.selectedPinboardID == "default")
+        #expect(result.effects == [.focus(.panel)])
+        #expect(result.shouldSyncToolbar)
+    }
+
+    @Test
+    func escapeHidesPanelWhenSearchIsClosedAndEmpty() {
+        let controller = makePanelInteractionController()
+
+        let result = controller.dispatch(.escape(isPreviewShown: false))
+
+        #expect(result.effects == [.external(.hidePanel)])
+        #expect(!result.shouldSyncToolbar)
     }
 
     @Test
@@ -230,7 +458,7 @@ struct PanelInteractionControllerTests {
         #expect(!result.viewState.toolbar.isSearchVisible)
         #expect(result.viewState.toolbar.selectedPinboardID == "default")
         #expect(result.effects == [
-            .external(.queryChanged(searchText: "", sourceAppID: nil, pinboardID: "default", debounce: false))
+            .external(.queryChanged(searchText: "", itemType: nil, sourceAppID: nil, pinboardID: "default", debounce: false))
         ])
         #expect(result.shouldSyncToolbar)
     }

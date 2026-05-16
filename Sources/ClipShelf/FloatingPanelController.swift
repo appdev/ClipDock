@@ -3,8 +3,8 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 
 private enum PanelPresentationAnimation {
-    static let showDuration: TimeInterval = 0.12
-    static let hideDuration: TimeInterval = 0.10
+    static let showDuration: TimeInterval = 0.16
+    static let hideDuration: TimeInterval = 0.18
     static let frameIntervalNanoseconds: UInt64 = 16_666_667
 
     static func entranceFrame(for frame: NSRect) -> NSRect {
@@ -351,6 +351,10 @@ final class FloatingPanelController {
 
     func invalidateCachedListPages() {
         contentView.invalidateCachedListPages()
+    }
+
+    func invalidateCachedPinboardListPages(pinboardID: String) {
+        contentView.invalidateCachedPinboardListPages(pinboardID: pinboardID)
     }
 
     func setPreferredHeight(_ height: CGFloat) {

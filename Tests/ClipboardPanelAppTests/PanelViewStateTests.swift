@@ -5,7 +5,7 @@ struct PanelViewStateTests {
     @Test
     func viewStateMapsToolbarSelectionAndSearchVisibility() {
         let scene = PanelSceneState(
-            query: PanelQueryState(searchText: "report", pinboardID: "default", isSearchVisible: true),
+            query: PanelQueryState(searchText: "report", itemType: "color", pinboardID: "default", isSearchVisible: true),
             selection: PanelSelectionState(selectedItemID: "item-1", isCommandHintModeEnabled: true),
             preview: PanelPreviewState(isPopoverEnabled: false)
         )
@@ -20,6 +20,7 @@ struct PanelViewStateTests {
 
         #expect(viewState.toolbar.searchText == "report")
         #expect(viewState.toolbar.isSearchVisible)
+        #expect(viewState.toolbar.selectedItemType == "color")
         #expect(viewState.toolbar.selectedPinboardID == "default")
         #expect(viewState.toolbar.clearActionTitle == "清空当前结果")
         #expect(viewState.selectedItemID == "item-1")

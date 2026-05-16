@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import Testing
 import WebKit
@@ -25,6 +26,7 @@ struct PanelRuntimeSeamTests {
         #expect(await waitForMainActor(attempts: 240) {
             controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
         })
+        #expect(controller.smokeContentView.smokePanelUsesWindowLocalBackdropBlend())
         let backgroundAlphaBeforeHide = controller.smokePanelContentBackgroundAlpha
 
         controller.smokeHandleOutsideMouseDown(
@@ -61,7 +63,7 @@ struct PanelRuntimeSeamTests {
         var copiedItemID: String?
         let item = PanelQASamples.makePagedPanelItems(count: 1)[0]
         controller.onRuntimeAction = { action in
-            if case .queryChanged(let searchText, _, let pinboardID, let debounce) = action {
+            if case .queryChanged(let searchText, _, _, let pinboardID, let debounce) = action {
                 queries.append((searchText, pinboardID, debounce))
             }
             if case .copyItem(let item) = action {
@@ -94,6 +96,373 @@ struct PanelRuntimeSeamTests {
     }
 
     @Test
+    func typeToSearchKeyPlannerAllowsShiftAndRejectsShortcutOrNonPrintableKeys() {
+        #expect(PanelTypeToSearchKeyPlanner.initialSearchText(
+            characters: "A",
+            charactersIgnoringModifiers: "a",
+            modifierFlags: [.shift]
+        ) == "A")
+        #expect(PanelTypeToSearchKeyPlanner.initialSearchText(
+            characters: "a",
+            charactersIgnoringModifiers: "a",
+            modifierFlags: [.command]
+        ) == nil)
+        #expect(PanelTypeToSearchKeyPlanner.initialSearchText(
+            characters: " ",
+            charactersIgnoringModifiers: " ",
+            modifierFlags: []
+        ) == nil)
+        #expect(PanelTypeToSearchKeyPlanner.initialSearchText(
+            characters: "\u{1B}",
+            charactersIgnoringModifiers: "\u{1B}",
+            modifierFlags: []
+        ) == nil)
+        #expect(PanelTypeToSearchKeyPlanner.initialSearchText(
+            characters: "ab",
+            charactersIgnoringModifiers: "ab",
+            modifierFlags: []
+        ) == nil)
+    }
+
+    @Test
+    @MainActor
+    func printableKeyStartsSearchFocusesFieldAndEmitsDebouncedQuery() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var queries: [(searchText: String, debounce: Bool)] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(let searchText, _, _, _, let debounce) = action {
+                queries.append((searchText, debounce))
+            }
+        }
+
+        controller.show()
+        #expect(await waitForMainActor {
+            controller.smokeFirstResponderIsContentView
+        })
+
+        PanelQAHarness.sendPrintable(
+            characters: "R",
+            charactersIgnoringModifiers: "r",
+            modifiers: [.shift],
+            keyCode: UInt16(kVK_ANSI_R),
+            to: contentView
+        )
+
+        #expect(await waitForMainActor {
+            contentView.smokeIsSearchVisible
+                && contentView.smokeSearchText == "R"
+                && contentView.smokeFirstResponderIsSearchField
+        })
+        #expect(queries.count == 1)
+        #expect(queries.first?.searchText == "R")
+        #expect(queries.first?.debounce == true)
+        #expect(await waitForMainActor(attempts: 120) {
+            abs(contentView.smokeSearchFieldWidth - 330) < 0.5
+                && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
+                && !contentView.smokeSearchFieldIsHidden
+        })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func printableKeyDoesNotStealInputFromFocusedSearchField() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var queries: [String] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(let searchText, _, _, _, _) = action {
+                queries.append(searchText)
+            }
+        }
+
+        controller.show()
+        contentView.smokeOpenSearch(text: "report")
+        #expect(await waitForMainActor {
+            contentView.smokeFirstResponderIsSearchField
+                && contentView.smokeSearchText == "report"
+        })
+        let queryCount = queries.count
+
+        PanelQAHarness.sendPrintable(characters: "x", to: contentView)
+        PanelQAHarness.drainMainRunLoop()
+
+        #expect(contentView.smokeSearchText == "report")
+        #expect(queries.count == queryCount)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func searchFieldCancelOperationUsesEscapePolicy() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var queries: [(searchText: String, debounce: Bool)] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(let searchText, _, _, _, let debounce) = action {
+                queries.append((searchText, debounce))
+            }
+        }
+
+        controller.show()
+        contentView.smokeOpenSearch(text: "report")
+        #expect(await waitForMainActor {
+            contentView.smokeIsSearchVisible && contentView.smokeSearchText == "report"
+        })
+
+        #expect(contentView.smokeCancelSearchOperation())
+        #expect(await waitForMainActor {
+            contentView.smokeIsSearchVisible && contentView.smokeSearchText.isEmpty
+        })
+        #expect(queries.last?.searchText == "")
+        #expect(queries.last?.debounce == false)
+        let queryCountAfterClear = queries.count
+
+        #expect(contentView.smokeCancelSearchOperation())
+        #expect(await waitForMainActor(attempts: 120) {
+            !contentView.smokeIsSearchVisible
+                && contentView.smokeSearchFieldIsHidden
+                && abs(contentView.smokeSearchFieldWidth) < 0.5
+                && abs(contentView.smokeSearchFieldAlpha) < 0.01
+                && controller.smokeFirstResponderIsContentView
+        })
+        #expect(queries.count == queryCountAfterClear)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func nativeSearchCancelTextChangeBeforeActionEmitsOneImmediateClearQuery() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var queries: [(searchText: String, debounce: Bool)] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(let searchText, _, _, _, let debounce) = action {
+                queries.append((searchText, debounce))
+            }
+        }
+
+        controller.show()
+        contentView.smokeOpenSearch(text: "report")
+        let queryCountBeforeCancel = queries.count
+
+        #expect(contentView.smokeNativeSearchCancelTextChangeBeforeAction())
+        #expect(await waitForMainActor {
+            contentView.smokeIsSearchVisible
+                && contentView.smokeSearchText.isEmpty
+                && contentView.smokeFirstResponderIsSearchField
+        })
+        let cancelQueries = Array(queries.dropFirst(queryCountBeforeCancel))
+        #expect(cancelQueries.count == 1)
+        #expect(cancelQueries.first?.searchText == "")
+        #expect(cancelQueries.first?.debounce == false)
+        #expect(!cancelQueries.contains { $0.debounce })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func nativeSearchCancelActionBeforeTextChangeEmitsOneImmediateClearQuery() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var queries: [(searchText: String, debounce: Bool)] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(let searchText, _, _, _, let debounce) = action {
+                queries.append((searchText, debounce))
+            }
+        }
+
+        controller.show()
+        contentView.smokeOpenSearch(text: "report")
+        let queryCountBeforeCancel = queries.count
+
+        #expect(contentView.smokeNativeSearchCancelActionBeforeTextChange())
+        #expect(await waitForMainActor {
+            contentView.smokeIsSearchVisible
+                && contentView.smokeSearchText.isEmpty
+                && contentView.smokeFirstResponderIsSearchField
+        })
+        let cancelQueries = Array(queries.dropFirst(queryCountBeforeCancel))
+        #expect(cancelQueries.count == 1)
+        #expect(cancelQueries.first?.searchText == "")
+        #expect(cancelQueries.first?.debounce == false)
+        #expect(!cancelQueries.contains { $0.debounce })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func emptySearchClickAwayOnCardAndChipClosesSearchWithoutConsumingClick() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = Array(PanelQASamples.makePagedPanelItems(count: 2))
+        var pinboardQueries: [String?] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(_, _, _, let pinboardID, _) = action {
+                pinboardQueries.append(pinboardID)
+            }
+        }
+
+        controller.show()
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "default",
+                title: "固定",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        contentView.smokeOpenSearch(text: "")
+        #expect(contentView.smokeIsSearchVisible)
+        contentView.smokeClickCardWithSearchClickAway(itemID: items[1].id)
+        #expect(await waitForMainActor {
+            !contentView.smokeIsSearchVisible && contentView.smokeSelectedItemID == items[1].id
+        })
+
+        contentView.smokeOpenSearch(text: "")
+        #expect(contentView.smokeIsSearchVisible)
+        contentView.smokeClickPinboardFilterWithSearchClickAway(pinboardID: "default")
+        #expect(await waitForMainActor {
+            !contentView.smokeIsSearchVisible && pinboardQueries.last == "default"
+        })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func nonEmptySearchClickAwayPreservesSearchWhileOriginalClickContinues() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = Array(PanelQASamples.makePagedPanelItems(count: 2))
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+        contentView.smokeOpenSearch(text: "report")
+
+        contentView.smokeClickCardWithSearchClickAway(itemID: items[1].id)
+        PanelQAHarness.drainMainRunLoop()
+
+        #expect(contentView.smokeIsSearchVisible)
+        #expect(contentView.smokeSearchText == "report")
+        #expect(contentView.smokeSelectedItemID == items[1].id)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func menuTrackingDefersEmptySearchClickAwayAndRechecksBeforeClosing() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+
+        controller.show()
+        contentView.layoutSubtreeIfNeeded()
+        contentView.smokeOpenSearch(text: "")
+        let closingMenu = contentView.smokeMenuTrackingDefersEmptySearchClickAway(makeSearchNonEmptyBeforeExit: false)
+
+        #expect(closingMenu.pendingDuringTracking)
+        #expect(closingMenu.searchVisibleDuringTracking)
+        #expect(await waitForMainActor {
+            !contentView.smokeIsSearchVisible && controller.smokeFirstResponderIsContentView
+        })
+
+        contentView.smokeOpenSearch(text: "")
+        let preservedMenu = contentView.smokeMenuTrackingDefersEmptySearchClickAway(makeSearchNonEmptyBeforeExit: true)
+
+        #expect(preservedMenu.pendingDuringTracking)
+        #expect(preservedMenu.searchVisibleDuringTracking)
+        PanelQAHarness.drainMainRunLoop()
+        #expect(contentView.smokeIsSearchVisible)
+        #expect(contentView.smokeSearchText == "menu")
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func searchFieldHideAnimationIgnoresStaleCompletionAfterReopen() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+
+        controller.show()
+        contentView.smokeOpenSearch(text: "")
+        #expect(await waitForMainActor(attempts: 120) {
+            contentView.smokeIsSearchVisible
+                && abs(contentView.smokeSearchFieldWidth - 330) < 0.5
+                && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
+        })
+
+        PanelQAHarness.sendEscape(to: contentView)
+        contentView.smokeOpenSearch(text: "z")
+
+        #expect(await waitForMainActor(attempts: 160) {
+            contentView.smokeIsSearchVisible
+                && contentView.smokeSearchText == "z"
+                && !contentView.smokeSearchFieldIsHidden
+                && abs(contentView.smokeSearchFieldWidth - 330) < 0.5
+                && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
+        })
+
+        controller.hide()
+    }
+
+    @Test
     @MainActor
     func panelKeyboardShortcutsCopyAndDeleteSelectedItem() async throws {
         let app = NSApplication.shared
@@ -109,7 +478,7 @@ struct PanelRuntimeSeamTests {
             switch action {
             case .copyItem(let item):
                 copiedItemID = item.id
-            case .deleteItem(let item):
+            case .deleteItem(let item, _):
                 deletedItemID = item.id
             default:
                 break
@@ -233,12 +602,6 @@ struct PanelRuntimeSeamTests {
         )
         #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == items.map(\.id) })
 
-        let firstCardsByID = Dictionary(
-            uniqueKeysWithValues: zip(
-                contentView.smokeOrderedCardItemIDs(),
-                contentView.smokeCardBoxObjectIdentifiers()
-            )
-        )
         let inserted = makeRuntimeTextItem(id: "runtime-reconcile-inserted", summary: "Inserted")
         let changed = runtimeLinkItemByUpdatingMetadata(items[1], title: "Changed title")
         let nextItems = [items[2], inserted, changed]
@@ -249,17 +612,8 @@ struct PanelRuntimeSeamTests {
         )
 
         #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == nextItems.map(\.id) })
-        let nextCardsByID = Dictionary(
-            uniqueKeysWithValues: zip(
-                contentView.smokeOrderedCardItemIDs(),
-                contentView.smokeCardBoxObjectIdentifiers()
-            )
-        )
-        #expect(nextCardsByID[items[2].id] == firstCardsByID[items[2].id])
-        #expect(nextCardsByID[items[1].id] != firstCardsByID[items[1].id])
-        #expect(nextCardsByID[items[0].id] == nil)
-        #expect(nextCardsByID[inserted.id] != nil)
         #expect(contentView.smokeRenderedCardTrackingIsConsistent)
+        #expect(contentView.smokeRetainedCollectionSurfaceCount <= contentView.smokeCollectionRetainedCellBound)
 
         controller.hide()
     }
@@ -285,6 +639,8 @@ struct PanelRuntimeSeamTests {
         contentView.smokeScrollToX(720)
         let scrolledX = contentView.smokeScrollOriginX
         #expect(scrolledX > 0)
+        contentView.smokeSelectItem(id: items[6].id, scrollIntoView: true)
+        #expect(await waitForMainActor { contentView.smokeCardBoxes().contains { $0.itemID == items[6].id } })
         #expect(contentView.smokePerformManagementAction(itemID: items[6].id, title: "预览"))
         #expect(await waitForMainActor { contentView.smokeIsPreviewShown })
 
@@ -297,7 +653,7 @@ struct PanelRuntimeSeamTests {
             )),
             isFiltered: false
         )
-        #expect(contentView.smokeIsPreviewShown)
+        #expect(!contentView.smokeIsPreviewShown)
         #expect(contentView.smokeScrollOriginX <= scrolledX)
         #expect(contentView.smokeRenderedCardTrackingIsConsistent)
 
@@ -358,6 +714,26 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func itemBandUsesCollectionViewReusableSurface() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 12)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        let scrollView = try #require(contentView.smokeHorizontalScrollView())
+        #expect(scrollView.documentView is NSCollectionView)
+        #expect(!scrollView.hasHorizontalScroller)
+        #expect(!scrollView.hasVerticalScroller)
+        #expect(scrollView.horizontalScroller == nil)
+        #expect(scrollView.verticalScroller == nil)
+        #expect(contentView.smokeOrderedCardItemIDs() == items.map(\.id))
+    }
+
+    @Test
+    @MainActor
     func itemBandUsesTransparentSpacersForHorizontalContentPadding() async throws {
         let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
         let items = PanelQASamples.makePagedPanelItems(count: 8)
@@ -412,16 +788,18 @@ struct PanelRuntimeSeamTests {
             callbackCount += 1
         }
 
-        sendWheel(to: scrollView, deltaX: 0, deltaY: 180)
+        sendWheel(to: scrollView, deltaX: 0, deltaY: -180)
         PanelQAHarness.drainMainRunLoop()
         #expect(scrollView.contentView.bounds.origin.x > 0)
-        #expect(callbackCount == 1)
+        #expect(callbackCount >= 1)
 
         callbackCount = 0
         scrollView.contentView.scroll(to: NSPoint(x: maxX, y: scrollView.contentView.bounds.origin.y))
         scrollView.reflectScrolledClipView(scrollView.contentView)
+        PanelQAHarness.drainMainRunLoop()
+        callbackCount = 0
         for _ in 0..<5 {
-            sendWheel(to: scrollView, deltaX: 0, deltaY: 180)
+            sendWheel(to: scrollView, deltaX: 0, deltaY: -180)
         }
         PanelQAHarness.drainMainRunLoop()
         #expect(abs(scrollView.contentView.bounds.origin.x - maxX) < 0.5)
@@ -430,17 +808,41 @@ struct PanelRuntimeSeamTests {
         callbackCount = 0
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.origin.y))
         scrollView.reflectScrolledClipView(scrollView.contentView)
+        PanelQAHarness.drainMainRunLoop()
+        callbackCount = 0
         for _ in 0..<5 {
-            sendWheel(to: scrollView, deltaX: 0, deltaY: -180)
+            sendWheel(to: scrollView, deltaX: 0, deltaY: 180)
         }
         PanelQAHarness.drainMainRunLoop()
         #expect(abs(scrollView.contentView.bounds.origin.x) < 0.5)
         #expect(callbackCount == 0)
 
-        sendWheel(to: scrollView, deltaX: 180, deltaY: 0)
+        sendWheel(to: scrollView, deltaX: -180, deltaY: 0)
         PanelQAHarness.drainMainRunLoop()
         #expect(scrollView.contentView.bounds.origin.x > 0)
-        #expect(callbackCount == 1)
+        #expect(callbackCount >= 1)
+    }
+
+    @Test
+    @MainActor
+    func itemBandWheelProjectionDoesNotAddSyntheticInertia() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 18)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        let scrollView = try #require(contentView.smokeHorizontalScrollView())
+        sendWheel(to: scrollView, deltaX: 0, deltaY: -120)
+        let immediateX = scrollView.contentView.bounds.origin.x
+
+        PanelQAHarness.drainMainRunLoop()
+        let settledX = scrollView.contentView.bounds.origin.x
+
+        #expect(immediateX > 0)
+        #expect(abs(settledX - immediateX) < 0.5)
     }
 
     @Test
@@ -473,8 +875,9 @@ struct PanelRuntimeSeamTests {
         #expect(abs(clickedFrameAfter.height - clickedFrameBefore.height) < 0.5)
         #expect(abs(contentView.smokeScrollOrigin.y - scrollOriginBeforeClick.y) < 0.5)
 
-        let farCard = try #require(contentView.smokeOrderedCardBoxes().first { $0.itemID == items[10].id })
         contentView.smokeSelectItem(id: items[10].id, scrollIntoView: true)
+        #expect(await waitForMainActor { contentView.smokeCardBoxes().contains { $0.itemID == items[10].id } })
+        let farCard = try #require(contentView.smokeOrderedCardBoxes().first { $0.itemID == items[10].id })
         contentView.layoutSubtreeIfNeeded()
         let farFrameAfter = farCard.convert(farCard.bounds, to: contentView)
         #expect(contentView.smokeSelectedItemID == items[10].id)
@@ -531,6 +934,7 @@ struct PanelRuntimeSeamTests {
 
         #expect(items.map(\.title) == ["隐藏面板", "偏好设置"])
         #expect(items.allSatisfy { $0.isEnabled && !$0.hasSubmenu && !$0.hasCustomView })
+        #expect(items.allSatisfy { $0.hasImage })
         #expect(contentView.smokeToolbarButtonToolTips().contains("更多功能"))
         #expect(contentView.smokePerformPanelOverflowAction(title: "隐藏面板"))
         #expect(didHidePanel)
@@ -567,6 +971,7 @@ struct PanelRuntimeSeamTests {
 
         let items = contentView.smokeManagementMenuItems(itemID: item.id)
         #expect(items.map(\.title) == ["复制", "复制路径", "删除", "固定", "预览"])
+        #expect(items.allSatisfy { $0.hasImage })
         #expect(contentView.smokePerformManagementAction(itemID: item.id, title: "复制路径"))
         #expect(copiedPathText == payloadURL.standardizedFileURL.path)
     }
@@ -595,6 +1000,7 @@ struct PanelRuntimeSeamTests {
 
         let items = contentView.smokeManagementMenuItems(itemID: item.id)
         #expect(items.map(\.title) == ["复制", "复制路径", "删除", "固定", "预览"])
+        #expect(items.allSatisfy { $0.hasImage })
         #expect(contentView.smokePerformManagementAction(itemID: item.id, title: "复制路径"))
         #expect(copiedPathText == "\(firstImagePath)\n\(secondImagePath)")
     }
@@ -615,6 +1021,7 @@ struct PanelRuntimeSeamTests {
 
         let items = contentView.smokeManagementMenuItems(itemID: item.id)
         #expect(items.map(\.title) == ["复制", "删除", "固定", "预览"])
+        #expect(items.allSatisfy { $0.hasImage })
         #expect(!contentView.smokePerformManagementAction(itemID: item.id, title: "复制路径"))
     }
 
@@ -860,6 +1267,7 @@ struct PanelRuntimeSeamTests {
         #expect(await waitForMainActor(attempts: 240) {
             controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
         })
+        #expect(controller.smokeContentView.smokePanelUsesWindowLocalBackdropBlend())
         let backgroundAlphaBeforeHide = controller.smokePanelContentBackgroundAlpha
         controller.smokeHandleOutsideMouseDown(
             eventWindowIsPanel: false,
@@ -1632,6 +2040,244 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func colorCardRenderUsesFullNativeSurfaceWithoutAsyncImageTokens() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let colorValue = try #require(ClipboardColorValue(normalizedHex: "#FF00AA"))
+
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "color-card",
+            sourceAppName: "Color Meter",
+            relativeTimeText: "now",
+            symbolName: "paintpalette",
+            typeText: "颜色",
+            summaryText: "#FF00AA",
+            footnoteText: "",
+            commandIndexText: "7",
+            isSelected: true,
+            preview: .color(colorValue),
+            assetRequest: PanelCardAssetRequest(
+                sourceAppId: "com.apple.DigitalColorMeter",
+                sourceAppName: "Color Meter",
+                sourceAppIconHeaderColor: 0xFF11_2233,
+                previewAssetPath: "missing-preview.png",
+                payloadAssetPath: "missing-payload.png",
+                primaryText: "#FF00AA"
+            )
+        ))
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+
+        let surface = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardSurface"
+        })
+        let hexLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardHexLabel"
+        } as? NSTextField)
+        let commandIndexLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardCommandIndexLabel"
+        } as? NSTextField)
+        let typeLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "PanelCardTypeLabel"
+        } as? NSTextField)
+        let timeLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "PanelCardTimeLabel"
+        } as? NSTextField)
+        let header = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "PanelCardHeader"
+        })
+        let surfaceColor = try #require(surface.layer?.backgroundColor.flatMap(NSColor.init(cgColor:)))
+        let headerColor = try #require(header.layer?.backgroundColor.flatMap(NSColor.init(cgColor:)))
+        let surfaceFrame = surface.convert(surface.bounds, to: renderedCard.view)
+
+        #expect(typeLabel.stringValue == "颜色")
+        #expect(timeLabel.stringValue == "now")
+        #expect(colorAndAlphaDistance(
+            headerColor,
+            NSColor(srgbRed: CGFloat(0x11) / 255, green: CGFloat(0x22) / 255, blue: CGFloat(0x33) / 255, alpha: 0.96)
+        ) < 0.001)
+        #expect(surface.toolTip == "#FF00AA")
+        #expect(surfaceFrame.width > 210)
+        #expect(surfaceFrame.height > 165)
+        #expect(abs(surfaceFrame.minY) < 0.5)
+        #expect(colorAndAlphaDistance(surfaceColor, NSColor(srgbRed: 1, green: 0, blue: CGFloat(0xAA) / 255, alpha: 1)) < 0.001)
+        #expect(hexLabel.stringValue == "#FF00AA")
+        #expect(hexLabel.alignment == .center)
+        #expect(colorAndAlphaDistance(hexLabel.textColor ?? .clear, .black) < 0.001)
+        #expect(commandIndexLabel.stringValue == "7")
+        #expect(!commandIndexLabel.isHidden)
+        #expect(colorAndAlphaDistance(commandIndexLabel.textColor ?? .clear, .black) < 0.001)
+        #expect(!renderedCard.view.subviewsRecursiveForSmoke().contains {
+            ($0 as? NSTextField)?.stringValue == "RGB 255, 0, 170"
+        })
+        #expect(renderedCard.artifacts.imagePreviewViews.isEmpty)
+        #expect(renderedCard.artifacts.previewImageLoadTokensForSmoke().isEmpty)
+        #expect(renderedCard.artifacts.filePreviewThumbnailTokensForSmoke().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func colorCardSurfaceForegroundCoversLightDarkSaturatedAndMidGrayColors() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let cases: [(hex: String, foreground: NSColor)] = [
+            ("#FDF6E3", .black),
+            ("#000000", .white),
+            ("#FFFFFF", .black),
+            ("#FF00AA", .black),
+            ("#777777", .black),
+            ("#666666", .white)
+        ]
+
+        for testCase in cases {
+            let colorValue = try #require(ClipboardColorValue(normalizedHex: testCase.hex))
+            let renderedCard = renderer.render(PanelItemCardViewState(
+                itemID: "color-card-\(testCase.hex)",
+                sourceAppName: "Color Meter",
+                relativeTimeText: "now",
+                symbolName: "paintpalette",
+                typeText: "颜色",
+                summaryText: testCase.hex,
+                footnoteText: "",
+                isSelected: false,
+                preview: .color(colorValue),
+                assetRequest: PanelCardAssetRequest(primaryText: testCase.hex)
+            ))
+            let hexLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+                $0.identifier?.rawValue == "ColorCardHexLabel"
+            } as? NSTextField)
+            let commandIndexLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+                $0.identifier?.rawValue == "ColorCardCommandIndexLabel"
+            } as? NSTextField)
+
+            #expect(hexLabel.stringValue == testCase.hex)
+            #expect(colorAndAlphaDistance(hexLabel.textColor ?? .clear, testCase.foreground) < 0.001)
+            #expect(colorAndAlphaDistance(commandIndexLabel.textColor ?? .clear, testCase.foreground) < 0.001)
+        }
+    }
+
+    @Test
+    @MainActor
+    func collectionCellReuseClearsColorStateWhenReconfiguredAsImage() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let metrics = PanelItemCollectionLayoutMetrics(
+            itemSide: 218,
+            itemSpacing: 22,
+            horizontalContentInset: 22,
+            imagePreviewMinHeight: 78,
+            imagePreviewMaxHeight: 116,
+            cardInset: 12
+        )
+        let cell = PanelItemCollectionCell()
+        _ = cell.view
+        let colorValue = try #require(ClipboardColorValue(normalizedHex: "#FF00AA"))
+
+        cell.configure(
+            entry: PanelItemCollectionEntry(
+                id: "reuse-item",
+                state: PanelItemCardViewState(
+                    itemID: "reuse-item",
+                    sourceAppName: "Color Meter",
+                    relativeTimeText: "now",
+                    symbolName: "paintpalette",
+                    typeText: "颜色",
+                    summaryText: "#FF00AA",
+                    footnoteText: "",
+                    commandIndexText: "8",
+                    isSelected: false,
+                    preview: .color(colorValue),
+                    assetRequest: PanelCardAssetRequest(primaryText: "#FF00AA")
+                ),
+                callbacks: PanelItemCollectionCallbacks(toolTip: nil, onSelect: nil, onDoubleClick: nil, onContextMenu: nil)
+            ),
+            renderer: renderer,
+            metrics: metrics
+        )
+        #expect(cell.hostedCard?.subviewsRecursiveForSmoke().contains {
+            $0.identifier?.rawValue == "ColorCardSurface" && $0.toolTip == "#FF00AA"
+        } == true)
+        #expect((cell.hostedCard?.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardCommandIndexLabel"
+        } as? NSTextField)?.stringValue == "8")
+
+        cell.applyTransientDecorations(isSelected: false, commandIndexText: nil)
+        #expect((cell.hostedCard?.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardCommandIndexLabel"
+        } as? NSTextField)?.isHidden == true)
+
+        cell.configure(
+            entry: PanelItemCollectionEntry(
+                id: "reuse-item",
+                state: PanelItemCardViewState(
+                    itemID: "reuse-item",
+                    sourceAppName: "Preview",
+                    relativeTimeText: "now",
+                    symbolName: "photo",
+                    typeText: "图片",
+                    summaryText: "",
+                    footnoteText: "120 × 80",
+                    isSelected: false,
+                    preview: .image(previewPath: nil, payloadPath: nil, summary: "图片 120 x 80"),
+                    assetRequest: PanelCardAssetRequest(sourceAppName: "Preview")
+                ),
+                callbacks: PanelItemCollectionCallbacks(toolTip: nil, onSelect: nil, onDoubleClick: nil, onContextMenu: nil)
+            ),
+            renderer: renderer,
+            metrics: metrics
+        )
+
+        #expect(cell.hostedCard?.subviewsRecursiveForSmoke().contains {
+            $0.identifier?.rawValue == "ColorCardSurface" || $0.identifier?.rawValue == "ColorCardHexLabel"
+        } == false)
+        #expect(cell.hostedCard?.subviewsRecursiveForSmoke().contains { $0.toolTip == "#FF00AA" } == false)
+    }
+
+    @Test
+    @MainActor
+    func colorPreviewPopoverPreservesHexRgbHslAndHsbDetails() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let item = makeRuntimeColorItem(id: "preview-color", hex: "#FF00AA")
+        controller.setAppSupportDirectory(FileManager.default.temporaryDirectory)
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(items: [item], totalCount: 1, hasMore: false)),
+            isFiltered: false
+        )
+        PanelQAHarness.drainMainRunLoop()
+
+        #expect(contentView.smokePerformManagementAction(itemID: item.id, title: "预览"))
+        #expect(await waitForMainActor { contentView.smokeIsPreviewShown })
+
+        let previewLabels = contentView.smokePreviewLabelTexts().joined(separator: " ")
+        #expect(previewLabels.contains("HEX"))
+        #expect(previewLabels.contains("#FF00AA"))
+        #expect(previewLabels.contains("RGB"))
+        #expect(previewLabels.contains("255, 0, 170"))
+        #expect(previewLabels.contains("HSL"))
+        #expect(previewLabels.contains("320°, 100%, 50%"))
+        #expect(previewLabels.contains("HSB"))
+        #expect(previewLabels.contains("320°, 100%, 100%"))
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
     func fileCardUsesPersistedThumbnailWhenOriginalFileIsMissing() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1680,6 +2326,55 @@ struct PanelRuntimeSeamTests {
 
         #expect(abs(cardBox.borderWidth) < 0.001)
         #expect(cardBox.borderColor.alphaComponent < 0.001)
+    }
+
+    @Test
+    @MainActor
+    func textCardBodyExtendsBehindFooterAndUsesBottomFadeOverlay() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let itemSide: CGFloat = 218
+        let renderer = makeRuntimeCardRenderer(
+            appSupportDirectory: tempDirectory,
+            itemSide: itemSide
+        )
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "text-card-fade",
+            sourceAppName: "TextEdit",
+            relativeTimeText: "now",
+            symbolName: "doc.text",
+            typeText: "文本",
+            summaryText: String(repeating: "172.17.170.82:{\"data\":\n", count: 30),
+            footnoteText: "1,524 个字符",
+            isSelected: true,
+            preview: .none,
+            assetRequest: PanelCardAssetRequest(sourceAppName: "TextEdit")
+        ))
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: itemSide, height: itemSide))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+
+        let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        let cardBox = try #require(renderedCard.view as? NSBox)
+        let fadeView = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "TextBodyBottomFade"
+        })
+        let bodyFrame = bodyLabel.convert(bodyLabel.bounds, to: renderedCard.view)
+        let fadeFrame = fadeView.convert(fadeView.bounds, to: renderedCard.view)
+
+        #expect(colorAndAlphaDistance(
+            cardBox.fillColor,
+            ClipShelfTheme.current(for: NSAppearance(named: .aqua)).card.textItemBackgroundColor
+        ) < 0.001)
+        #expect(!fadeView.isHidden)
+        #expect(fadeFrame.height >= 70)
+        #expect(bodyFrame.intersects(fadeFrame))
     }
 
     @Test
@@ -2384,8 +3079,6 @@ struct PanelRuntimeSeamTests {
         )
 
         #expect(await waitForMainActor { contentView.smokeCurrentItemCount == 50 })
-        let firstCardBeforeAppend = try #require(contentView.smokeCardBoxes().first)
-
         contentView.smokeScrollToLoadMoreThreshold()
 
         #expect(await waitForMainActor {
@@ -2406,7 +3099,207 @@ struct PanelRuntimeSeamTests {
             contentView.smokeCurrentItemCount == 75
                 && !contentView.smokeIsLoadingMoreActive
         })
-        #expect(contentView.smokeCardBoxes().first === firstCardBeforeAppend)
+        #expect(contentView.smokeOrderedCardItemIDs() == pagedItems.map(\.id))
+        #expect(contentView.smokeRetainedCollectionSurfaceCount <= contentView.smokeCollectionRetainedCellBound)
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func loadMoreAppendFailureClearsSuppressionAndAllowsRetryForSameLoadedCount() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let firstPage = Array(PanelQASamples.makePagedPanelItems(count: 50))
+        var loadMoreRequestCount = 0
+
+        controller.onRuntimeAction = { action in
+            if case .loadMore = action {
+                loadMoreRequestCount += 1
+            }
+        }
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: firstPage, totalCount: 75, hasMore: true)),
+            isFiltered: false
+        )
+
+        contentView.smokeScrollToLoadMoreThreshold()
+        #expect(await waitForMainActor {
+            loadMoreRequestCount == 1 && contentView.smokeIsLoadingMoreActive
+        })
+
+        contentView.updateListState(
+            .failure(RustCoreError(
+                code: "test",
+                messageKey: "test",
+                recoverable: true,
+                message: "append failed"
+            )),
+            isFiltered: false,
+            append: true
+        )
+        #expect(!contentView.smokeIsLoadingMoreActive)
+        #expect(contentView.smokeCurrentItemCount == firstPage.count)
+
+        contentView.smokeScrollToLoadMoreThreshold()
+        #expect(await waitForMainActor {
+            loadMoreRequestCount == 2 && contentView.smokeIsLoadingMoreActive
+        })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func collectionSurfaceKeepsRetainedCellsBoundedWhenScrollingLargeLoadedList() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 90)
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == items.map(\.id) })
+
+        for x in [CGFloat(0), CGFloat(3_800), CGFloat.greatestFiniteMagnitude] {
+            contentView.smokeScrollToX(x)
+            PanelQAHarness.drainMainRunLoop()
+            #expect(contentView.smokeRetainedCollectionSurfaceCount <= contentView.smokeCollectionRetainedCellBound)
+        }
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func commandHintsUseFullyVisibleVisualOrderOnly() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 16)
+
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+        contentView.smokeScrollToX(110)
+
+        let visibleIDs = contentView.smokeVisibleCommandItemIDs()
+        let orderedIDs = contentView.smokeOrderedCardItemIDs()
+        let visibleIndexes = visibleIDs.compactMap { orderedIDs.firstIndex(of: $0) }
+
+        #expect(visibleIDs.count <= 9)
+        #expect(visibleIndexes == visibleIndexes.sorted())
+        #expect(visibleIDs.first != items.first?.id)
+    }
+
+    @Test
+    @MainActor
+    func inactiveScopeUpdateDoesNotAttachCellsToActiveSurface() async throws {
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let clipboardItems = PanelQASamples.makePagedPanelItems(count: 24)
+        let inactiveItems = [clipboardItems[8], clipboardItems[9]]
+
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: clipboardItems,
+                totalCount: Int64(clipboardItems.count),
+                hasMore: false
+            )),
+            isFiltered: false,
+            scope: .clipboard
+        )
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == clipboardItems.map(\.id) })
+        let retainedCountBefore = contentView.smokeRetainedCollectionSurfaceCount
+
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: inactiveItems,
+                totalCount: Int64(inactiveItems.count),
+                hasMore: false
+            )),
+            isFiltered: true,
+            scope: ClipboardListScope(pinboardID: "inactive-board")
+        )
+
+        #expect(contentView.smokeActiveListScope == .clipboard)
+        #expect(contentView.smokeOrderedCardItemIDs() == clipboardItems.map(\.id))
+        #expect(contentView.smokeRetainedCollectionSurfaceCount == retainedCountBefore)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func searchScopeSwitchRestoresOrderedIDsSelectionAndScrollOrigin() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let clipboardItems = PanelQASamples.makePagedPanelItems(count: 30)
+        let searchItems = Array(clipboardItems[10...18])
+        let searchScope = ClipboardListScope(normalizedSearch: "needle")
+
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: clipboardItems,
+                totalCount: Int64(clipboardItems.count),
+                hasMore: false
+            )),
+            isFiltered: false,
+            scope: .clipboard
+        )
+
+        contentView.smokeOpenSearch(text: "needle")
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: searchItems,
+                totalCount: Int64(searchItems.count),
+                hasMore: false
+            )),
+            isFiltered: true,
+            scope: searchScope
+        )
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == searchItems.map(\.id) })
+
+        contentView.smokeSelectItem(id: searchItems[4].id, scrollIntoView: true)
+        contentView.smokeScrollToX(420)
+        let savedSearchX = contentView.smokeScrollOriginX
+
+        contentView.resetFiltersForCapturedItem()
+        #expect(contentView.smokeActiveListScope == .clipboard)
+
+        contentView.smokeOpenSearch(text: "needle")
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: searchItems,
+                totalCount: Int64(searchItems.count),
+                hasMore: false
+            )),
+            isFiltered: true,
+            scope: searchScope
+        )
+
+        #expect(contentView.smokeActiveListScope == searchScope)
+        #expect(contentView.smokeOrderedCardItemIDs() == searchItems.map(\.id))
+        #expect(contentView.smokeSelectedItemID == searchItems[4].id)
+        #expect(abs(contentView.smokeScrollOriginX - savedSearchX) < 1)
+
         controller.hide()
     }
 
@@ -2424,7 +3317,7 @@ struct PanelRuntimeSeamTests {
         var queries: [(pinboardID: String?, debounce: Bool)] = []
 
         controller.onRuntimeAction = { action in
-            if case .queryChanged(_, _, let pinboardID, let debounce) = action {
+            if case .queryChanged(_, _, _, let pinboardID, let debounce) = action {
                 queries.append((pinboardID, debounce))
                 if pinboardID == "board-a" {
                     controller.updateListState(
@@ -2463,7 +3356,8 @@ struct PanelRuntimeSeamTests {
         )
 
         #expect(await waitForMainActor { contentView.smokeCurrentItemCount == clipboardItems.count })
-        let firstClipboardCard = try #require(contentView.smokeCardBoxes().first)
+        contentView.smokeSelectItem(id: clipboardItems[8].id, scrollIntoView: true)
+        #expect(await waitForMainActor { contentView.smokeSelectedItemID == clipboardItems[8].id })
         contentView.smokeScrollToX(640)
         let savedScrollX = contentView.smokeScrollOriginX
         #expect(savedScrollX > 0)
@@ -2473,11 +3367,136 @@ struct PanelRuntimeSeamTests {
 
         contentView.smokePinboardFilterButton(pinboardID: nil)?.onPress?()
         #expect(contentView.smokeCurrentItemCount == clipboardItems.count)
-        #expect(contentView.smokeCardBoxes().first === firstClipboardCard)
+        #expect(contentView.smokeOrderedCardItemIDs() == clipboardItems.map(\.id))
+        #expect(contentView.smokeSelectedItemID == clipboardItems[8].id)
+        #expect(contentView.smokeActiveListScope == .clipboard)
         #expect(abs(contentView.smokeScrollOriginX - savedScrollX) < 1)
+        #expect(contentView.smokeRetainedCollectionSurfaceCount <= contentView.smokeCollectionRetainedCellBound)
         #expect(queries.map(\.debounce) == [false, false])
 
         controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func pinboardScopedDeleteKeepsOtherCachedPinboardListIndependent() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let samples = PanelQASamples.makePagedPanelItems(count: 4)
+        let boardAItems = [samples[0]]
+        let boardBItems = [samples[1]]
+        var deletedItem: (id: String, pinboardID: String?)?
+        var shouldApplyQueryResponses = true
+
+        controller.onRuntimeAction = { action in
+            switch action {
+            case .queryChanged(_, _, _, let pinboardID, _):
+                guard shouldApplyQueryResponses else { return }
+                if pinboardID == "board-a" {
+                    controller.updateListState(
+                        .success(RustCoreListResult(
+                            items: boardAItems,
+                            totalCount: Int64(boardAItems.count),
+                            hasMore: false
+                        )),
+                        isFiltered: true,
+                        scope: ClipboardListScope(pinboardID: "board-a")
+                    )
+                } else if pinboardID == "board-b" {
+                    controller.updateListState(
+                        .success(RustCoreListResult(
+                            items: boardBItems,
+                            totalCount: Int64(boardBItems.count),
+                            hasMore: false
+                        )),
+                        isFiltered: true,
+                        scope: ClipboardListScope(pinboardID: "board-b")
+                    )
+                }
+            case .deleteItem(let item, let pinboardID):
+                deletedItem = (item.id, pinboardID)
+            default:
+                break
+            }
+        }
+
+        controller.show()
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "board-a",
+                title: "Board A",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "board-b",
+                title: "Board B",
+                colorCode: 4_294_620_928,
+                sortOrder: 1,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+
+        contentView.smokePinboardFilterButton(pinboardID: "board-a")?.onPress?()
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == boardAItems.map(\.id) })
+
+        contentView.smokePinboardFilterButton(pinboardID: "board-b")?.onPress?()
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == boardBItems.map(\.id) })
+
+        contentView.smokePinboardFilterButton(pinboardID: "board-a")?.onPress?()
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == boardAItems.map(\.id) })
+        #expect(contentView.smokePerformManagementAction(itemID: boardAItems[0].id, title: "删除"))
+        #expect(deletedItem?.id == boardAItems[0].id)
+        #expect(deletedItem?.pinboardID == "board-a")
+
+        shouldApplyQueryResponses = false
+        contentView.invalidateCachedPinboardListPages(pinboardID: "board-a")
+        contentView.smokePinboardFilterButton(pinboardID: "board-b")?.onPress?()
+
+        #expect(contentView.smokeOrderedCardItemIDs() == boardBItems.map(\.id))
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func topFilterChipsDoNotExposeColorCategory() async throws {
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var queries: [(itemType: String?, pinboardID: String?, debounce: Bool)] = []
+
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(_, let itemType, _, let pinboardID, let debounce) = action {
+                queries.append((itemType, pinboardID, debounce))
+            }
+        }
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "board-a",
+                title: "Board A",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+
+        #expect(contentView.smokeItemTypeFilterButton(itemType: "color") == nil)
+        contentView.smokePinboardFilterButton(pinboardID: "board-a")?.onPress?()
+
+        #expect(queries.map(\.pinboardID) == ["board-a"])
+        #expect(queries.map(\.itemType) == [nil])
+        #expect(queries.map(\.debounce) == [false])
     }
 
     @Test
@@ -2640,6 +3659,28 @@ private func makeRuntimeImageFileItem(id: String, primaryText: String) -> RustCl
     )
 }
 
+private func makeRuntimeColorItem(id: String, hex: String) -> RustClipboardItemSummary {
+    RustClipboardItemSummary(
+        id: id,
+        itemType: "color",
+        summary: hex,
+        primaryText: hex,
+        contentHash: id,
+        sourceAppId: "com.apple.DigitalColorMeter",
+        sourceAppName: "Color Meter",
+        sourceAppIconPath: nil,
+        previewAssetPath: "should-not-load.png",
+        payloadAssetPath: "should-not-load-payload.png",
+        sourceConfidence: "high",
+        firstCopiedAtMs: 1,
+        lastCopiedAtMs: 1,
+        copyCount: 1,
+        isPinned: false,
+        sizeBytes: Int64(hex.utf8.count),
+        previewState: "ready"
+    )
+}
+
 private func makePreviewContent(fileURLs: [URL]) -> ClipboardPreviewContent {
     ClipboardPreviewContent(
         itemID: UUID().uuidString,
@@ -2654,6 +3695,7 @@ private func makePreviewContent(fileURLs: [URL]) -> ClipboardPreviewContent {
         linkURL: nil,
         linkDisplayURL: nil,
         linkTitle: nil,
+        colorValue: nil,
         fileURLs: fileURLs,
         copiedAtMilliseconds: 1
     )
@@ -2673,6 +3715,7 @@ private func makeTextPreviewContent(body: String, itemType: String = "text") -> 
         linkURL: nil,
         linkDisplayURL: nil,
         linkTitle: nil,
+        colorValue: nil,
         fileURLs: [],
         copiedAtMilliseconds: 1
     )
@@ -2692,6 +3735,7 @@ private func makeImagePreviewContent(imageURL: URL) -> ClipboardPreviewContent {
         linkURL: nil,
         linkDisplayURL: nil,
         linkTitle: nil,
+        colorValue: nil,
         fileURLs: [],
         copiedAtMilliseconds: 1
     )

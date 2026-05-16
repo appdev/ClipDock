@@ -74,6 +74,45 @@ struct ClipboardListCoordinatorTests {
 
     @Test
     @MainActor
+    func updateQueryCarriesItemTypeWithSearchAndPinboard() async {
+        let requests = QueryRecorder()
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                return .success(RustCoreListResult(items: [], totalCount: 0, hasMore: false))
+            },
+            mutationPerformer: { _ in
+                .success(RustItemManagementResult(affectedCount: 0))
+            }
+        )
+
+        coordinator.updateQuery(
+            searchText: " #FF00AA ",
+            itemType: "color",
+            sourceAppID: "source-app",
+            pinboardID: "board",
+            debounce: false
+        )
+
+        #expect(await waitUntil { await requests.values().count == 1 })
+        let query = await requests.values()[0]
+        #expect(query.itemType == "color")
+        #expect(query.sourceAppID == "source-app")
+        #expect(query.pinboardID == "board")
+        #expect(query.normalizedSearch == "#FF00AA")
+        #expect(query.scope == ClipboardListScope(
+            itemType: "color",
+            sourceAppID: "source-app",
+            pinboardID: "board",
+            normalizedSearch: "#FF00AA"
+        ))
+        #expect(query.isFiltered)
+    }
+
+    @Test
+    @MainActor
     func refreshPrefetchesNextPageAndLoadMoreConsumesIt() async {
         let requests = QueryRecorder()
         var updates: [ClipboardListUpdate] = []
@@ -130,6 +169,138 @@ struct ClipboardListCoordinatorTests {
         }
         #expect(updates[1].append)
         #expect(appendedPage.items.map(\.id) == ["c"])
+    }
+
+    @Test
+    @MainActor
+    func pinboardMembershipMutationDoesNotRefreshClipboardScopeAfterLoadMore() async {
+        let requests = QueryRecorder()
+        let firstPage = [
+            makeItem(id: "a"),
+            makeItem(id: "b")
+        ]
+        let secondPage = [
+            makeItem(id: "c")
+        ]
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                if query.offset == 0 {
+                    return .success(RustCoreListResult(
+                        items: firstPage,
+                        totalCount: 3,
+                        hasMore: true
+                    ))
+                }
+                return .success(RustCoreListResult(
+                    items: secondPage,
+                    totalCount: 3,
+                    hasMore: false
+                ))
+            },
+            mutationPerformer: { mutation in
+                #expect(mutation == .setPinboardMembership(
+                    itemID: "c",
+                    pinboardID: "default",
+                    isMember: true
+                ))
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+
+        coordinator.refresh()
+        #expect(await waitUntil { await requests.values().count == 2 })
+
+        coordinator.loadMore()
+        #expect(await waitUntil { coordinator.loadedItemCount == 3 })
+
+        coordinator.performMutation(.setPinboardMembership(
+            itemID: "c",
+            pinboardID: "default",
+            isMember: true
+        ))
+
+        await Task.yield()
+        #expect(await requests.values().count == 2)
+        #expect(coordinator.loadedItemCount == 3)
+    }
+
+    @Test
+    @MainActor
+    func pinboardMembershipMutationRefreshesCurrentPinboardScopeLoadedWindow() async {
+        let requests = QueryRecorder()
+        let firstPage = [
+            makeItem(id: "a"),
+            makeItem(id: "b")
+        ]
+        let secondPage = [
+            makeItem(id: "c")
+        ]
+        let refreshedPinboardWindow = [
+            makeItem(id: "a"),
+            makeItem(id: "b"),
+            makeItem(id: "c")
+        ]
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                if query.limit == 3 {
+                    return .success(RustCoreListResult(
+                        items: refreshedPinboardWindow,
+                        totalCount: 3,
+                        hasMore: false
+                    ))
+                }
+                if query.offset == 0 {
+                    return .success(RustCoreListResult(
+                        items: firstPage,
+                        totalCount: 3,
+                        hasMore: true
+                    ))
+                }
+                return .success(RustCoreListResult(
+                    items: secondPage,
+                    totalCount: 3,
+                    hasMore: false
+                ))
+            },
+            mutationPerformer: { mutation in
+                #expect(mutation == .setPinboardMembership(
+                    itemID: "c",
+                    pinboardID: "default",
+                    isMember: false
+                ))
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+
+        coordinator.updateQuery(
+            searchText: "",
+            sourceAppID: nil,
+            pinboardID: "default",
+            debounce: false
+        )
+        #expect(await waitUntil { await requests.values().count == 2 })
+
+        coordinator.loadMore()
+        #expect(await waitUntil { coordinator.loadedItemCount == 3 })
+
+        coordinator.performMutation(.setPinboardMembership(
+            itemID: "c",
+            pinboardID: "default",
+            isMember: false
+        ))
+
+        #expect(await waitUntil { await requests.values().count == 3 })
+        let mutationRefreshQuery = await requests.values()[2]
+        #expect(mutationRefreshQuery.pinboardID == "default")
+        #expect(mutationRefreshQuery.offset == 0)
+        #expect(mutationRefreshQuery.limit == 3)
+        #expect(coordinator.loadedItemCount == 3)
     }
 
     @Test
@@ -202,13 +373,13 @@ struct ClipboardListCoordinatorTests {
                 ))
             },
             mutationPerformer: { mutation in
-                #expect(mutation == .delete(itemID: "item-1"))
+                #expect(mutation == .delete(itemID: "item-1", pinboardID: nil))
                 return .success(RustItemManagementResult(affectedCount: 1))
             }
         )
         coordinator.onStatusTextChanged = { statusTexts.append($0) }
 
-        coordinator.performMutation(.delete(itemID: "item-1"))
+        coordinator.performMutation(.delete(itemID: "item-1", pinboardID: nil))
 
         #expect(await waitUntil {
             statusTexts.contains("条目：已删除")
@@ -216,6 +387,51 @@ struct ClipboardListCoordinatorTests {
         })
         #expect(await requests.values().count == 1)
         #expect(await requests.values()[0].offset == 0)
+    }
+
+    @Test
+    @MainActor
+    func scopedDeleteReportsPinboardRemovalAndRefreshesCurrentPinboardScope() async {
+        var statusTexts: [String] = []
+        let requests = QueryRecorder()
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                return .success(RustCoreListResult(
+                    items: [makeItem(id: "remaining")],
+                    totalCount: 1,
+                    hasMore: false
+                ))
+            },
+            mutationPerformer: { mutation in
+                #expect(mutation == .delete(itemID: "item-1", pinboardID: "board-a"))
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        coordinator.onStatusTextChanged = { statusTexts.append($0) }
+
+        coordinator.updateQuery(
+            searchText: "",
+            sourceAppID: nil,
+            pinboardID: "board-a",
+            debounce: false
+        )
+        #expect(await waitUntil { await requests.values().count == 1 })
+        let initialRequestCount = await requests.values().count
+        statusTexts.removeAll()
+
+        coordinator.performMutation(.delete(itemID: "item-1", pinboardID: "board-a"))
+
+        #expect(await waitUntil {
+            let requestCount = await requests.values().count
+            return statusTexts.contains("Pinboard：已移除")
+                && requestCount > initialRequestCount
+        })
+        let mutationRefreshQuery = await requests.values().last
+        #expect(mutationRefreshQuery?.pinboardID == "board-a")
+        #expect(mutationRefreshQuery?.offset == 0)
     }
 
     @Test

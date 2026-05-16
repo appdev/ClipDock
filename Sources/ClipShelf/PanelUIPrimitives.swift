@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ClipboardPanelApp
 
 enum PanelLevelMode: String, CaseIterable {
     case floating = "Floating"
@@ -140,76 +141,163 @@ final class HeightResizeHandleView: NSView {
 
 final class HorizontalWheelScrollView: NSScrollView {
     var onScrollDidChange: (() -> Void)?
+    private var isApplyingScrollerVisibility = false
+
+    private enum ScrollExecution {
+        static let minimumVisibleMove: CGFloat = 0.5
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        suppressScrollers()
+        configureScrollObservation()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        suppressScrollers()
+        configureScrollObservation()
+    }
+
+    override func tile() {
+        super.tile()
+        suppressScrollers()
+    }
 
     override func scrollWheel(with event: NSEvent) {
-        guard let documentView else {
+        guard documentView != nil else {
             super.scrollWheel(with: event)
             return
         }
 
-        let initialHorizontalOrigin = contentView.bounds.origin.x
-        let horizontalDelta = horizontalScrollDelta(from: event)
-        guard horizontalDelta != 0 else { return }
+        let plan = PanelHorizontalScrollPlanner.plan(for: PanelHorizontalScrollInput(
+            horizontalDelta: event.scrollingDeltaX,
+            verticalDelta: event.scrollingDeltaY,
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
+        ))
 
+        switch plan.mode {
+        case .none:
+            return
+
+        case .nativeHorizontal:
+            if scrollUsingSystemEvent(event) {
+                return
+            }
+
+            _ = scrollHorizontally(by: plan.contentOffsetDelta)
+
+        case .projectedVertical:
+            if let rewrittenEvent = ScrollWheelAxisRewriter.eventByProjectingVerticalAxis(from: event),
+               scrollUsingSystemEvent(rewrittenEvent) {
+                return
+            }
+
+            _ = scrollHorizontally(by: plan.contentOffsetDelta)
+        }
+    }
+
+    @discardableResult
+    private func scrollHorizontally(by delta: CGFloat) -> Bool {
+        guard let documentView else { return false }
+
+        let initialHorizontalOrigin = contentView.bounds.origin.x
         let minimumX: CGFloat = 0
         let maximumX = max(minimumX, documentView.frame.width - contentView.bounds.width)
-        let targetX = min(max(initialHorizontalOrigin + horizontalDelta, minimumX), maximumX)
-        guard abs(targetX - initialHorizontalOrigin) >= 0.5 else { return }
+        let targetX = min(max(initialHorizontalOrigin + delta, minimumX), maximumX)
+        guard abs(targetX - initialHorizontalOrigin) >= ScrollExecution.minimumVisibleMove else {
+            return false
+        }
 
         contentView.scroll(to: NSPoint(x: targetX, y: contentView.bounds.origin.y))
         reflectScrolledClipView(contentView)
+        return true
+    }
+
+    private func scrollUsingSystemEvent(_ event: NSEvent) -> Bool {
+        let initialOriginX = contentView.bounds.origin.x
+        super.scrollWheel(with: event)
+        return abs(contentView.bounds.origin.x - initialOriginX) >= ScrollExecution.minimumVisibleMove
+    }
+
+    private func configureScrollObservation() {
+        contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(clipViewBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: contentView
+        )
+    }
+
+    private func suppressScrollers() {
+        guard !isApplyingScrollerVisibility else { return }
+        isApplyingScrollerVisibility = true
+        defer { isApplyingScrollerVisibility = false }
+
+        autohidesScrollers = true
+        scrollerStyle = .overlay
+        hasHorizontalScroller = false
+        hasVerticalScroller = false
+        horizontalScroller?.isHidden = true
+        verticalScroller?.isHidden = true
+        horizontalScroller = nil
+        verticalScroller = nil
+    }
+
+    @objc private func clipViewBoundsDidChange(_ notification: Notification) {
         onScrollDidChange?()
     }
 
-    private func scrollDelta(
-        for event: NSEvent,
-        cgEvent: CGEvent,
-        preciseValue: CGFloat,
-        pointField: CGEventField,
-        fixedField: CGEventField,
-        lineField: CGEventField
-    ) -> CGFloat {
-        if preciseValue != 0 {
-            return preciseValue
-        }
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+}
 
-        let pointValue = cgEvent.getIntegerValueField(pointField)
-        if pointValue != 0 {
-            return CGFloat(pointValue)
-        }
+private enum ScrollWheelAxisRewriter {
+    static func eventByProjectingVerticalAxis(from event: NSEvent) -> NSEvent? {
+        guard let rewrittenCGEvent = event.cgEvent?.copy() else { return nil }
 
-        let fixedValue = cgEvent.getIntegerValueField(fixedField)
-        if fixedValue != 0 {
-            return CGFloat(fixedValue)
-        }
+        swapScrollWheelFields(
+            event: rewrittenCGEvent,
+            axis1: .scrollWheelEventDeltaAxis1,
+            axis2: .scrollWheelEventDeltaAxis2,
+            fallbackAxis1: integerDelta(event.scrollingDeltaY),
+            fallbackAxis2: integerDelta(event.scrollingDeltaX)
+        )
+        swapScrollWheelFields(
+            event: rewrittenCGEvent,
+            axis1: .scrollWheelEventPointDeltaAxis1,
+            axis2: .scrollWheelEventPointDeltaAxis2,
+            fallbackAxis1: 0,
+            fallbackAxis2: 0
+        )
+        swapScrollWheelFields(
+            event: rewrittenCGEvent,
+            axis1: .scrollWheelEventFixedPtDeltaAxis1,
+            axis2: .scrollWheelEventFixedPtDeltaAxis2,
+            fallbackAxis1: 0,
+            fallbackAxis2: 0
+        )
 
-        return CGFloat(cgEvent.getIntegerValueField(lineField))
+        return NSEvent(cgEvent: rewrittenCGEvent)
     }
 
-    private func horizontalScrollDelta(from event: NSEvent) -> CGFloat {
-        guard let cgEvent = event.cgEvent else {
-            return abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX)
-                ? event.scrollingDeltaY
-                : event.scrollingDeltaX
-        }
+    private static func swapScrollWheelFields(
+        event: CGEvent,
+        axis1: CGEventField,
+        axis2: CGEventField,
+        fallbackAxis1: Int64,
+        fallbackAxis2: Int64
+    ) {
+        let originalAxis1 = event.getIntegerValueField(axis1)
+        let originalAxis2 = event.getIntegerValueField(axis2)
+        event.setIntegerValueField(axis1, value: originalAxis2 == 0 ? fallbackAxis2 : originalAxis2)
+        event.setIntegerValueField(axis2, value: originalAxis1 == 0 ? fallbackAxis1 : originalAxis1)
+    }
 
-        let verticalDelta = scrollDelta(
-            for: event,
-            cgEvent: cgEvent,
-            preciseValue: event.scrollingDeltaY,
-            pointField: .scrollWheelEventPointDeltaAxis1,
-            fixedField: .scrollWheelEventFixedPtDeltaAxis1,
-            lineField: .scrollWheelEventDeltaAxis1
-        )
-        let nativeHorizontalDelta = scrollDelta(
-            for: event,
-            cgEvent: cgEvent,
-            preciseValue: event.scrollingDeltaX,
-            pointField: .scrollWheelEventPointDeltaAxis2,
-            fixedField: .scrollWheelEventFixedPtDeltaAxis2,
-            lineField: .scrollWheelEventDeltaAxis2
-        )
-        return abs(verticalDelta) > abs(nativeHorizontalDelta) ? verticalDelta : nativeHorizontalDelta
+    private static func integerDelta(_ delta: CGFloat) -> Int64 {
+        Int64(delta.rounded(.toNearestOrAwayFromZero))
     }
 }
 
@@ -341,6 +429,16 @@ final class ClipboardItemCardBox: NSBox {
 }
 
 
+enum MenuIcon {
+    static func image(named symbolName: String, title: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title)
+            ?? NSImage(systemSymbolName: "circle", accessibilityDescription: title)
+        image?.isTemplate = true
+        image?.size = NSSize(width: 16, height: 16)
+        return image
+    }
+}
+
 final class ActionMenuItem: NSMenuItem {
     private let handler: () -> Void
 
@@ -355,9 +453,7 @@ final class ActionMenuItem: NSMenuItem {
         super.init(title: title, action: #selector(performAction(_:)), keyEquivalent: keyEquivalent)
         target = self
         keyEquivalentModifierMask = modifierMask
-        if let imageName {
-            image = NSImage(systemSymbolName: imageName, accessibilityDescription: title)
-        }
+        image = imageName.flatMap { MenuIcon.image(named: $0, title: title) }
     }
 
     required init(coder: NSCoder) {
@@ -398,6 +494,7 @@ class PanelActionButton: NSButton {
 
 final class PinboardChipButton: PanelActionButton {
     var pinboardID: String?
+    var itemType: String?
     var chipTitleText = "" {
         didSet {
             title = chipTitleText

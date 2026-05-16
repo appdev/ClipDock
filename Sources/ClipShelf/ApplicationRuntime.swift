@@ -345,7 +345,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch mutation {
             case .recordCopied:
                 self?.panelController.invalidateCachedListPages()
-            case .setPinboardMembership(_, _, _), .delete(_), .clear:
+            case .setPinboardMembership(_, let pinboardID, _):
+                self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
+                self?.refreshPinboards()
+            case .delete(_, let pinboardID):
+                if let pinboardID {
+                    self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
+                } else {
+                    self?.panelController.invalidateCachedListPages()
+                }
+                self?.refreshPinboards()
+            case .clear:
                 self?.panelController.invalidateCachedListPages()
                 self?.refreshPinboards()
             }
@@ -371,6 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.panelController.clearPinboardSelectionIfNeeded(deletedPinboardID: pinboardID)
                 self?.listCoordinator?.updateQuery(
                     searchText: "",
+                    itemType: nil,
                     sourceAppID: nil,
                     pinboardID: nil,
                     debounce: false
@@ -480,9 +491,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showPreferences(nil)
             case .hidePanel:
                 self?.hidePanel(nil)
-            case .queryChanged(let searchText, let sourceAppID, let pinboardID, let debounce):
+            case .queryChanged(let searchText, let itemType, let sourceAppID, let pinboardID, let debounce):
                 self?.updateQuery(
                     searchText: searchText,
+                    itemType: itemType,
                     sourceAppID: sourceAppID,
                     pinboardID: pinboardID,
                     debounce: debounce
@@ -501,8 +513,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.performPinboardMutation(.updateColor(pinboardID: pinboardID, colorCode: colorCode))
             case .deletePinboard(let pinboardID):
                 self?.performPinboardMutation(.delete(pinboardID: pinboardID))
-            case .deleteItem(let item):
-                self?.deleteItem(item)
+            case .deleteItem(let item, let pinboardID):
+                self?.deleteItem(item, pinboardID: pinboardID)
             case .loadMore:
                 self?.loadMoreClipboardItems()
             }
@@ -532,13 +544,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
     }
 
-    private func deleteItem(_ item: RustClipboardItemSummary) {
+    private func deleteItem(_ item: RustClipboardItemSummary, pinboardID: String?) {
         guard listCoordinator != nil else {
             updateStorageStatus("条目：存储未初始化")
             return
         }
 
-        performItemMutation(.delete(itemID: item.id))
+        performItemMutation(.delete(itemID: item.id, pinboardID: pinboardID))
     }
 
     private func performItemMutation(_ mutation: ClipboardItemMutationRequest) {
@@ -930,12 +942,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateQuery(
         searchText: String,
+        itemType: String?,
         sourceAppID: String?,
         pinboardID: String?,
         debounce: Bool
     ) {
         listCoordinator?.updateQuery(
             searchText: searchText,
+            itemType: itemType,
             sourceAppID: sourceAppID,
             pinboardID: pinboardID,
             debounce: debounce
@@ -977,6 +991,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panelController.resetFiltersForCapturedItem()
             listCoordinator?.updateQuery(
                 searchText: "",
+                itemType: nil,
                 sourceAppID: nil,
                 pinboardID: nil,
                 debounce: false
@@ -1229,20 +1244,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu(title: "ClipShelf")
 
-        appMenu.addItem(makeMenuItem(title: "关于 ClipShelf", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        appMenu.addItem(makeMenuItem(title: "关于 ClipShelf", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
         appMenu.addItem(.separator())
         let togglePanelMenuItem = makeMenuItem(
             title: "显示/隐藏面板",
+            imageName: "rectangle.on.rectangle",
             action: #selector(togglePanel(_:)),
             key: "v",
             modifiers: [.command, .shift]
         )
         self.togglePanelMenuItem = togglePanelMenuItem
         appMenu.addItem(togglePanelMenuItem)
-        appMenu.addItem(makeMenuItem(title: "偏好设置…", action: #selector(showPreferences(_:)), key: ",", modifiers: [.command]))
-        appMenu.addItem(makeMenuItem(title: "切换窗口层级", action: #selector(cyclePanelLevel(_:)), key: "l", modifiers: [.command, .shift]))
+        appMenu.addItem(makeMenuItem(title: "偏好设置…", imageName: "gearshape", action: #selector(showPreferences(_:)), key: ",", modifiers: [.command]))
         appMenu.addItem(.separator())
-        appMenu.addItem(makeMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), key: "q", modifiers: [.command]))
+        appMenu.addItem(makeMenuItem(title: "退出", imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "q", modifiers: [.command]))
 
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
@@ -1256,15 +1271,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.title = ""
 
         let menu = NSMenu()
-        menu.addItem(makeMenuItem(title: "关于 ClipShelf", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: "关于 ClipShelf", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
-        menu.addItem(makeMenuItem(title: "显示面板", action: #selector(showPanel(_:)), key: "", modifiers: []))
-        menu.addItem(makeMenuItem(title: "隐藏面板", action: #selector(hidePanel(_:)), key: "", modifiers: []))
-        menu.addItem(makeMenuItem(title: "回到 Dock 区域", action: #selector(repositionPanel(_:)), key: "", modifiers: []))
-        menu.addItem(makeMenuItem(title: "切换窗口层级", action: #selector(cyclePanelLevel(_:)), key: "", modifiers: []))
-        menu.addItem(makeMenuItem(title: "偏好设置…", action: #selector(showPreferences(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: "显示面板", imageName: "eye", action: #selector(showPanel(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: "隐藏面板", imageName: "eye.slash", action: #selector(hidePanel(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: "偏好设置…", imageName: "gearshape", action: #selector(showPreferences(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
-        menu.addItem(makeMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: "退出", imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "", modifiers: []))
         statusItem?.menu = menu
     }
 
@@ -1291,6 +1304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeMenuItem(
         title: String,
+        imageName: String,
         action: Selector,
         key: String,
         modifiers: NSEvent.ModifierFlags
@@ -1298,6 +1312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = action == #selector(NSApplication.terminate(_:)) ? NSApp : self
         item.keyEquivalentModifierMask = modifiers
+        item.image = MenuIcon.image(named: imageName, title: title)
         return item
     }
 

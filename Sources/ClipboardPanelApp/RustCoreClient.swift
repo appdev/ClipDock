@@ -266,7 +266,7 @@ public struct RustIgnoreListPreferences: Equatable, Codable, Sendable {
     public var skipUnknownSource: Bool
 
     public init(
-        ignoredAppIdentifiers: [String] = [],
+        ignoredAppIdentifiers: [String] = Self.defaultIgnoredAppIdentifiers,
         windowTitleKeywords: [String] = [],
         skipUnknownSource: Bool = false
     ) {
@@ -280,6 +280,19 @@ public struct RustIgnoreListPreferences: Equatable, Codable, Sendable {
         case windowTitleKeywords = "window_title_keywords"
         case skipUnknownSource = "skip_unknown_source"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.ignoredAppIdentifiers = try container.decodeIfPresent([String].self, forKey: .ignoredAppIdentifiers)
+            ?? Self.defaultIgnoredAppIdentifiers
+        self.windowTitleKeywords = try container.decodeIfPresent([String].self, forKey: .windowTitleKeywords) ?? []
+        self.skipUnknownSource = try container.decodeIfPresent(Bool.self, forKey: .skipUnknownSource) ?? false
+    }
+
+    public static let defaultIgnoredAppIdentifiers = [
+        "com.apple.Passwords",
+        "com.apple.keychainaccess"
+    ]
 }
 
 public struct RustLinkMetadataSummary: Equatable, Decodable, Sendable {
@@ -1114,6 +1127,7 @@ public struct RustCoreClient: Sendable {
         appSupportDirectory: URL,
         limit: Int64 = 50,
         offset: Int64 = 0,
+        itemType: String? = nil,
         sourceAppId: String? = nil,
         pinboardId: String? = nil,
         searchText: String? = nil
@@ -1123,6 +1137,7 @@ public struct RustCoreClient: Sendable {
                 appSupportPath: appSupportPath,
                 limit: limit,
                 offset: offset,
+                itemType: itemType,
                 sourceAppId: sourceAppId,
                 pinboardId: pinboardId,
                 searchText: searchText
@@ -1289,13 +1304,14 @@ public struct RustCoreClient: Sendable {
 
     public func clearItems(
         appSupportDirectory: URL,
+        itemType: String? = nil,
         sourceAppId: String? = nil,
         searchText: String? = nil
     ) -> Result<RustItemManagementResult, RustCoreError> {
         withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
             let result = clear_items(
                 appSupportPath,
-                "",
+                itemType ?? "",
                 sourceAppId ?? "",
                 searchText ?? ""
             )
@@ -1463,6 +1479,7 @@ public struct RustCoreClient: Sendable {
         appSupportPath: String,
         limit: Int64 = 50,
         offset: Int64 = 0,
+        itemType: String? = nil,
         sourceAppId: String? = nil,
         pinboardId: String? = nil,
         searchText: String? = nil
@@ -1471,7 +1488,7 @@ public struct RustCoreClient: Sendable {
             appSupportPath,
             limit,
             offset,
-            "",
+            itemType ?? "",
             sourceAppId ?? "",
             pinboardId ?? "",
             searchText ?? ""

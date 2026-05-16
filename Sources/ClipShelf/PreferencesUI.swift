@@ -4,6 +4,7 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum PreferenceSection: Int, CaseIterable, Hashable {
     case general
@@ -16,8 +17,8 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
     static var allCases: [PreferenceSection] {
         [
             .general,
-            .shortcuts,
             .rules,
+            .shortcuts,
             .about
         ]
     }
@@ -50,7 +51,7 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
         case .shortcuts:
             return "打开、搜索与快速取用"
         case .rules:
-            return "来源权限、忽略规则与窗口标题"
+            return "来源权限与忽略应用"
         case .about:
             return "版本、构建与项目说明"
         }
@@ -562,7 +563,11 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     private let viewModel = PreferencesSwiftUIViewModel()
-    private var hostingView: NSHostingView<PreferencesRootView>?
+    private let toolbarCoordinator = PreferencesToolbarCoordinator()
+    private var splitViewController: PreferencesSplitViewController?
+    private var theme: ClipShelfPreferencesTheme {
+        ClipShelfTheme.current(for: window).preferences
+    }
 
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)? {
         didSet {
@@ -589,13 +594,18 @@ final class PreferencesWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
-        window.backgroundColor = .windowBackgroundColor
+        window.toolbarStyle = .unified
+        window.toolbar = toolbarCoordinator.makeToolbar()
         window.isMovableByWindowBackground = true
         window.isOpaque = true
 
         super.init(window: window)
 
+        viewModel.onAppearanceModeChanged = { [weak self] in
+            self?.applyTheme()
+        }
         configureWindow(window)
+        applyTheme()
     }
 
     required init?(coder: NSCoder) {
@@ -609,6 +619,7 @@ final class PreferencesWindowController: NSWindowController {
             window.center()
         }
 
+        applyTheme()
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -616,6 +627,7 @@ final class PreferencesWindowController: NSWindowController {
 
     func updatePreferences(_ preferences: RustPreferencesDocument) {
         viewModel.updatePreferences(preferences)
+        applyTheme()
     }
 
     func showSection(_ section: PreferenceSection) {
@@ -638,7 +650,6 @@ final class PreferencesWindowController: NSWindowController {
         viewModel.persist { $0.appearance.previewPopoverEnabled.toggle() }
         viewModel.persist { $0.linkPreview.webPreviewEnabled.toggle() }
         viewModel.persist { $0.shortcuts.pasteDirectlyToTarget.toggle() }
-        viewModel.persist { $0.ignoreList.skipUnknownSource.toggle() }
         viewModel.persist {
             $0.shortcuts.openPanel = RustKeyboardShortcut(
                 keyCode: Int64(kVK_ANSI_B),
@@ -648,16 +659,67 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     private func configureWindow(_ window: NSWindow) {
-        let rootView = PreferencesRootView(model: viewModel)
-        let hostingView = NSHostingView(rootView: rootView)
-        hostingView.frame = NSRect(origin: .zero, size: Layout.defaultWindowSize)
-        hostingView.autoresizingMask = [.width, .height]
-        hostingView.wantsLayer = true
-        hostingView.layer?.cornerRadius = 22
-        hostingView.layer?.cornerCurve = .continuous
-        hostingView.layer?.masksToBounds = true
-        window.contentView = hostingView
-        self.hostingView = hostingView
+        let splitViewController = PreferencesSplitViewController(model: viewModel)
+        splitViewController.view.frame = NSRect(origin: .zero, size: Layout.defaultWindowSize)
+        splitViewController.view.autoresizingMask = [.width, .height]
+        window.contentViewController = splitViewController
+        self.splitViewController = splitViewController
+    }
+
+    private func applyTheme() {
+        window?.backgroundColor = theme.windowBackgroundColor
+        splitViewController?.applyTheme()
+    }
+
+    func preferencesShellSmokeSnapshot() -> PreferencesShellSmokeSnapshot? {
+        guard let splitViewController else { return nil }
+        window?.layoutIfNeeded()
+        splitViewController.view.layoutSubtreeIfNeeded()
+        return splitViewController.smokeSnapshot(
+            selectedSection: viewModel.selectedSection,
+            visibleSidebarSectionCount: PreferenceSection.allCases.count,
+            window: window
+        )
+    }
+}
+
+@MainActor
+private final class PreferencesToolbarCoordinator: NSObject, NSToolbarDelegate {
+    private enum Identifier {
+        static let toolbar = NSToolbar.Identifier("ClipShelf.Preferences.Toolbar")
+    }
+
+    func makeToolbar() -> NSToolbar {
+        let toolbar = NSToolbar(identifier: Identifier.toolbar)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.sizeMode = .regular
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.showsBaselineSeparator = false
+        return toolbar
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            .sidebarTrackingSeparator,
+            .flexibleSpace
+        ]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            .sidebarTrackingSeparator,
+            .flexibleSpace
+        ]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        nil
     }
 }
 
@@ -670,6 +732,7 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
 
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
     var onAccessibilityPermissionRequested: (() -> Void)?
+    var onAppearanceModeChanged: (() -> Void)?
 
     var selectedSection: PreferenceSection {
         preferenceSection(for: state.selectedSection)
@@ -692,6 +755,7 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     }
 
     func persist(_ update: (inout RustPreferencesDocument) -> Void) {
+        let previousAppearanceMode = sceneController.state.preferences.appearance.mode
         let nextPreferences = sceneController.makeUpdatedPreferences(update)
         sceneController.beginPreferencePersistence()
         state = sceneController.state
@@ -701,10 +765,34 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
             persistedPreferences: savedPreferences,
             fallbackPreferences: nextPreferences
         ))
+        if previousAppearanceMode != state.preferences.appearance.mode {
+            onAppearanceModeChanged?()
+        }
     }
 
     func requestAccessibilityPermission() {
         onAccessibilityPermissionRequested?()
+    }
+
+    func addIgnoredApplications(at urls: [URL]) {
+        let identifiers = urls.compactMap(IgnoredApplicationRuleResolver.ruleIdentifier(forApplicationAt:))
+        guard !identifiers.isEmpty else { return }
+
+        persist { preferences in
+            var nextIdentifiers = preferences.ignoreList.ignoredAppIdentifiers
+            for identifier in identifiers where !nextIdentifiers.contains(where: { $0.caseInsensitiveCompare(identifier) == .orderedSame }) {
+                nextIdentifiers.append(identifier)
+            }
+            preferences.ignoreList.ignoredAppIdentifiers = nextIdentifiers
+        }
+    }
+
+    func removeIgnoredApplication(identifier: String) {
+        persist { preferences in
+            preferences.ignoreList.ignoredAppIdentifiers.removeAll {
+                $0.caseInsensitiveCompare(identifier) == .orderedSame
+            }
+        }
     }
 
     private func apply(_ update: PreferencesSceneUpdate) {
@@ -760,80 +848,327 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     }
 }
 
-private struct PreferencesRootView: View {
-    @ObservedObject var model: PreferencesSwiftUIViewModel
+struct PreferencesShellSmokeSnapshot: Equatable {
+    let selectedSection: PreferenceSection
+    let splitItemCount: Int
+    let sidebarMinimumThickness: CGFloat
+    let sidebarMaximumThickness: CGFloat
+    let sidebarCanCollapse: Bool
+    let sidebarCanCollapseFromWindowResize: Bool
+    let sidebarFrameWidth: CGFloat
+    let contentFrameWidth: CGFloat
+    let visibleSidebarSectionCount: Int
+    let windowHasToolbar: Bool
+    let windowUsesUnifiedToolbarStyle: Bool
+    let windowUsesFullSizeContentView: Bool
+    let windowTitleIsHidden: Bool
+    let windowTitlebarAppearsTransparent: Bool
+    let toolbarShowsBaselineSeparator: Bool
+    let toolbarUsesSidebarTrackingSeparator: Bool
+    let toolbarHasNavigationItem: Bool
+    let windowBackgroundMatchesTheme: Bool
+    let splitBackgroundMatchesTheme: Bool
+    let sidebarBackgroundMatchesTheme: Bool
+    let contentBackgroundMatchesTheme: Bool
+    let sidebarBackgroundWhiteComponent: CGFloat
+}
 
-    var body: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-                .ignoresSafeArea()
+@MainActor
+private final class PreferencesSplitViewController: NSSplitViewController {
+    private enum Layout {
+        static let sidebarPreferredWidth: CGFloat = 252
+        static let sidebarMinimumWidth: CGFloat = 220
+        static let sidebarMaximumWidth: CGFloat = 264
+        static let contentMinimumWidth: CGFloat = 520
+    }
 
-            HStack(spacing: 0) {
-                PreferencesSidebar(model: model)
-                Rectangle()
-                    .fill(Color.primary.opacity(0.055))
-                    .frame(width: 1)
-                PreferencesContent(model: model)
-            }
+    private let model: PreferencesSwiftUIViewModel
+    private let sidebarController: NSHostingController<PreferencesSidebarList>
+    private let contentController: NSHostingController<PreferencesContent>
+    private var didApplyInitialSidebarWidth = false
+    private var pendingDeferredThemeRefresh = false
+
+    init(model: PreferencesSwiftUIViewModel) {
+        self.model = model
+        self.sidebarController = NSHostingController(rootView: PreferencesSidebarList(model: model))
+        self.contentController = NSHostingController(rootView: PreferencesContent(model: model))
+
+        super.init(nibName: nil, bundle: nil)
+
+        sidebarController.preferredContentSize = NSSize(
+            width: Layout.sidebarPreferredWidth,
+            height: 600
+        )
+        contentController.preferredContentSize = NSSize(
+            width: Layout.contentMinimumWidth,
+            height: 600
+        )
+
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarController)
+        sidebarItem.minimumThickness = Layout.sidebarMinimumWidth
+        sidebarItem.maximumThickness = Layout.sidebarMaximumWidth
+        sidebarItem.canCollapse = false
+        sidebarItem.canCollapseFromWindowResize = false
+        sidebarItem.holdingPriority = .defaultHigh
+
+        let contentItem = NSSplitViewItem(viewController: contentController)
+        contentItem.minimumThickness = Layout.contentMinimumWidth
+        contentItem.canCollapse = false
+
+        addSplitViewItem(sidebarItem)
+        addSplitViewItem(contentItem)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        applyTheme()
+        scheduleDeferredThemeRefresh()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+
+        applyTheme()
+        scheduleDeferredThemeRefresh()
+        guard !didApplyInitialSidebarWidth, splitViewItems.count > 1 else { return }
+        didApplyInitialSidebarWidth = true
+        splitView.setPosition(Layout.sidebarPreferredWidth, ofDividerAt: 0)
+    }
+
+    func applyTheme() {
+        let preferencesTheme = ClipShelfTheme.current(for: view).preferences
+        view.wantsLayer = true
+        splitView.wantsLayer = true
+        sidebarController.view.wantsLayer = true
+        contentController.view.wantsLayer = true
+        view.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
+        splitView.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
+        sidebarController.view.layer?.backgroundColor = preferencesTheme.sidebarBackgroundColor.cgColor
+        contentController.view.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
+        view.window?.backgroundColor = preferencesTheme.windowBackgroundColor
+        configureScrollViews(
+            in: sidebarController.view,
+            backgroundColor: preferencesTheme.sidebarBackgroundColor,
+            overridesVisualEffects: true
+        )
+        configureScrollViews(
+            in: contentController.view,
+            backgroundColor: preferencesTheme.contentBackgroundColor,
+            overridesVisualEffects: false
+        )
+    }
+
+    private func scheduleDeferredThemeRefresh() {
+        guard !pendingDeferredThemeRefresh else { return }
+        pendingDeferredThemeRefresh = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingDeferredThemeRefresh = false
+            self.applyTheme()
         }
-        .frame(minWidth: 820, minHeight: 600)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    func smokeSnapshot(
+        selectedSection: PreferenceSection,
+        visibleSidebarSectionCount: Int,
+        window: NSWindow?
+    ) -> PreferencesShellSmokeSnapshot? {
+        guard let sidebarItem = splitViewItems.first,
+              splitViewItems.count > 1 else {
+            return nil
+        }
+
+        let toolbar = window?.toolbar
+        let preferencesTheme = ClipShelfTheme.current(for: window).preferences
+        let windowBackground = window?.backgroundColor
+        let splitBackground = view.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))
+        let sidebarBackground = sidebarController.view.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))
+        let contentBackground = contentController.view.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))
+        return PreferencesShellSmokeSnapshot(
+            selectedSection: selectedSection,
+            splitItemCount: splitViewItems.count,
+            sidebarMinimumThickness: sidebarItem.minimumThickness,
+            sidebarMaximumThickness: sidebarItem.maximumThickness,
+            sidebarCanCollapse: sidebarItem.canCollapse,
+            sidebarCanCollapseFromWindowResize: sidebarItem.canCollapseFromWindowResize,
+            sidebarFrameWidth: sidebarController.view.frame.width,
+            contentFrameWidth: contentController.view.frame.width,
+            visibleSidebarSectionCount: visibleSidebarSectionCount,
+            windowHasToolbar: toolbar != nil,
+            windowUsesUnifiedToolbarStyle: window?.toolbarStyle == .unified,
+            windowUsesFullSizeContentView: window?.styleMask.contains(.fullSizeContentView) == true,
+            windowTitleIsHidden: window?.titleVisibility == .hidden,
+            windowTitlebarAppearsTransparent: window?.titlebarAppearsTransparent == true,
+            toolbarShowsBaselineSeparator: toolbar?.showsBaselineSeparator == true,
+            toolbarUsesSidebarTrackingSeparator: toolbar?.items.contains {
+                $0.itemIdentifier == .sidebarTrackingSeparator
+            } == true,
+            toolbarHasNavigationItem: toolbar?.items.contains {
+                $0.itemIdentifier.rawValue == "ClipShelf.Preferences.Toolbar.Navigation"
+            } == true,
+            windowBackgroundMatchesTheme: preferenceColorsMatch(windowBackground, preferencesTheme.windowBackgroundColor),
+            splitBackgroundMatchesTheme: preferenceColorsMatch(splitBackground, preferencesTheme.contentBackgroundColor),
+            sidebarBackgroundMatchesTheme: preferenceColorsMatch(sidebarBackground, preferencesTheme.sidebarBackgroundColor),
+            contentBackgroundMatchesTheme: preferenceColorsMatch(contentBackground, preferencesTheme.contentBackgroundColor),
+            sidebarBackgroundWhiteComponent: preferenceWhiteComponent(sidebarBackground)
+        )
+    }
+
+    private func configureScrollViews(
+        in view: NSView,
+        backgroundColor: NSColor,
+        overridesVisualEffects: Bool
+    ) {
+        if let scrollView = view as? NSScrollView {
+            scrollView.drawsBackground = false
+            scrollView.backgroundColor = backgroundColor
+            scrollView.contentView.drawsBackground = false
+            scrollView.contentView.backgroundColor = backgroundColor
+        }
+
+        if let tableView = view as? NSTableView {
+            tableView.backgroundColor = backgroundColor
+            tableView.enclosingScrollView?.drawsBackground = false
+            tableView.enclosingScrollView?.backgroundColor = backgroundColor
+        }
+
+        if overridesVisualEffects, let visualEffectView = view as? NSVisualEffectView {
+            visualEffectView.state = .inactive
+            visualEffectView.wantsLayer = true
+            visualEffectView.layer?.backgroundColor = backgroundColor.cgColor
+        }
+
+        view.subviews.forEach {
+            configureScrollViews(
+                in: $0,
+                backgroundColor: backgroundColor,
+                overridesVisualEffects: overridesVisualEffects
+            )
+        }
     }
 }
 
-private struct PreferencesSidebar: View {
+@MainActor
+private struct PreferencesThemeValues {
+    let palette: ClipShelfPreferencesTheme
+
+    init(colorScheme: ColorScheme) {
+        let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+        self.palette = ClipShelfTheme.current(for: appearance).preferences
+    }
+
+    var windowBackground: Color { Color(nsColor: palette.windowBackgroundColor) }
+    var contentBackground: Color { Color(nsColor: palette.contentBackgroundColor) }
+    var sidebarBackground: Color { Color(nsColor: palette.sidebarBackgroundColor) }
+    var cardBackground: Color { Color(nsColor: palette.cardBackgroundColor) }
+    var cardBorder: Color { Color(nsColor: palette.cardBorderColor) }
+    var primaryText: Color { Color(nsColor: palette.primaryTextColor) }
+    var secondaryText: Color { Color(nsColor: palette.secondaryTextColor) }
+    var separator: Color { Color(nsColor: palette.separatorColor) }
+    var controlBackground: Color { Color(nsColor: palette.controlBackgroundColor) }
+    var navigationText: Color { Color(nsColor: palette.navigationTextColor) }
+}
+
+private func preferenceColorsMatch(_ lhs: NSColor?, _ rhs: NSColor, tolerance: CGFloat = 0.01) -> Bool {
+    guard let lhs = lhs?.usingColorSpace(.sRGB),
+          let rhs = rhs.usingColorSpace(.sRGB) else {
+        return false
+    }
+
+    return abs(lhs.redComponent - rhs.redComponent) <= tolerance
+        && abs(lhs.greenComponent - rhs.greenComponent) <= tolerance
+        && abs(lhs.blueComponent - rhs.blueComponent) <= tolerance
+        && abs(lhs.alphaComponent - rhs.alphaComponent) <= tolerance
+}
+
+private func preferenceWhiteComponent(_ color: NSColor?) -> CGFloat {
+    guard let color = color?.usingColorSpace(.sRGB) else { return 1 }
+    return max(color.redComponent, color.greenComponent, color.blueComponent)
+}
+
+private struct PreferencesSidebarList: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    private enum Layout {
+        static let topInset: CGFloat = 16
+    }
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            PreferencesSidebarHeader()
-
-            VStack(alignment: .leading, spacing: 4) {
+        ScrollView {
+            VStack(spacing: 4) {
                 ForEach(PreferenceSection.allCases, id: \.self) { section in
-                    PreferenceSidebarRow(
+                    PreferenceSidebarButton(
                         section: section,
-                        isSelected: model.selectedSection == section
+                        isSelected: model.selectedSection == section,
+                        colors: colors
                     ) {
                         model.selectSection(section)
                     }
+                    .tag(section)
                 }
             }
-
-            Spacer(minLength: 16)
+            .padding(.top, Layout.topInset)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 18)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(.top, 52)
-        .padding(.horizontal, 14)
-        .padding(.bottom, 20)
-        .frame(width: 244)
-        .background {
-            Color(nsColor: .windowBackgroundColor)
-                .ignoresSafeArea()
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .ignoresSafeArea()
-        }
+        .scrollContentBackground(.hidden)
+        .frame(
+            minWidth: 220,
+            idealWidth: 252,
+            maxWidth: 264,
+            maxHeight: .infinity
+        )
+        .background(colors.sidebarBackground.ignoresSafeArea())
     }
 }
 
-private struct PreferencesSidebarHeader: View {
+private struct PreferenceSidebarButton: View {
+    let section: PreferenceSection
+    let isSelected: Bool
+    let colors: PreferencesThemeValues
+    let action: () -> Void
+
     var body: some View {
-        HStack(spacing: 10) {
-            PreferenceMiniAppIconView()
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: section.symbolName)
+                    .font(.system(size: 17, weight: .medium))
+                    .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(aboutDisplayName())
+                Text(section.title)
                     .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text("偏好设置")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isSelected ? Color.white : colors.navigationText)
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.accentColor)
+                }
+            }
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 10)
-        .padding(.bottom, 2)
+        .buttonStyle(.plain)
+        .help(section.title)
     }
 }
 
@@ -860,51 +1195,13 @@ private struct PreferenceMiniAppIconView: View {
     }
 }
 
-private struct PreferenceSidebarRow: View {
-    let section: PreferenceSection
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: section.symbolName)
-                    .font(.system(size: 15, weight: .medium))
-                    .frame(width: 20)
-                Text(section.title)
-                    .font(.system(size: 13.5, weight: .medium))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(isSelected ? Color.accentColor : Color.primary.opacity(0.72))
-            .padding(.horizontal, 10)
-            .frame(height: 36)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.13))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.7)
-                        )
-                }
-            }
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    Capsule()
-                        .fill(Color.accentColor)
-                        .frame(width: 3, height: 18)
-                        .padding(.leading, 1)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 private struct PreferencesContent: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     var body: some View {
         ScrollView {
@@ -912,14 +1209,15 @@ private struct PreferencesContent: View {
                 PreferencePageHeader(section: model.selectedSection)
                 pageContent
             }
-            .frame(maxWidth: 700, alignment: .leading)
-            .padding(.top, 48)
-            .padding(.horizontal, 44)
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.top, 16)
+            .padding(.horizontal, 52)
             .padding(.bottom, 48)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
+        .scrollContentBackground(.hidden)
+        .background(colors.contentBackground.ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -941,30 +1239,44 @@ private struct PreferencesContent: View {
 
 private struct PreferencePageHeader: View {
     let section: PreferenceSection
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
+        Group {
+            if section == .rules {
                 Text(section.title)
                     .font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Text(section.subtitle)
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colors.primaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(section.title)
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(colors.primaryText)
+                        Text(section.subtitle)
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(colors.secondaryText)
+                    }
+                    .layoutPriority(1)
+
+                    Spacer(minLength: 16)
+
+                    Image(systemName: section.symbolName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 34, height: 34)
+                        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.6)
+                        )
+                }
             }
-            .layoutPriority(1)
-
-            Spacer(minLength: 16)
-
-            Image(systemName: section.symbolName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 34, height: 34)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.6)
-                )
         }
     }
 }
@@ -1110,11 +1422,16 @@ private struct PreferenceShortcutSection: View {
 
 private struct PreferencePrivacySection: View {
     @ObservedObject var model: PreferencesSwiftUIViewModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 28) {
             PreferenceSectionGroup(title: "系统权限") {
-                PreferenceRow(title: "窗口标题采集", detail: model.state.accessibilityPermissionState.detail) {
+                PrivacySettingRow(title: "窗口标题采集", detail: model.state.accessibilityPermissionState.detail) {
                     Button(model.state.accessibilityPermissionState.actionTitle) {
                         model.requestAccessibilityPermission()
                     }
@@ -1125,7 +1442,7 @@ private struct PreferencePrivacySection: View {
             }
 
             PreferenceSectionGroup(title: "链接预览") {
-                PreferenceRow(title: "网页完整预览", detail: "按空格时加载真实网页") {
+                PrivacySettingRow(title: "网页完整预览", detail: "按空格时加载真实网页") {
                     Toggle(
                         "",
                         isOn: Binding(
@@ -1139,43 +1456,358 @@ private struct PreferencePrivacySection: View {
                 }
             }
 
-            PreferenceSectionGroup(title: "忽略规则") {
-                PreferenceRow(title: "应用标识", detail: "逗号分隔，如 com.apple.Terminal") {
-                    RuleListField(
-                        values: model.state.preferences.ignoreList.ignoredAppIdentifiers,
-                        placeholder: "com.apple.Terminal, Xcode"
-                    ) { apps in
-                        model.persist { $0.ignoreList.ignoredAppIdentifiers = apps }
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("忽略应用程序")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(colors.primaryText)
+                    Text("不要保存从以下应用程序或窗口复制的内容。")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(colors.secondaryText)
                 }
-                PreferenceDivider()
-                PreferenceRow(title: "未知来源", detail: "无法识别来源时不写入历史") {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { model.state.preferences.ignoreList.skipUnknownSource },
-                            set: { isOn in model.persist { $0.ignoreList.skipUnknownSource = isOn } }
-                        )
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                }
-                PreferenceDivider()
-                PreferenceRow(title: "窗口标题关键词", detail: "标题命中关键词时不写入历史") {
-                    RuleListField(
-                        values: model.state.preferences.ignoreList.windowTitleKeywords,
-                        placeholder: "验证码, Private"
-                    ) { keywords in
-                        model.persist { $0.ignoreList.windowTitleKeywords = keywords }
-                    }
-                }
+                .padding(.leading, 4)
+
+                IgnoredApplicationsPicker(model: model)
             }
         }
     }
 }
 
+private struct IgnoredApplicationsPicker: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
+    @State private var selectedIdentifier: String?
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
+    private var descriptors: [IgnoredApplicationDescriptor] {
+        model.state.preferences.ignoreList.ignoredAppIdentifiers.map {
+            IgnoredApplicationDescriptor(ruleIdentifier: $0)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if descriptors.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "app.dashed")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(colors.secondaryText)
+                        .frame(width: 34, height: 34)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("未添加应用程序")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(colors.primaryText)
+                        Text("点击 + 选择需要忽略的应用。")
+                            .font(.system(size: 13))
+                            .foregroundStyle(colors.secondaryText)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 15)
+                .frame(minHeight: 70)
+            } else {
+                ForEach(Array(descriptors.enumerated()), id: \.element.id) { index, descriptor in
+                    IgnoredApplicationRow(
+                        descriptor: descriptor,
+                        isSelected: selectedIdentifier == descriptor.id
+                    ) {
+                        selectedIdentifier = descriptor.id
+                    }
+
+                    if index < descriptors.count - 1 {
+                        PreferenceDivider()
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 0) {
+                IgnoredApplicationPickerToolbarButton(
+                    symbolName: "plus",
+                    help: "添加应用程序"
+                ) {
+                    addApplications()
+                }
+
+                Divider()
+                    .frame(height: 20)
+
+                IgnoredApplicationPickerToolbarButton(
+                    symbolName: "minus",
+                    help: "移除选中的应用程序",
+                    isDisabled: selectedIdentifier == nil
+                ) {
+                    removeSelectedApplication()
+                }
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(colors.secondaryText)
+            .background(colors.controlBackground)
+        }
+        .background(
+            colors.cardBackground,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(colors.cardBorder, lineWidth: 0.6)
+        )
+    }
+
+    private func addApplications() {
+        let panel = NSOpenPanel()
+        panel.title = "选择要忽略的应用程序"
+        panel.message = "选择后会自动读取应用标识，用于忽略该应用复制的内容。"
+        panel.prompt = "添加"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+
+        guard panel.runModal() == .OK else { return }
+        model.addIgnoredApplications(at: panel.urls)
+        selectedIdentifier = panel.urls
+            .compactMap(IgnoredApplicationRuleResolver.ruleIdentifier(forApplicationAt:))
+            .last
+    }
+
+    private func removeSelectedApplication() {
+        guard let selectedIdentifier else { return }
+        model.removeIgnoredApplication(identifier: selectedIdentifier)
+        self.selectedIdentifier = nil
+    }
+}
+
+private struct IgnoredApplicationPickerToolbarButton: View {
+    let symbolName: String
+    let help: String
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Rectangle()
+                    .fill(Color.clear)
+                Image(systemName: symbolName)
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .frame(width: 52, height: 36)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .help(help)
+    }
+}
+
+private struct IgnoredApplicationRow: View {
+    let descriptor: IgnoredApplicationDescriptor
+    let isSelected: Bool
+    let onSelect: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                Image(nsImage: descriptor.icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(descriptor.displayName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(colors.primaryText)
+                        .lineLimit(1)
+                    Text(descriptor.detail)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(colors.secondaryText)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 10)
+            .frame(minHeight: 60)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.13))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PrivacySettingRow<Accessory: View>: View {
+    let title: String
+    let detail: String
+    let accessory: Accessory
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
+    init(title: String, detail: String, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title
+        self.detail = detail
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(colors.primaryText)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(colors.secondaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 12)
+
+            accessory
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 15)
+        .frame(minHeight: 70)
+    }
+}
+
+private struct PrivacyRuleFieldRow<Accessory: View>: View {
+    let title: String
+    let detail: String
+    let accessory: Accessory
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
+    init(title: String, detail: String, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title
+        self.detail = detail
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(colors.primaryText)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(colors.secondaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(minWidth: 164, maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+
+            accessory
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+        .frame(minHeight: 72)
+    }
+}
+
+struct IgnoredApplicationRuleResolver {
+    static func ruleIdentifier(forApplicationAt url: URL) -> String? {
+        let bundle = Bundle(url: url)
+
+        if let bundleIdentifier = bundle?.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !bundleIdentifier.isEmpty {
+            return bundleIdentifier
+        }
+
+        let displayName = displayName(forApplicationAt: url, bundle: bundle)
+        if !displayName.isEmpty {
+            return displayName
+        }
+
+        let fallbackName = url.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallbackName.isEmpty ? nil : fallbackName
+    }
+
+    static func displayName(forApplicationAt url: URL, bundle: Bundle?) -> String {
+        let infoDictionary = bundle?.localizedInfoDictionary ?? bundle?.infoDictionary
+        let candidate = (infoDictionary?["CFBundleDisplayName"] as? String)
+            ?? (infoDictionary?["CFBundleName"] as? String)
+            ?? url.deletingPathExtension().lastPathComponent
+        return candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct IgnoredApplicationDescriptor: Identifiable {
+    let id: String
+    let displayName: String
+    let detail: String
+    let icon: NSImage
+
+    init(ruleIdentifier: String) {
+        let trimmedIdentifier = ruleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let applicationURL = Self.applicationURL(for: trimmedIdentifier)
+        let bundle = applicationURL.flatMap(Bundle.init(url:))
+        let resolvedName = applicationURL.map {
+            IgnoredApplicationRuleResolver.displayName(forApplicationAt: $0, bundle: bundle)
+        }
+        let displayName = resolvedName?.isEmpty == false
+            ? resolvedName ?? trimmedIdentifier
+            : trimmedIdentifier
+
+        self.id = trimmedIdentifier
+        self.displayName = displayName
+        self.detail = bundle?.bundleIdentifier ?? trimmedIdentifier
+        self.icon = applicationURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
+            ?? NSImage(systemSymbolName: "app.dashed", accessibilityDescription: displayName)
+            ?? NSImage(size: NSSize(width: 32, height: 32))
+    }
+
+    private static func applicationURL(for identifier: String) -> URL? {
+        if identifier.hasSuffix(".app") || identifier.contains("/") {
+            let url = URL(fileURLWithPath: NSString(string: identifier).expandingTildeInPath)
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
+
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier)
+    }
+}
+
 private struct PreferenceAboutSection: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             PreferenceSectionGroup {
@@ -1185,10 +1817,10 @@ private struct PreferenceAboutSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(aboutDisplayName())
                             .font(.system(size: 19, weight: .semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(colors.primaryText)
                         Text("本地剪贴架")
                             .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(colors.secondaryText)
                     }
 
                     Spacer(minLength: 0)
@@ -1235,6 +1867,11 @@ private struct PreferenceAppIconView: View {
 private struct PreferenceSectionGroup<Content: View>: View {
     let title: String?
     let content: Content
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     init(title: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -1246,14 +1883,21 @@ private struct PreferenceSectionGroup<Content: View>: View {
             if let title {
                 Text(title)
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colors.secondaryText)
                     .padding(.leading, 4)
             }
 
             VStack(spacing: 0) {
                 content
             }
-            .preferenceGlass(cornerRadius: 8)
+            .background(
+                colors.cardBackground,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(colors.cardBorder, lineWidth: 0.6)
+            )
         }
     }
 }
@@ -1262,6 +1906,11 @@ private struct PreferenceRow<Accessory: View>: View {
     let title: String
     let detail: String
     let accessory: Accessory
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     init(title: String, detail: String, @ViewBuilder accessory: () -> Accessory) {
         self.title = title
@@ -1274,11 +1923,11 @@ private struct PreferenceRow<Accessory: View>: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14.5, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(colors.primaryText)
                     .lineLimit(2)
                 Text(detail)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colors.secondaryText)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1296,9 +1945,15 @@ private struct PreferenceRow<Accessory: View>: View {
 }
 
 private struct PreferenceDivider: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
     var body: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.065))
+            .fill(colors.separator)
             .frame(height: 0.5)
             .padding(.horizontal, 22)
     }
@@ -1309,12 +1964,17 @@ private struct PreferenceNumberStepper: View {
     let range: ClosedRange<Int>
     let step: Int
     let suffix: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             Text("\(value.wrappedValue)\(suffix)")
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(.primary)
+                .foregroundStyle(colors.primaryText)
                 .frame(width: suffix.isEmpty ? 66 : 82, alignment: .trailing)
             Stepper("", value: value, in: range, step: step)
                 .labelsHidden()
@@ -1325,6 +1985,11 @@ private struct PreferenceNumberStepper: View {
 
 private struct PreferenceShortcutPill: View {
     let shortcut: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     init(_ shortcut: String) {
         self.shortcut = shortcut
@@ -1333,20 +1998,25 @@ private struct PreferenceShortcutPill: View {
     var body: some View {
         Text(shortcut)
             .font(.system(size: 13, weight: .medium, design: .monospaced))
-            .foregroundStyle(.primary)
+            .foregroundStyle(colors.primaryText)
             .frame(minWidth: 92)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(colors.controlBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.6)
+                    .strokeBorder(colors.separator, lineWidth: 0.6)
             )
     }
 }
 
 private struct PreferenceValuePill: View {
     let value: String
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     init(_ value: String) {
         self.value = value
@@ -1355,13 +2025,13 @@ private struct PreferenceValuePill: View {
     var body: some View {
         Text(value)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.primary)
+            .foregroundStyle(colors.primaryText)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(colors.controlBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.6)
+                    .strokeBorder(colors.separator, lineWidth: 0.6)
             )
     }
 }
@@ -1385,7 +2055,7 @@ private struct RuleListField: View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 13))
-            .frame(width: 304)
+            .frame(width: 300)
             .focused($isFocused)
             .onSubmit(commit)
             .onDisappear(perform: commit)
@@ -1410,6 +2080,11 @@ private struct RuleListField: View {
 private struct ShortcutRecorderRepresentable: NSViewRepresentable {
     let shortcut: RustKeyboardShortcut
     let onRecord: (RustKeyboardShortcut) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
 
     init(shortcut: RustKeyboardShortcut, onRecord: @escaping (RustKeyboardShortcut) -> Void) {
         self.shortcut = shortcut
@@ -1418,52 +2093,23 @@ private struct ShortcutRecorderRepresentable: NSViewRepresentable {
 
     func makeNSView(context: Context) -> ShortcutRecorderButton {
         let button = ShortcutRecorderButton(shortcut: shortcut)
-        button.normalTextColor = .labelColor
+        button.normalTextColor = colors.palette.primaryTextColor
         button.wantsLayer = true
         button.layer?.cornerRadius = 8
         button.layer?.cornerCurve = .continuous
         button.layer?.borderWidth = 0.5
-        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.55).cgColor
+        button.layer?.backgroundColor = colors.palette.controlBackgroundColor.cgColor
+        button.layer?.borderColor = colors.palette.separatorColor.cgColor
         button.onShortcutRecorded = onRecord
         return button
     }
 
     func updateNSView(_ nsView: ShortcutRecorderButton, context: Context) {
-        nsView.normalTextColor = .labelColor
+        nsView.normalTextColor = colors.palette.primaryTextColor
+        nsView.layer?.backgroundColor = colors.palette.controlBackgroundColor.cgColor
+        nsView.layer?.borderColor = colors.palette.separatorColor.cgColor
         nsView.onShortcutRecorded = onRecord
         nsView.updateShortcut(shortcut)
-    }
-}
-
-private struct PreferenceGlassModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    let cornerRadius: CGFloat
-
-    func body(content: Content) -> some View {
-        let fillColor = colorScheme == .dark
-            ? Color.white.opacity(0.045)
-            : Color.white.opacity(0.72)
-        let strokeColor = colorScheme == .dark
-            ? Color.white.opacity(0.08)
-            : Color.black.opacity(0.07)
-        let shadowColor = colorScheme == .dark
-            ? Color.black.opacity(0.10)
-            : Color.black.opacity(0.045)
-
-        content
-            .background(fillColor, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(strokeColor, lineWidth: 0.7)
-            )
-            .shadow(color: shadowColor, radius: 9, x: 0, y: 2)
-    }
-}
-
-private extension View {
-    func preferenceGlass(cornerRadius: CGFloat) -> some View {
-        modifier(PreferenceGlassModifier(cornerRadius: cornerRadius))
     }
 }
 
@@ -1927,37 +2573,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                         )
                     ]),
                     makeSection(title: "应用", rows: [
-                        makeTextInputRow(
-                            title: "应用标识",
-                            detail: "Bundle ID、应用名或 .app 名称",
-                            value: joinedRuleList(preferences.ignoreList.ignoredAppIdentifiers)
-                        ) { [weak self] value in
-                            guard let self else { return }
-                            let identifiers = self.splitRuleList(value)
-                            self.persist {
-                                $0.ignoreList.ignoredAppIdentifiers = identifiers
-                            }
-                        },
-                        makeSettingRow(
-                            title: "未知来源",
-                            detail: "来源为空时跳过",
-                            control: makeSwitch(isOn: preferences.ignoreList.skipUnknownSource) { [weak self] isOn in
-                                self?.persist { $0.ignoreList.skipUnknownSource = isOn }
-                            }
-                        )
-                    ]),
-                    makeSection(title: "窗口标题", rows: [
-                        makeTextInputRow(
-                            title: "标题关键词",
-                            detail: "命中时跳过",
-                            value: joinedRuleList(preferences.ignoreList.windowTitleKeywords)
-                        ) { [weak self] value in
-                            guard let self else { return }
-                            let keywords = self.splitRuleList(value)
-                            self.persist {
-                                $0.ignoreList.windowTitleKeywords = keywords
-                            }
-                        }
+                        makeIgnoredApplicationsPickerRow(preferences: preferences)
                     ])
                 ]
             )
@@ -2222,6 +2838,49 @@ private final class LegacyPreferencesWindowController: NSWindowController {
         ])
 
         return makeSettingRow(title: title, detail: detail, control: textField)
+    }
+
+    private func makeIgnoredApplicationsPickerRow(preferences: RustPreferencesDocument) -> NSView {
+        let count = preferences.ignoreList.ignoredAppIdentifiers.count
+        let detail = count == 0
+            ? "未添加应用；选择后自动读取应用标识"
+            : "已忽略 \(count) 个应用；选择后自动读取应用标识"
+        return makeSettingRow(
+            title: "忽略应用程序",
+            detail: detail,
+            control: makeActionButton(title: "选择应用...") { [weak self] in
+                self?.openIgnoredApplicationsPanel()
+            }
+        )
+    }
+
+    private func openIgnoredApplicationsPanel() {
+        let panel = NSOpenPanel()
+        panel.title = "选择要忽略的应用程序"
+        panel.message = "选择后会自动读取应用标识，用于忽略该应用复制的内容。"
+        panel.prompt = "添加"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+
+        guard panel.runModal() == .OK else { return }
+        addIgnoredApplications(at: panel.urls)
+    }
+
+    private func addIgnoredApplications(at urls: [URL]) {
+        let identifiers = urls.compactMap(IgnoredApplicationRuleResolver.ruleIdentifier(forApplicationAt:))
+        guard !identifiers.isEmpty else { return }
+
+        persist { preferences in
+            var nextIdentifiers = preferences.ignoreList.ignoredAppIdentifiers
+            for identifier in identifiers where !nextIdentifiers.contains(where: { $0.caseInsensitiveCompare(identifier) == .orderedSame }) {
+                nextIdentifiers.append(identifier)
+            }
+            preferences.ignoreList.ignoredAppIdentifiers = nextIdentifiers
+        }
+        renderSelectedSection()
     }
 
     private func joinedRuleList(_ values: [String]) -> String {

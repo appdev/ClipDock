@@ -6,9 +6,9 @@ use crate::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CapturePendingImageRequest,
     CaptureResult, CaptureTextRequest, CapturedFileMetadata, ClipboardItemType,
     CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
-    FailPendingImagePayloadRequest, ItemQuery, LinkMetadataState, PageRequest,
-    RecoverPendingImagesRequest, SourceConfidence,
-    ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
+    FailPendingImagePayloadRequest, ItemQuery, LinkMetadataState, PageRequest, PreferencesDocument,
+    RecoverPendingImagesRequest, SourceConfidence, ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION,
+    CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
 };
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
@@ -47,6 +47,20 @@ fn capture_pending_link(core: &mut ClipboardCore, text: &str, url: &str) -> Capt
         self_write_token: None,
     })
     .unwrap()
+}
+
+fn text_capture_request(text: &str, change_count: i64) -> CaptureTextRequest {
+    CaptureTextRequest {
+        text: text.to_string(),
+        detected_link: None,
+        source_bundle_id: Some("com.example.TestApp".to_string()),
+        source_app_name: Some("TestApp".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: change_count,
+        self_write_token: None,
+    }
 }
 
 fn pending_image_request(
@@ -97,6 +111,14 @@ fn test_webp_bytes(payload: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(b"WEBP");
     bytes.extend_from_slice(payload);
     bytes
+}
+
+fn stable_hash_for_test(value: &str) -> String {
+    let digest = Sha256::digest(value.as_bytes());
+    digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
 }
 
 #[test]
@@ -469,6 +491,188 @@ fn capture_text_deduplicates_by_content_hash() {
 }
 
 #[test]
+fn capture_text_classifies_hex_rgb_colors_with_normalized_storage() {
+    let (_, mut core) = open_temp_core();
+    let accepted = [
+        ("#ff00aa", "#FF00AA", true),
+        ("ff00aa", "#FF00AA", false),
+        ("#FF00AA", "#FF00AA", false),
+        ("FF00AA", "#FF00AA", false),
+        ("  #0a1B2c\n", "#0A1B2C", true),
+    ];
+
+    for (index, (value, expected_hex, expected_inserted)) in accepted.iter().enumerate() {
+        let result = core
+            .capture_text(text_capture_request(value, index as i64 + 1))
+            .unwrap();
+        assert_eq!(result.inserted, *expected_inserted);
+        assert_eq!(
+            result.content_hash,
+            stable_hash_for_test(&format!("color:{expected_hex}"))
+        );
+    }
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(page.total_count, 2);
+
+    let color_item = page
+        .items
+        .iter()
+        .find(|item| item.summary == "#FF00AA")
+        .expect("normalized color item");
+    assert_eq!(color_item.item_type, ClipboardItemType::Color);
+    assert_eq!(color_item.primary_text.as_deref(), Some("#FF00AA"));
+    assert_eq!(color_item.copy_count, 4);
+
+    let second_color = page
+        .items
+        .iter()
+        .find(|item| item.summary == "#0A1B2C")
+        .expect("trimmed normalized color item");
+    assert_eq!(second_color.item_type, ClipboardItemType::Color);
+    assert_eq!(second_color.primary_text.as_deref(), Some("#0A1B2C"));
+}
+
+#[test]
+fn capture_text_keeps_near_miss_color_inputs_as_text() {
+    let (_, mut core) = open_temp_core();
+    let near_misses = [
+        "#FFF",
+        "#FFFFFFFF",
+        "rgb(255,0,0)",
+        "hsl(0, 100%, 50%)",
+        "red",
+        "0xFF00AA",
+        "#FF00AG",
+        "#FF00AA extra",
+    ];
+
+    for (index, value) in near_misses.iter().enumerate() {
+        core.capture_text(text_capture_request(value, index as i64 + 1))
+            .unwrap();
+    }
+
+    let page = core
+        .list_items(
+            ItemQuery {
+                item_type: Some(ClipboardItemType::Color),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(page.total_count, 0);
+
+    let text_page = core
+        .list_items(
+            ItemQuery {
+                item_type: Some(ClipboardItemType::Text),
+                ..ItemQuery::default()
+            },
+            PageRequest {
+                limit: 20,
+                offset: 0,
+            },
+        )
+        .unwrap();
+    assert_eq!(text_page.total_count, near_misses.len() as i64);
+}
+
+#[test]
+fn capture_text_color_hash_is_distinct_from_text_hash_and_writes_no_assets() {
+    let (_, mut core) = open_temp_core();
+    let captured = core
+        .capture_text(text_capture_request("ff00aa", 1))
+        .unwrap();
+
+    assert_eq!(captured.content_hash, stable_hash_for_test("color:#FF00AA"));
+    assert_ne!(captured.content_hash, stable_hash_for_test("text:ff00aa"));
+    assert_ne!(captured.content_hash, stable_hash_for_test("text:#FF00AA"));
+
+    let asset_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM clipboard_assets", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(asset_count, 0);
+}
+
+#[test]
+fn capture_text_color_filter_and_search_compose() {
+    let (_, mut core) = open_temp_core();
+    core.capture_text(text_capture_request("#11aa22", 1))
+        .unwrap();
+    core.capture_text(text_capture_request("Alpha #11AA22 note", 2))
+        .unwrap();
+    core.capture_text(text_capture_request("#334455", 3))
+        .unwrap();
+
+    let color_search_page = core
+        .list_items(
+            ItemQuery {
+                item_type: Some(ClipboardItemType::Color),
+                search_text: Some("#11AA22".to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(color_search_page.total_count, 1);
+    assert_eq!(
+        color_search_page.items[0].item_type,
+        ClipboardItemType::Color
+    );
+    assert_eq!(color_search_page.items[0].summary, "#11AA22");
+
+    let text_search_page = core
+        .list_items(
+            ItemQuery {
+                item_type: Some(ClipboardItemType::Text),
+                search_text: Some("#11AA22".to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(text_search_page.total_count, 1);
+    assert_eq!(text_search_page.items[0].summary, "Alpha #11AA22 note");
+}
+
+#[test]
+fn capture_detected_link_keeps_priority_over_color_classification() {
+    let (_, mut core) = open_temp_core();
+    core.capture_text(CaptureTextRequest {
+        text: "#ff00aa".to_string(),
+        detected_link: Some(CaptureDetectedLink {
+            original_text: "#ff00aa".to_string(),
+            canonical_url: "https://example.com/color".to_string(),
+            display_url: "example.com/color".to_string(),
+            host: "example.com".to_string(),
+            metadata_state: LinkMetadataState::Pending,
+        }),
+        source_bundle_id: Some("com.apple.Safari".to_string()),
+        source_app_name: Some("Safari".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 1,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(page.total_count, 1);
+    assert_eq!(page.items[0].item_type, ClipboardItemType::Link);
+    assert_eq!(page.items[0].summary, "example.com/color");
+    assert_eq!(page.items[0].primary_text.as_deref(), Some("#ff00aa"));
+}
+
+#[test]
 fn record_item_copied_updates_recent_order_and_copy_count() {
     let (_, mut core) = open_temp_core();
     let old = core
@@ -758,7 +962,11 @@ fn capture_image_inserts_asset_preview_and_source() {
 #[test]
 fn capture_pending_image_inserts_thumbnail_visible_row_without_payload() {
     let (temp_dir, mut core) = open_temp_core();
-    write_test_webp(temp_dir.path(), "thumbnails/pending.webp", b"pending thumbnail");
+    write_test_webp(
+        temp_dir.path(),
+        "thumbnails/pending.webp",
+        b"pending thumbnail",
+    );
 
     let result = core
         .capture_pending_image(pending_image_request(
@@ -789,7 +997,11 @@ fn capture_pending_image_inserts_thumbnail_visible_row_without_payload() {
 #[test]
 fn capture_pending_image_validates_metadata_and_relative_paths() {
     let (temp_dir, mut core) = open_temp_core();
-    write_test_webp(temp_dir.path(), "thumbnails/pending-validation.webp", b"thumb");
+    write_test_webp(
+        temp_dir.path(),
+        "thumbnails/pending-validation.webp",
+        b"thumb",
+    );
 
     let mut bad_mime = pending_image_request(
         "session-a",
@@ -872,7 +1084,10 @@ fn complete_pending_image_payload_moves_staged_to_reserved_and_enables_payload()
         .unwrap();
 
     assert_eq!(completed.status, "ready");
-    assert_eq!(completed.effective_item_id.as_deref(), Some(pending.item_id.as_str()));
+    assert_eq!(
+        completed.effective_item_id.as_deref(),
+        Some(pending.item_id.as_str())
+    );
     assert!(completed.content_hash.is_some());
     assert!(completed.cleaned_relative_paths.is_empty());
     assert!(temp_dir.path().join("assets/ready.webp").exists());
@@ -976,8 +1191,7 @@ fn completion_after_tombstone_purge_deletes_nothing_and_returns_not_pending() {
     let completed = core
         .complete_pending_image_payload(CompletePendingImagePayloadRequest {
             job_id: pending.job_id,
-            staged_payload_relative_path: ".staging/image-captures/purged-pending.webp"
-                .to_string(),
+            staged_payload_relative_path: ".staging/image-captures/purged-pending.webp".to_string(),
             mime_type: "image/webp".to_string(),
             width: 40,
             height: 20,
@@ -1096,7 +1310,10 @@ fn duplicate_pending_image_completion_merges_into_existing_ready_item() {
         .unwrap();
 
     assert_eq!(completed.status, "merged");
-    assert_eq!(completed.effective_item_id.as_deref(), Some(existing.item_id.as_str()));
+    assert_eq!(
+        completed.effective_item_id.as_deref(),
+        Some(existing.item_id.as_str())
+    );
     assert!(completed.content_hash.is_some());
     assert_eq!(
         completed.cleaned_relative_paths,
@@ -1452,6 +1669,43 @@ fn list_items_filters_by_type_and_search_text() {
     assert_eq!(
         search_page.items[0].source_app_name.as_deref(),
         Some("Safari")
+    );
+}
+
+#[test]
+fn list_items_searches_full_primary_text_beyond_ui_preview_prefix() {
+    let (_temp_dir, mut core) = open_temp_core();
+    let late_token = "late-token-after-ui-preview-500";
+    let long_text = format!("{} {}", "a".repeat(520), late_token);
+    let captured = core
+        .capture_text(CaptureTextRequest {
+            text: long_text.clone(),
+            detected_link: None,
+            source_bundle_id: Some("com.apple.TextEdit".to_string()),
+            source_app_name: Some("TextEdit".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 3,
+            self_write_token: None,
+        })
+        .unwrap();
+
+    let search_page = core
+        .list_items(
+            ItemQuery {
+                search_text: Some(late_token.to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+
+    assert_eq!(search_page.total_count, 1);
+    assert_eq!(search_page.items[0].id, captured.item_id);
+    assert_eq!(
+        search_page.items[0].primary_text.as_deref(),
+        Some(long_text.as_str())
     );
 }
 
@@ -2044,9 +2298,72 @@ fn default_preferences_document_is_seeded() {
         vec!["command".to_string(), "shift".to_string()]
     );
     assert!(!preferences.shortcuts.paste_directly_to_target);
-    assert!(preferences.ignore_list.ignored_app_identifiers.is_empty());
+    assert_eq!(
+        preferences.ignore_list.ignored_app_identifiers,
+        vec![
+            "com.apple.Passwords".to_string(),
+            "com.apple.keychainaccess".to_string()
+        ]
+    );
+    assert!(row.1.contains(
+        "\"ignored_app_identifiers\":[\"com.apple.Passwords\",\"com.apple.keychainaccess\"]"
+    ));
     assert!(preferences.ignore_list.window_title_keywords.is_empty());
     assert!(!preferences.ignore_list.skip_unknown_source);
+}
+
+#[test]
+fn old_empty_ignore_list_is_migrated_once_to_default_privacy_apps() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let core = ClipboardCore::open(temp_dir.path()).expect("open core");
+    let mut old_preferences = PreferencesDocument::default();
+    old_preferences.ignore_list.ignored_app_identifiers.clear();
+    let old_json = serde_json::to_string(&old_preferences).unwrap();
+    core.connection
+        .execute(
+            r#"
+            UPDATE preference_documents
+            SET schema_version = 9, value_json = ?1
+            WHERE id = 'current'
+            "#,
+            params![old_json],
+        )
+        .unwrap();
+    drop(core);
+
+    let mut migrated = ClipboardCore::open(temp_dir.path()).expect("reopen migrated core");
+    let migrated_preferences = migrated.get_preferences().unwrap();
+    let row_schema_version: i64 = migrated
+        .connection
+        .query_row(
+            "SELECT schema_version FROM preference_documents WHERE id = 'current'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(row_schema_version, CURRENT_SCHEMA_VERSION);
+    assert_eq!(
+        migrated_preferences.ignore_list.ignored_app_identifiers,
+        vec![
+            "com.apple.Passwords".to_string(),
+            "com.apple.keychainaccess".to_string()
+        ]
+    );
+
+    let mut user_preferences = migrated_preferences;
+    user_preferences.ignore_list.ignored_app_identifiers.clear();
+    let saved = migrated.update_preferences(user_preferences).unwrap();
+    assert!(saved.ignore_list.ignored_app_identifiers.is_empty());
+    drop(migrated);
+
+    let reopened = ClipboardCore::open(temp_dir.path()).expect("reopen after explicit removal");
+    assert!(reopened
+        .get_preferences()
+        .unwrap()
+        .ignore_list
+        .ignored_app_identifiers
+        .is_empty());
 }
 
 #[test]
@@ -2157,7 +2474,13 @@ fn preferences_parse_keeps_backward_compatible_missing_ignore_list() {
 
     let preferences = preferences::parse_preferences_document(legacy_json).unwrap();
 
-    assert!(preferences.ignore_list.ignored_app_identifiers.is_empty());
+    assert_eq!(
+        preferences.ignore_list.ignored_app_identifiers,
+        vec![
+            "com.apple.Passwords".to_string(),
+            "com.apple.keychainaccess".to_string()
+        ]
+    );
     assert!(preferences.ignore_list.window_title_keywords.is_empty());
     assert_eq!(preferences.history.max_items, 5000);
     assert!(preferences.history.record_images);
@@ -2881,7 +3204,10 @@ fn v9_migration_adds_payload_state_and_pending_image_jobs() {
         )
         .unwrap();
 
-    assert_eq!(payload_state_column, ("TEXT".to_string(), 1, "'ready'".to_string()));
+    assert_eq!(
+        payload_state_column,
+        ("TEXT".to_string(), 1, "'ready'".to_string())
+    );
     assert_eq!(pending_table_count, 1);
     assert_eq!(index_count, 6);
 }

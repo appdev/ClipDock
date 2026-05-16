@@ -7,15 +7,18 @@ public enum PanelFocusTarget: Equatable, Sendable {
 
 public struct PanelQueryState: Equatable, Sendable {
     public var searchText: String
+    public var itemType: String?
     public var pinboardID: String?
     public var isSearchVisible: Bool
 
     public init(
         searchText: String = "",
+        itemType: String? = nil,
         pinboardID: String? = nil,
         isSearchVisible: Bool = false
     ) {
         self.searchText = searchText
+        self.itemType = itemType
         self.pinboardID = pinboardID
         self.isSearchVisible = isSearchVisible
     }
@@ -94,6 +97,16 @@ public struct PanelSearchFocusResult: Equatable, Sendable {
     }
 }
 
+public struct PanelStartSearchResult: Equatable, Sendable {
+    public let state: PanelSceneState
+    public let focusTarget: PanelFocusTarget
+
+    public init(state: PanelSceneState, focusTarget: PanelFocusTarget) {
+        self.state = state
+        self.focusTarget = focusTarget
+    }
+}
+
 public final class PanelSceneRuntimeController {
     public private(set) var state: PanelSceneState
 
@@ -141,6 +154,18 @@ public final class PanelSceneRuntimeController {
         state = PanelSceneController.stateBySettingPinboardFilter(state, pinboardID: pinboardID)
     }
 
+    public func setItemTypeFilter(_ itemType: String?) {
+        state = PanelSceneController.stateBySettingItemTypeFilter(state, itemType: itemType)
+    }
+
+    public func setScopeFilters(itemType: String?, pinboardID: String?) {
+        state = PanelSceneController.stateBySettingScopeFilters(
+            state,
+            itemType: itemType,
+            pinboardID: pinboardID
+        )
+    }
+
     public func clearFilters() {
         state = PanelSceneController.stateByClearingFilters(state)
     }
@@ -153,6 +178,12 @@ public final class PanelSceneRuntimeController {
 
     public func focusSearch() -> PanelSearchFocusResult {
         let result = PanelSceneController.focusSearchResult(state)
+        state = result.state
+        return result
+    }
+
+    public func startSearch(initialText: String) -> PanelStartSearchResult {
+        let result = PanelSceneController.startSearchResult(state, initialText: initialText)
         state = result.state
         return result
     }
@@ -267,9 +298,29 @@ public enum PanelSceneController {
         return nextState
     }
 
+    public static func stateBySettingItemTypeFilter(
+        _ state: PanelSceneState,
+        itemType: String?
+    ) -> PanelSceneState {
+        var nextState = state
+        nextState.query.itemType = itemType?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        return nextState
+    }
+
+    public static func stateBySettingScopeFilters(
+        _ state: PanelSceneState,
+        itemType: String?,
+        pinboardID: String?
+    ) -> PanelSceneState {
+        var nextState = stateBySettingItemTypeFilter(state, itemType: itemType)
+        nextState.query.pinboardID = pinboardID
+        return nextState
+    }
+
     public static func stateByClearingFilters(_ state: PanelSceneState) -> PanelSceneState {
         var nextState = state
         nextState.query.searchText = ""
+        nextState.query.itemType = nil
         nextState.query.pinboardID = nil
         nextState.query.isSearchVisible = false
         return nextState
@@ -314,6 +365,20 @@ public enum PanelSceneController {
         return PanelSearchFocusResult(state: nextState, focusTarget: .searchField)
     }
 
+    public static func startSearchResult(
+        _ state: PanelSceneState,
+        initialText: String
+    ) -> PanelStartSearchResult {
+        var nextState = state
+        nextState.query.isSearchVisible = true
+        let searchText = state.query.isSearchVisible
+            ? state.query.searchText + initialText
+            : initialText
+        nextState.query.searchText = searchText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return PanelStartSearchResult(state: nextState, focusTarget: .searchField)
+    }
+
     public static func stateByDismissingSearch(_ state: PanelSceneState) -> PanelSceneState {
         var nextState = state
         nextState.query.searchText = ""
@@ -327,7 +392,8 @@ public enum PanelSceneController {
     ) -> PanelEscapeAction {
         PanelInteractionPlanner.escapeAction(
             isPreviewShown: isPreviewShown,
-            searchText: state.query.searchText
+            searchText: state.query.searchText,
+            isSearchVisible: state.query.isSearchVisible
         )
     }
 
@@ -336,5 +402,11 @@ public enum PanelSceneController {
         visibleItemIDs: [String]
     ) -> String? {
         PanelInteractionPlanner.selectedIDForCommandNumber(number, itemIDs: visibleItemIDs)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

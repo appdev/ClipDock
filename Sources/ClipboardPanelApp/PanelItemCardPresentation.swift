@@ -10,6 +10,7 @@ public struct PanelItemCardPresentation: Equatable, Sendable {
     public let linkTitle: String?
     public let fileTitle: String?
     public let fileDetail: String?
+    public let colorValue: ClipboardColorValue?
 
     public init(
         symbolName: String,
@@ -20,7 +21,8 @@ public struct PanelItemCardPresentation: Equatable, Sendable {
         linkDetail: String? = nil,
         linkTitle: String? = nil,
         fileTitle: String? = nil,
-        fileDetail: String? = nil
+        fileDetail: String? = nil,
+        colorValue: ClipboardColorValue? = nil
     ) {
         self.symbolName = symbolName
         self.displayType = displayType
@@ -31,6 +33,7 @@ public struct PanelItemCardPresentation: Equatable, Sendable {
         self.linkTitle = linkTitle
         self.fileTitle = fileTitle
         self.fileDetail = fileDetail
+        self.colorValue = colorValue
     }
 }
 
@@ -42,6 +45,7 @@ public enum PanelItemCardPresenter {
         let displayType = displayType(for: item)
         let linkMetadata = linkPresentation(for: item)
         let fileMetadata = filePresentation(for: item)
+        let colorValue = colorPresentation(for: item)
 
         return PanelItemCardPresentation(
             symbolName: symbolName(forItemType: item.itemType),
@@ -54,13 +58,15 @@ public enum PanelItemCardPresenter {
                 for: item,
                 linkMetadata: linkMetadata,
                 fileMetadata: fileMetadata,
+                colorValue: colorValue,
                 byteCountFormatter: byteCountFormatter
             ),
             linkHost: item.itemType == "link" ? linkMetadata.host : nil,
             linkDetail: item.itemType == "link" ? linkMetadata.detail : nil,
             linkTitle: item.itemType == "link" ? linkMetadata.title : nil,
             fileTitle: item.itemType == "file" ? fileMetadata.title : nil,
-            fileDetail: item.itemType == "file" ? fileMetadata.detail : nil
+            fileDetail: item.itemType == "file" ? fileMetadata.detail : nil,
+            colorValue: item.itemType == "color" ? colorValue : nil
         )
     }
 
@@ -118,15 +124,40 @@ public enum PanelItemCardPresenter {
             return ""
         case "image":
             return ""
+        case "color":
+            return colorPresentation(for: item)?.normalizedHex
+                ?? item.primaryText
+                ?? item.summary
+        case "text", "rich_text":
+            return boundedTextPreview(from: item.primaryText ?? item.summary)
         default:
             return item.primaryText ?? item.summary
         }
+    }
+
+    private static func boundedTextPreview(from text: String, limitUTF16Units: Int = 500) -> String {
+        guard limitUTF16Units > 0 else { return "" }
+
+        let utf16Length = (text as NSString).length
+        guard utf16Length > limitUTF16Units else { return text }
+
+        var boundedLength = limitUTF16Units
+        while boundedLength > 0 {
+            let range = NSRange(location: 0, length: boundedLength)
+            if let swiftRange = Range(range, in: text) {
+                return String(text[swiftRange])
+            }
+            boundedLength -= 1
+        }
+
+        return ""
     }
 
     private static func footnoteText(
         for item: RustClipboardItemSummary,
         linkMetadata: (host: String, detail: String, title: String?),
         fileMetadata: (title: String, detail: String),
+        colorValue: ClipboardColorValue?,
         byteCountFormatter: (Int64) -> String
     ) -> String {
         switch item.itemType {
@@ -138,6 +169,8 @@ public enum PanelItemCardPresenter {
                 : linkMetadata.host
         case "file":
             return fileMetadata.detail
+        case "color":
+            return colorValue == nil ? "颜色格式不可用" : ""
         default:
             return contentFootnote(for: item.primaryText ?? item.summary)
         }
@@ -225,6 +258,18 @@ public enum PanelItemCardPresenter {
 
         let detail = nonEmptyText(primaryPathText) ?? (isPathLikeText(summary) ? summary : "本地文件路径")
         return (summary, detail)
+    }
+
+    private static func colorPresentation(for item: RustClipboardItemSummary) -> ClipboardColorValue? {
+        guard item.itemType == "color" else { return nil }
+        return [
+            item.primaryText,
+            item.summary
+        ]
+        .compactMap { $0 }
+        .lazy
+        .compactMap { ClipboardColorValue(normalizedHex: $0) }
+        .first
     }
 
     private static func nonEmptyText(_ text: String?) -> String? {

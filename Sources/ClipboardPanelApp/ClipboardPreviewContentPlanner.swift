@@ -13,6 +13,7 @@ public struct ClipboardPreviewContent: Equatable, Sendable {
     public let linkURL: URL?
     public let linkDisplayURL: String?
     public let linkTitle: String?
+    public let colorValue: ClipboardColorValue?
     public let fileURLs: [URL]
     public let copiedAtMilliseconds: Int64
 }
@@ -48,6 +49,7 @@ public enum ClipboardPreviewContentPlanner {
             linkURL: previewLinkURL(for: item),
             linkDisplayURL: item.linkMetadata?.displayURL,
             linkTitle: item.linkMetadata?.title,
+            colorValue: previewColorValue(for: item),
             fileURLs: fileURLs,
             copiedAtMilliseconds: item.lastCopiedAtMs
         )
@@ -62,6 +64,8 @@ public enum ClipboardPreviewContentPlanner {
                 ?? item.summary
         case "image":
             return item.summary
+        case "color":
+            return previewColorValue(for: item)?.normalizedHex ?? item.summary
         default:
             return item.summary
         }
@@ -94,6 +98,9 @@ public enum ClipboardPreviewContentPlanner {
             return item.primaryText ?? item.summary
         case "image":
             return item.summary
+        case "color":
+            return previewColorValue(for: item)?.previewMetadataText
+                ?? (item.primaryText ?? item.summary)
         default:
             return item.primaryText ?? item.summary
         }
@@ -110,6 +117,8 @@ public enum ClipboardPreviewContentPlanner {
             return item.sizeBytes > 0 ? "PNG · \(sizeText)" : "PNG"
         case "link":
             return item.linkMetadata?.displayURL ?? item.primaryText ?? item.summary
+        case "color":
+            return previewColorValue(for: item)?.previewMetadataText ?? "颜色格式不可用"
         default:
             let sizeText = formatter.string(fromByteCount: item.sizeBytes)
             return item.sizeBytes > 0 ? sizeText : item.sourceConfidence
@@ -170,6 +179,18 @@ public enum ClipboardPreviewContentPlanner {
             appSupportDirectory: appSupportDirectory,
             fileManager: fileManager
         )
+    }
+
+    private static func previewColorValue(for item: RustClipboardItemSummary) -> ClipboardColorValue? {
+        guard item.itemType == "color" else { return nil }
+        return [
+            item.primaryText,
+            item.summary
+        ]
+        .compactMap { $0 }
+        .lazy
+        .compactMap { ClipboardColorValue(normalizedHex: $0) }
+        .first
     }
 
     private static func hostName(from text: String) -> String? {

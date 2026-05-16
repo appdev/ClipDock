@@ -141,15 +141,23 @@ struct PanelRegressionPlannerTests {
     func escapePrioritizesPreviewThenSearchThenPanelHide() {
         #expect(PanelInteractionPlanner.escapeAction(
             isPreviewShown: true,
-            searchText: "query"
+            searchText: "query",
+            isSearchVisible: true
         ) == .closePreview)
         #expect(PanelInteractionPlanner.escapeAction(
             isPreviewShown: false,
-            searchText: " query "
+            searchText: " query ",
+            isSearchVisible: true
         ) == .clearSearch)
         #expect(PanelInteractionPlanner.escapeAction(
             isPreviewShown: false,
-            searchText: "   "
+            searchText: "   ",
+            isSearchVisible: true
+        ) == .closeSearch)
+        #expect(PanelInteractionPlanner.escapeAction(
+            isPreviewShown: false,
+            searchText: "   ",
+            isSearchVisible: false
         ) == .hidePanel)
     }
 

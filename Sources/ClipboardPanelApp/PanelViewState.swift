@@ -3,17 +3,20 @@ import Foundation
 public struct PanelToolbarViewState: Equatable, Sendable {
     public let searchText: String
     public let isSearchVisible: Bool
+    public let selectedItemType: String?
     public let selectedPinboardID: String?
     public let clearActionTitle: String
 
     public init(
         searchText: String,
         isSearchVisible: Bool,
+        selectedItemType: String? = nil,
         selectedPinboardID: String?,
         clearActionTitle: String
     ) {
         self.searchText = searchText
         self.isSearchVisible = isSearchVisible
+        self.selectedItemType = selectedItemType
         self.selectedPinboardID = selectedPinboardID
         self.clearActionTitle = clearActionTitle
     }
@@ -47,7 +50,7 @@ public enum PanelViewStateAdapter {
         list: PanelListViewState
     ) -> PanelViewState {
         let hasSearch = !scene.query.searchText.isEmpty
-        let clearActionTitle = (scene.query.pinboardID != nil || hasSearch)
+        let clearActionTitle = (scene.query.itemType != nil || scene.query.pinboardID != nil || hasSearch)
             ? "清空当前结果"
             : "清空历史"
 
@@ -55,6 +58,7 @@ public enum PanelViewStateAdapter {
             toolbar: PanelToolbarViewState(
                 searchText: scene.query.searchText,
                 isSearchVisible: scene.query.isSearchVisible,
+                selectedItemType: scene.query.itemType,
                 selectedPinboardID: scene.query.pinboardID,
                 clearActionTitle: clearActionTitle
             ),

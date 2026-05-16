@@ -20,6 +20,7 @@ struct ClipShelfPanelTheme {
 
 struct ClipShelfCardTheme {
     let backgroundColor: NSColor
+    let textItemBackgroundColor: NSColor
     let borderColor: NSColor
     let selectionBorderColor: NSColor
     let primaryTextColor: NSColor
@@ -32,6 +33,10 @@ struct ClipShelfCardTheme {
     let linkPreviewOverlayStartColor: NSColor
     let linkPreviewOverlayEndColor: NSColor
     let linkFooterBackgroundColor: NSColor
+    let textBodyFadeTopColor: NSColor
+    let textBodyFadeMiddleColor: NSColor
+    let textBodyFadeFooterColor: NSColor
+    let textBodyFadeBottomColor: NSColor
     let linkDefaultIconTintColor: NSColor
     let linkResolvedIconBorderColor: NSColor
     let appIconTileBackgroundColor: NSColor
@@ -128,6 +133,7 @@ enum ClipShelfTheme {
         ),
         card: ClipShelfCardTheme(
             backgroundColor: NSColor(calibratedWhite: 0.98, alpha: 0.98),
+            textItemBackgroundColor: NSColor.white,
             borderColor: NSColor(calibratedWhite: 0.0, alpha: 0.13),
             selectionBorderColor: .systemBlue,
             primaryTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.96),
@@ -145,6 +151,10 @@ enum ClipShelfTheme {
             linkPreviewOverlayStartColor: NSColor.black.withAlphaComponent(0.02),
             linkPreviewOverlayEndColor: NSColor.black.withAlphaComponent(0.16),
             linkFooterBackgroundColor: NSColor.white,
+            textBodyFadeTopColor: NSColor.white.withAlphaComponent(0),
+            textBodyFadeMiddleColor: NSColor.white.withAlphaComponent(0.56),
+            textBodyFadeFooterColor: NSColor.white.withAlphaComponent(0.90),
+            textBodyFadeBottomColor: NSColor.white.withAlphaComponent(0.98),
             linkDefaultIconTintColor: NSColor(
                 calibratedRed: 0.745,
                 green: 0.745,
@@ -203,6 +213,12 @@ enum ClipShelfTheme {
         ),
         card: ClipShelfCardTheme(
             backgroundColor: NSColor(calibratedWhite: 0.075, alpha: 0.98),
+            textItemBackgroundColor: NSColor(
+                srgbRed: 20.0 / 255.0,
+                green: 20.0 / 255.0,
+                blue: 20.0 / 255.0,
+                alpha: 1
+            ),
             borderColor: NSColor.black.withAlphaComponent(0.14),
             selectionBorderColor: .systemBlue,
             primaryTextColor: NSColor.white.withAlphaComponent(0.92),
@@ -215,6 +231,30 @@ enum ClipShelfTheme {
             linkPreviewOverlayStartColor: NSColor.black.withAlphaComponent(0.02),
             linkPreviewOverlayEndColor: NSColor.black.withAlphaComponent(0.18),
             linkFooterBackgroundColor: NSColor(srgbRed: 0.19, green: 0.19, blue: 0.19, alpha: 1),
+            textBodyFadeTopColor: NSColor(
+                srgbRed: 20.0 / 255.0,
+                green: 20.0 / 255.0,
+                blue: 20.0 / 255.0,
+                alpha: 0
+            ),
+            textBodyFadeMiddleColor: NSColor(
+                srgbRed: 20.0 / 255.0,
+                green: 20.0 / 255.0,
+                blue: 20.0 / 255.0,
+                alpha: 0.56
+            ),
+            textBodyFadeFooterColor: NSColor(
+                srgbRed: 20.0 / 255.0,
+                green: 20.0 / 255.0,
+                blue: 20.0 / 255.0,
+                alpha: 0.90
+            ),
+            textBodyFadeBottomColor: NSColor(
+                srgbRed: 20.0 / 255.0,
+                green: 20.0 / 255.0,
+                blue: 20.0 / 255.0,
+                alpha: 0.98
+            ),
             linkDefaultIconTintColor: NSColor.white.withAlphaComponent(0.38),
             linkResolvedIconBorderColor: NSColor.white.withAlphaComponent(0.20),
             appIconTileBackgroundColor: NSColor.white.withAlphaComponent(0.90),

@@ -6,8 +6,8 @@ struct PreferencesCoordinatorTests {
     func sceneSectionsExposeSettingsNavigationOrder() {
         #expect(PreferencesSceneSection.allCases == [
             .general,
-            .shortcuts,
             .rules,
+            .shortcuts,
             .about
         ])
     }

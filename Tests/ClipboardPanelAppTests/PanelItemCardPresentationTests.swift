@@ -21,7 +21,7 @@ struct PanelItemCardPresentationTests {
     }
 
     @Test
-    func keepsFullTextCardSummaryWhileFootnoteCountUsesFullText() {
+    func boundsLongTextCardSummaryWhileFootnoteCountUsesFullText() {
         let longText = String(repeating: "alpha beta gamma\n", count: 30)
         let presentation = PanelItemCardPresenter.presentation(
             for: makeItem(
@@ -31,8 +31,104 @@ struct PanelItemCardPresentationTests {
             )
         )
 
-        #expect(presentation.summaryText == longText)
+        #expect(presentation.summaryText == String((longText as NSString).substring(to: 500)))
+        #expect((presentation.summaryText as NSString).length == 500)
+        #expect(!presentation.summaryText.hasSuffix("…"))
         #expect(presentation.footnoteText == "\(longText.trimmingCharacters(in: .whitespacesAndNewlines).count) 个字符")
+    }
+
+    @Test
+    func keepsFourHundredNinetyNineUTF16UnitTextSummaryUnchanged() {
+        let text = String(repeating: "z", count: 499)
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "text",
+                summary: "fallback",
+                primaryText: text
+            )
+        )
+
+        #expect(presentation.summaryText == text)
+        #expect((presentation.summaryText as NSString).length == 499)
+    }
+
+    @Test
+    func keepsExactFiveHundredUTF16UnitTextSummaryUnchanged() {
+        let text = String(repeating: "a", count: 500)
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "text",
+                summary: "fallback",
+                primaryText: text
+            )
+        )
+
+        #expect(presentation.summaryText == text)
+        #expect((presentation.summaryText as NSString).length == 500)
+    }
+
+    @Test
+    func truncatesFiveHundredOneUTF16UnitTextSummaryToFiveHundredWithoutEllipsis() {
+        let text = String(repeating: "b", count: 501)
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "text",
+                summary: "fallback",
+                primaryText: text
+            )
+        )
+
+        #expect(presentation.summaryText == String((text as NSString).substring(to: 500)))
+        #expect((presentation.summaryText as NSString).length == 500)
+        #expect(!presentation.summaryText.hasSuffix("…"))
+    }
+
+    @Test
+    func preservesWhitespaceAndNewlinesInBoundedTextSummary() {
+        let text = "\(String(repeating: "a", count: 498)) \nZ"
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "text",
+                summary: "fallback",
+                primaryText: text
+            )
+        )
+
+        #expect(presentation.summaryText == "\(String(repeating: "a", count: 498)) \n")
+        #expect((presentation.summaryText as NSString).length == 500)
+    }
+
+    @Test
+    func avoidsSplittingSurrogatePairAtTextSummaryBoundary() {
+        let text = "\(String(repeating: "a", count: 499))🙂Z"
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "text",
+                summary: "fallback",
+                primaryText: text
+            )
+        )
+
+        #expect(presentation.summaryText == String(repeating: "a", count: 499))
+        #expect((presentation.summaryText as NSString).length <= 500)
+    }
+
+    @Test
+    func boundsRichTextSummaryLikeTextSummary() {
+        let richText = String(repeating: "rich text\n", count: 60)
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "rich_text",
+                summary: "fallback",
+                primaryText: richText
+            )
+        )
+
+        #expect(presentation.symbolName == "doc.richtext")
+        #expect(presentation.displayType == "富文本")
+        #expect(presentation.summaryText == String((richText as NSString).substring(to: 500)))
+        #expect((presentation.summaryText as NSString).length == 500)
+        #expect(presentation.footnoteText == "\(richText.trimmingCharacters(in: .whitespacesAndNewlines).count) 个字符")
     }
 
     @Test
@@ -136,6 +232,43 @@ struct PanelItemCardPresentationTests {
         #expect(presentation.symbolName == "photo")
         #expect(presentation.summaryText.isEmpty)
         #expect(presentation.footnoteText == "100 × 100")
+    }
+
+    @Test
+    func presentsNormalizedColorWithoutCardFootnoteAndKeepsPreviewDetails() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "color",
+                summary: "#FF00AA",
+                primaryText: "#FF00AA"
+            )
+        )
+
+        #expect(presentation.symbolName == "paintpalette")
+        #expect(presentation.displayType == "颜色")
+        #expect(presentation.summaryText == "#FF00AA")
+        #expect(presentation.footnoteText.isEmpty)
+        #expect(presentation.colorValue?.normalizedHex == "#FF00AA")
+        #expect(presentation.colorValue?.rgbText == "RGB 255, 0, 170")
+        #expect(presentation.colorValue?.hslText == "HSL 320°, 100%, 50%")
+        #expect(presentation.colorValue?.hsbText == "HSB 320°, 100%, 100%")
+        #expect(presentation.colorValue?.previewMetadataText.contains("RGB 255, 0, 170") == true)
+    }
+
+    @Test
+    func presentsMalformedStoredColorAsFallbackText() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "color",
+                summary: "not-a-color",
+                primaryText: "not-a-color"
+            )
+        )
+
+        #expect(presentation.displayType == "颜色")
+        #expect(presentation.summaryText == "not-a-color")
+        #expect(presentation.footnoteText == "颜色格式不可用")
+        #expect(presentation.colorValue == nil)
     }
 
     @Test

@@ -7,6 +7,7 @@ use rusqlite::{params, Connection};
 use super::ClipboardCore;
 
 const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1000;
+const DEFAULT_PRIVACY_IGNORE_APPS_SCHEMA_VERSION: i64 = 10;
 
 impl ClipboardCore {
     pub fn get_preferences(&self) -> Result<PreferencesDocument> {
@@ -123,6 +124,7 @@ pub(super) fn seed_default_preferences(connection: &Connection) -> Result<()> {
         "#,
         params![CURRENT_SCHEMA_VERSION, preferences, now],
     )?;
+    migrate_default_privacy_ignore_apps(connection)?;
     Ok(())
 }
 
@@ -135,4 +137,51 @@ pub(super) fn parse_preferences_document(value_json: &str) -> Result<Preferences
                 format!("preferences json is invalid: {error}"),
             )
         })
+}
+
+fn migrate_default_privacy_ignore_apps(connection: &Connection) -> Result<()> {
+    let (schema_version, value_json): (i64, String) = connection.query_row(
+        "SELECT schema_version, value_json FROM preference_documents WHERE id = 'current'",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    if schema_version >= DEFAULT_PRIVACY_IGNORE_APPS_SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    let mut preferences = parse_preferences_document(&value_json)?;
+    for identifier in PreferencesDocument::default()
+        .ignore_list
+        .ignored_app_identifiers
+    {
+        if !preferences
+            .ignore_list
+            .ignored_app_identifiers
+            .iter()
+            .any(|value| value.eq_ignore_ascii_case(&identifier))
+        {
+            preferences
+                .ignore_list
+                .ignored_app_identifiers
+                .push(identifier);
+        }
+    }
+    let preferences = preferences.normalized();
+    let value_json = serde_json::to_string(&preferences).map_err(|error| {
+        CoreError::new(
+            CoreErrorCode::InvalidInput,
+            format!("default ignore app migration serialization failed: {error}"),
+        )
+    })?;
+
+    connection.execute(
+        r#"
+        UPDATE preference_documents
+        SET schema_version = ?1, value_json = ?2, updated_at_ms = ?3
+        WHERE id = 'current'
+        "#,
+        params![CURRENT_SCHEMA_VERSION, value_json, now_ms()],
+    )?;
+    Ok(())
 }

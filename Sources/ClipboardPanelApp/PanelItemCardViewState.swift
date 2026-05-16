@@ -40,6 +40,7 @@ public enum PanelCardPreviewState: Equatable, Sendable {
         accessibilityLabel: String
     )
     case file(accessibilityLabel: String)
+    case color(ClipboardColorValue)
 }
 
 public struct PanelItemCardViewState: Equatable, Sendable {
@@ -141,6 +142,11 @@ public enum PanelItemCardViewStateAdapter {
             )
         case "file":
             return .file(accessibilityLabel: sourceAppName)
+        case "color":
+            guard let colorValue = presentation.colorValue else {
+                return .none
+            }
+            return .color(colorValue)
         default:
             return .none
         }

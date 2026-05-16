@@ -19,6 +19,20 @@ public enum ClipboardPastePayloadPlanner {
             let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmedText.isEmpty ? .unsupported(reason: "empty_text") : .text(text)
 
+        case "color":
+            guard let colorValue = [
+                item.primaryText,
+                item.summary
+            ]
+                .compactMap({ $0 })
+                .lazy
+                .compactMap({ ClipboardColorValue(normalizedHex: $0) })
+                .first
+            else {
+                return .unsupported(reason: "invalid_color")
+            }
+            return .text(colorValue.normalizedHex)
+
         case "image":
             guard let url = imageAssetURL(
                 for: item,

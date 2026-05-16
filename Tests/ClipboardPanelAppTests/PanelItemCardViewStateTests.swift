@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ClipboardPanelApp
 
@@ -134,6 +135,106 @@ struct PanelItemCardViewStateTests {
         #expect(state.summaryText == "hello")
         #expect(state.commandIndexText == nil)
         #expect(state.isSelected == false)
+    }
+
+    @Test
+    func colorItemMapsColorPreviewWithoutAssetPreview() throws {
+        let item = makePanelItemCardStateItem(
+            id: "color-1",
+            itemType: "color",
+            summary: "#FF00AA",
+            primaryText: "#FF00AA",
+            previewAssetPath: "should-not-load.png",
+            payloadAssetPath: "should-not-load-payload.png"
+        )
+
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: nil,
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        let color = try #require({
+            if case .color(let value) = state.preview {
+                return value
+            }
+            return nil
+        }())
+        #expect(color.normalizedHex == "#FF00AA")
+        #expect(state.summaryText == "#FF00AA")
+        #expect(state.footnoteText.isEmpty)
+        #expect(state.assetRequest.previewAssetPath == "should-not-load.png")
+    }
+
+    @Test
+    func malformedColorItemFallsBackWithoutColorPreview() {
+        let item = makePanelItemCardStateItem(
+            id: "bad-color",
+            itemType: "color",
+            summary: "bad",
+            primaryText: "bad"
+        )
+
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: nil,
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        #expect(state.preview == .none)
+        #expect(state.summaryText == "bad")
+        #expect(state.footnoteText == "颜色格式不可用")
+    }
+
+    @Test
+    func colorItemTransientCommandIndexPreservesPreviewAndClearsCleanly() {
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: makePanelItemCardStateItem(
+                id: "color-command",
+                itemType: "color",
+                summary: "#FDF6E3",
+                primaryText: "#FDF6E3"
+            ),
+            selectedItemID: nil,
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        let indexedState = PanelItemCardViewStateAdapter.stateBySettingCommandIndexText(
+            state,
+            commandIndexText: "4"
+        )
+        let clearedState = PanelItemCardViewStateAdapter.stateBySettingCommandIndexText(
+            indexedState,
+            commandIndexText: nil
+        )
+
+        #expect(indexedState.commandIndexText == "4")
+        #expect(indexedState.preview == state.preview)
+        #expect(indexedState.footnoteText.isEmpty)
+        #expect(clearedState.commandIndexText == nil)
+        #expect(clearedState.preview == state.preview)
+    }
+
+    @Test
+    func textItemKeepsAssetRequestPrimaryTextFullWhileSummaryTextIsBounded() {
+        let fullText = "\(String(repeating: "a", count: 499))🙂Z"
+        let item = makePanelItemCardStateItem(
+            id: "text-long",
+            itemType: "text",
+            summary: "fallback",
+            primaryText: fullText
+        )
+
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: nil,
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        #expect(state.preview == .none)
+        #expect(state.summaryText == String(repeating: "a", count: 499))
+        #expect((state.summaryText as NSString).length <= 500)
+        #expect(state.assetRequest.primaryText == fullText)
     }
 
     @Test

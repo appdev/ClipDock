@@ -12,6 +12,7 @@ struct ClipShelfThemeTests {
         #expect(light.scheme == .light)
         #expect(dark.scheme == .dark)
         #expect(colorDistance(light.card.backgroundColor, dark.card.backgroundColor) > 0.2)
+        #expect(colorDistance(light.card.textItemBackgroundColor, dark.card.textItemBackgroundColor) > 0.2)
         #expect(colorDistance(light.card.linkFooterBackgroundColor, dark.card.linkFooterBackgroundColor) > 0.2)
         #expect(colorDistance(
             light.card.imagePreviewCheckerboardBackgroundColor,
@@ -48,10 +49,51 @@ struct ClipShelfThemeTests {
 
         for palette in palettes {
             #expect(contrastRatio(palette.card.primaryTextColor, palette.card.backgroundColor) >= 4.5)
+            #expect(contrastRatio(palette.card.primaryTextColor, palette.card.textItemBackgroundColor) >= 4.5)
             #expect(contrastRatio(palette.card.primaryTextColor, palette.card.linkFooterBackgroundColor) >= 4.5)
             #expect(contrastRatio(palette.preferences.primaryTextColor, palette.preferences.contentBackgroundColor) >= 4.5)
             #expect(contrastRatio(palette.preview.bodyTextColor, palette.preview.surfaceBackgroundColor) >= 4.5)
         }
+    }
+
+    @Test
+    @MainActor
+    func textBodyFadeUsesSemanticThemeRampForTextItemSurface() throws {
+        let palettes = [
+            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
+            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+        ]
+
+        for palette in palettes {
+            let backgroundAlpha = palette.card.textItemBackgroundColor.usingColorSpace(.sRGB)?.alphaComponent ?? 0
+            let topAlpha = palette.card.textBodyFadeTopColor.usingColorSpace(.sRGB)?.alphaComponent ?? 1
+            let middleAlpha = palette.card.textBodyFadeMiddleColor.usingColorSpace(.sRGB)?.alphaComponent ?? 0
+            let footerAlpha = palette.card.textBodyFadeFooterColor.usingColorSpace(.sRGB)?.alphaComponent ?? 0
+            let bottomAlpha = palette.card.textBodyFadeBottomColor.usingColorSpace(.sRGB)?.alphaComponent ?? 0
+
+            #expect(colorDistance(palette.card.textBodyFadeTopColor, palette.card.textItemBackgroundColor) < 0.001)
+            #expect(colorDistance(palette.card.textBodyFadeMiddleColor, palette.card.textItemBackgroundColor) < 0.001)
+            #expect(colorDistance(palette.card.textBodyFadeFooterColor, palette.card.textItemBackgroundColor) < 0.001)
+            #expect(colorDistance(palette.card.textBodyFadeBottomColor, palette.card.textItemBackgroundColor) < 0.001)
+            #expect(topAlpha == 0)
+            #expect(middleAlpha > topAlpha)
+            #expect(footerAlpha > middleAlpha)
+            #expect(bottomAlpha > footerAlpha)
+            #expect(bottomAlpha < backgroundAlpha)
+        }
+    }
+
+    @Test
+    @MainActor
+    func textItemBackgroundUsesPureWhiteAndReferenceDarkGray() throws {
+        let light = ClipShelfTheme.current(for: NSAppearance(named: .aqua)).card
+        let dark = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua)).card
+
+        #expect(colorAndAlphaDistance(light.textItemBackgroundColor, NSColor.white) < 0.001)
+        #expect(colorAndAlphaDistance(
+            dark.textItemBackgroundColor,
+            NSColor(srgbRed: 20.0 / 255.0, green: 20.0 / 255.0, blue: 20.0 / 255.0, alpha: 1)
+        ) < 0.001)
     }
 
     @Test

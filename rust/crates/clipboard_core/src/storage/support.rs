@@ -16,9 +16,20 @@ pub(super) fn classify_text(text: &str) -> ClipboardItemType {
     let lower = text.to_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
         ClipboardItemType::Link
+    } else if normalize_hex_color(text).is_some() {
+        ClipboardItemType::Color
     } else {
         ClipboardItemType::Text
     }
+}
+
+pub(super) fn normalize_hex_color(text: &str) -> Option<String> {
+    let hex = text.strip_prefix('#').unwrap_or(text);
+    if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+
+    Some(format!("#{}", hex.to_ascii_uppercase()))
 }
 
 pub(super) fn summarize_text(text: &str) -> String {

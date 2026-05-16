@@ -67,6 +67,7 @@ public enum ScreenSelectionPlanner {
 public enum PanelEscapeAction: Equatable, Sendable {
     case closePreview
     case clearSearch
+    case closeSearch
     case hidePanel
 }
 
@@ -110,14 +111,20 @@ public enum PanelInteractionPlanner {
 
     public static func escapeAction(
         isPreviewShown: Bool,
-        searchText: String
+        searchText: String,
+        isSearchVisible: Bool
     ) -> PanelEscapeAction {
         if isPreviewShown {
             return .closePreview
         }
 
-        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if isSearchVisible,
+           !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return .clearSearch
+        }
+
+        if isSearchVisible {
+            return .closeSearch
         }
 
         return .hidePanel

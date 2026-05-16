@@ -73,9 +73,13 @@ struct PanelSceneControllerTests {
         let state = PanelSceneState(
             query: PanelQueryState(searchText: " report ", isSearchVisible: true)
         )
+        let visibleEmptyState = PanelSceneState(
+            query: PanelQueryState(searchText: "", isSearchVisible: true)
+        )
 
         #expect(PanelSceneController.escapeAction(state, isPreviewShown: false) == .clearSearch)
         #expect(PanelSceneController.escapeAction(state, isPreviewShown: true) == .closePreview)
+        #expect(PanelSceneController.escapeAction(visibleEmptyState, isPreviewShown: false) == .closeSearch)
     }
 
     @Test
@@ -95,6 +99,46 @@ struct PanelSceneControllerTests {
     func focusSearchShowsFieldAndFocusesSearchField() {
         let result = PanelSceneController.focusSearchResult(PanelSceneState())
 
+        #expect(result.state.query.isSearchVisible)
+        #expect(result.focusTarget == .searchField)
+    }
+
+    @Test
+    func startSearchReplacesHiddenSearchTextShowsFieldFocusesSearchAndPreservesFilters() {
+        let state = PanelSceneState(
+            query: PanelQueryState(
+                searchText: "rep",
+                itemType: "text",
+                pinboardID: "default",
+                isSearchVisible: false
+            )
+        )
+
+        let result = PanelSceneController.startSearchResult(state, initialText: "A")
+
+        #expect(result.state.query.searchText == "A")
+        #expect(result.state.query.itemType == "text")
+        #expect(result.state.query.pinboardID == "default")
+        #expect(result.state.query.isSearchVisible)
+        #expect(result.focusTarget == .searchField)
+    }
+
+    @Test
+    func startSearchAppendsInitialTextWhenSearchIsAlreadyVisible() {
+        let state = PanelSceneState(
+            query: PanelQueryState(
+                searchText: "rep",
+                itemType: "text",
+                pinboardID: "default",
+                isSearchVisible: true
+            )
+        )
+
+        let result = PanelSceneController.startSearchResult(state, initialText: "A")
+
+        #expect(result.state.query.searchText == "repA")
+        #expect(result.state.query.itemType == "text")
+        #expect(result.state.query.pinboardID == "default")
         #expect(result.state.query.isSearchVisible)
         #expect(result.focusTarget == .searchField)
     }
@@ -186,6 +230,22 @@ struct PanelSceneControllerTests {
         let result = controller.toggleSearch()
 
         #expect(result.focusTarget == .searchField)
+        #expect(controller.state.query.isSearchVisible)
+    }
+
+    @Test
+    func runtimeControllerStartSearchMutatesState() {
+        let controller = PanelSceneRuntimeController(
+            state: PanelSceneState(
+                query: PanelQueryState(searchText: "#", pinboardID: "colors")
+            )
+        )
+
+        let result = controller.startSearch(initialText: "F")
+
+        #expect(result.focusTarget == .searchField)
+        #expect(controller.state.query.searchText == "F")
+        #expect(controller.state.query.pinboardID == "colors")
         #expect(controller.state.query.isSearchVisible)
     }
 

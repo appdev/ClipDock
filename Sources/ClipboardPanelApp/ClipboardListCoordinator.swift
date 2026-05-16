@@ -3,6 +3,7 @@ import Foundation
 public struct ClipboardListQuery: Equatable, Sendable {
     public let limit: Int64
     public let offset: Int64
+    public let itemType: String?
     public let sourceAppID: String?
     public let pinboardID: String?
     public let normalizedSearch: String
@@ -10,23 +11,26 @@ public struct ClipboardListQuery: Equatable, Sendable {
     public init(
         limit: Int64,
         offset: Int64,
+        itemType: String? = nil,
         sourceAppID: String?,
         pinboardID: String?,
         normalizedSearch: String
     ) {
         self.limit = limit
         self.offset = offset
+        self.itemType = itemType
         self.sourceAppID = sourceAppID
         self.pinboardID = pinboardID
         self.normalizedSearch = normalizedSearch
     }
 
     public var isFiltered: Bool {
-        sourceAppID != nil || pinboardID != nil || !normalizedSearch.isEmpty
+        itemType != nil || sourceAppID != nil || pinboardID != nil || !normalizedSearch.isEmpty
     }
 
     public var scope: ClipboardListScope {
         ClipboardListScope(
+            itemType: itemType,
             sourceAppID: sourceAppID,
             pinboardID: pinboardID,
             normalizedSearch: normalizedSearch
@@ -35,22 +39,26 @@ public struct ClipboardListQuery: Equatable, Sendable {
 }
 
 public struct ClipboardListScope: Hashable, Sendable {
+    public let itemType: String?
     public let sourceAppID: String?
     public let pinboardID: String?
     public let normalizedSearch: String
 
     public init(
+        itemType: String? = nil,
         sourceAppID: String? = nil,
         pinboardID: String? = nil,
         normalizedSearch: String = ""
     ) {
+        self.itemType = itemType?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.sourceAppID = sourceAppID
         self.pinboardID = pinboardID
         self.normalizedSearch = normalizedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    public init(searchText: String, sourceAppID: String?, pinboardID: String?) {
+    public init(searchText: String, itemType: String? = nil, sourceAppID: String?, pinboardID: String?) {
         self.init(
+            itemType: itemType,
             sourceAppID: sourceAppID,
             pinboardID: pinboardID,
             normalizedSearch: searchText
@@ -60,7 +68,7 @@ public struct ClipboardListScope: Hashable, Sendable {
     public static let clipboard = ClipboardListScope()
 
     public var isFiltered: Bool {
-        sourceAppID != nil || pinboardID != nil || !normalizedSearch.isEmpty
+        itemType != nil || sourceAppID != nil || pinboardID != nil || !normalizedSearch.isEmpty
     }
 }
 
@@ -85,9 +93,9 @@ public struct ClipboardListUpdate: Sendable {
 
 public enum ClipboardItemMutationRequest: Sendable, Equatable {
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
-    case delete(itemID: String)
+    case delete(itemID: String, pinboardID: String?)
     case recordCopied(itemID: String)
-    case clear(sourceAppID: String?, normalizedSearch: String)
+    case clear(itemType: String?, sourceAppID: String?, normalizedSearch: String)
 }
 
 public enum ClipboardPinboardMutationRequest: Sendable, Equatable {
@@ -116,6 +124,7 @@ public actor ClipboardCoreDatabaseWorker {
             appSupportDirectory: appSupportURL,
             limit: query.limit,
             offset: query.offset,
+            itemType: query.itemType,
             sourceAppId: query.sourceAppID,
             pinboardId: query.pinboardID,
             searchText: query.normalizedSearch.isEmpty ? nil : query.normalizedSearch
@@ -136,15 +145,25 @@ public actor ClipboardCoreDatabaseWorker {
                 isMember: isMember
             )
 
-        case .delete(let itemID):
-            client.deleteItem(appSupportDirectory: appSupportURL, itemId: itemID)
+        case .delete(let itemID, let pinboardID):
+            if let pinboardID {
+                client.setItemPinboardMembership(
+                    appSupportDirectory: appSupportURL,
+                    itemId: itemID,
+                    pinboardId: pinboardID,
+                    isMember: false
+                )
+            } else {
+                client.deleteItem(appSupportDirectory: appSupportURL, itemId: itemID)
+            }
 
         case .recordCopied(let itemID):
             client.recordItemCopied(appSupportDirectory: appSupportURL, itemId: itemID)
 
-        case .clear(let sourceAppID, let normalizedSearch):
+        case .clear(let itemType, let sourceAppID, let normalizedSearch):
             client.clearItems(
                 appSupportDirectory: appSupportURL,
+                itemType: itemType,
                 sourceAppId: sourceAppID,
                 searchText: normalizedSearch.isEmpty ? nil : normalizedSearch
             )
@@ -224,6 +243,7 @@ public final class ClipboardListCoordinator {
     private let mutationPerformer: ClipboardItemMutationPerformer
 
     private var currentSearchText = ""
+    private var currentItemType: String?
     private var currentSourceAppID: String?
     private var currentPinboardID: String?
     private var listRefreshGeneration = 0
@@ -261,11 +281,13 @@ public final class ClipboardListCoordinator {
 
     public func updateQuery(
         searchText: String,
+        itemType: String? = nil,
         sourceAppID: String?,
         pinboardID: String? = nil,
         debounce: Bool = true
     ) {
         currentSearchText = searchText
+        currentItemType = itemType?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         currentSourceAppID = sourceAppID
         currentPinboardID = pinboardID
         refresh(debounce: debounce)
@@ -377,7 +399,7 @@ public final class ClipboardListCoordinator {
             case .success(let mutationResult):
                 self.onStatusTextChanged?(self.statusText(for: mutation, result: mutationResult))
                 self.onMutationCompleted?(mutation, mutationResult)
-                self.refresh()
+                self.refreshAfterMutationIfNeeded(mutation)
 
             case .failure(let error):
                 self.onStatusTextChanged?("条目：\(error.code)")
@@ -391,6 +413,7 @@ public final class ClipboardListCoordinator {
         totalCount: Int64
     ) {
         currentSearchText = ""
+        currentItemType = nil
         currentSourceAppID = nil
         currentPinboardID = nil
         listRefreshGeneration += 1
@@ -433,10 +456,63 @@ public final class ClipboardListCoordinator {
         ClipboardListQuery(
             limit: limit,
             offset: offset,
+            itemType: currentItemType,
             sourceAppID: currentSourceAppID,
             pinboardID: currentPinboardID,
             normalizedSearch: currentSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+    }
+
+    private func refreshAfterMutationIfNeeded(_ mutation: ClipboardItemMutationRequest) {
+        switch mutation {
+        case .setPinboardMembership:
+            guard currentPinboardID != nil else { return }
+            refreshLoadedWindow()
+        case .delete(_, let pinboardID):
+            if let pinboardID {
+                guard currentPinboardID == pinboardID else { return }
+            }
+            refreshLoadedWindow()
+        case .recordCopied, .clear:
+            refreshLoadedWindow()
+        }
+    }
+
+    private func refreshLoadedWindow() {
+        guard pageSize > 0 else {
+            setLoadingMore(false)
+            return
+        }
+
+        listRefreshGeneration += 1
+        let generation = listRefreshGeneration
+        let refreshedLimit = max(pageSize, loadedItemCountStorage)
+        let query = makeQuery(limit: refreshedLimit, offset: 0)
+        let pageLoader = self.pageLoader
+
+        pendingListRefreshTask?.cancel()
+        pendingListRefreshTask = nil
+        cancelPrefetch()
+        setLoadingMore(false)
+
+        pendingListRefreshTask = Task { [weak self, query, generation, pageLoader] in
+            let result = await pageLoader(query)
+
+            guard !Task.isCancelled,
+                  let self,
+                  generation == self.listRefreshGeneration
+            else {
+                return
+            }
+
+            self.pendingListRefreshTask = nil
+            self.applyListResult(
+                result,
+                isFiltered: query.isFiltered,
+                append: false,
+                scope: query.scope
+            )
+        }
     }
 
     private func consumePrefetchedPageIfAvailable() -> Bool {
@@ -522,6 +598,7 @@ public final class ClipboardListCoordinator {
 
     private func isCurrentListFiltered() -> Bool {
         currentSourceAppID != nil
+            || currentItemType != nil
             || currentPinboardID != nil
             || !currentSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -575,7 +652,10 @@ public final class ClipboardListCoordinator {
                 ? (isMember ? "Pinboard：已加入" : "Pinboard：已移除")
                 : "条目：未找到"
 
-        case .delete:
+        case .delete(_, let pinboardID):
+            if pinboardID != nil {
+                return result.affectedCount > 0 ? "Pinboard：已移除" : "条目：未找到"
+            }
             return result.affectedCount > 0 ? "条目：已删除" : "条目：未找到"
 
         case .recordCopied:
@@ -586,5 +666,11 @@ public final class ClipboardListCoordinator {
                 ? "条目：已清理 \(result.affectedCount) 条"
                 : "条目：没有可清理条目"
         }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
