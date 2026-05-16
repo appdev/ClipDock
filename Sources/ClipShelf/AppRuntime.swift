@@ -888,11 +888,16 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let container = NSView()
 
         searchField.placeholderString = "搜索剪贴板内容或来源应用"
+        searchField.controlSize = .large
         searchField.font = .systemFont(ofSize: 13)
         searchField.focusRingType = .none
         searchField.delegate = self
         searchField.target = nil
         searchField.action = nil
+        if let cell = searchField.cell as? NSSearchFieldCell {
+            cell.controlSize = .large
+            cell.font = searchField.font
+        }
         searchField.onCancelButtonMouseDown = { [weak self] in
             self?.armSearchCancelButtonClick() ?? false
         }
@@ -1662,6 +1667,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let generation = searchFieldVisibilityGeneration
 
         if visible {
+            toolbarSearchButton?.isHidden = true
             searchField.isHidden = false
         }
 
@@ -1698,6 +1704,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchFieldWidthConstraint?.constant = targetWidth
         searchField.alphaValue = visible ? 1 : 0
         searchField.isHidden = !visible
+        toolbarSearchButton?.isHidden = visible
         filterRow?.layoutSubtreeIfNeeded()
         filterRow?.superview?.layoutSubtreeIfNeeded()
     }
@@ -2104,7 +2111,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func pointInWindow(_ pointInWindow: NSPoint, isInside view: NSView) -> Bool {
-        guard view.window === window else { return false }
+        guard view.window === window,
+              !view.isHidden
+        else { return false }
         let point = view.convert(pointInWindow, from: nil)
         return view.bounds.contains(point)
     }
@@ -2567,6 +2576,10 @@ extension FloatingPanelContentView {
 
     var smokeSearchFieldIsHidden: Bool {
         searchField.isHidden
+    }
+
+    var smokeToolbarSearchButtonIsHidden: Bool {
+        toolbarSearchButton?.isHidden ?? false
     }
 
     var smokeSearchClickAwayDiagnostic: String {

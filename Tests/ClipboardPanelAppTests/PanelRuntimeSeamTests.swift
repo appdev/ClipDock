@@ -165,6 +165,7 @@ struct PanelRuntimeSeamTests {
             abs(contentView.smokeSearchFieldWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
                 && !contentView.smokeSearchFieldIsHidden
+                && contentView.smokeToolbarSearchButtonIsHidden
         })
 
         controller.hide()
