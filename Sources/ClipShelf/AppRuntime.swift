@@ -351,6 +351,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let blockingGeneration: Int
     }
 
+    private let searchFieldRevealView = NSView()
     private let searchField = PanelSearchField()
     private let previewPopoverController = ClipboardPreviewPopoverController()
     private let itemBandContainerView = NSView()
@@ -905,8 +906,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             self?.handleSearchCancelButtonClick()
         }
         searchField.isHidden = true
-        searchField.alphaValue = 0
         searchField.translatesAutoresizingMaskIntoConstraints = false
+
+        searchFieldRevealView.wantsLayer = true
+        searchFieldRevealView.layer?.masksToBounds = true
+        searchFieldRevealView.isHidden = true
+        searchFieldRevealView.alphaValue = 0
+        searchFieldRevealView.translatesAutoresizingMaskIntoConstraints = false
+        searchFieldRevealView.addSubview(searchField)
 
         let searchButton = makeToolbarIconButton(
             symbolName: "magnifyingglass",
@@ -935,7 +942,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             self?.showPanelOverflowMenu(from: moreButton)
         }
 
-        let row = NSStackView(views: [searchButton, searchField] + chips + [addButton])
+        let row = NSStackView(views: [searchButton, searchFieldRevealView] + chips + [addButton])
         row.orientation = NSUserInterfaceLayoutOrientation.horizontal
         row.alignment = NSLayoutConstraint.Attribute.centerY
         row.spacing = 9
@@ -944,7 +951,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         filterRow = row
 
         container.addSubview(row)
-        searchFieldWidthConstraint = searchField.widthAnchor.constraint(equalToConstant: 0)
+        searchFieldWidthConstraint = searchFieldRevealView.widthAnchor.constraint(equalToConstant: 0)
         searchFieldWidthConstraint?.isActive = true
 
         let leadingConstraint = row.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor)
@@ -958,7 +965,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             row.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             leadingConstraint,
             row.trailingAnchor.constraint(lessThanOrEqualTo: moreButton.leadingAnchor, constant: -Layout.sectionSpacing),
-            searchField.heightAnchor.constraint(equalToConstant: Layout.searchFieldHeight),
+            searchFieldRevealView.heightAnchor.constraint(equalToConstant: Layout.searchFieldHeight),
+            searchField.leadingAnchor.constraint(equalTo: searchFieldRevealView.leadingAnchor),
+            searchField.centerYAnchor.constraint(equalTo: searchFieldRevealView.centerYAnchor),
+            searchField.widthAnchor.constraint(equalToConstant: Layout.searchFieldWidth),
+            searchField.heightAnchor.constraint(equalTo: searchFieldRevealView.heightAnchor),
             moreButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             moreButton.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
@@ -1668,6 +1679,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
         if visible {
             toolbarSearchButton?.isHidden = true
+            searchFieldRevealView.isHidden = false
             searchField.isHidden = false
         }
 
@@ -1682,7 +1694,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             context.duration = Layout.searchFieldAnimationDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             searchFieldWidthConstraint?.animator().constant = targetWidth
-            searchField.animator().alphaValue = targetAlpha
+            searchFieldRevealView.animator().alphaValue = targetAlpha
             filterRow?.layoutSubtreeIfNeeded()
             filterRow?.superview?.layoutSubtreeIfNeeded()
         } completionHandler: { [weak self] in
@@ -1702,7 +1714,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func applySearchFieldVisibilityFinalState(_ visible: Bool) {
         let targetWidth = visible ? Layout.searchFieldWidth : 0
         searchFieldWidthConstraint?.constant = targetWidth
-        searchField.alphaValue = visible ? 1 : 0
+        searchFieldRevealView.alphaValue = visible ? 1 : 0
+        searchFieldRevealView.isHidden = !visible
         searchField.isHidden = !visible
         toolbarSearchButton?.isHidden = visible
         filterRow?.layoutSubtreeIfNeeded()
@@ -2038,7 +2051,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
               !hasBlockingPanelOperation,
               !previewPopoverController.isShown,
               menuTrackingDepth == 0,
-              !eventLocation(event, isInside: searchField)
+              !eventLocation(event, isInside: searchFieldRevealView)
         else {
             return false
         }
@@ -2073,7 +2086,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return
         }
 
-        if pointInWindow(pending.locationInWindow, isInside: searchField) {
+        if pointInWindow(pending.locationInWindow, isInside: searchFieldRevealView) {
             pendingEmptySearchClose = nil
             return
         }
@@ -2175,6 +2188,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func armSearchCancelButtonClick() -> Bool {
         guard panelViewState().toolbar.isSearchVisible,
+              !searchFieldRevealView.isHidden,
               !searchField.isHidden,
               !searchField.stringValue.isEmpty
         else {
@@ -2559,7 +2573,9 @@ extension FloatingPanelContentView {
     }
 
     var smokeIsSearchVisible: Bool {
-        panelViewState().toolbar.isSearchVisible && !searchField.isHidden
+        panelViewState().toolbar.isSearchVisible
+            && !searchFieldRevealView.isHidden
+            && !searchField.isHidden
     }
 
     var smokeSearchText: String {
@@ -2570,12 +2586,20 @@ extension FloatingPanelContentView {
         searchFieldWidthConstraint?.constant ?? searchField.frame.width
     }
 
+    var smokeSearchFieldHeight: CGFloat {
+        searchField.frame.height
+    }
+
+    var smokeSearchFieldInnerWidth: CGFloat {
+        searchField.frame.width
+    }
+
     var smokeSearchFieldAlpha: CGFloat {
-        searchField.alphaValue
+        searchFieldRevealView.alphaValue
     }
 
     var smokeSearchFieldIsHidden: Bool {
-        searchField.isHidden
+        searchFieldRevealView.isHidden || searchField.isHidden
     }
 
     var smokeToolbarSearchButtonIsHidden: Bool {
@@ -2584,7 +2608,7 @@ extension FloatingPanelContentView {
 
     var smokeSearchClickAwayDiagnostic: String {
         let toolbar = panelViewState().toolbar
-        return "visible=\(toolbar.isSearchVisible) text=\(toolbar.searchText.debugDescription) fieldHidden=\(searchField.isHidden) rename=\(activeRenameField != nil) blocking=\(hasBlockingPanelOperation) preview=\(previewPopoverController.isShown) menuDepth=\(menuTrackingDepth) window=\(window?.windowNumber ?? 0)"
+        return "visible=\(toolbar.isSearchVisible) text=\(toolbar.searchText.debugDescription) fieldHidden=\(searchFieldRevealView.isHidden || searchField.isHidden) rename=\(activeRenameField != nil) blocking=\(hasBlockingPanelOperation) preview=\(previewPopoverController.isShown) menuDepth=\(menuTrackingDepth) window=\(window?.windowNumber ?? 0)"
     }
 
     func smokeOpenSearch(text: String) {

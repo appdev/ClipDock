@@ -99,6 +99,16 @@ mod ffi {
     }
 
     #[swift_bridge(swift_repr = "struct")]
+    struct CoreSvgRasterizeResult {
+        ok: bool,
+        bytes: Vec<u8>,
+        width: i64,
+        height: i64,
+        error_code: String,
+        message_key: String,
+    }
+
+    #[swift_bridge(swift_repr = "struct")]
     struct CoreLinkMetadataFetchBatchResult {
         ok: bool,
         candidates_json: String,
@@ -118,6 +128,11 @@ mod ffi {
         fn open_core(app_support_dir: String) -> CoreOpenResult;
         fn active_source_icon_header_color_cache_version() -> i64;
         fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> CoreWebPEncodeResult;
+        fn rasterize_svg_to_png(
+            svg: &[u8],
+            max_width: i64,
+            max_height: i64,
+        ) -> CoreSvgRasterizeResult;
         fn run_maintenance(app_support_dir: String) -> CoreMaintenanceResult;
         fn get_preferences(app_support_dir: String) -> CorePreferencesResult;
         fn update_preferences(
@@ -659,6 +674,92 @@ fn webp_encode_error(code: &str) -> ffi::CoreWebPEncodeResult {
     }
 }
 
+fn rasterize_svg_to_png(
+    svg: &[u8],
+    max_width: i64,
+    max_height: i64,
+) -> ffi::CoreSvgRasterizeResult {
+    const MAX_SVG_BYTES: usize = 512 * 1024;
+    const MAX_RASTER_EDGE: u32 = 1024;
+
+    let max_width = match u32::try_from(max_width) {
+        Ok(value) if value > 0 => value.min(MAX_RASTER_EDGE),
+        _ => return svg_rasterize_error("invalid_input"),
+    };
+    let max_height = match u32::try_from(max_height) {
+        Ok(value) if value > 0 => value.min(MAX_RASTER_EDGE),
+        _ => return svg_rasterize_error("invalid_input"),
+    };
+    if svg.is_empty() || svg.len() > MAX_SVG_BYTES {
+        return svg_rasterize_error("invalid_input");
+    }
+
+    match rasterize_svg_to_png_impl(svg, max_width, max_height) {
+        Ok((bytes, width, height)) => ffi::CoreSvgRasterizeResult {
+            ok: true,
+            bytes,
+            width: i64::from(width),
+            height: i64::from(height),
+            error_code: String::new(),
+            message_key: String::new(),
+        },
+        Err(code) => svg_rasterize_error(code),
+    }
+}
+
+fn rasterize_svg_to_png_impl(
+    svg: &[u8],
+    max_width: u32,
+    max_height: u32,
+) -> Result<(Vec<u8>, u32, u32), &'static str> {
+    let mut options = resvg::usvg::Options::default();
+    options.resources_dir = None;
+    options.image_href_resolver = resvg::usvg::ImageHrefResolver {
+        resolve_data: resvg::usvg::ImageHrefResolver::default_data_resolver(),
+        resolve_string: Box::new(|_, _| None),
+    };
+
+    let tree = resvg::usvg::Tree::from_data(svg, &options).map_err(|_| "invalid_svg")?;
+    let svg_size = tree.size();
+    let source_width = svg_size.width();
+    let source_height = svg_size.height();
+    if !source_width.is_finite()
+        || !source_height.is_finite()
+        || source_width <= 0.0
+        || source_height <= 0.0
+    {
+        return Err("invalid_svg");
+    }
+
+    let scale = (max_width as f32 / source_width)
+        .min(max_height as f32 / source_height)
+        .min(1.0);
+    let width = ((source_width * scale).ceil() as u32).clamp(1, max_width);
+    let height = ((source_height * scale).ceil() as u32).clamp(1, max_height);
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height).ok_or("rasterize_failed")?;
+    let transform = resvg::tiny_skia::Transform::from_scale(
+        width as f32 / source_width,
+        height as f32 / source_height,
+    );
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    let bytes = pixmap.encode_png().map_err(|_| "encoding_failed")?;
+    if bytes.is_empty() {
+        return Err("encoding_failed");
+    }
+    Ok((bytes, width, height))
+}
+
+fn svg_rasterize_error(code: &str) -> ffi::CoreSvgRasterizeResult {
+    ffi::CoreSvgRasterizeResult {
+        ok: false,
+        bytes: Vec::new(),
+        width: 0,
+        height: 0,
+        error_code: code.to_string(),
+        message_key: "clipboard.error.image_encoding_failed".to_string(),
+    }
+}
+
 fn capture_text(
     app_support_dir: String,
     text: String,
@@ -1106,5 +1207,54 @@ fn parse_item_type(value: &str) -> Option<ClipboardItemType> {
         "color" => Some(ClipboardItemType::Color),
         "rich_text" => Some(ClipboardItemType::RichText),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rasterizes_static_svg_to_png() {
+        let svg = br##"
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <rect width="512" height="512" fill="#1A5FB8" rx="112"/>
+          <rect x="84" y="126" width="222" height="64" fill="#FFFFFF" rx="24"/>
+        </svg>
+        "##;
+
+        let result = rasterize_svg_to_png(svg, 128, 128);
+
+        assert!(result.ok, "{}", result.error_code);
+        assert_eq!(result.width, 128);
+        assert_eq!(result.height, 128);
+        assert_eq!(&result.bytes[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn rasterize_svg_rejects_oversized_input() {
+        let oversized_svg = vec![b' '; 512 * 1024 + 1];
+
+        let result = rasterize_svg_to_png(&oversized_svg, 128, 128);
+
+        assert!(!result.ok);
+        assert_eq!(result.error_code, "invalid_input");
+        assert!(result.bytes.is_empty());
+    }
+
+    #[test]
+    fn rasterize_svg_ignores_external_image_references() {
+        let svg = br##"
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+          <rect width="128" height="128" fill="#1A5FB8"/>
+          <image href="file:///etc/passwd" x="0" y="0" width="128" height="128"/>
+        </svg>
+        "##;
+
+        let result = rasterize_svg_to_png(svg, 128, 128);
+
+        assert!(result.ok, "{}", result.error_code);
+        assert_eq!(result.width, 128);
+        assert_eq!(result.height, 128);
     }
 }

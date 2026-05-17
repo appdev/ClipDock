@@ -60,6 +60,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "default_privacy_ignore_apps_preference_version",
         sql: DEFAULT_PRIVACY_IGNORE_APPS_PREFERENCE_VERSION,
     },
+    Migration {
+        version: 11,
+        name: "default_open_panel_shortcut_preference_version",
+        sql: DEFAULT_OPEN_PANEL_SHORTCUT_PREFERENCE_VERSION,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -572,5 +577,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_pending_image_jobs_active_item
 "#;
 
 const DEFAULT_PRIVACY_IGNORE_APPS_PREFERENCE_VERSION: &str = r#"
+SELECT 1;
+"#;
+
+const DEFAULT_OPEN_PANEL_SHORTCUT_PREFERENCE_VERSION: &str = r#"
 SELECT 1;
 "#;

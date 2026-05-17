@@ -566,7 +566,7 @@ final class PreferencesWindowController: NSWindowController {
     private let toolbarCoordinator = PreferencesToolbarCoordinator()
     private var splitViewController: PreferencesSplitViewController?
     private var theme: ClipShelfPreferencesTheme {
-        ClipShelfTheme.current(for: window).preferences
+        viewModel.preferencesTheme(fallbackAppearance: window?.effectiveAppearance)
     }
 
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)? {
@@ -738,6 +738,17 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         preferenceSection(for: state.selectedSection)
     }
 
+    var forcedAppearance: NSAppearance? {
+        switch state.preferences.appearance.mode {
+        case "light":
+            return NSAppearance(named: .aqua)
+        case "dark":
+            return NSAppearance(named: .darkAqua)
+        default:
+            return nil
+        }
+    }
+
     func selectSection(_ section: PreferenceSection) {
         apply(sceneController.selectSection(sceneSection(for: section)))
     }
@@ -793,6 +804,21 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
                 $0.caseInsensitiveCompare(identifier) == .orderedSame
             }
         }
+    }
+
+    func resolvedColorScheme(systemColorScheme: ColorScheme) -> ColorScheme {
+        switch state.preferences.appearance.mode {
+        case "light":
+            return .light
+        case "dark":
+            return .dark
+        default:
+            return systemColorScheme
+        }
+    }
+
+    func preferencesTheme(fallbackAppearance: NSAppearance?) -> ClipShelfPreferencesTheme {
+        ClipShelfTheme.current(for: forcedAppearance ?? fallbackAppearance).preferences
     }
 
     private func apply(_ update: PreferencesSceneUpdate) {
@@ -871,6 +897,8 @@ struct PreferencesShellSmokeSnapshot: Equatable {
     let sidebarBackgroundMatchesTheme: Bool
     let contentBackgroundMatchesTheme: Bool
     let sidebarBackgroundWhiteComponent: CGFloat
+    let sidebarHostingAppearanceIsDark: Bool
+    let contentHostingAppearanceIsDark: Bool
 }
 
 @MainActor
@@ -943,11 +971,14 @@ private final class PreferencesSplitViewController: NSSplitViewController {
     }
 
     func applyTheme() {
-        let preferencesTheme = ClipShelfTheme.current(for: view).preferences
+        let preferencesTheme = model.preferencesTheme(fallbackAppearance: view.effectiveAppearance)
+        let forcedAppearance = model.forcedAppearance
         view.wantsLayer = true
         splitView.wantsLayer = true
         sidebarController.view.wantsLayer = true
         contentController.view.wantsLayer = true
+        sidebarController.view.appearance = forcedAppearance
+        contentController.view.appearance = forcedAppearance
         view.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
         splitView.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
         sidebarController.view.layer?.backgroundColor = preferencesTheme.sidebarBackgroundColor.cgColor
@@ -987,7 +1018,7 @@ private final class PreferencesSplitViewController: NSSplitViewController {
         }
 
         let toolbar = window?.toolbar
-        let preferencesTheme = ClipShelfTheme.current(for: window).preferences
+        let preferencesTheme = model.preferencesTheme(fallbackAppearance: window?.effectiveAppearance)
         let windowBackground = window?.backgroundColor
         let splitBackground = view.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))
         let sidebarBackground = sidebarController.view.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))
@@ -1018,7 +1049,9 @@ private final class PreferencesSplitViewController: NSSplitViewController {
             splitBackgroundMatchesTheme: preferenceColorsMatch(splitBackground, preferencesTheme.contentBackgroundColor),
             sidebarBackgroundMatchesTheme: preferenceColorsMatch(sidebarBackground, preferencesTheme.sidebarBackgroundColor),
             contentBackgroundMatchesTheme: preferenceColorsMatch(contentBackground, preferencesTheme.contentBackgroundColor),
-            sidebarBackgroundWhiteComponent: preferenceWhiteComponent(sidebarBackground)
+            sidebarBackgroundWhiteComponent: preferenceWhiteComponent(sidebarBackground),
+            sidebarHostingAppearanceIsDark: ClipShelfTheme.isDark(sidebarController.view.effectiveAppearance),
+            contentHostingAppearanceIsDark: ClipShelfTheme.isDark(contentController.view.effectiveAppearance)
         )
     }
 
@@ -1103,7 +1136,11 @@ private struct PreferencesSidebarList: View {
     }
 
     private var colors: PreferencesThemeValues {
-        PreferencesThemeValues(colorScheme: colorScheme)
+        PreferencesThemeValues(colorScheme: effectiveColorScheme)
+    }
+
+    private var effectiveColorScheme: ColorScheme {
+        model.resolvedColorScheme(systemColorScheme: colorScheme)
     }
 
     var body: some View {
@@ -1133,6 +1170,7 @@ private struct PreferencesSidebarList: View {
             maxHeight: .infinity
         )
         .background(colors.sidebarBackground.ignoresSafeArea())
+        .environment(\.colorScheme, effectiveColorScheme)
     }
 }
 
@@ -1200,7 +1238,11 @@ private struct PreferencesContent: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var colors: PreferencesThemeValues {
-        PreferencesThemeValues(colorScheme: colorScheme)
+        PreferencesThemeValues(colorScheme: effectiveColorScheme)
+    }
+
+    private var effectiveColorScheme: ColorScheme {
+        model.resolvedColorScheme(systemColorScheme: colorScheme)
     }
 
     var body: some View {
@@ -1218,6 +1260,7 @@ private struct PreferencesContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .scrollContentBackground(.hidden)
         .background(colors.contentBackground.ignoresSafeArea())
+        .environment(\.colorScheme, effectiveColorScheme)
     }
 
     @ViewBuilder

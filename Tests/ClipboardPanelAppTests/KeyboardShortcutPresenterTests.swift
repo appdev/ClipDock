@@ -4,8 +4,8 @@ import Testing
 struct KeyboardShortcutPresenterTests {
     @Test
     func displaysDefaultOpenPanelShortcut() {
-        #expect(KeyboardShortcutPresenter.displayText(for: RustKeyboardShortcut()) == "⌘ ⇧ V")
-        #expect(KeyboardShortcutPresenter.keyEquivalent(for: RustKeyboardShortcut()) == "v")
+        #expect(KeyboardShortcutPresenter.displayText(for: RustKeyboardShortcut()) == "⌘ ⇧ X")
+        #expect(KeyboardShortcutPresenter.keyEquivalent(for: RustKeyboardShortcut()) == "x")
     }
 
     @Test

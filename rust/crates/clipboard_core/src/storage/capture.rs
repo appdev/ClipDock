@@ -612,8 +612,26 @@ fn upsert_link_metadata(
             display_url = excluded.display_url,
             host = excluded.host,
             metadata_state = CASE
+                WHEN link_metadata.metadata_state = 'ready'
+                    AND NULLIF(TRIM(COALESCE(link_metadata.icon_relative_path, '')), '') IS NULL
+                    AND NULLIF(TRIM(COALESCE(link_metadata.image_relative_path, '')), '') IS NULL
+                    THEN 'stale'
                 WHEN link_metadata.metadata_state = 'ready' THEN link_metadata.metadata_state
                 ELSE link_metadata.metadata_state
+            END,
+            failure_code = CASE
+                WHEN link_metadata.metadata_state = 'ready'
+                    AND NULLIF(TRIM(COALESCE(link_metadata.icon_relative_path, '')), '') IS NULL
+                    AND NULLIF(TRIM(COALESCE(link_metadata.image_relative_path, '')), '') IS NULL
+                    THEN NULL
+                ELSE link_metadata.failure_code
+            END,
+            next_retry_at_ms = CASE
+                WHEN link_metadata.metadata_state = 'ready'
+                    AND NULLIF(TRIM(COALESCE(link_metadata.icon_relative_path, '')), '') IS NULL
+                    AND NULLIF(TRIM(COALESCE(link_metadata.image_relative_path, '')), '') IS NULL
+                    THEN NULL
+                ELSE link_metadata.next_retry_at_ms
             END,
             updated_at_ms = excluded.updated_at_ms
         "#,

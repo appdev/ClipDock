@@ -8,6 +8,9 @@ public func active_source_icon_header_color_cache_version() -> Int64 {
 public func encode_webp_lossless_rgba(_ rgba: UnsafeBufferPointer<UInt8>, _ width: Int64, _ height: Int64) -> CoreWebPEncodeResult {
     __swift_bridge__$encode_webp_lossless_rgba(rgba.toFfiSlice(), width, height).intoSwiftRepr()
 }
+public func rasterize_svg_to_png(_ svg: UnsafeBufferPointer<UInt8>, _ max_width: Int64, _ max_height: Int64) -> CoreSvgRasterizeResult {
+    __swift_bridge__$rasterize_svg_to_png(svg.toFfiSlice(), max_width, max_height).intoSwiftRepr()
+}
 public func run_maintenance<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CoreMaintenanceResult {
     __swift_bridge__$run_maintenance({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
@@ -497,6 +500,53 @@ extension __swift_bridge__$Option$CoreWebPEncodeResult {
             return __swift_bridge__$Option$CoreWebPEncodeResult(is_some: true, val: v.intoFfiRepr())
         } else {
             return __swift_bridge__$Option$CoreWebPEncodeResult(is_some: false, val: __swift_bridge__$CoreWebPEncodeResult())
+        }
+    }
+}
+public struct CoreSvgRasterizeResult {
+    public var ok: Bool
+    public var bytes: RustVec<UInt8>
+    public var width: Int64
+    public var height: Int64
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,bytes: RustVec<UInt8>,width: Int64,height: Int64,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.bytes = bytes
+        self.width = width
+        self.height = height
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreSvgRasterizeResult {
+        { let val = self; return __swift_bridge__$CoreSvgRasterizeResult(ok: val.ok, bytes: { let val = val.bytes; val.isOwned = false; return val.ptr }(), width: val.width, height: val.height, error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreSvgRasterizeResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreSvgRasterizeResult {
+        { let val = self; return CoreSvgRasterizeResult(ok: val.ok, bytes: RustVec(ptr: val.bytes), width: val.width, height: val.height, error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreSvgRasterizeResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreSvgRasterizeResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreSvgRasterizeResult>) -> __swift_bridge__$Option$CoreSvgRasterizeResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreSvgRasterizeResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreSvgRasterizeResult(is_some: false, val: __swift_bridge__$CoreSvgRasterizeResult())
         }
     }
 }

@@ -8,7 +8,6 @@ build="${APP_BUILD:-1}"
 app_bundle_name="${APP_BUNDLE_NAME:-ClipShelf}"
 bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipShelf}"
 app_archs="${APP_ARCHS:-arm64 x86_64}"
-create_dmg="${CREATE_DMG:-0}"
 artifact_root="${RELEASE_DIR:-.codex/artifacts/release/$version}"
 checksums_path="$artifact_root/SHA256SUMS"
 manifest_path="$artifact_root/${app_bundle_name}-release-manifest.txt"
@@ -69,7 +68,7 @@ RUST_DARWIN_TARGETS="${release_archs[*]}" scripts/build-rust-core.sh
     printf 'version=%s\n' "$version"
     printf 'build=%s\n' "$build"
     printf 'archs=%s\n' "${release_archs[*]}"
-    printf 'create_dmg=%s\n' "$create_dmg"
+    printf 'artifact_format=dmg\n'
     printf 'bundle_executable=%s\n' "$bundle_executable_name"
     printf 'codesign_identity=%s\n' "${CODESIGN_IDENTITY:--}"
     if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
@@ -80,31 +79,35 @@ RUST_DARWIN_TARGETS="${release_archs[*]}" scripts/build-rust-core.sh
 } > "$manifest_path"
 
 for arch in "${release_archs[@]}"; do
-    app_path="$artifact_root/${app_bundle_name}-$version-$arch.app"
-    zip_path="$artifact_root/${app_bundle_name}-$version-$arch.zip"
+    arch_artifact_dir="$artifact_root/$arch"
+    app_path="$arch_artifact_dir/${app_bundle_name}.app"
+    legacy_app_path="$artifact_root/${app_bundle_name}-$version-$arch.app"
+    legacy_zip_path="$artifact_root/${app_bundle_name}-$version-$arch.zip"
     dmg_path="$artifact_root/${app_bundle_name}-$version-$arch.dmg"
 
+    mkdir -p "$arch_artifact_dir"
     rm -rf "$app_path"
-    rm -f "$zip_path" "$dmg_path"
+    rm -rf "$legacy_app_path"
+    rm -f "$legacy_zip_path" "$dmg_path"
 
     APP_VERSION="$version" APP_BUILD="$build" APP_BUNDLE_NAME="$app_bundle_name" APP_EXECUTABLE_NAME="$bundle_executable_name" APP_ARCHS="$arch" SKIP_RUST_CORE_BUILD=1 scripts/package-macos-app.sh "$app_path"
 
-    ditto -c -k --sequesterRsrc --keepParent "$app_path" "$zip_path"
-
-    if [[ "$create_dmg" == "1" ]] && command -v hdiutil >/dev/null 2>&1; then
-        staging_dir="$artifact_root/dmg-staging-$arch"
-        rm -rf "$staging_dir"
-        mkdir -p "$staging_dir"
-        cp -R "$app_path" "$staging_dir/${app_bundle_name}.app"
-        ln -s /Applications "$staging_dir/Applications"
-        hdiutil create \
-            -volname "ClipShelf $version $arch" \
-            -srcfolder "$staging_dir" \
-            -ov \
-            -format UDZO \
-            "$dmg_path" >/dev/null
-        rm -rf "$staging_dir"
+    if ! command -v hdiutil >/dev/null 2>&1; then
+        echo "hdiutil not found; cannot create DMG release artifact" >&2
+        exit 1
     fi
+    staging_dir="$artifact_root/dmg-staging-$arch"
+    rm -rf "$staging_dir"
+    mkdir -p "$staging_dir"
+    cp -R "$app_path" "$staging_dir/${app_bundle_name}.app"
+    ln -s /Applications "$staging_dir/Applications"
+    hdiutil create \
+        -volname "ClipShelf $version $arch" \
+        -srcfolder "$staging_dir" \
+        -ov \
+        -format UDZO \
+        "$dmg_path" >/dev/null
+    rm -rf "$staging_dir"
 
     if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
         if [[ "${CODESIGN_IDENTITY:-}" == "" || "${CODESIGN_IDENTITY:-}" == "-" ]]; then
@@ -116,42 +119,23 @@ for arch in "${release_archs[@]}"; do
             exit 1
         fi
 
-        xcrun notarytool submit "$zip_path" \
+        xcrun notarytool submit "$dmg_path" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --wait
-        xcrun stapler staple "$app_path"
-        rm -f "$zip_path"
-        ditto -c -k --sequesterRsrc --keepParent "$app_path" "$zip_path"
-
-        if [[ "$create_dmg" == "1" && -f "$dmg_path" ]]; then
-            xcrun notarytool submit "$dmg_path" \
-                --apple-id "$APPLE_ID" \
-                --team-id "$APPLE_TEAM_ID" \
-                --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-                --wait
-            xcrun stapler staple "$dmg_path"
-        fi
+        xcrun stapler staple "$dmg_path"
     fi
 
     (
         cd "$artifact_root"
-        shasum -a 256 "${app_bundle_name}-$version-$arch.app/Contents/MacOS/${bundle_executable_name}" "${app_bundle_name}-$version-$arch.zip" >> "$checksums_path"
-        if [[ "$create_dmg" == "1" && -f "${app_bundle_name}-$version-$arch.dmg" ]]; then
-            shasum -a 256 "${app_bundle_name}-$version-$arch.dmg" >> "$checksums_path"
-        fi
+        shasum -a 256 "$arch/${app_bundle_name}.app/Contents/MacOS/${bundle_executable_name}" "${app_bundle_name}-$version-$arch.dmg" >> "$checksums_path"
     )
 
     {
         printf '\n[%s]\n' "$arch"
         printf 'bundle=%s\n' "$app_path"
-        printf 'zip=%s\n' "$zip_path"
-        if [[ "$create_dmg" == "1" && -f "$dmg_path" ]]; then
-            printf 'dmg=%s\n' "$dmg_path"
-        else
-            printf 'dmg=not-created\n'
-        fi
+        printf 'dmg=%s\n' "$dmg_path"
     } >> "$manifest_path"
 done
 

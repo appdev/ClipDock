@@ -62,6 +62,12 @@ public struct RustItemManagementResult: Equatable, Sendable {
     public let affectedCount: Int64
 }
 
+public struct RustSvgRasterizeResult: Equatable, Sendable {
+    public let pngData: Data
+    public let width: Int
+    public let height: Int
+}
+
 public struct RustPreferencesResult: Equatable, Sendable {
     public let schemaVersion: Int64
     public let preferences: RustPreferencesDocument
@@ -247,7 +253,7 @@ public struct RustKeyboardShortcut: Equatable, Codable, Sendable {
     public var modifiers: [String]
 
     public init(
-        keyCode: Int64 = 9,
+        keyCode: Int64 = 7,
         modifiers: [String] = ["command", "shift"]
     ) {
         self.keyCode = keyCode
@@ -1069,6 +1075,43 @@ public struct RustCoreClient: Sendable {
             }
 
             return .success(Data(bytes: result.bytes.as_ptr(), count: result.bytes.len()))
+        }
+    }
+
+    public func rasterizeSVGToPNG(
+        svgData: Data,
+        maxWidth: Int,
+        maxHeight: Int
+    ) -> Result<RustSvgRasterizeResult, RustCoreError> {
+        guard maxWidth > 0, maxHeight > 0, !svgData.isEmpty else {
+            return .failure(Self.makeError(
+                code: "invalid_input",
+                messageKey: "clipboard.error.invalid_input"
+            ))
+        }
+
+        return svgData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return .failure(Self.makeError(
+                    code: "invalid_input",
+                    messageKey: "clipboard.error.invalid_input"
+                ))
+            }
+
+            let buffer = UnsafeBufferPointer(start: baseAddress, count: svgData.count)
+            let result = rasterize_svg_to_png(buffer, Int64(maxWidth), Int64(maxHeight))
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+
+            return .success(RustSvgRasterizeResult(
+                pngData: Data(bytes: result.bytes.as_ptr(), count: result.bytes.len()),
+                width: Int(result.width),
+                height: Int(result.height)
+            ))
         }
     }
 

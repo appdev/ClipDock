@@ -249,9 +249,14 @@ enum LinkMetadataFetchError: Error, Equatable {
 
 final class LinkPresentationMetadataFetcher: LinkMetadataFetching, @unchecked Sendable {
     private let timeout: TimeInterval
+    private let imageFetcher: LinkMetadataPageImageFetching
 
-    init(timeout: TimeInterval = 30) {
+    init(
+        timeout: TimeInterval = 30,
+        imageFetcher: LinkMetadataPageImageFetching = OpenGraphLinkMetadataImageFetcher()
+    ) {
         self.timeout = timeout
+        self.imageFetcher = imageFetcher
     }
 
     func fetch(url: URL) async throws -> LinkMetadataFetchPayload {
@@ -262,8 +267,25 @@ final class LinkPresentationMetadataFetcher: LinkMetadataFetching, @unchecked Se
             throw LinkMetadataFetchError.privacySensitive
         }
 
-        return try await MetadataProviderBox(timeout: timeout).fetchPayload(url: url)
+        let payload = try await MetadataProviderBox(timeout: timeout).fetchPayload(url: url)
+        let images = await imageFetcher.fetchImages(for: payload.canonicalURL)
+        return LinkMetadataFetchPayload(
+            title: payload.title,
+            canonicalURL: payload.canonicalURL,
+            originalURL: payload.originalURL,
+            iconData: images.iconData,
+            previewData: images.previewData
+        )
     }
+}
+
+struct LinkMetadataFetchedImages: Sendable, Equatable {
+    let iconData: LinkMetadataImagePayload?
+    let previewData: LinkMetadataImagePayload?
+}
+
+protocol LinkMetadataPageImageFetching: Sendable {
+    func fetchImages(for pageURL: URL) async -> LinkMetadataFetchedImages
 }
 
 private final class MetadataProviderBox: @unchecked Sendable {
@@ -324,6 +346,293 @@ private final class MetadataProviderBox: @unchecked Sendable {
         default:
             return .provider
         }
+    }
+}
+
+final class OpenGraphLinkMetadataImageFetcher: LinkMetadataPageImageFetching, @unchecked Sendable {
+    private enum Defaults {
+        static let pageTimeout: TimeInterval = 12
+        static let imageTimeout: TimeInterval = 12
+        static let maxHTMLBytes = 512 * 1_024
+        static let maxImageBytes = 5 * 1_024 * 1_024
+        static let maxPreviewCandidates = 4
+        static let maxIconCandidates = 4
+        static let svgIconMaxPixelSize = 128
+        static let svgPreviewMaxPixelSize = 640
+    }
+
+    private let httpClient: LinkMetadataHTTPClient
+
+    init(httpClient: LinkMetadataHTTPClient = URLSessionLinkMetadataHTTPClient()) {
+        self.httpClient = httpClient
+    }
+
+    func fetchImages(for pageURL: URL) async -> LinkMetadataFetchedImages {
+        guard LinkMetadataURLPolicy.isSupportedRemoteURL(pageURL),
+              !LinkMetadataURLPolicy.isPrivacySensitive(pageURL)
+        else {
+            return LinkMetadataFetchedImages(iconData: nil, previewData: nil)
+        }
+
+        guard let html = try? await loadHTML(from: pageURL) else {
+            return LinkMetadataFetchedImages(iconData: nil, previewData: nil)
+        }
+        let candidates = LinkMetadataHTMLImageParser.imageCandidates(
+            in: html,
+            baseURL: pageURL
+        )
+        async let iconData = loadFirstImage(
+            from: candidates.iconURLs,
+            limit: Defaults.maxIconCandidates,
+            svgMaxPixelSize: Defaults.svgIconMaxPixelSize
+        )
+        async let previewData = loadFirstImage(
+            from: candidates.previewURLs,
+            limit: Defaults.maxPreviewCandidates,
+            svgMaxPixelSize: Defaults.svgPreviewMaxPixelSize
+        )
+        return await LinkMetadataFetchedImages(
+            iconData: iconData,
+            previewData: previewData
+        )
+    }
+
+    private func loadHTML(from url: URL) async throws -> String {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = Defaults.pageTimeout
+        request.setValue(
+            "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
+            forHTTPHeaderField: "Accept"
+        )
+        let (data, response) = try await httpClient.data(for: request)
+        guard isSuccessfulHTTPResponse(response),
+              response.mimeType?.lowercased().contains("html") != false
+        else {
+            throw LinkMetadataFetchError.provider
+        }
+        let limitedData = data.count > Defaults.maxHTMLBytes
+            ? data.prefix(Defaults.maxHTMLBytes)
+            : data[...]
+        return String(data: Data(limitedData), encoding: .utf8)
+            ?? String(data: Data(limitedData), encoding: .isoLatin1)
+            ?? ""
+    }
+
+    private func loadFirstImage(
+        from urls: [URL],
+        limit: Int,
+        svgMaxPixelSize: Int
+    ) async -> LinkMetadataImagePayload? {
+        for url in urls.prefix(limit) {
+            guard LinkMetadataURLPolicy.isSupportedRemoteURL(url),
+                  !LinkMetadataURLPolicy.isPrivacySensitive(url),
+                  let payload = try? await loadImage(from: url, svgMaxPixelSize: svgMaxPixelSize)
+            else {
+                continue
+            }
+            return payload
+        }
+        return nil
+    }
+
+    private func loadImage(from url: URL, svgMaxPixelSize: Int) async throws -> LinkMetadataImagePayload? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = Defaults.imageTimeout
+        request.setValue("image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        let (data, response) = try await httpClient.data(for: request)
+        guard isSuccessfulHTTPResponse(response), !data.isEmpty else {
+            return nil
+        }
+        if isSVGImage(url: url, response: response, data: data) {
+            return rasterizedSVGImagePayload(data, maxPixelSize: svgMaxPixelSize)
+        }
+        guard data.count <= Defaults.maxImageBytes,
+              let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(imageSource) > 0
+        else { return nil }
+        return LinkMetadataImagePayload(
+            data: data,
+            typeIdentifier: imageTypeIdentifier(from: response) ?? UTType.png.identifier
+        )
+    }
+
+    private func isSuccessfulHTTPResponse(_ response: URLResponse) -> Bool {
+        guard let httpResponse = response as? HTTPURLResponse else { return true }
+        return (200..<300).contains(httpResponse.statusCode)
+    }
+
+    private func imageTypeIdentifier(from response: URLResponse) -> String? {
+        if let mimeType = response.mimeType,
+           let type = UTType(mimeType: mimeType),
+           type.conforms(to: .image) {
+            return type.identifier
+        }
+        if let suggestedFilename = response.suggestedFilename,
+           let type = UTType(filenameExtension: URL(fileURLWithPath: suggestedFilename).pathExtension),
+           type.conforms(to: .image) {
+            return type.identifier
+        }
+        return nil
+    }
+
+    private func isSVGImage(url: URL, response: URLResponse, data: Data) -> Bool {
+        if url.pathExtension.caseInsensitiveCompare("svg") == .orderedSame {
+            return true
+        }
+        if response.suggestedFilename?.lowercased().hasSuffix(".svg") == true {
+            return true
+        }
+        if response.mimeType?.lowercased() == "image/svg+xml" {
+            return true
+        }
+        let prefix = String(decoding: data.prefix(256), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return prefix.hasPrefix("<svg") || (prefix.hasPrefix("<?xml") && prefix.contains("<svg"))
+    }
+
+    private func rasterizedSVGImagePayload(_ data: Data, maxPixelSize: Int) -> LinkMetadataImagePayload? {
+        guard data.count <= Defaults.maxHTMLBytes else { return nil }
+        guard case let .success(result) = RustCoreClient().rasterizeSVGToPNG(
+            svgData: data,
+            maxWidth: maxPixelSize,
+            maxHeight: maxPixelSize
+        ) else {
+            return nil
+        }
+        return LinkMetadataImagePayload(
+            data: result.pngData,
+            typeIdentifier: UTType.png.identifier
+        )
+    }
+}
+
+struct LinkMetadataImageCandidates: Equatable, Sendable {
+    let iconURLs: [URL]
+    let previewURLs: [URL]
+}
+
+enum LinkMetadataHTMLImageParser {
+    private static let metaImageKeys: Set<String> = [
+        "og:image",
+        "og:image:url",
+        "twitter:image",
+        "twitter:image:src"
+    ]
+    private static let fallbackIconPaths = [
+        "/favicon.ico",
+        "/favicon.png",
+        "/apple-touch-icon.png"
+    ]
+
+    static func imageCandidates(in html: String, baseURL: URL) -> LinkMetadataImageCandidates {
+        let metaTags = tags(named: "meta", in: html)
+        let linkTags = tags(named: "link", in: html)
+        let previewURLs = metaTags.compactMap { tag -> URL? in
+            let attributes = attributes(in: tag)
+            let key = (attributes["property"] ?? attributes["name"])?.lowercased()
+            guard let key,
+                  metaImageKeys.contains(key),
+                  let content = attributes["content"]
+            else {
+                return nil
+            }
+            return resolvedURL(from: content, baseURL: baseURL)
+        }
+        let declaredIconURLs = linkTags.compactMap { tag -> URL? in
+            let attributes = attributes(in: tag)
+            guard let rel = attributes["rel"]?.lowercased(),
+                  rel.split(separator: " ").contains(where: { $0 == "icon" || $0 == "apple-touch-icon" }),
+                  let href = attributes["href"]
+            else {
+                return nil
+            }
+            return resolvedURL(from: href, baseURL: baseURL)
+        }
+        return LinkMetadataImageCandidates(
+            iconURLs: unique(declaredIconURLs + fallbackIconURLs(baseURL: baseURL)),
+            previewURLs: unique(previewURLs)
+        )
+    }
+
+    private static func tags(named name: String, in html: String) -> [String] {
+        let pattern = "<\\s*\(name)\\b[^>]*>"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return []
+        }
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        return regex.matches(in: html, range: range).compactMap { match in
+            guard let matchRange = Range(match.range, in: html) else { return nil }
+            return String(html[matchRange])
+        }
+    }
+
+    private static func attributes(in tag: String) -> [String: String] {
+        let pattern = #"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>/]+))"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return [:]
+        }
+        let range = NSRange(tag.startIndex..<tag.endIndex, in: tag)
+        var result: [String: String] = [:]
+        for match in regex.matches(in: tag, range: range) {
+            guard let keyRange = Range(match.range(at: 1), in: tag) else { continue }
+            let valueRange = [3, 4, 5]
+                .compactMap { index -> Range<String.Index>? in
+                    let range = match.range(at: index)
+                    guard range.location != NSNotFound else { return nil }
+                    return Range(range, in: tag)
+                }
+                .first
+            guard let valueRange else { continue }
+            result[String(tag[keyRange]).lowercased()] = String(tag[valueRange])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return result
+    }
+
+    private static func resolvedURL(from value: String, baseURL: URL) -> URL? {
+        guard let url = URL(string: value, relativeTo: baseURL)?.absoluteURL,
+              LinkMetadataURLPolicy.isSupportedRemoteURL(url),
+              !LinkMetadataURLPolicy.isPrivacySensitive(url)
+        else {
+            return nil
+        }
+        return url
+    }
+
+    private static func unique(_ urls: [URL]) -> [URL] {
+        var seen: Set<String> = []
+        return urls.filter { url in
+            let value = url.absoluteString
+            guard !seen.contains(value) else { return false }
+            seen.insert(value)
+            return true
+        }
+    }
+
+    private static func fallbackIconURLs(baseURL: URL) -> [URL] {
+        fallbackIconPaths.compactMap { path in
+            guard var components = URLComponents(
+                url: baseURL,
+                resolvingAgainstBaseURL: true
+            ) else {
+                return nil
+            }
+            components.path = path
+            components.query = nil
+            components.fragment = nil
+            return components.url
+        }
+    }
+}
+
+protocol LinkMetadataHTTPClient: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+struct URLSessionLinkMetadataHTTPClient: LinkMetadataHTTPClient {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await URLSession.shared.data(for: request)
     }
 }
 

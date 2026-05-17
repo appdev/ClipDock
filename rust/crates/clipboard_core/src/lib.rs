@@ -18,5 +18,5 @@ pub use error::{CoreError, CoreErrorCode, Result};
 pub use storage::ClipboardCore;
 
 pub const DATABASE_FILE_NAME: &str = "clipboard.sqlite";
-pub const CURRENT_SCHEMA_VERSION: i64 = 10;
+pub const CURRENT_SCHEMA_VERSION: i64 = 11;
 pub const ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION: i64 = 1;

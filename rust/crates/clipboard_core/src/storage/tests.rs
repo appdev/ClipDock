@@ -853,6 +853,97 @@ fn complete_link_metadata_fetch_requires_matching_lease() {
 }
 
 #[test]
+fn recapturing_ready_link_without_assets_marks_metadata_stale() {
+    let (_, mut core) = open_temp_core();
+    let result = capture_pending_link(
+        &mut core,
+        "https://example.com/no-assets",
+        "https://example.com/no-assets",
+    );
+    let candidate = core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .unwrap()
+        .remove(0);
+    core.complete_link_metadata_fetch(CompleteLinkMetadataFetchRequest {
+        item_id: result.item_id.clone(),
+        lease_started_at_ms: candidate.lease_started_at_ms,
+        canonical_url: "https://example.com/no-assets".to_string(),
+        display_url: "example.com/no-assets".to_string(),
+        host: "example.com".to_string(),
+        title: Some("No assets".to_string()),
+        site_name: Some("Example".to_string()),
+        icon_relative_path: None,
+        image_relative_path: None,
+    })
+    .unwrap();
+
+    capture_pending_link(
+        &mut core,
+        "https://example.com/no-assets",
+        "https://example.com/no-assets",
+    );
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let metadata = page.items[0].link_metadata.as_ref().unwrap();
+    assert_eq!(metadata.metadata_state, LinkMetadataState::Stale);
+
+    let candidates = core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .expect("claim stale no-asset link");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].item_id, result.item_id);
+}
+
+#[test]
+fn recapturing_ready_link_with_assets_keeps_metadata_ready() {
+    let (_, mut core) = open_temp_core();
+    let result = capture_pending_link(
+        &mut core,
+        "https://example.com/with-assets",
+        "https://example.com/with-assets",
+    );
+    let candidate = core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .unwrap()
+        .remove(0);
+    core.complete_link_metadata_fetch(CompleteLinkMetadataFetchRequest {
+        item_id: result.item_id.clone(),
+        lease_started_at_ms: candidate.lease_started_at_ms,
+        canonical_url: "https://example.com/with-assets".to_string(),
+        display_url: "example.com/with-assets".to_string(),
+        host: "example.com".to_string(),
+        title: Some("With assets".to_string()),
+        site_name: Some("Example".to_string()),
+        icon_relative_path: Some("assets/link-icons/example.png".to_string()),
+        image_relative_path: None,
+    })
+    .unwrap();
+
+    capture_pending_link(
+        &mut core,
+        "https://example.com/with-assets",
+        "https://example.com/with-assets",
+    );
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let metadata = page.items[0].link_metadata.as_ref().unwrap();
+    assert_eq!(metadata.metadata_state, LinkMetadataState::Ready);
+    assert!(metadata
+        .icon_asset_path
+        .as_deref()
+        .unwrap()
+        .ends_with("assets/link-icons/example.png"));
+    assert!(core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .expect("claim batch")
+        .is_empty());
+}
+
+#[test]
 fn privacy_sensitive_failure_does_not_auto_retry() {
     let (_, mut core) = open_temp_core();
     let result = capture_pending_link(
@@ -2292,7 +2383,7 @@ fn default_preferences_document_is_seeded() {
     assert_eq!(preferences.history.max_items, 5000);
     assert_eq!(preferences.appearance.mode, "system");
     assert!(preferences.link_preview.web_preview_enabled);
-    assert_eq!(preferences.shortcuts.open_panel.key_code, 9);
+    assert_eq!(preferences.shortcuts.open_panel.key_code, 7);
     assert_eq!(
         preferences.shortcuts.open_panel.modifiers,
         vec!["command".to_string(), "shift".to_string()]
@@ -2364,6 +2455,46 @@ fn old_empty_ignore_list_is_migrated_once_to_default_privacy_apps() {
         .ignore_list
         .ignored_app_identifiers
         .is_empty());
+}
+
+#[test]
+fn old_default_open_panel_shortcut_is_migrated_to_current_default() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let core = ClipboardCore::open(temp_dir.path()).expect("open core");
+    let mut old_preferences = PreferencesDocument::default();
+    old_preferences.shortcuts.open_panel.key_code = 9;
+    old_preferences.shortcuts.open_panel.modifiers =
+        vec!["command".to_string(), "shift".to_string()];
+    let old_json = serde_json::to_string(&old_preferences).unwrap();
+    core.connection
+        .execute(
+            r#"
+            UPDATE preference_documents
+            SET schema_version = 10, value_json = ?1
+            WHERE id = 'current'
+            "#,
+            params![old_json],
+        )
+        .unwrap();
+    drop(core);
+
+    let migrated = ClipboardCore::open(temp_dir.path()).expect("reopen migrated core");
+    let migrated_preferences = migrated.get_preferences().unwrap();
+    let row_schema_version: i64 = migrated
+        .connection
+        .query_row(
+            "SELECT schema_version FROM preference_documents WHERE id = 'current'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(row_schema_version, CURRENT_SCHEMA_VERSION);
+    assert_eq!(migrated_preferences.shortcuts.open_panel.key_code, 7);
+    assert_eq!(
+        migrated_preferences.shortcuts.open_panel.modifiers,
+        vec!["command".to_string(), "shift".to_string()]
+    );
 }
 
 #[test]
@@ -2442,7 +2573,7 @@ fn preferences_update_falls_back_when_shortcut_is_not_recordable() {
 
     let saved = core.update_preferences(preferences).unwrap();
 
-    assert_eq!(saved.shortcuts.open_panel.key_code, 9);
+    assert_eq!(saved.shortcuts.open_panel.key_code, 7);
     assert_eq!(
         saved.shortcuts.open_panel.modifiers,
         vec!["command".to_string(), "shift".to_string()]

@@ -15,7 +15,7 @@
   <img alt="Open source" src="https://img.shields.io/badge/open%20source-yes-blue">
 </p>
 
-![ClipShelf current shelf](docs/assets/marketing/clipshelf-panel-overview-screen-real.png)
+![ClipShelf current shelf](docs/assets/marketing/clipshelf-panel-overview-screen-real.webp)
 
 > The ClipShelf screenshots in this README are captured from a real running app window on a secondary display with sample clipboard content.<br>
 > 本 README 中的 ClipShelf 截图来自副屏上真实运行的应用窗口，内容为样例剪贴板数据。
@@ -82,9 +82,9 @@ Preview is a first-class part of the workflow. Text and rich text stay readable 
 
 预览是核心工作流的一部分。文本和富文本会保持可读，图片条目展示真实图片，文件条目展示文档预览，颜色以色块呈现，链接可以显示来自目标页面的元数据。截图中的 GitHub 卡片使用的是 `https://github.com/` 的 ready 状态 Open Graph 预览。
 
-![ClipShelf preview popover](docs/assets/marketing/clipshelf-preview-screen-real.png)
+![ClipShelf preview popover](docs/assets/marketing/clipshelf-preview-screen-real.webp)
 
-![ClipShelf pinboard filter](docs/assets/marketing/clipshelf-panel-pinboard-screen-real.png)
+![ClipShelf pinboard filter](docs/assets/marketing/clipshelf-panel-pinboard-screen-real.webp)
 
 Pinboards keep durable material separate from short-lived clipboard history. The shelf can switch directly into a Pinboard filter, making product notes, design references, release material, customer documents, or team knowledge available without searching through transient clipboard activity.
 

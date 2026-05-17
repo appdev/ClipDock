@@ -1,0 +1,1332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ClipShelf - Clipboard shelf for macOS</title>
+  <meta name="description" content="ClipShelf is a native macOS clipboard shelf for searching, pinning, and reusing copied text, links, code, images, and files.">
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f5f5f7;
+      --canvas-raised: #ffffff;
+      --ink: #1d1d1f;
+      --muted: #6e6e73;
+      --faint: #86868b;
+      --line: rgba(0, 0, 0, .1);
+      --line-strong: rgba(0, 0, 0, .16);
+      --accent: #0071e3;
+      --accent-strong: #0066cc;
+      --green: #2aa874;
+      --orange: #ee8a27;
+      --violet: #8269d8;
+      --cyan: #2c9ab7;
+      --chrome: rgba(255, 255, 255, .76);
+      --shadow: 0 24px 80px rgba(24, 27, 35, .16);
+      --deep-shadow: 0 46px 120px rgba(24, 27, 35, .22);
+      --stage-bg:
+        radial-gradient(circle at 18% 8%, rgba(0, 113, 227, .16), transparent 28%),
+        linear-gradient(135deg, #fbfbfd 0%, #eef1f5 100%);
+      --download-bg:
+        radial-gradient(circle at 50% 12%, rgba(0, 113, 227, .32), transparent 42%),
+        linear-gradient(180deg, #17191f 0%, #08090d 100%);
+      --download-ink: #f5f5f7;
+      --download-muted: rgba(255, 255, 255, .72);
+      --spot-x: 50%;
+      --spot-y: 18%;
+      --pointer-x: 0;
+      --pointer-y: 0;
+      --scroll-progress: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", sans-serif;
+      letter-spacing: 0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --canvas: #090a0d;
+        --canvas-raised: #15171d;
+        --ink: #f5f5f7;
+        --muted: #a1a1a6;
+        --faint: #85858b;
+        --line: rgba(255, 255, 255, .14);
+        --line-strong: rgba(255, 255, 255, .22);
+        --accent: #2997ff;
+        --accent-strong: #54aaff;
+        --green: #33c083;
+        --orange: #f5a142;
+        --violet: #a596ff;
+        --cyan: #64d2ff;
+        --chrome: rgba(24, 25, 30, .72);
+        --shadow: 0 26px 86px rgba(0, 0, 0, .5);
+        --deep-shadow: 0 52px 140px rgba(0, 0, 0, .68);
+        --stage-bg:
+          radial-gradient(circle at 18% 8%, rgba(41, 151, 255, .22), transparent 28%),
+          linear-gradient(135deg, #17181e 0%, #0d0e12 100%);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--canvas);
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      overflow-x: hidden;
+      background:
+        radial-gradient(circle at var(--spot-x) var(--spot-y), color-mix(in srgb, var(--accent) 14%, transparent), transparent 28rem),
+        var(--canvas);
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1.45;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at calc(50% + var(--pointer-x) * 1px) calc(22% + var(--pointer-y) * 1px), color-mix(in srgb, var(--accent) 12%, transparent), transparent 22rem);
+      opacity: .85;
+      transition: opacity .2s ease;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    [data-copy="en"] {
+      display: none;
+    }
+
+    html:not([data-locale="en"]) [data-copy="zh"] {
+      display: contents;
+    }
+
+    html[data-locale="en"] [data-copy="zh"] {
+      display: none;
+    }
+
+    html[data-locale="en"] [data-copy="en"] {
+      display: contents;
+    }
+
+    .scroll-meter {
+      position: fixed;
+      z-index: 100;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: color-mix(in srgb, var(--line) 55%, transparent);
+      transform: translateZ(0);
+    }
+
+    .scroll-meter::after {
+      content: "";
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: var(--accent);
+      transform: scaleX(var(--scroll-progress));
+      transform-origin: 0 50%;
+    }
+
+    .site-nav {
+      position: sticky;
+      z-index: 90;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: min(1180px, calc(100% - 32px));
+      min-height: 68px;
+      margin: 0 auto;
+      padding: 14px 0;
+      backdrop-filter: blur(20px);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .mark {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, .88), rgba(255, 255, 255, 0)),
+        linear-gradient(135deg, var(--accent), var(--cyan));
+      box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 36%, transparent);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 26px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .nav-links a:hover,
+    .nav-links a:focus-visible {
+      color: var(--ink);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .lang-switch {
+      display: inline-flex;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--chrome) 88%, transparent);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, .06);
+    }
+
+    .lang-switch button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 8px 10px;
+    }
+
+    html:not([data-locale="en"]) .lang-switch button[data-set-locale="zh"],
+    html[data-locale="en"] .lang-switch button[data-set-locale="en"] {
+      background: var(--ink);
+      color: var(--canvas);
+    }
+
+    .nav-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .page {
+      width: 100%;
+    }
+
+    .section {
+      position: relative;
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: block;
+      min-height: calc(100svh - 92px);
+      padding: clamp(46px, 6vw, 76px) 0 clamp(64px, 7vw, 92px);
+    }
+
+    .hero-copy {
+      max-width: 1180px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .hero-title {
+      margin: 0;
+      font-size: clamp(48px, 7vw, 92px);
+      font-weight: 760;
+      line-height: .98;
+      letter-spacing: 0;
+    }
+
+    .hero-title .title-line {
+      display: inline;
+    }
+
+    .hero-sub {
+      max-width: 560px;
+      margin: 28px auto 0;
+      color: var(--muted);
+      font-size: clamp(19px, 2.1vw, 25px);
+      line-height: 1.38;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 22px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 750;
+      box-shadow: 0 16px 42px color-mix(in srgb, var(--accent) 28%, transparent);
+      transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      background: var(--accent-strong);
+      transform: translateY(-1px);
+    }
+
+    .button.secondary {
+      background: transparent;
+      border-color: var(--line);
+      color: var(--ink);
+      box-shadow: none;
+    }
+
+    .button.secondary:hover,
+    .button.secondary:focus-visible {
+      background: color-mix(in srgb, var(--canvas-raised) 82%, transparent);
+    }
+
+    .shortcut-line {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      align-items: center;
+      margin-top: 24px;
+      color: var(--faint);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .shortcut-key {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--canvas-raised) 76%, transparent);
+      color: var(--ink);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, .06);
+    }
+
+    .hero-stage {
+      position: relative;
+      min-height: clamp(430px, 40vw, 560px);
+      margin-top: clamp(18px, 3vw, 34px);
+      perspective: 1600px;
+      transform: translate3d(calc(var(--pointer-x) * .018px), calc(var(--pointer-y) * .014px), 0);
+      transition: transform .16s ease-out;
+    }
+
+    .product-window {
+      position: absolute;
+      top: 7%;
+      left: 50%;
+      width: min(840px, 82%);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--stage-bg);
+      box-shadow: var(--deep-shadow);
+      transform: translateX(-50%) rotateX(calc(var(--pointer-y) * -.006deg)) rotateY(calc(var(--pointer-x) * .008deg)) translateZ(0);
+      transform-origin: 50% 70%;
+      transition: transform .18s ease-out;
+    }
+
+    .window-chrome {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      height: 44px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--chrome) 90%, transparent);
+      backdrop-filter: blur(18px);
+    }
+
+    .window-chrome span {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #ff5f57;
+    }
+
+    .window-chrome span:nth-child(2) {
+      background: #febc2e;
+    }
+
+    .window-chrome span:nth-child(3) {
+      background: #28c840;
+    }
+
+    .screen {
+      padding: clamp(16px, 3vw, 30px);
+    }
+
+    .screen img {
+      width: 100%;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: inset 0 0 0 1px var(--line), 0 18px 54px rgba(0, 0, 0, .12);
+    }
+
+    .float-card {
+      position: absolute;
+      z-index: 3;
+      width: clamp(150px, 16vw, 210px);
+      min-height: 128px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--canvas-raised) 86%, transparent);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      transform: translate3d(calc(var(--pointer-x) * var(--mx, .018px)), calc(var(--pointer-y) * var(--my, .018px)), 0);
+      transition: transform .16s ease-out;
+    }
+
+    .float-card strong {
+      display: block;
+      margin-top: 10px;
+      font-size: 15px;
+      line-height: 1.22;
+    }
+
+    .float-card .type {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .card-a {
+      left: 8%;
+      top: 28%;
+      --mx: -.03px;
+      --my: .024px;
+    }
+
+    .card-b {
+      right: 7%;
+      bottom: 9%;
+      --mx: .028px;
+      --my: -.018px;
+    }
+
+    .card-c {
+      left: 20%;
+      bottom: 1%;
+      --mx: -.02px;
+      --my: -.026px;
+    }
+
+    .line {
+      height: 7px;
+      margin-top: 10px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--muted) 22%, transparent);
+    }
+
+    .line.short {
+      width: 54%;
+    }
+
+    .next-signal {
+      display: flex;
+      justify-content: center;
+      margin: -38px auto 0;
+      color: var(--faint);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .next-signal span {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--chrome) 74%, transparent);
+      backdrop-filter: blur(18px);
+    }
+
+    .story {
+      display: grid;
+      grid-template-columns: minmax(0, .82fr) minmax(440px, 1fr);
+      gap: clamp(28px, 5vw, 74px);
+      align-items: start;
+      padding: clamp(78px, 12vw, 150px) 0;
+    }
+
+    .story-copy {
+      position: sticky;
+      top: 104px;
+      padding-top: 12px;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: clamp(38px, 5.6vw, 70px);
+      font-weight: 760;
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .section-sub {
+      max-width: 640px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: clamp(18px, 2vw, 23px);
+      line-height: 1.42;
+    }
+
+    .steps {
+      display: grid;
+      gap: 18px;
+      margin-top: 42px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 16px;
+      padding: 18px 0;
+      border-top: 1px solid var(--line);
+      opacity: .72;
+      transform: translateY(18px);
+      transition: opacity .6s cubic-bezier(.2, .8, .2, 1), transform .6s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    .step.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .step-index {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--step-color, var(--accent)) 14%, transparent);
+      color: var(--step-color, var(--accent));
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .step h3 {
+      margin: 2px 0 6px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .sticky-product {
+      position: sticky;
+      top: 108px;
+      min-height: 590px;
+    }
+
+    .showcase {
+      position: relative;
+      overflow: hidden;
+      min-height: 560px;
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      background: var(--stage-bg);
+      box-shadow: var(--shadow);
+      transform: translateY(calc((.5 - var(--scroll-progress)) * 16px));
+    }
+
+    .showcase::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at calc(20% + var(--scroll-progress) * 60%) 10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 28rem);
+    }
+
+    .showcase-shot {
+      position: absolute;
+      left: 8%;
+      right: 8%;
+      top: 12%;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--canvas-raised);
+      box-shadow: var(--deep-shadow);
+    }
+
+    .showcase-shot.pinboard {
+      top: 44%;
+      transform: translateX(calc((1 - var(--scroll-progress)) * 80px)) rotate(-2deg);
+    }
+
+    .showcase-shot.overview {
+      transform: translateX(calc(var(--scroll-progress) * -48px)) rotate(1deg);
+    }
+
+    .feature-band {
+      padding: clamp(64px, 9vw, 120px) 0;
+    }
+
+    .feature-head {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(260px, .42fr);
+      gap: 32px;
+      align-items: end;
+      margin-bottom: clamp(32px, 5vw, 60px);
+    }
+
+    .feature-note {
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .feature-card {
+      min-height: 210px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--canvas-raised) 72%, transparent);
+      transform: translateY(22px);
+      opacity: 0;
+      transition: opacity .65s cubic-bezier(.2, .8, .2, 1), transform .65s cubic-bezier(.2, .8, .2, 1), border-color .2s ease;
+    }
+
+    .feature-card.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .feature-card:hover {
+      border-color: color-mix(in srgb, var(--card-accent, var(--accent)) 45%, var(--line));
+    }
+
+    .feature-card h3 {
+      margin: 0 0 14px;
+      font-size: 21px;
+      line-height: 1.18;
+    }
+
+    .feature-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .feature-symbol {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      margin-bottom: 24px;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--card-accent, var(--accent)) 15%, transparent);
+      color: var(--card-accent, var(--accent));
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    .pinboard-section {
+      display: grid;
+      grid-template-columns: minmax(0, .82fr) minmax(420px, 1fr);
+      gap: clamp(28px, 5vw, 70px);
+      align-items: center;
+      padding: clamp(68px, 10vw, 132px) 0;
+    }
+
+    .pinboard-window,
+    .privacy-window {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      background: var(--stage-bg);
+      box-shadow: var(--shadow);
+    }
+
+    .pinboard-window img {
+      padding: clamp(16px, 3vw, 28px);
+    }
+
+    .privacy-section {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(300px, .52fr);
+      gap: clamp(28px, 5vw, 70px);
+      align-items: center;
+      padding: clamp(68px, 10vw, 132px) 0;
+    }
+
+    .privacy-copy {
+      max-width: 650px;
+    }
+
+    .privacy-window {
+      position: relative;
+      max-width: 420px;
+      justify-self: end;
+      border-radius: 26px;
+      background: #111318;
+      transform: translateY(calc(var(--scroll-progress) * -18px));
+    }
+
+    .privacy-window img {
+      width: 100%;
+      opacity: .94;
+    }
+
+    .privacy-badge {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 18px;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .9);
+      color: #15161b;
+      box-shadow: 0 22px 46px rgba(0, 0, 0, .28);
+    }
+
+    .privacy-badge strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+
+    .privacy-badge span {
+      display: block;
+      margin-top: 4px;
+      color: #60636b;
+      font-size: 13px;
+    }
+
+    .download-section {
+      width: min(1180px, calc(100% - 32px));
+      margin: clamp(44px, 8vw, 100px) auto 0;
+      overflow: hidden;
+      border-radius: 34px;
+      background: var(--download-bg);
+      color: var(--download-ink);
+      box-shadow: var(--deep-shadow);
+    }
+
+    .download-inner {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(300px, .48fr);
+      gap: clamp(28px, 5vw, 70px);
+      align-items: center;
+      min-height: 560px;
+      padding: clamp(42px, 7vw, 84px);
+    }
+
+    .download-section h2 {
+      max-width: 720px;
+      margin: 0;
+      font-size: clamp(42px, 6vw, 78px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .download-section p {
+      max-width: 620px;
+      margin: 24px 0 0;
+      color: var(--download-muted);
+      font-size: clamp(18px, 2vw, 23px);
+      line-height: 1.42;
+    }
+
+    .download-section .button.secondary {
+      border-color: rgba(255, 255, 255, .18);
+      color: #fff;
+    }
+
+    .release-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .release-item {
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .release-item strong,
+    .release-item span {
+      display: block;
+    }
+
+    .release-item span {
+      margin-top: 5px;
+      color: rgba(255, 255, 255, .66);
+      font-size: 14px;
+    }
+
+    .site-footer {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 38px 0 52px;
+      color: var(--faint);
+      font-size: 13px;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity .75s cubic-bezier(.2, .8, .2, 1), transform .75s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    :focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--accent) 38%, transparent);
+      outline-offset: 3px;
+    }
+
+    @media (max-width: 980px) {
+      .site-nav {
+        width: min(100% - 24px, 760px);
+      }
+
+      .nav-links {
+        display: none;
+      }
+
+      .hero,
+      .story,
+      .pinboard-section,
+      .privacy-section,
+      .download-inner,
+      .feature-head {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        min-height: auto;
+        padding-top: 40px;
+      }
+
+      .hero-copy {
+        max-width: 650px;
+        margin: 0;
+        text-align: left;
+      }
+
+      .hero-title .title-line {
+        display: block;
+      }
+
+      .hero-sub {
+        margin-left: 0;
+        margin-right: 0;
+      }
+
+      .hero-actions,
+      .shortcut-line {
+        justify-content: flex-start;
+      }
+
+      .hero-stage {
+        min-height: clamp(360px, 72vw, 620px);
+      }
+
+      .product-window {
+        inset: 8% 0 auto;
+        width: 100%;
+        transform: rotateX(calc(var(--pointer-y) * -.006deg)) rotateY(calc(var(--pointer-x) * .008deg)) translateZ(0);
+      }
+
+      .float-card {
+        width: min(190px, 45vw);
+      }
+
+      .story-copy,
+      .sticky-product {
+        position: relative;
+        top: auto;
+      }
+
+      .sticky-product {
+        min-height: 520px;
+      }
+
+      .feature-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .privacy-window {
+        justify-self: start;
+      }
+    }
+
+    @media (max-width: 620px) {
+      body {
+        font-size: 16px;
+      }
+
+      .site-nav {
+        min-height: 62px;
+      }
+
+      .nav-download {
+        display: none;
+      }
+
+      .section,
+      .download-section,
+      .site-footer {
+        width: min(100% - 24px, 520px);
+      }
+
+      .hero-title {
+        font-size: clamp(42px, 12vw, 58px);
+      }
+
+      .hero-sub,
+      .section-sub,
+      .download-section p {
+        font-size: 18px;
+      }
+
+      .hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .button {
+        width: 100%;
+      }
+
+      .hero-stage {
+        min-height: 430px;
+      }
+
+      .screen {
+        padding: 12px;
+      }
+
+      .float-card {
+        width: 154px;
+        min-height: 108px;
+        padding: 12px;
+      }
+
+      .card-a {
+        top: 0;
+      }
+
+      .card-b {
+        bottom: 2%;
+      }
+
+      .card-c {
+        left: 2%;
+        bottom: 15%;
+      }
+
+      .story,
+      .feature-band,
+      .pinboard-section,
+      .privacy-section {
+        padding: 72px 0;
+      }
+
+      .sticky-product,
+      .showcase {
+        min-height: 430px;
+      }
+
+      .showcase-shot {
+        left: 18px;
+        right: 18px;
+      }
+
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .feature-card {
+        min-height: 0;
+      }
+
+      .privacy-badge {
+        position: static;
+        margin: -28px 14px 14px;
+      }
+
+      .download-section {
+        border-radius: 24px;
+      }
+
+      .download-inner {
+        min-height: 0;
+        padding: 34px 24px;
+      }
+
+      .download-section h2 {
+        font-size: clamp(38px, 12vw, 54px);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+      }
+
+      body::before {
+        opacity: 0;
+      }
+
+      .hero-stage,
+      .float-card,
+      .showcase,
+      .showcase-shot,
+      .privacy-window,
+      .reveal,
+      .step,
+      .feature-card {
+        transform: none !important;
+      }
+
+      .product-window {
+        transform: translateX(-50%) !important;
+      }
+    }
+
+    @media (max-width: 980px) and (prefers-reduced-motion: reduce) {
+      .product-window {
+        transform: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="scroll-meter" aria-hidden="true"></div>
+  <header class="site-nav">
+    <a class="brand" href="#top" aria-label="ClipShelf">
+      <span class="mark" aria-hidden="true"></span>
+      <span>ClipShelf</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#features"><span data-copy="zh">功能</span><span data-copy="en">Features</span></a>
+      <a href="#pinboard">Pinboard</a>
+      <a href="#privacy"><span data-copy="zh">隐私</span><span data-copy="en">Privacy</span></a>
+    </nav>
+    <div class="nav-actions">
+      <div class="lang-switch" aria-label="Language">
+        <button type="button" data-set-locale="zh">中文</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
+      <a class="nav-download" href="https://github.com/appdev/ClipShelf/releases">
+        <span data-copy="zh">下载</span><span data-copy="en">Download</span>
+      </a>
+    </div>
+  </header>
+
+  <main id="top" class="page">
+    <section class="section hero">
+      <div class="hero-copy reveal is-visible">
+        <h1 class="hero-title">
+          <span data-copy="zh"><span class="title-line">复制过的内容，</span><span class="title-line">随手可取。</span></span>
+          <span data-copy="en"><span class="title-line">A clipboard shelf</span><span class="title-line">ready when you are.</span></span>
+        </h1>
+        <p class="hero-sub">
+          <span data-copy="zh">把文字、链接、代码、图片和文件收进一个原生 macOS 工作台，搜索、固定、再次粘贴都保持轻快。</span>
+          <span data-copy="en">Collect text, links, code, images, and files in a native macOS workspace built for fast search, pinning, and paste-back.</span>
+        </p>
+        <div class="hero-actions">
+          <a class="button" href="https://github.com/appdev/ClipShelf/releases">
+            <span data-copy="zh">免费下载</span><span data-copy="en">Free download</span>
+          </a>
+          <a class="button secondary" href="#features">
+            <span data-copy="zh">查看功能</span><span data-copy="en">Explore features</span>
+          </a>
+        </div>
+        <div class="shortcut-line">
+          <span data-copy="zh">默认唤出</span><span data-copy="en">Default shortcut</span>
+          <span class="shortcut-key">Command + Shift + X</span>
+        </div>
+      </div>
+
+      <div class="hero-stage" aria-label="ClipShelf product preview">
+        <div class="product-window">
+          <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="screen">
+            <img src="assets/clipshelf-launch-20260517/overview.png" alt="ClipShelf clipboard overview">
+          </div>
+        </div>
+        <div class="float-card card-a" aria-hidden="true">
+          <div class="type">Text</div>
+          <strong>Launch summary</strong>
+          <div class="line"></div>
+          <div class="line short"></div>
+        </div>
+        <div class="float-card card-b" aria-hidden="true">
+          <div class="type">Code</div>
+          <strong>swift build</strong>
+          <div class="line"></div>
+          <div class="line short"></div>
+        </div>
+        <div class="float-card card-c" aria-hidden="true">
+          <div class="type">Image</div>
+          <strong>Design review</strong>
+          <div class="line"></div>
+          <div class="line short"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="next-signal" aria-hidden="true"><span>Recall · Pinboard · Privacy</span></div>
+
+    <section id="features" class="section story">
+      <div class="story-copy reveal">
+        <h2 class="section-title">
+          <span data-copy="zh">从临时复制，到可复用的工作材料。</span>
+          <span data-copy="en">From temporary copy to reusable work material.</span>
+        </h2>
+        <p class="section-sub">
+          <span data-copy="zh">ClipShelf 不把历史记录堆成列表，而是把刚复制过、经常复用、需要临时保存的内容组织成可以扫描的原生面板。</span>
+          <span data-copy="en">ClipShelf turns recent and frequently reused clips into a scannable native panel instead of a long history dump.</span>
+        </p>
+        <div class="steps">
+          <div class="step" style="--step-color: var(--accent);">
+            <span class="step-index">1</span>
+            <div><h3>Recall</h3><p><span data-copy="zh">按内容类型、来源和时间快速找回最近复制。</span><span data-copy="en">Find recent clips by type, source, and time.</span></p></div>
+          </div>
+          <div class="step" style="--step-color: var(--green);">
+            <span class="step-index">2</span>
+            <div><h3>Pinboard</h3><p><span data-copy="zh">把常用内容固定成项目资料、客服回复或开发片段。</span><span data-copy="en">Pin reusable material for projects, replies, and snippets.</span></p></div>
+          </div>
+          <div class="step" style="--step-color: var(--orange);">
+            <span class="step-index">3</span>
+            <div><h3>Paste</h3><p><span data-copy="zh">搜索后直接粘贴回当前工作流，减少窗口切换。</span><span data-copy="en">Search and paste back without breaking your current flow.</span></p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sticky-product" aria-label="ClipShelf scrolling product story">
+        <div class="showcase">
+          <div class="showcase-shot overview">
+            <img src="assets/clipshelf-launch-20260517/overview.png" alt="ClipShelf recent clips">
+          </div>
+          <div class="showcase-shot pinboard">
+            <img src="assets/clipshelf-launch-20260517/pinboard.png" alt="ClipShelf Pinboard">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section feature-band">
+      <div class="feature-head reveal">
+        <h2 class="section-title">
+          <span data-copy="zh">一个面板，覆盖日常复制路径。</span>
+          <span data-copy="en">One shelf for everyday copy paths.</span>
+        </h2>
+        <p class="feature-note">
+          <span data-copy="zh">保持设置克制，把页面重点留给真实工作流。</span>
+          <span data-copy="en">The page keeps settings quiet and keeps the workflow visible.</span>
+        </p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card" style="--card-accent: var(--accent);">
+          <span class="feature-symbol">R</span>
+          <h3>Recall</h3>
+          <p><span data-copy="zh">最近复制的文本、链接、代码、图片和文件以卡片呈现。</span><span data-copy="en">Text, links, code, images, and files appear as readable cards.</span></p>
+        </article>
+        <article class="feature-card" style="--card-accent: var(--green);">
+          <span class="feature-symbol">P</span>
+          <h3>Pinboard</h3>
+          <p><span data-copy="zh">常用片段固定到 Pinboard，不用再临时翻找。</span><span data-copy="en">Pin reusable clips to Pinboard instead of searching again.</span></p>
+        </article>
+        <article class="feature-card" style="--card-accent: var(--orange);">
+          <span class="feature-symbol">X</span>
+          <h3>Command + Shift + X</h3>
+          <p><span data-copy="zh">从当前应用直接唤出，再把内容粘贴回去。</span><span data-copy="en">Open from the current app, then paste the selected content back.</span></p>
+        </article>
+        <article class="feature-card" style="--card-accent: var(--violet);">
+          <span class="feature-symbol">L</span>
+          <h3>Local-first</h3>
+          <p><span data-copy="zh">内容保存在本机，隐私承诺不需要复杂话术。</span><span data-copy="en">Clipboard content stays local, with privacy kept understandable.</span></p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pinboard" class="section pinboard-section">
+      <div class="reveal">
+        <h2 class="section-title">
+          <span data-copy="zh">把高频内容固定下来。</span>
+          <span data-copy="en">Pin what you keep reusing.</span>
+        </h2>
+        <p class="section-sub">
+          <span data-copy="zh">Pinboard 用来收纳稳定、反复使用的材料：发布命令、模板回复、项目链接和常用图片。最近记录继续保持轻快，固定内容则更有秩序。</span>
+          <span data-copy="en">Pinboard holds stable material you use again and again: release commands, reply templates, project links, and reusable images.</span>
+        </p>
+      </div>
+      <div class="pinboard-window reveal">
+        <img src="assets/clipshelf-launch-20260517/pinboard.png" alt="ClipShelf Pinboard collection">
+      </div>
+    </section>
+
+    <section id="privacy" class="section privacy-section">
+      <div class="privacy-copy reveal">
+        <h2 class="section-title">
+          <span data-copy="zh">隐私信息不必离开你的 Mac。</span>
+          <span data-copy="en">Private material can stay on your Mac.</span>
+        </h2>
+        <p class="section-sub">
+          <span data-copy="zh">发布页不需要大面积展示设置界面。只保留一个清晰的证明点：ClipShelf 以本地体验为核心，让隐私成为默认气质。</span>
+          <span data-copy="en">The page keeps settings in the background and makes the promise clear: ClipShelf is designed around a local macOS experience.</span>
+        </p>
+      </div>
+      <div class="privacy-window reveal">
+        <img src="assets/clipshelf-launch-20260517/privacy.png" alt="ClipShelf privacy preferences">
+        <div class="privacy-badge">
+          <strong><span data-copy="zh">本地优先</span><span data-copy="en">Local-first</span></strong>
+          <span><span data-copy="zh">设置只作为信任证明出现，不抢走产品使用场景。</span><span data-copy="en">Settings support the trust story without taking over the page.</span></span>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" class="download-section">
+      <div class="download-inner">
+        <div>
+          <h2><span data-copy="zh">把 ClipShelf 放进你的菜单栏。</span><span data-copy="en">Put ClipShelf in your menu bar.</span></h2>
+          <p><span data-copy="zh">轻量、原生、随叫随到。下载最新版本，使用 Command + Shift + X 唤出你的剪贴板工作台。</span><span data-copy="en">Native, light, and always nearby. Download the latest release and open your clipboard shelf with Command + Shift + X.</span></p>
+          <div class="hero-actions">
+            <a class="button" href="https://github.com/appdev/ClipShelf/releases"><span data-copy="zh">免费下载</span><span data-copy="en">Free download</span></a>
+            <a class="button secondary" href="https://github.com/appdev/ClipShelf/releases"><span data-copy="zh">查看发行说明</span><span data-copy="en">Release notes</span></a>
+          </div>
+        </div>
+        <div class="release-list" aria-label="Release details">
+          <div class="release-item"><strong>Universal build</strong><span>Apple Silicon and Intel Mac</span></div>
+          <div class="release-item"><strong>Native shelf</strong><span>Menu bar resident, shortcut driven</span></div>
+          <div class="release-item"><strong>Pinboard</strong><span>Reusable clips without a heavy workspace</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>ClipShelf for macOS</span>
+  </footer>
+
+  <script>
+    const root = document.documentElement;
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const setLocale = (locale) => {
+      root.dataset.locale = locale;
+      root.lang = locale === 'en' ? 'en' : 'zh-CN';
+      localStorage.setItem('clipshelf-locale', locale);
+    };
+
+    const storedLocale = localStorage.getItem('clipshelf-locale');
+    const initialLocale = storedLocale || ((navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'zh');
+    setLocale(initialLocale);
+
+    document.querySelectorAll('[data-set-locale]').forEach((button) => {
+      button.addEventListener('click', () => setLocale(button.dataset.setLocale));
+    });
+
+    const updateScrollProgress = () => {
+      const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      root.style.setProperty('--scroll-progress', (window.scrollY / maxScroll).toFixed(4));
+    };
+
+    updateScrollProgress();
+    window.addEventListener('scroll', updateScrollProgress, { passive: true });
+    window.addEventListener('resize', updateScrollProgress);
+
+    if (!prefersReducedMotion.matches) {
+      window.addEventListener('pointermove', (event) => {
+        const x = event.clientX - window.innerWidth / 2;
+        const y = event.clientY - window.innerHeight / 2;
+        root.style.setProperty('--pointer-x', x.toFixed(2));
+        root.style.setProperty('--pointer-y', y.toFixed(2));
+        root.style.setProperty('--spot-x', `${event.clientX}px`);
+        root.style.setProperty('--spot-y', `${event.clientY}px`);
+      }, { passive: true });
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+        }
+      });
+    }, { threshold: 0.18, rootMargin: '0px 0px -10% 0px' });
+
+    document.querySelectorAll('.reveal, .step, .feature-card').forEach((node) => observer.observe(node));
+  </script>
+</body>
+</html>

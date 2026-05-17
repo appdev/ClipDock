@@ -27,6 +27,24 @@ struct RustCoreClientTests {
     }
 
     @Test
+    func rasterizesSVGToPNGThroughSwiftBridge() throws {
+        let svgData = Data("""
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <rect width="512" height="512" fill="#1A5FB8" rx="112"/>
+          <rect x="84" y="126" width="222" height="64" fill="#FFFFFF" rx="24"/>
+        </svg>
+        """.utf8)
+
+        let result = try RustCoreClient()
+            .rasterizeSVGToPNG(svgData: svgData, maxWidth: 128, maxHeight: 128)
+            .get()
+
+        #expect(result.width == 128)
+        #expect(result.height == 128)
+        #expect(result.pngData.prefix(8) == Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+    }
+
+    @Test
     func opensRustCoreThroughSwiftBridgeBinding() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -35,7 +53,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 10)
+        #expect(value.schemaVersion == 11)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -793,7 +811,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 10)
+        #expect(result.schemaVersion == 11)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.history.maxItems == 5000)
@@ -804,7 +822,7 @@ struct RustCoreClientTests {
         #expect(result.preferences.appearance.itemDensity == "standard")
         #expect(result.preferences.appearance.previewPopoverEnabled)
         #expect(result.preferences.linkPreview.webPreviewEnabled)
-        #expect(result.preferences.shortcuts.openPanel.keyCode == 9)
+        #expect(result.preferences.shortcuts.openPanel.keyCode == 7)
         #expect(result.preferences.shortcuts.openPanel.modifiers == ["command", "shift"])
         #expect(!result.preferences.shortcuts.pasteDirectlyToTarget)
         #expect(result.preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)

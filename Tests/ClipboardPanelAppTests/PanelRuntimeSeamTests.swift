@@ -163,6 +163,8 @@ struct PanelRuntimeSeamTests {
         #expect(queries.first?.debounce == true)
         #expect(await waitForMainActor(attempts: 120) {
             abs(contentView.smokeSearchFieldWidth - 330) < 0.5
+                && abs(contentView.smokeSearchFieldInnerWidth - 330) < 0.5
+                && abs(contentView.smokeSearchFieldHeight - 48) < 0.5
                 && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
                 && !contentView.smokeSearchFieldIsHidden
                 && contentView.smokeToolbarSearchButtonIsHidden
@@ -446,6 +448,7 @@ struct PanelRuntimeSeamTests {
         #expect(await waitForMainActor(attempts: 120) {
             contentView.smokeIsSearchVisible
                 && abs(contentView.smokeSearchFieldWidth - 330) < 0.5
+                && abs(contentView.smokeSearchFieldInnerWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
         })
 
@@ -457,6 +460,7 @@ struct PanelRuntimeSeamTests {
                 && contentView.smokeSearchText == "z"
                 && !contentView.smokeSearchFieldIsHidden
                 && abs(contentView.smokeSearchFieldWidth - 330) < 0.5
+                && abs(contentView.smokeSearchFieldInnerWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
         })
 
@@ -844,6 +848,29 @@ struct PanelRuntimeSeamTests {
 
         #expect(immediateX > 0)
         #expect(abs(settledX - immediateX) < 0.5)
+    }
+
+    @Test
+    @MainActor
+    func itemBandLocksVerticalClipOrigin() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 18)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        let scrollView = try #require(contentView.smokeHorizontalScrollView())
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: 12))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        PanelQAHarness.drainMainRunLoop()
+        #expect(abs(scrollView.contentView.bounds.origin.y) < 0.5)
+
+        sendWheel(to: scrollView, deltaX: -180, deltaY: 24)
+        PanelQAHarness.drainMainRunLoop()
+        #expect(scrollView.contentView.bounds.origin.x > 0)
+        #expect(abs(scrollView.contentView.bounds.origin.y) < 0.5)
     }
 
     @Test
@@ -2336,9 +2363,11 @@ struct PanelRuntimeSeamTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         let itemSide: CGFloat = 218
+        let theme = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
         let renderer = makeRuntimeCardRenderer(
             appSupportDirectory: tempDirectory,
-            itemSide: itemSide
+            itemSide: itemSide,
+            theme: theme
         )
         let renderedCard = renderer.render(PanelItemCardViewState(
             itemID: "text-card-fade",
@@ -2371,7 +2400,7 @@ struct PanelRuntimeSeamTests {
 
         #expect(colorAndAlphaDistance(
             cardBox.fillColor,
-            ClipShelfTheme.current(for: NSAppearance(named: .aqua)).card.textItemBackgroundColor
+            theme.card.textItemBackgroundColor
         ) < 0.001)
         #expect(!fadeView.isHidden)
         #expect(fadeFrame.height >= 70)

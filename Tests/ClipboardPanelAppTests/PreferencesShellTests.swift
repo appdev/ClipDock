@@ -1,4 +1,5 @@
 import AppKit
+import ClipboardPanelApp
 import Testing
 @testable import ClipShelf
 
@@ -59,6 +60,37 @@ struct PreferencesShellTests {
         #expect(snapshot.sidebarBackgroundMatchesTheme)
         #expect(snapshot.contentBackgroundMatchesTheme)
         #expect(snapshot.sidebarBackgroundWhiteComponent < 0.25)
+        #expect(snapshot.sidebarHostingAppearanceIsDark)
+        #expect(snapshot.contentHostingAppearanceIsDark)
+    }
+
+    @Test
+    @MainActor
+    func preferencesWindowHonorsForcedDarkModeBeforeGlobalAppearanceChanges() throws {
+        let app = NSApplication.shared
+        let originalAppearance = app.appearance
+        defer { app.appearance = originalAppearance }
+
+        app.appearance = NSAppearance(named: .aqua)
+        let controller = PreferencesWindowController()
+        defer { controller.close() }
+        let window = try #require(controller.window)
+
+        var preferences = RustPreferencesDocument()
+        preferences.appearance.mode = "dark"
+        controller.updatePreferences(preferences)
+
+        window.setFrame(NSRect(x: 0, y: 0, width: 820, height: 600), display: false)
+        window.layoutIfNeeded()
+        let snapshot = try #require(controller.preferencesShellSmokeSnapshot())
+
+        #expect(snapshot.windowBackgroundMatchesTheme)
+        #expect(snapshot.splitBackgroundMatchesTheme)
+        #expect(snapshot.sidebarBackgroundMatchesTheme)
+        #expect(snapshot.contentBackgroundMatchesTheme)
+        #expect(snapshot.sidebarBackgroundWhiteComponent < 0.25)
+        #expect(snapshot.sidebarHostingAppearanceIsDark)
+        #expect(snapshot.contentHostingAppearanceIsDark)
     }
 
     @Test

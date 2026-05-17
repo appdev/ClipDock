@@ -139,6 +139,22 @@ final class HeightResizeHandleView: NSView {
     }
 }
 
+private final class HorizontalOnlyClipView: NSClipView {
+    override func setBoundsOrigin(_ newOrigin: NSPoint) {
+        super.setBoundsOrigin(NSPoint(x: newOrigin.x, y: 0))
+    }
+
+    override func scroll(to newOrigin: NSPoint) {
+        super.scroll(to: NSPoint(x: newOrigin.x, y: 0))
+    }
+
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var constrainedBounds = super.constrainBoundsRect(proposedBounds)
+        constrainedBounds.origin.y = 0
+        return constrainedBounds
+    }
+}
+
 final class HorizontalWheelScrollView: NSScrollView {
     var onScrollDidChange: (() -> Void)?
     private var isApplyingScrollerVisibility = false
@@ -149,12 +165,14 @@ final class HorizontalWheelScrollView: NSScrollView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        installHorizontalOnlyClipView()
         suppressScrollers()
         configureScrollObservation()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        installHorizontalOnlyClipView()
         suppressScrollers()
         configureScrollObservation()
     }
@@ -228,6 +246,20 @@ final class HorizontalWheelScrollView: NSScrollView {
             name: NSView.boundsDidChangeNotification,
             object: contentView
         )
+    }
+
+    private func installHorizontalOnlyClipView() {
+        guard !(contentView is HorizontalOnlyClipView) else { return }
+
+        let originalClipView = contentView
+        let originalDocumentView = documentView
+        let horizontalClipView = HorizontalOnlyClipView(frame: originalClipView.frame)
+        horizontalClipView.autoresizingMask = originalClipView.autoresizingMask
+        horizontalClipView.drawsBackground = originalClipView.drawsBackground
+        horizontalClipView.backgroundColor = originalClipView.backgroundColor
+        horizontalClipView.postsBoundsChangedNotifications = originalClipView.postsBoundsChangedNotifications
+        contentView = horizontalClipView
+        documentView = originalDocumentView
     }
 
     private func suppressScrollers() {

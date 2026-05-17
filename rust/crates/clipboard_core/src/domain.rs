@@ -700,7 +700,7 @@ fn default_open_panel_shortcut() -> KeyboardShortcut {
 }
 
 fn default_open_panel_key_code() -> i64 {
-    9
+    7
 }
 
 fn default_open_panel_modifiers() -> Vec<String> {
