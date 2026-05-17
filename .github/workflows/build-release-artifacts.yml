@@ -50,6 +50,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Print toolchain
         run: |
@@ -97,11 +99,58 @@ jobs:
             echo "build=$build"
             echo "tag=$tag"
             echo "artifact_dir=$artifact_dir"
-            echo "zip=$artifact_dir/ClipShelf-$version.zip"
-            echo "dmg=$artifact_dir/ClipShelf-$version.dmg"
+            echo "zips=$artifact_dir/ClipShelf-$version-*.zip"
             echo "checksums=$artifact_dir/SHA256SUMS"
             echo "manifest=$artifact_dir/ClipShelf-release-manifest.txt"
+            echo "release_notes=$artifact_dir/ClipShelf-release-notes.md"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes from commits
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_BUILD: ${{ steps.release.outputs.build }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_NOTES: ${{ steps.release.outputs.release_notes }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$(dirname "$RELEASE_NOTES")"
+
+          target_commit="$GITHUB_SHA"
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
+            target_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+            previous_tag="$(git describe --tags --abbrev=0 "$RELEASE_TAG^" 2>/dev/null || true)"
+          else
+            previous_tag="$(git describe --tags --abbrev=0 "$target_commit" 2>/dev/null || true)"
+          fi
+
+          if [[ -n "$previous_tag" ]]; then
+            commit_range="$previous_tag..$target_commit"
+          else
+            commit_range="$target_commit"
+          fi
+
+          {
+            echo "## ClipShelf $RELEASE_VERSION"
+            echo
+            echo "- Build: $RELEASE_BUILD"
+            echo "- Commit: $target_commit"
+            if [[ -n "$previous_tag" ]]; then
+              echo "- Changes since: $previous_tag"
+            fi
+            echo
+            echo "## Commits"
+            echo
+          } > "$RELEASE_NOTES"
+
+          commit_count="$(git rev-list --count "$commit_range" 2>/dev/null || true)"
+          if [[ "${commit_count:-0}" =~ ^[0-9]+$ && "$commit_count" -gt 0 ]]; then
+            git log --format="- %s (%h)" --reverse "$commit_range" >> "$RELEASE_NOTES"
+          else
+            git log -1 --format="- %s (%h)" "$target_commit" >> "$RELEASE_NOTES"
+          fi
+
+          cat "$RELEASE_NOTES"
 
       - name: Build release bundle
         env:
@@ -112,6 +161,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          CREATE_DMG: "0"
         run: scripts/release-macos.sh
 
       - name: Upload workflow artifact
@@ -119,8 +169,7 @@ jobs:
         with:
           name: ClipShelf-${{ steps.release.outputs.version }}-macos
           path: |
-            ${{ steps.release.outputs.zip }}
-            ${{ steps.release.outputs.dmg }}
+            ${{ steps.release.outputs.zips }}
             ${{ steps.release.outputs.checksums }}
             ${{ steps.release.outputs.manifest }}
           if-no-files-found: error
@@ -132,13 +181,12 @@ jobs:
           tag_name: ${{ steps.release.outputs.tag }}
           target_commitish: ${{ github.sha }}
           name: ClipShelf ${{ steps.release.outputs.version }}
-          generate_release_notes: true
+          body_path: ${{ steps.release.outputs.release_notes }}
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
           fail_on_unmatched_files: true
           overwrite_files: true
           files: |
-            ${{ steps.release.outputs.zip }}
-            ${{ steps.release.outputs.dmg }}
+            ${{ steps.release.outputs.zips }}
             ${{ steps.release.outputs.checksums }}
             ${{ steps.release.outputs.manifest }}

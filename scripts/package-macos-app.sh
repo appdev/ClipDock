@@ -89,7 +89,9 @@ join_by_space() {
     printf '%s' "$joined"
 }
 
-RUST_DARWIN_TARGETS="$(join_by_space "${rust_targets[@]}")" scripts/build-rust-core.sh
+if [[ "${SKIP_RUST_CORE_BUILD:-0}" != "1" ]]; then
+    RUST_DARWIN_TARGETS="$(join_by_space "${rust_targets[@]}")" scripts/build-rust-core.sh
+fi
 
 built_executables=()
 for swift_triple in "${swift_triples[@]}"; do
