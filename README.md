@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>A lightweight shelf for everything you copy on macOS.</strong><br>
-  <strong>一个贴在 macOS 底部、随时呼出的轻量剪贴板内容架。</strong>
+  <strong>A local clipboard history shelf for macOS.</strong><br>
+  <strong>面向 macOS 的本地剪贴板历史内容架。</strong>
 </p>
 
 <p align="center">
@@ -15,60 +15,84 @@
   <img alt="Open source" src="https://img.shields.io/badge/open%20source-yes-blue">
 </p>
 
-![ClipShelf runtime hero](docs/assets/marketing/clipshelf-runtime-hero.webp)
+![ClipShelf current shelf](docs/assets/marketing/clipshelf-panel-overview-screen-real.png)
 
-> The ClipShelf panel shown here is rendered by the real app with sample clipboard content. The wallpaper backdrop may be AI-generated.<br>
-> 图中的 ClipShelf 面板来自真实应用运行画面，内容为样例剪贴板数据；壁纸背景可能由 AI 生成。
+> The ClipShelf screenshots in this README are captured from a real running app window on a secondary display with sample clipboard content.<br>
+> 本 README 中的 ClipShelf 截图来自副屏上真实运行的应用窗口，内容为样例剪贴板数据。
 
 ## What It Is / 它是什么
 
-ClipShelf is a clipboard shelf for macOS. It quietly keeps the things you copied, then appears from the bottom of the screen when you need to find one again.
+ClipShelf is a local clipboard history shelf for macOS. It records supported clipboard content, presents recent items in a compact bottom panel, and helps organize reusable material through Pinboards.
 
-ClipShelf 是一个 macOS 剪贴板内容架。它会安静记录你复制过的内容，并在需要时从屏幕底部轻轻展开，帮你快速找回刚刚用过的文本、链接、图片或文件。
+ClipShelf 是一款面向 macOS 的本地剪贴板历史内容架。它记录受支持的剪贴板内容，在底部紧凑面板中展示最近条目，并通过 Pinboard 管理需要长期复用的资料。
 
-It is not a heavy clipboard manager, not a dashboard, and not another window you have to manage. It feels more like a shelf attached to your desktop: quick to open, easy to scan, and gone when the job is done.
+The interface is designed to stay close to the current workflow: open it with a shortcut, scan recent content, preview the selected item, then return to the active app.
 
-它不是一个厚重的“管理后台”，也不是又一个需要管理的大窗口。它更像贴在桌面底部的一层轻量架子：呼出很快、扫读很快，用完就收起。
+界面设计目标是尽量贴近当前工作流：通过快捷键呼出，快速浏览最近内容，预览选中条目，然后回到当前应用继续工作。
 
 ## Why ClipShelf / 为什么需要它
 
-We copy things all day: a sentence from a chat, a link from the browser, a screenshot, a file, a small snippet we need again five minutes later. macOS only keeps the latest one. ClipShelf keeps the recent ones within reach.
+Modern work frequently moves small pieces of information between apps: text, links, color values, screenshots, files, and reference snippets. macOS keeps only the latest clipboard item by default; ClipShelf keeps recent items available for review and reuse.
 
-我们每天都在复制：聊天里的一句话、浏览器里的链接、一张截图、一个文件、几分钟后还要再用的小片段。macOS 默认只记住最后一次复制。ClipShelf 把最近复制过的东西都放在手边。
-
-![ClipShelf runtime shelf](docs/assets/marketing/clipshelf-runtime-panel.webp)
+现代工作流经常需要在多个应用之间转移小型信息单元：文本、链接、颜色值、截图、文件和参考片段。macOS 默认只保留最后一次复制内容；ClipShelf 将最近条目保留在可浏览、可预览、可复用的位置。
 
 ## What You Can Do / 你可以做什么
 
-- **Bring it up instantly / 随时呼出**<br>
+- **Open from anywhere / 全局呼出**<br>
   Press `Command + Shift + V` to open the shelf from the bottom of the screen.<br>
   按下 `Command + Shift + V`，从屏幕底部呼出内容架。
 
-- **Find recent copies fast / 快速找回刚复制过的内容**<br>
-  Browse recent items visually, or search when the list gets long.<br>
-  可以直接横向扫一眼，也可以在内容变多后搜索定位。
+- **Review recent content / 浏览最近内容**<br>
+  Browse recent items visually, or search when the list grows.<br>
+  通过横向卡片浏览最近条目，也可以在内容增多后使用搜索定位。
 
-- **Preview before using / 使用前先确认**<br>
-  Check text, links, images, and files before putting them back on the clipboard.<br>
-  在回贴之前先确认文本、链接、图片和文件，减少误选。
+- **Display typed clipboard items / 类型化展示**<br>
+  Text, rich text, links, colors, images, and files use dedicated card presentations.<br>
+  文本、富文本、链接、颜色、图片和文件会以对应的卡片样式展示，便于识别和确认。
 
-- **Keep important snippets / 固定常用内容**<br>
-  Pin reusable content so it does not get lost in everyday clipboard noise.<br>
-  把常用片段固定起来，不被日常临时复制内容淹没。
+- **Preview before reuse / 复用前预览**<br>
+  Check text, links, colors, images, and files before putting them back on the clipboard.<br>
+  在重新使用之前预览文本、链接、颜色、图片和文件，降低误选成本。
 
-- **Stay focused / 不打断当前工作**<br>
-  ClipShelf appears only when you call it and hides after you pick something.<br>
-  ClipShelf 只在你需要时出现，选完内容后自动退回幕后。
+- **Organize reusable material / 管理复用资料**<br>
+  Pin important content into Pinboards so it remains separate from transient clipboard activity.<br>
+  将重要内容固定到 Pinboard 中，使其与临时剪贴板记录区分管理。
+
+- **Return to work quickly / 快速回到工作流**<br>
+  ClipShelf is intended to appear only when needed and stay out of the way after selection.<br>
+  ClipShelf 只在需要时出现，并在完成选择后回到后台，减少对当前任务的干扰。
 
 ## A More Natural Clipboard / 更自然的剪贴板
 
-ClipShelf is designed for people who move between apps all day: writing, coding, researching, designing, chatting, collecting references, and reusing small pieces of information.
+ClipShelf is designed for users who frequently move information across writing, development, research, design, communication, and documentation workflows.
 
-ClipShelf 适合每天在多个应用之间来回切换的人：写作、开发、资料整理、设计、聊天、收集参考、复用零散信息。
+ClipShelf 适用于需要在写作、开发、研究、设计、沟通和文档整理之间频繁转移信息的用户。
 
-The goal is simple: make clipboard history feel like part of macOS, not a separate place you have to visit.
+The goal is to make clipboard history feel like a native extension of macOS rather than a separate management surface.
 
-目标很简单：让剪贴板历史像 macOS 的一部分，而不是另一个需要专门打开和整理的地方。
+目标是让剪贴板历史更像 macOS 的自然延伸，而不是一个需要额外维护的管理界面。
+
+## Preview And Pinboards / 预览与固定
+
+The main shelf keeps scope controls, search, Pinboard shortcuts, and typed content cards in a single horizontal workspace. Each supported content type has a dedicated presentation so users can identify what they copied before reusing it.
+
+主面板将范围控制、搜索、Pinboard 快捷入口和类型化内容卡片整合在同一条横向工作区中。每一种受支持的内容类型都有对应展示方式，用户可以在重新使用前确认复制内容。
+
+Preview is a first-class part of the workflow. Text and rich text stay readable inside cards, image items show the actual captured image, file items expose a document preview, colors render as swatches, and links can show fetched metadata from the target page. The GitHub card in the screenshot is backed by a ready Open Graph preview for `https://github.com/`.
+
+预览是核心工作流的一部分。文本和富文本会保持可读，图片条目展示真实图片，文件条目展示文档预览，颜色以色块呈现，链接可以显示来自目标页面的元数据。截图中的 GitHub 卡片使用的是 `https://github.com/` 的 ready 状态 Open Graph 预览。
+
+![ClipShelf preview popover](docs/assets/marketing/clipshelf-preview-screen-real.png)
+
+![ClipShelf pinboard filter](docs/assets/marketing/clipshelf-panel-pinboard-screen-real.png)
+
+Pinboards keep durable material separate from short-lived clipboard history. The shelf can switch directly into a Pinboard filter, making product notes, design references, release material, customer documents, or team knowledge available without searching through transient clipboard activity.
+
+Pinboard 将需要长期保留的资料与临时剪贴板历史分开管理。主面板可以直接切换到指定 Pinboard，例如产品资料、设计参考、发布说明、客户资料归档或团队知识库，而不需要在临时记录中反复搜索。
+
+Settings remain available for the supporting workflow: general behavior, privacy rules, keyboard shortcuts, and about information are split into focused pages, but they are secondary to the shelf, preview, and Pinboard experience.
+
+设置页用于支撑主流程：通用行为、隐私规则、键盘快捷键和关于信息分别放在聚焦页面中，但它们是内容架、预览和 Pinboard 体验的辅助部分。
 
 ## Privacy / 隐私
 
@@ -131,6 +155,38 @@ scripts/build-rust-core.sh
 swift build
 swift test
 ```
+
+### Screenshot Refresh / 更新截图
+
+```bash
+swift build
+.build/debug/ClipShelf --show-pinboard-ui overview --qa-screen 1 \
+  --qa-sample-image /Users/ying/Downloads/pexels-ing-do-2160128514-36552442.jpg &
+PANEL_PID=$!
+sleep 2
+screencapture -x -D 2 docs/assets/marketing/clipshelf-panel-overview-screen-real.png
+kill "$PANEL_PID"
+
+.build/debug/ClipShelf --show-pinboard-ui ai --qa-screen 1 \
+  --qa-sample-image /Users/ying/Downloads/pexels-ing-do-2160128514-36552442.jpg &
+PANEL_PID=$!
+sleep 2
+screencapture -x -D 2 docs/assets/marketing/clipshelf-panel-pinboard-screen-real.png
+kill "$PANEL_PID"
+
+.build/debug/ClipShelf --show-pinboard-ui preview --qa-screen 1 \
+  --qa-sample-image /Users/ying/Downloads/pexels-ing-do-2160128514-36552442.jpg &
+PANEL_PID=$!
+sleep 2
+screencapture -x -D 2 docs/assets/marketing/clipshelf-preview-screen-real.png
+kill "$PANEL_PID"
+```
+
+The panel screenshots use a real local image file, real repository files, and the live `https://github.com/` Open Graph preview. The `--qa-screen 1` flag places the QA window on the secondary display, while `screencapture -D 2` captures that full display. Settings screenshots can be refreshed with `--show-preferences-ui --preferences-section ... --qa-screen 1` if needed, but the README intentionally keeps settings as supporting context.
+
+### Documentation Record / 文档记录
+
+Updated on 2026-05-17 by Codex.
 
 ### Repository Map / 仓库结构
 

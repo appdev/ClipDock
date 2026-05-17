@@ -128,6 +128,29 @@ pub(super) fn normalize_relative_asset_path(value: &str) -> Result<String> {
     Ok(value.to_string())
 }
 
+pub(super) fn delete_relative_file(root: &Path, relative_path: &str) -> Result<Option<i64>> {
+    let relative_path = normalize_relative_asset_path(relative_path)?;
+    let path = root.join(relative_path);
+    let metadata = match fs::metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(CoreError::new(CoreErrorCode::IoFailed, error.to_string())
+                .with_detail("path", path.display().to_string()));
+        }
+    };
+
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+
+    fs::remove_file(&path).map_err(|error| {
+        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
+            .with_detail("path", path.display().to_string())
+    })?;
+    Ok(Some(metadata.len() as i64))
+}
+
 pub(super) fn unique_strings(values: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut unique_values = Vec::new();

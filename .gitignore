@@ -25,6 +25,7 @@ Generated/ClipboardCoreBridge/RustXcframework.xcframework/
 
 # Local Codex run outputs
 .codex/
+.playwright-mcp/
 verification.md
 
 # Local verification and test artifacts

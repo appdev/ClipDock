@@ -1,7 +1,7 @@
 use crate::domain::{
     ClipboardFileItemSummary, ClipboardItemSummary, ClipboardItemType, ItemManagementResult,
-    ItemPage, ItemQuery, LinkMetadataState, LinkMetadataSummary, PageRequest, PinboardPage,
-    PinboardSummary, PayloadState, PreviewState, SourceAppPage, SourceAppSummary, SourceConfidence,
+    ItemPage, ItemQuery, LinkMetadataState, LinkMetadataSummary, PageRequest, PayloadState,
+    PinboardPage, PinboardSummary, PreviewState, SourceAppPage, SourceAppSummary, SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;

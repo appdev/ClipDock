@@ -895,7 +895,9 @@ fn pending_image_error_result(code: &str) -> ffi::CorePendingImageResult {
     }
 }
 
-fn pending_image_core_error_result(error: clipboard_core::CoreError) -> ffi::CorePendingImageResult {
+fn pending_image_core_error_result(
+    error: clipboard_core::CoreError,
+) -> ffi::CorePendingImageResult {
     ffi::CorePendingImageResult {
         ok: false,
         result_json: "{}".to_string(),

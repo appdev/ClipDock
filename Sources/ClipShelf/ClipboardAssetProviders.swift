@@ -5,6 +5,23 @@ import ImageIO
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
+private enum ImagePropertyReader {
+    static func pixelDimension(_ value: Any?) -> CGFloat? {
+        switch value {
+        case let number as NSNumber:
+            return CGFloat(truncating: number)
+        case let value as CGFloat:
+            return value
+        case let value as Double:
+            return CGFloat(value)
+        case let value as Int:
+            return CGFloat(value)
+        default:
+            return nil
+        }
+    }
+}
+
 @MainActor
 protocol SourceAppIconCaching {
     func cacheIcon(for source: ClipboardCaptureSource?) -> String?
@@ -295,8 +312,8 @@ struct CapturedClipboardFiles: Sendable {
                 0,
                 options
               ) as? [CFString: Any],
-              let width = pixelDimension(properties[kCGImagePropertyPixelWidth]),
-              let height = pixelDimension(properties[kCGImagePropertyPixelHeight]),
+              let width = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelWidth]),
+              let height = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelHeight]),
               width > 0,
               height > 0
         else {
@@ -333,20 +350,6 @@ struct CapturedClipboardFiles: Sendable {
         return size
     }
 
-    private static func pixelDimension(_ value: Any?) -> CGFloat? {
-        switch value {
-        case let number as NSNumber:
-            return CGFloat(truncating: number)
-        case let value as CGFloat:
-            return value
-        case let value as Double:
-            return CGFloat(value)
-        case let value as Int:
-            return CGFloat(value)
-        default:
-            return nil
-        }
-    }
 }
 
 private struct ClipboardFileSnapshotDocument: Codable {
@@ -948,8 +951,8 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
                     0,
                     sourceOptions
                   ) as? [CFString: Any],
-                  let width = Self.pixelDimension(properties[kCGImagePropertyPixelWidth]),
-                  let height = Self.pixelDimension(properties[kCGImagePropertyPixelHeight]),
+                  let width = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelWidth]),
+                  let height = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelHeight]),
                   width > 0,
                   height > 0
             else {
@@ -1086,20 +1089,6 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         )
     }
 
-    private static func pixelDimension(_ value: Any?) -> CGFloat? {
-        switch value {
-        case let number as NSNumber:
-            return CGFloat(truncating: number)
-        case let value as CGFloat:
-            return value
-        case let value as Double:
-            return CGFloat(value)
-        case let value as Int:
-            return CGFloat(value)
-        default:
-            return nil
-        }
-    }
 }
 
 fileprivate struct ClipboardImageRepresentation {

@@ -9,6 +9,11 @@ private func runClipShelfApp() {
         Darwin.exit(0)
     }
 
+    if PreferencesRealUICommand.shouldRun(arguments: CommandLine.arguments) {
+        PreferencesRealUICommand.run(arguments: CommandLine.arguments)
+        Darwin.exit(0)
+    }
+
     if PanelInteractionSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
         do {
             try PanelInteractionSmokeCommand.run()

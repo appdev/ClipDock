@@ -61,6 +61,22 @@ final class PanelCardAssetResolver {
     static func previewImageLoadIsActiveForSmoke(_ token: PanelPreviewImageLoadToken) -> Bool {
         previewImageLoadTasks[token.callbackID] != nil
     }
+
+    static func primePreviewImageCacheForSmoke(paths: [String]) {
+        for path in paths {
+            let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedPath.isEmpty else { continue }
+            let key = trimmedPath as NSString
+            guard imageCache.object(forKey: key) == nil else { continue }
+            let url = URL(fileURLWithPath: trimmedPath)
+            let image = NSImage(contentsOf: url)
+                ?? ((try? Data(contentsOf: url)).flatMap(NSImage.init(data:)))
+            if let image {
+                imageCache.setObject(image, forKey: key)
+            }
+        }
+    }
+
     private static let sourceColorCache = NSCache<NSString, NSColor>()
     private static var sourceColorWriteInFlight: Set<SourceColorWriteKey> = []
     private static let sourceColorContext = CIContext(options: [

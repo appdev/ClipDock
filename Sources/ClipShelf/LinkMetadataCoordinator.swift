@@ -1,6 +1,6 @@
 import AppKit
 import ClipboardPanelApp
-import Foundation
+@preconcurrency import Foundation
 import ImageIO
 @preconcurrency import LinkPresentation
 import UniformTypeIdentifiers
@@ -271,12 +271,12 @@ private final class MetadataProviderBox: @unchecked Sendable {
 
     init(timeout: TimeInterval) {
         provider.timeout = timeout
-        provider.shouldFetchSubresources = true
+        provider.shouldFetchSubresources = false
     }
 
     func fetchPayload(url: URL) async throws -> LinkMetadataFetchPayload {
         try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+            try await withCheckedThrowingContinuation(isolation: nil) { continuation in
                 provider.startFetchingMetadata(for: url) { metadata, error in
                     if let error = error as NSError? {
                         continuation.resume(throwing: Self.fetchError(from: error))
@@ -289,46 +289,17 @@ private final class MetadataProviderBox: @unchecked Sendable {
                     let title = Self.nonEmpty(metadata.title)
                     let canonicalURL = metadata.url ?? url
                     let originalURL = metadata.originalURL
-                    let iconProvider = ItemProviderBox(metadata.iconProvider)
-                    let imageProvider = ItemProviderBox(metadata.imageProvider)
-                    Task {
-                        let iconData = await Self.loadImageData(from: iconProvider.provider)
-                        let previewData = await Self.loadImageData(from: imageProvider.provider)
-                        continuation.resume(returning: LinkMetadataFetchPayload(
-                            title: title,
-                            canonicalURL: canonicalURL,
-                            originalURL: originalURL,
-                            iconData: iconData,
-                            previewData: previewData
-                        ))
-                    }
+                    continuation.resume(returning: LinkMetadataFetchPayload(
+                        title: title,
+                        canonicalURL: canonicalURL,
+                        originalURL: originalURL,
+                        iconData: nil,
+                        previewData: nil
+                    ))
                 }
             }
         } onCancel: {
             provider.cancel()
-        }
-    }
-
-    private static func loadImageData(from provider: NSItemProvider?) async -> LinkMetadataImagePayload? {
-        guard let provider,
-              let typeIdentifier = provider.registeredTypeIdentifiers.first(where: { identifier in
-                UTType(identifier)?.conforms(to: .image) == true
-              })
-        else {
-            return nil
-        }
-
-        return await withCheckedContinuation { continuation in
-            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
-                guard let data, !data.isEmpty else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                continuation.resume(returning: LinkMetadataImagePayload(
-                    data: data,
-                    typeIdentifier: typeIdentifier
-                ))
-            }
         }
     }
 
@@ -353,14 +324,6 @@ private final class MetadataProviderBox: @unchecked Sendable {
         default:
             return .provider
         }
-    }
-}
-
-private struct ItemProviderBox: @unchecked Sendable {
-    let provider: NSItemProvider?
-
-    init(_ provider: NSItemProvider?) {
-        self.provider = provider
     }
 }
 

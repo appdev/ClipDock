@@ -9,7 +9,7 @@ use super::pending_images::{
     active_pending_image_staged_paths, mark_pending_jobs_deleted_for_items,
     purge_expired_pending_image_tombstones, terminal_pending_image_staged_paths,
 };
-use super::support::{normalize_relative_asset_path, unique_strings};
+use super::support::{delete_relative_file, unique_strings};
 use super::ClipboardCore;
 
 const UNKNOWN_STAGING_FILE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
@@ -178,29 +178,6 @@ impl ClipboardCore {
 
         Ok(paths.into_iter().collect())
     }
-}
-
-fn delete_relative_file(root: &Path, relative_path: &str) -> Result<Option<i64>> {
-    let relative_path = normalize_relative_asset_path(relative_path)?;
-    let path = root.join(relative_path);
-    let metadata = match fs::metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-                .with_detail("path", path.display().to_string()));
-        }
-    };
-
-    if !metadata.is_file() {
-        return Ok(None);
-    }
-
-    fs::remove_file(&path).map_err(|error| {
-        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-            .with_detail("path", path.display().to_string())
-    })?;
-    Ok(Some(metadata.len() as i64))
 }
 
 fn collect_maintenance_files(root: &Path) -> Result<Vec<String>> {

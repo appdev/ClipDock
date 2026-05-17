@@ -782,7 +782,7 @@ final class PanelItemCardRenderer {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let maximumPreviewSize = NSSize(width: metrics.defaultItemSide - 72, height: 76)
+        let maximumPreviewSize = NSSize(width: metrics.defaultItemSide - 72, height: 132)
         let filePreviewURLs = cardAssetResolver.filePreviewURLs(for: assetRequest)
         let imageView = FilePreviewImageView()
         imageView.image = cardAssetResolver.filePreviewImage(
@@ -821,7 +821,7 @@ final class PanelItemCardRenderer {
             imageView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             imageView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             widthConstraint,
-            imageView.heightAnchor.constraint(lessThanOrEqualToConstant: 76),
+            imageView.heightAnchor.constraint(lessThanOrEqualToConstant: 132),
             imageView.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
             imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 54)
         ])

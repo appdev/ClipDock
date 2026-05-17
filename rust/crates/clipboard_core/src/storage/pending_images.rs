@@ -1,7 +1,7 @@
 use crate::domain::{
-    CapturePendingImageRequest, CompletePendingImagePayloadRequest,
-    FailPendingImagePayloadRequest, ItemManagementResult, PendingImageCaptureResult,
-    PendingImageCompletionResult, RecoverPendingImagesRequest, SourceConfidence,
+    CapturePendingImageRequest, CompletePendingImagePayloadRequest, FailPendingImagePayloadRequest,
+    ItemManagementResult, PendingImageCaptureResult, PendingImageCompletionResult,
+    RecoverPendingImagesRequest, SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
@@ -9,12 +9,11 @@ use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 use std::fs;
 use std::path::Path;
 
-use super::capture::{
-    make_item_id, record_capture_event, update_search_index,
-};
+use super::capture::{make_item_id, record_capture_event, update_search_index};
 use super::source_apps::SourceAppInput;
 use super::support::{
-    hash_file, insert_asset, normalize_relative_asset_path, positive_dimension, stable_hash,
+    delete_relative_file, hash_file, insert_asset, normalize_relative_asset_path,
+    positive_dimension, stable_hash,
 };
 use super::ClipboardCore;
 
@@ -70,7 +69,10 @@ impl ClipboardCore {
             request.pasteboard_change_count
         ));
         let item_id = make_item_id(&content_hash);
-        let job_id = format!("pending_image_{}", &stable_hash(&format!("{item_id}:{now}"))[..24]);
+        let job_id = format!(
+            "pending_image_{}",
+            &stable_hash(&format!("{item_id}:{now}"))[..24]
+        );
         let summary = super::support::summarize_image(request.width, request.height);
         let source_app_id = self.upsert_source_app(
             SourceAppInput {
@@ -83,10 +85,8 @@ impl ClipboardCore {
         )?;
         let source_app_name = request.source_app_name.as_deref();
         let source_confidence = request.source_confidence;
-        let lease_duration_ms = normalized_duration(
-            request.lease_duration_ms,
-            DEFAULT_PENDING_IMAGE_LEASE_MS,
-        );
+        let lease_duration_ms =
+            normalized_duration(request.lease_duration_ms, DEFAULT_PENDING_IMAGE_LEASE_MS);
         let cleanup_duration_ms = normalized_duration(
             request.cleanup_after_duration_ms,
             DEFAULT_PENDING_IMAGE_CLEANUP_MS,
@@ -265,7 +265,8 @@ impl ClipboardCore {
         let payload_digest = hash_file(&staged_path)?;
         let content_hash = stable_hash(&format!("image:{payload_digest}"));
 
-        if let Some((duplicate_item_id, _)) = super::capture::find_existing_item(&transaction, &content_hash)?
+        if let Some((duplicate_item_id, _)) =
+            super::capture::find_existing_item(&transaction, &content_hash)?
         {
             merge_pending_image_into_duplicate(
                 &transaction,
@@ -735,9 +736,8 @@ fn active_pending_item_id(
     let Some(item_id) = job.item_id.as_deref() else {
         return Ok(None);
     };
-    let active = transaction
-        .query_row(
-            r#"
+    let active = transaction.query_row(
+        r#"
             SELECT EXISTS(
                 SELECT 1
                 FROM clipboard_items
@@ -746,10 +746,9 @@ fn active_pending_item_id(
                     AND payload_state = 'pending'
             )
             "#,
-            params![item_id],
-            |row| row.get::<_, i64>(0),
-        )?
-        == 1;
+        params![item_id],
+        |row| row.get::<_, i64>(0),
+    )? == 1;
     Ok(active.then(|| item_id.to_string()))
 }
 
@@ -905,25 +904,4 @@ fn normalized_duration(value: Option<i64>, default_value: i64) -> i64 {
     value
         .filter(|duration| *duration > 0)
         .unwrap_or(default_value)
-}
-
-fn delete_relative_file(root: &Path, relative_path: &str) -> Result<Option<i64>> {
-    let relative_path = normalize_relative_asset_path(relative_path)?;
-    let path = root.join(relative_path);
-    let metadata = match fs::metadata(&path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-                .with_detail("path", path.display().to_string()));
-        }
-    };
-    if !metadata.is_file() {
-        return Ok(None);
-    }
-    fs::remove_file(&path).map_err(|error| {
-        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-            .with_detail("path", path.display().to_string())
-    })?;
-    Ok(Some(metadata.len() as i64))
 }

@@ -3,21 +3,125 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 import ServiceManagement
 
-enum PanelSnapshotCommand {
-    private static let flag = "--render-panel-snapshot"
-    private static let selectedPinboardFlag = "--snapshot-selected-pinboard"
-
-    static func outputURL(arguments: [String]) -> URL? {
+private enum CommandLineArgumentReader {
+    static func value(after flag: String, in arguments: [String]) -> String? {
         guard let flagIndex = arguments.firstIndex(of: flag) else { return nil }
-        let nextIndex = arguments.index(after: flagIndex)
-        if arguments.indices.contains(nextIndex), !arguments[nextIndex].hasPrefix("--") {
-            return URL(fileURLWithPath: arguments[nextIndex])
+        let valueIndex = arguments.index(after: flagIndex)
+        guard arguments.indices.contains(valueIndex),
+              !arguments[valueIndex].hasPrefix("--")
+        else {
+            return nil
+        }
+        return arguments[valueIndex]
+    }
+
+    static func outputURL(
+        after flag: String,
+        in arguments: [String],
+        defaultArtifactFilename: String
+    ) -> URL? {
+        guard arguments.contains(flag) else { return nil }
+        if let path = value(after: flag, in: arguments) {
+            return URL(fileURLWithPath: path)
         }
 
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent(".codex", isDirectory: true)
             .appendingPathComponent("artifacts", isDirectory: true)
-            .appendingPathComponent("panel-runtime-snapshot.png")
+            .appendingPathComponent(defaultArtifactFilename)
+    }
+}
+
+private enum PreferencesCommandArguments {
+    static func section(arguments: [String], flag: String) -> PreferenceSection {
+        switch CommandLineArgumentReader.value(after: flag, in: arguments)?.lowercased() {
+        case "general", "appearance", "history":
+            return .general
+        case "shortcuts":
+            return .shortcuts
+        case "privacy", "rules":
+            return .rules
+        case "about":
+            return .about
+        default:
+            return .general
+        }
+    }
+
+    static func appearanceMode(arguments: [String], flag: String) -> String {
+        switch CommandLineArgumentReader.value(after: flag, in: arguments)?.lowercased() {
+        case "light":
+            return "light"
+        case "dark":
+            return "dark"
+        default:
+            return "system"
+        }
+    }
+}
+
+private enum CommandLineWindowPlacement {
+    private static let screenFlag = "--qa-screen"
+
+    @MainActor
+    static func frame(
+        arguments: [String],
+        defaultOrigin: NSPoint,
+        size: NSSize
+    ) -> NSRect {
+        let screenOrigin = screenFrame(arguments: arguments)?.origin ?? .zero
+        return NSRect(
+            x: screenOrigin.x + defaultOrigin.x,
+            y: screenOrigin.y + defaultOrigin.y,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    @MainActor
+    static func bottomPanelFrame(
+        arguments: [String],
+        preferredHeight: CGFloat
+    ) -> NSRect {
+        let targetScreenFrame = screenFrame(arguments: arguments)
+            ?? NSScreen.main?.frame
+            ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        return BottomPanelGeometryPlanner.frame(
+            screenFrame: targetScreenFrame,
+            preferredHeight: preferredHeight
+        )
+    }
+
+    @MainActor
+    private static func screenFrame(arguments: [String]) -> NSRect? {
+        guard let value = CommandLineArgumentReader.value(after: screenFlag, in: arguments),
+              let index = Int(value),
+              NSScreen.screens.indices.contains(index)
+        else {
+            return nil
+        }
+        return NSScreen.screens[index].frame
+    }
+}
+
+private struct CommandLineQAError: LocalizedError {
+    let message: String
+
+    var errorDescription: String? {
+        message
+    }
+}
+
+enum PanelSnapshotCommand {
+    private static let flag = "--render-panel-snapshot"
+    private static let selectedPinboardFlag = "--snapshot-selected-pinboard"
+
+    static func outputURL(arguments: [String]) -> URL? {
+        CommandLineArgumentReader.outputURL(
+            after: flag,
+            in: arguments,
+            defaultArtifactFilename: "panel-runtime-snapshot.png"
+        )
     }
 
     @MainActor
@@ -29,7 +133,7 @@ enum PanelSnapshotCommand {
            let pinboardButton = view.smokePinboardFilterButton(pinboardID: selectedPinboardID) {
             pinboardButton.onPress?()
         }
-        let previewURL = try PanelQASamples.makePanelSnapshotPreviewImageURL(outputDirectory: outputURL.deletingLastPathComponent())
+        let previewURL = try PanelQASamples.makeRealSampleImageURL()
         let chromeIconURL = try PanelQASamples.makePanelSnapshotChromeIconURL(outputDirectory: outputURL.deletingLastPathComponent())
         let sampleItems = PanelQASamples.makePanelSnapshotItems(
             imagePath: previewURL.path,
@@ -63,19 +167,14 @@ enum PanelSnapshotCommand {
     }
 
     private static func selectedPinboardID(arguments: [String]) -> String? {
-        guard let flagIndex = arguments.firstIndex(of: selectedPinboardFlag) else { return nil }
-        let nextIndex = arguments.index(after: flagIndex)
-        guard arguments.indices.contains(nextIndex), !arguments[nextIndex].hasPrefix("--") else {
-            return nil
-        }
-        return arguments[nextIndex]
+        CommandLineArgumentReader.value(after: selectedPinboardFlag, in: arguments)
     }
 
     private static var snapshotPinboards: [RustPinboardSummary] {
         [
             RustPinboardSummary(
                 id: "ai",
-                title: "AI",
+                title: "产品资料",
                 colorCode: 4_293_940_557,
                 sortOrder: 1,
                 itemCount: 0,
@@ -84,7 +183,7 @@ enum PanelSnapshotCommand {
             ),
             RustPinboardSummary(
                 id: "untitled",
-                title: "未命名",
+                title: "设计参考",
                 colorCode: 4_293_088_528,
                 sortOrder: 2,
                 itemCount: 0,
@@ -93,7 +192,7 @@ enum PanelSnapshotCommand {
             ),
             RustPinboardSummary(
                 id: "name",
-                title: "Name",
+                title: "发布说明",
                 colorCode: 4_290_925_536,
                 sortOrder: 3,
                 itemCount: 0,
@@ -102,7 +201,7 @@ enum PanelSnapshotCommand {
             ),
             RustPinboardSummary(
                 id: "blue-name",
-                title: "一个很长的 Pinboard 名称用于验证 chip 不截断",
+                title: "客户资料归档",
                 colorCode: 4_283_973_119,
                 sortOrder: 4,
                 itemCount: 0,
@@ -139,16 +238,11 @@ enum PreferencesSnapshotCommand {
     private static let appearanceFlag = "--preferences-appearance"
 
     static func outputURL(arguments: [String]) -> URL? {
-        guard let flagIndex = arguments.firstIndex(of: flag) else { return nil }
-        let nextIndex = arguments.index(after: flagIndex)
-        if arguments.indices.contains(nextIndex), !arguments[nextIndex].hasPrefix("--") {
-            return URL(fileURLWithPath: arguments[nextIndex])
-        }
-
-        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".codex", isDirectory: true)
-            .appendingPathComponent("artifacts", isDirectory: true)
-            .appendingPathComponent("preferences-runtime-snapshot.png")
+        CommandLineArgumentReader.outputURL(
+            after: flag,
+            in: arguments,
+            defaultArtifactFilename: "preferences-runtime-snapshot.png"
+        )
     }
 
     @MainActor
@@ -157,7 +251,10 @@ enum PreferencesSnapshotCommand {
         var preferences = RustPreferencesDocument()
         preferences.general.launchAtLogin = true
         preferences.general.defaultPanelHeight = 360
-        preferences.appearance.mode = appearanceMode(arguments: arguments)
+        preferences.appearance.mode = PreferencesCommandArguments.appearanceMode(
+            arguments: arguments,
+            flag: appearanceFlag
+        )
         preferences.ignoreList.ignoredAppIdentifiers = [
             "com.apple.Terminal",
             "Xcode"
@@ -169,7 +266,7 @@ enum PreferencesSnapshotCommand {
 
         ClipShelfTheme.applyAppearanceMode(preferences.appearance.mode)
         controller.updatePreferences(preferences)
-        controller.showSection(section(arguments: arguments))
+        controller.showSection(PreferencesCommandArguments.section(arguments: arguments, flag: sectionFlag))
         controller.updateLaunchAtLoginState(
             LaunchAtLoginState(
                 isOn: true,
@@ -199,44 +296,6 @@ enum PreferencesSnapshotCommand {
         rootView.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.12))
         try ViewSnapshotRenderer.render(view: rootView, to: outputURL)
-    }
-
-    private static func section(arguments: [String]) -> PreferenceSection {
-        guard let flagIndex = arguments.firstIndex(of: sectionFlag) else { return .general }
-        let valueIndex = arguments.index(after: flagIndex)
-        guard arguments.indices.contains(valueIndex) else { return .general }
-
-        switch arguments[valueIndex].lowercased() {
-        case "general":
-            return .general
-        case "appearance":
-            return .general
-        case "history":
-            return .general
-        case "shortcuts":
-            return .shortcuts
-        case "privacy", "rules":
-            return .rules
-        case "about":
-            return .about
-        default:
-            return .general
-        }
-    }
-
-    private static func appearanceMode(arguments: [String]) -> String {
-        guard let flagIndex = arguments.firstIndex(of: appearanceFlag) else { return "system" }
-        let valueIndex = arguments.index(after: flagIndex)
-        guard arguments.indices.contains(valueIndex) else { return "system" }
-
-        switch arguments[valueIndex].lowercased() {
-        case "light":
-            return "light"
-        case "dark":
-            return "dark"
-        default:
-            return "system"
-        }
     }
 
 }
@@ -280,6 +339,82 @@ enum PreferencesSmokeCommand {
 
         controller.exerciseForSmoke()
     }
+}
+
+enum PreferencesRealUICommand {
+    private static let flag = "--show-preferences-ui"
+    private static let sectionFlag = "--preferences-section"
+    private static let appearanceFlag = "--preferences-appearance"
+    @MainActor
+    private static var qaController: PreferencesWindowController?
+
+    static func shouldRun(arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
+
+    @MainActor
+    static func run(arguments: [String] = CommandLine.arguments) {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+        app.activate(ignoringOtherApps: true)
+
+        var preferences = RustPreferencesDocument()
+        preferences.general.launchAtLogin = true
+        preferences.general.showMenuBarItem = true
+        preferences.general.defaultPanelHeight = 360
+        preferences.appearance.mode = PreferencesCommandArguments.appearanceMode(
+            arguments: arguments,
+            flag: appearanceFlag
+        )
+        preferences.appearance.previewPopoverEnabled = true
+        preferences.ignoreList.ignoredAppIdentifiers = [
+            "com.apple.Terminal",
+            "com.apple.dt.Xcode"
+        ]
+        preferences.ignoreList.windowTitleKeywords = [
+            "验证码",
+            "Private"
+        ]
+
+        ClipShelfTheme.applyAppearanceMode(preferences.appearance.mode)
+
+        let controller = PreferencesWindowController()
+        controller.updatePreferences(preferences)
+        controller.showSection(PreferencesCommandArguments.section(arguments: arguments, flag: sectionFlag))
+        controller.updateLaunchAtLoginState(
+            LaunchAtLoginState(
+                isOn: true,
+                canChange: true,
+                detail: "已开启"
+            )
+        )
+        controller.updateAccessibilityPermissionState(
+            AccessibilityPermissionState(
+                isTrusted: true,
+                detail: "已允许读取当前窗口标题",
+                actionTitle: "打开系统设置",
+                canOpenSettings: true
+            )
+        )
+        controller.showPreferences()
+
+        if let window = controller.window {
+            window.setFrame(
+                CommandLineWindowPlacement.frame(
+                    arguments: arguments,
+                    defaultOrigin: NSPoint(x: 500, y: 170),
+                    size: NSSize(width: 920, height: 700)
+                ),
+                display: true
+            )
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+        }
+
+        qaController = controller
+        RunLoop.main.run()
+    }
+
 }
 
 enum PanelInteractionSmokeCommand {
@@ -333,7 +468,7 @@ enum LinkPreviewSmokeCommand {
         PanelQAHarness.drainMainRunLoop()
 
         guard !contentView.smokeCardsContainWebView() else {
-            throw QAError(message: "链接卡片层不应包含 WKWebView")
+            throw CommandLineQAError(message: "链接卡片层不应包含 WKWebView")
         }
 
         PanelQAHarness.sendSpace(to: contentView)
@@ -341,23 +476,23 @@ enum LinkPreviewSmokeCommand {
         guard contentView.smokeIsPreviewShown,
               contentView.smokePreviewContainsWebView()
         else {
-            throw QAError(message: "链接完整预览未创建 WKWebView")
+            throw CommandLineQAError(message: "链接完整预览未创建 WKWebView")
         }
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
         guard let previewWebViewURL = contentView.smokePreviewWebViewURLString(),
               urlsMatchForSmoke(previewWebViewURL, linkURL)
         else {
-            throw QAError(message: "链接完整预览未加载指定 URL")
+            throw CommandLineQAError(message: "链接完整预览未加载指定 URL")
         }
 
         guard contentView.smokeClosePreviewWithSpaceFromPopoverFocus() else {
-            throw QAError(message: "链接预览无法通过 Space 关闭")
+            throw CommandLineQAError(message: "链接预览无法通过 Space 关闭")
         }
         PanelQAHarness.drainMainRunLoop()
         guard !contentView.smokeIsPreviewShown,
               !contentView.smokePreviewContainsWebView()
         else {
-            throw QAError(message: "链接预览关闭后 WKWebView 未从视图树释放")
+            throw CommandLineQAError(message: "链接预览关闭后 WKWebView 未从视图树释放")
         }
 
         controller.hide()
@@ -381,7 +516,7 @@ enum LinkPreviewSmokeCommand {
               scheme == "http" || scheme == "https",
               url.host?.isEmpty == false
         else {
-            throw QAError(message: "链接预览 URL 参数无效")
+            throw CommandLineQAError(message: "链接预览 URL 参数无效")
         }
 
         return url
@@ -432,13 +567,6 @@ enum LinkPreviewSmokeCommand {
         return components?.url?.absoluteString ?? url.absoluteString
     }
 
-    private struct QAError: LocalizedError {
-        let message: String
-
-        var errorDescription: String? {
-            message
-        }
-    }
 }
 
 enum PanelReconcileBenchmarkCommand {
@@ -532,13 +660,11 @@ enum PanelReconcileBenchmarkCommand {
     }
 
     private static func parsedItemCount(arguments: [String]) throws -> Int {
-        guard let flagIndex = arguments.firstIndex(of: itemsFlag) else { return 500 }
-        let valueIndex = arguments.index(after: flagIndex)
-        guard arguments.indices.contains(valueIndex),
-              let count = Int(arguments[valueIndex]),
+        guard let value = CommandLineArgumentReader.value(after: itemsFlag, in: arguments) else { return 500 }
+        guard let count = Int(value),
               count > 0
         else {
-            throw QAError(message: "--items 参数必须是正整数")
+            throw CommandLineQAError(message: "--items 参数必须是正整数")
         }
         return count
     }
@@ -707,13 +833,6 @@ enum PanelReconcileBenchmarkCommand {
         let scrollEdgeOverlaysEnabled: Bool
     }
 
-    private struct QAError: LocalizedError {
-        let message: String
-
-        var errorDescription: String? {
-            message
-        }
-    }
 }
 
 enum RealFunctionQACommand {
@@ -749,9 +868,12 @@ enum ContextMenuRealQACommand {
             .appendingPathComponent("panel-interaction-smoke", isDirectory: true)
         try FileManager.default.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
 
-        let imageURL = try PanelQASamples.makePanelInteractionSmokeImageURL(outputDirectory: appSupportURL)
+        let imageURL = try PanelQASamples.makeRealSampleImageURL()
         let sampleItems = PanelQASamples.makePanelInteractionItems(imagePath: imageURL.path)
-        let frame = NSRect(x: 46, y: 120, width: 1840, height: 330)
+        let frame = CommandLineWindowPlacement.bottomPanelFrame(
+            arguments: CommandLine.arguments,
+            preferredHeight: 330
+        )
         let contentView = FloatingPanelContentView(frame: frame)
         contentView.updateListState(
             .success(RustCoreListResult(
@@ -776,7 +898,7 @@ enum ContextMenuRealQACommand {
         window.makeKeyAndOrderFront(nil)
         contentView.layoutSubtreeIfNeeded()
         guard let card = contentView.smokeCardBoxes().first else {
-            throw QAError(message: "未找到可展示右键菜单的条目")
+            throw CommandLineQAError(message: "未找到可展示右键菜单的条目")
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
@@ -800,17 +922,11 @@ enum ContextMenuRealQACommand {
         RunLoop.main.run()
     }
 
-    private struct QAError: LocalizedError {
-        let message: String
-
-        var errorDescription: String? {
-            message
-        }
-    }
 }
 
 enum PinboardRealQACommand {
     private static let flag = "--show-pinboard-ui"
+    private static let sampleImageFlag = "--qa-sample-image"
     @MainActor
     private static var qaWindow: NSWindow?
     @MainActor
@@ -832,10 +948,35 @@ enum PinboardRealQACommand {
             .appendingPathComponent("pinboard-real-qa", isDirectory: true)
         try FileManager.default.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
 
-        let imageURL = try PanelQASamples.makePanelInteractionSmokeImageURL(outputDirectory: appSupportURL)
-        let sampleItems = PanelQASamples.makePanelInteractionItems(imagePath: imageURL.path)
-        let frame = NSRect(x: 46, y: 120, width: 1840, height: 330)
+        let imageURL = try PanelQASamples.validatedRealSampleImageURL(
+            path: CommandLineArgumentReader.value(after: sampleImageFlag, in: arguments)
+        )
+        let imagePreviewURL = try PanelQASamples.makeCardFillingImagePreviewURL(
+            sourceURL: imageURL,
+            appSupportURL: appSupportURL
+        )
+        let filePreviewURL = try PanelQASamples.makeRealDocumentPreviewURL(
+            filePaths: PanelQASamples.realSampleFilePaths(),
+            appSupportURL: appSupportURL
+        )
+        let githubAssets = try PanelQASamples.prepareRealGitHubSampleAssets(appSupportURL: appSupportURL)
+        PanelCardAssetResolver.primePreviewImageCacheForSmoke(paths: [
+            imagePreviewURL.path,
+            filePreviewURL.path,
+            githubAssets.linkMetadata.imageAssetPath
+        ].compactMap { $0 })
+        let sampleItems = PanelQASamples.makePanelInteractionItems(
+            imagePath: imagePreviewURL.path,
+            imagePayloadPath: imageURL.path,
+            filePreviewPath: filePreviewURL.path,
+            linkMetadata: githubAssets.linkMetadata
+        )
+        let frame = CommandLineWindowPlacement.bottomPanelFrame(
+            arguments: arguments,
+            preferredHeight: 330
+        )
         let contentView = FloatingPanelContentView(frame: frame)
+        contentView.updateAppSupportDirectory(appSupportURL)
         contentView.updatePinboards(samplePinboards)
         contentView.updateListState(
             .success(RustCoreListResult(
@@ -863,8 +1004,28 @@ enum PinboardRealQACommand {
         contentView.layoutSubtreeIfNeeded()
 
         let mode = mode(arguments: arguments)
-        let targetPinboardID = "untitled-new"
-        contentView.smokePinboardFilterButton(pinboardID: targetPinboardID)?.onPress?()
+        let targetPinboardID = mode == "ai" ? "ai" : "untitled-new"
+        if mode == "overview" || mode == "preview" {
+            contentView.updateListState(
+                .success(RustCoreListResult(
+                    items: sampleItems,
+                    totalCount: Int64(sampleItems.count),
+                    hasMore: false
+                )),
+                isFiltered: false
+            )
+            contentView.layoutSubtreeIfNeeded()
+        } else {
+            contentView.smokePinboardFilterButton(pinboardID: targetPinboardID)?.onPress?()
+            contentView.updateListState(
+                .success(RustCoreListResult(
+                    items: sampleItems,
+                    totalCount: Int64(sampleItems.count),
+                    hasMore: false
+                )),
+                isFiltered: true
+            )
+        }
 
         switch mode {
         case "rename", "toolbar", "rename-long":
@@ -882,28 +1043,32 @@ enum PinboardRealQACommand {
                 _ = contentView.smokeShowPinboardChipMenu(pinboardID: targetPinboardID)
             case "delete":
                 _ = contentView.smokeShowPinboardDeleteConfirmationForScreenshot(pinboardID: targetPinboardID)
+            case "preview":
+                contentView.smokeSelectItem(id: "panel-smoke-image", scrollIntoView: false)
+                contentView.layoutSubtreeIfNeeded()
+                PanelQAHarness.sendSpace(to: contentView)
             default:
                 break
             }
         }
 
+        runMainLoop()
+    }
+
+    @MainActor
+    private static func runMainLoop() {
         RunLoop.main.run()
     }
 
     private static func mode(arguments: [String]) -> String {
-        guard let flagIndex = arguments.firstIndex(of: flag) else { return "toolbar" }
-        let nextIndex = arguments.index(after: flagIndex)
-        guard arguments.indices.contains(nextIndex), !arguments[nextIndex].hasPrefix("--") else {
-            return "toolbar"
-        }
-        return arguments[nextIndex]
+        CommandLineArgumentReader.value(after: flag, in: arguments) ?? "toolbar"
     }
 
     private static var samplePinboards: [RustPinboardSummary] {
         [
             RustPinboardSummary(
                 id: "ai",
-                title: "AI",
+                title: "产品资料",
                 colorCode: 4_293_940_557,
                 sortOrder: 1,
                 itemCount: 0,
@@ -912,7 +1077,7 @@ enum PinboardRealQACommand {
             ),
             RustPinboardSummary(
                 id: "untitled",
-                title: "未命名",
+                title: "设计参考",
                 colorCode: 4_294_620_928,
                 sortOrder: 2,
                 itemCount: 0,
@@ -921,7 +1086,7 @@ enum PinboardRealQACommand {
             ),
             RustPinboardSummary(
                 id: "name",
-                title: "Name",
+                title: "发布说明",
                 colorCode: 4_290_925_536,
                 sortOrder: 3,
                 itemCount: 0,
@@ -930,7 +1095,7 @@ enum PinboardRealQACommand {
             ),
             RustPinboardSummary(
                 id: "blue-name",
-                title: "一个很长的 Pinboard 名称用于验证 chip 不截断",
+                title: "客户资料归档",
                 colorCode: 4_283_973_119,
                 sortOrder: 4,
                 itemCount: 0,
@@ -939,7 +1104,7 @@ enum PinboardRealQACommand {
             ),
             RustPinboardSummary(
                 id: "untitled-new",
-                title: "未命名",
+                title: "团队知识库",
                 colorCode: 4_279_606_035,
                 sortOrder: 5,
                 itemCount: 1,
@@ -949,13 +1114,6 @@ enum PinboardRealQACommand {
         ]
     }
 
-    private struct QAError: LocalizedError {
-        let message: String
-
-        var errorDescription: String? {
-            message
-        }
-    }
 }
 
 enum PreviewRealQACommand {

@@ -3,6 +3,230 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 
 enum PanelQASamples {
+    struct RealGitHubSampleAssets {
+        let imageURL: URL
+        let linkMetadata: RustLinkMetadataSummary
+    }
+
+    private struct OpenGraphMetadata {
+        let title: String
+        let imageURL: URL
+    }
+
+    static func makeRealSampleImageURL() throws -> URL {
+        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png") {
+            return url
+        }
+
+        let fallbackURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/ClipShelf/Resources/AppIcon.png")
+        guard FileManager.default.fileExists(atPath: fallbackURL.path) else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        return fallbackURL
+    }
+
+    static func validatedRealSampleImageURL(path: String?) throws -> URL {
+        guard let path,
+              !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            throw PreviewQAError(message: "真实截图需要通过 --qa-sample-image 指定图片文件")
+        }
+
+        let url = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              NSImage(contentsOf: url) != nil
+        else {
+            throw PreviewQAError(message: "指定的真实图片文件不可读取：\(url.path)")
+        }
+        return url
+    }
+
+    static func makeCardFillingImagePreviewURL(sourceURL: URL, appSupportURL: URL) throws -> URL {
+        guard let sourceImage = NSImage(contentsOf: sourceURL),
+              let representation = sourceImage.representations
+                .compactMap({ $0 as? NSBitmapImageRep })
+                .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) })
+        else {
+            throw PreviewQAError(message: "无法读取真实图片预览：\(sourceURL.path)")
+        }
+
+        let targetPixelWidth = 1000
+        let targetPixelHeight = 800
+        let sourceWidth = CGFloat(representation.pixelsWide)
+        let sourceHeight = CGFloat(representation.pixelsHigh)
+        let targetAspect = CGFloat(targetPixelWidth) / CGFloat(targetPixelHeight)
+        let sourceAspect = sourceWidth / sourceHeight
+        let cropSize: NSSize
+        if sourceAspect > targetAspect {
+            cropSize = NSSize(width: floor(sourceHeight * targetAspect), height: sourceHeight)
+        } else {
+            cropSize = NSSize(width: sourceWidth, height: floor(sourceWidth / targetAspect))
+        }
+        let cropRect = NSRect(
+            x: floor((sourceWidth - cropSize.width) / 2),
+            y: floor((sourceHeight - cropSize.height) / 2),
+            width: cropSize.width,
+            height: cropSize.height
+        )
+
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: targetPixelWidth,
+            pixelsHigh: targetPixelHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bitmapFormat: [.alphaFirst],
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            throw PreviewQAError(message: "无法创建真实图片预览缓存")
+        }
+        bitmap.size = NSSize(width: targetPixelWidth, height: targetPixelHeight)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        NSColor.black.setFill()
+        NSRect(x: 0, y: 0, width: targetPixelWidth, height: targetPixelHeight).fill()
+        sourceImage.draw(
+            in: NSRect(x: 0, y: 0, width: targetPixelWidth, height: targetPixelHeight),
+            from: cropRect,
+            operation: .copy,
+            fraction: 1,
+            respectFlipped: false,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.92]) else {
+            throw PreviewQAError(message: "无法写入真实图片预览缓存")
+        }
+
+        let samplesDirectory = appSupportURL.appendingPathComponent("real-samples", isDirectory: true)
+        try FileManager.default.createDirectory(at: samplesDirectory, withIntermediateDirectories: true)
+        let outputURL = samplesDirectory.appendingPathComponent("pexels-card-preview.jpg")
+        try data.write(to: outputURL, options: .atomic)
+        return outputURL
+    }
+
+    static func makeRealDocumentPreviewURL(filePaths: [String], appSupportURL: URL) throws -> URL {
+        let existingFiles = filePaths
+            .map { URL(fileURLWithPath: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !existingFiles.isEmpty else {
+            throw PreviewQAError(message: "无法读取真实文档文件")
+        }
+
+        let canvasSize = NSSize(width: 720, height: 520)
+        let image = NSImage(size: canvasSize)
+        image.lockFocus()
+        NSColor(calibratedWhite: 0.98, alpha: 1).setFill()
+        NSRect(origin: .zero, size: canvasSize).fill()
+
+        NSColor(calibratedWhite: 0.88, alpha: 1).setStroke()
+        let pagePath = NSBezierPath(roundedRect: NSRect(x: 48, y: 36, width: 624, height: 448), xRadius: 18, yRadius: 18)
+        pagePath.lineWidth = 2
+        pagePath.stroke()
+
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 34, weight: .bold),
+            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+        ]
+        let metaAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 18, weight: .medium),
+            .foregroundColor: NSColor(calibratedWhite: 0.40, alpha: 1)
+        ]
+        let bodyAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 19, weight: .regular),
+            .foregroundColor: NSColor(calibratedWhite: 0.24, alpha: 1)
+        ]
+
+        let primaryFile = existingFiles[0]
+        let title = primaryFile.lastPathComponent as NSString
+        title.draw(at: NSPoint(x: 78, y: 424), withAttributes: titleAttributes)
+
+        let relativeNames = existingFiles
+            .map { url in
+                let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).path
+                return url.path.replacingOccurrences(of: "\(cwd)/", with: "")
+            }
+            .joined(separator: "  +  ")
+        (relativeNames as NSString).draw(at: NSPoint(x: 80, y: 386), withAttributes: metaAttributes)
+
+        let body = try existingFiles
+            .prefix(2)
+            .map { url -> String in
+                let text = try String(contentsOf: url, encoding: .utf8)
+                let normalized = text
+                    .split(separator: "\n", omittingEmptySubsequences: false)
+                    .prefix(12)
+                    .joined(separator: "\n")
+                return normalized
+            }
+            .joined(separator: "\n\n")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineSpacing = 4
+        var bodyDrawAttributes = bodyAttributes
+        bodyDrawAttributes[.paragraphStyle] = paragraph
+        (body as NSString).draw(
+            with: NSRect(x: 80, y: 84, width: 560, height: 274),
+            options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+            attributes: bodyDrawAttributes
+        )
+        image.unlockFocus()
+
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let data = bitmap.representation(using: .png, properties: [:])
+        else {
+            throw PreviewQAError(message: "无法生成真实文档预览缓存")
+        }
+
+        let samplesDirectory = appSupportURL.appendingPathComponent("real-samples", isDirectory: true)
+        try FileManager.default.createDirectory(at: samplesDirectory, withIntermediateDirectories: true)
+        let outputURL = samplesDirectory.appendingPathComponent("repository-documents-preview.png")
+        try data.write(to: outputURL, options: .atomic)
+        return outputURL
+    }
+
+    static func realSampleFilePaths() -> [String] {
+        let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        return [
+            rootURL.appendingPathComponent("README.md").path,
+            rootURL.appendingPathComponent("docs/architecture.md").path
+        ]
+    }
+
+    static func prepareRealGitHubSampleAssets(appSupportURL: URL) throws -> RealGitHubSampleAssets {
+        let githubURL = URL(string: "https://github.com/")!
+        let samplesDirectory = appSupportURL.appendingPathComponent("real-samples", isDirectory: true)
+        try FileManager.default.createDirectory(at: samplesDirectory, withIntermediateDirectories: true)
+
+        let openGraph = try fetchOpenGraphMetadata(from: githubURL)
+        let imageURL = try downloadImage(
+            from: openGraph.imageURL,
+            to: samplesDirectory.appendingPathComponent("github-homepage-preview.png")
+        )
+        let fetchedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let metadata = RustLinkMetadataSummary(
+            canonicalURL: githubURL.absoluteString,
+            displayURL: "github.com",
+            host: "github.com",
+            title: openGraph.title,
+            siteName: "GitHub",
+            imageAssetPath: imageURL.path,
+            metadataState: "ready",
+            fetchedAtMs: fetchedAtMs
+        )
+        return RealGitHubSampleAssets(imageURL: imageURL, linkMetadata: metadata)
+    }
+
     @MainActor
     static func makePanelSnapshotPreviewImageURL(outputDirectory: URL) throws -> URL {
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -88,12 +312,14 @@ enum PanelQASamples {
         return url
     }
 
-    static func makePanelSnapshotItems(imagePath: String, chromeIconPath: String? = nil) -> [RustClipboardItemSummary] {
+    static func makePanelSnapshotItems(
+        imagePath: String,
+        chromeIconPath: String? = nil,
+        linkMetadata: RustLinkMetadataSummary? = nil
+    ) -> [RustClipboardItemSummary] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let htmlText = """
-        <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/react/react-original.svg" height="40" alt="react logo" />
-          <img width="12" />
-          <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/android/android-original.svg" height="40" alt="android logo" />
+        ClipShelf maintains a local clipboard history for macOS, with fast review, reuse, and organization directly from the shelf.
         """
         return [
             makeItem(
@@ -109,12 +335,32 @@ enum PanelQASamples {
                 sizeBytes: Int64(htmlText.utf8.count)
             ),
             makeItem(
+                id: "snapshot-color",
+                itemType: "color",
+                summary: "#FF00AA",
+                primaryText: "#FF00AA",
+                sourceAppName: "Figma",
+                timestamp: now - 120_000,
+                contentHash: "snapshot-snapshot-color",
+                sizeBytes: 7
+            ),
+            makeItem(
+                id: "snapshot-rich-text",
+                itemType: "rich_text",
+                summary: "产品说明\n• 本地剪贴板历史\n• Pinboard 分类管理\n• 快速预览与回贴",
+                primaryText: "产品说明\n• 本地剪贴板历史\n• Pinboard 分类管理\n• 快速预览与回贴",
+                sourceAppName: "Xcode",
+                timestamp: now - 240_000,
+                contentHash: "snapshot-snapshot-rich-text",
+                sizeBytes: 64
+            ),
+            makeItem(
                 id: "snapshot-image",
                 itemType: "image",
-                summary: "图片 420 x 260",
+                summary: "ClipShelf AppIcon",
                 primaryText: nil,
                 sourceAppName: "预览",
-                timestamp: now - 120_000,
+                timestamp: now - 360_000,
                 contentHash: "snapshot-snapshot-image",
                 previewAssetPath: imagePath,
                 payloadAssetPath: imagePath,
@@ -123,10 +369,10 @@ enum PanelQASamples {
             makeItem(
                 id: "snapshot-file",
                 itemType: "file",
-                summary: "report.pdf",
-                primaryText: "/Users/evan/Downloads/report.pdf",
+                summary: "README.md",
+                primaryText: realSampleFilePaths().joined(separator: "\n"),
                 sourceAppName: "Finder",
-                timestamp: now - 240_000,
+                timestamp: now - 1_620_000,
                 contentHash: "snapshot-snapshot-file",
                 sizeBytes: 2048
             ),
@@ -136,29 +382,10 @@ enum PanelQASamples {
                 summary: "github.com",
                 primaryText: "https://github.com/",
                 sourceAppName: "Safari",
-                timestamp: now - 360_000,
-                contentHash: "snapshot-snapshot-link",
-                sizeBytes: 56
-            ),
-            makeItem(
-                id: "snapshot-terminal",
-                itemType: "text",
-                summary: "git push --set-upstream origin main",
-                primaryText: "git push --set-upstream origin main",
-                sourceAppName: "终端",
-                timestamp: now - 1_620_000,
-                contentHash: "snapshot-snapshot-terminal",
-                sizeBytes: 35
-            ),
-            makeItem(
-                id: "snapshot-hash",
-                itemType: "text",
-                summary: "f7543c5e99",
-                primaryText: "f7543c5e99",
-                sourceAppName: "Xcode",
                 timestamp: now - 50_400_000,
-                contentHash: "snapshot-snapshot-hash",
-                sizeBytes: 10
+                contentHash: "snapshot-snapshot-link",
+                linkMetadata: linkMetadata,
+                sizeBytes: 19
             )
         ]
     }
@@ -187,39 +414,45 @@ enum PanelQASamples {
         return url
     }
 
-    static func makePanelInteractionItems(imagePath: String) -> [RustClipboardItemSummary] {
+    static func makePanelInteractionItems(
+        imagePath: String,
+        imagePayloadPath: String? = nil,
+        filePreviewPath: String? = nil,
+        linkMetadata: RustLinkMetadataSummary? = nil
+    ) -> [RustClipboardItemSummary] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         var items = [
             makeItem(
                 id: "panel-smoke-text",
                 itemType: "text",
-                summary: "真实窗口交互 smoke 文本",
-                primaryText: "真实窗口交互 smoke 文本",
+                summary: "ClipShelf 提供本地剪贴板历史、快速预览与 Pinboard 分类管理，适合高频跨应用工作流。",
+                primaryText: "ClipShelf 提供本地剪贴板历史、快速预览与 Pinboard 分类管理，适合高频跨应用工作流。",
                 sourceAppName: "备忘录",
                 timestamp: now,
                 contentHash: "panel-smoke-panel-smoke-text",
-                sizeBytes: 34
+                sizeBytes: 112
             ),
             makeItem(
                 id: "panel-smoke-image",
                 itemType: "image",
-                summary: "图片 360 x 220",
+                summary: "pexels-ing-do-2160128514-36552442.jpg",
                 primaryText: nil,
                 sourceAppName: "预览",
                 timestamp: now - 60_000,
                 contentHash: "panel-smoke-panel-smoke-image",
                 previewAssetPath: imagePath,
-                payloadAssetPath: imagePath,
+                payloadAssetPath: imagePayloadPath ?? imagePath,
                 sizeBytes: 124_000
             ),
             makeItem(
                 id: "panel-smoke-file",
                 itemType: "file",
-                summary: "2 个文件 · report.pdf",
-                primaryText: "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt",
+                summary: "2 个真实文档 · README.md",
+                primaryText: realSampleFilePaths().joined(separator: "\n"),
                 sourceAppName: "Finder",
                 timestamp: now - 120_000,
                 contentHash: "panel-smoke-panel-smoke-file",
+                previewAssetPath: filePreviewPath,
                 sizeBytes: 2048
             ),
             makeItem(
@@ -230,16 +463,37 @@ enum PanelQASamples {
                 sourceAppName: "Safari",
                 timestamp: now - 180_000,
                 contentHash: "panel-smoke-panel-smoke-link",
+                linkMetadata: linkMetadata,
                 sizeBytes: 19
+            ),
+            makeItem(
+                id: "panel-smoke-color",
+                itemType: "color",
+                summary: "#FF00AA",
+                primaryText: "#FF00AA",
+                sourceAppName: "Figma",
+                timestamp: now - 240_000,
+                contentHash: "panel-smoke-panel-smoke-color",
+                sizeBytes: 7
+            ),
+            makeItem(
+                id: "panel-smoke-rich-text",
+                itemType: "rich_text",
+                summary: "产品说明\n• 本地历史记录\n• 分类固定内容\n• 快捷键快速取用",
+                primaryText: "产品说明\n• 本地历史记录\n• 分类固定内容\n• 快捷键快速取用",
+                sourceAppName: "Pages",
+                timestamp: now - 300_000,
+                contentHash: "panel-smoke-panel-smoke-rich-text",
+                sizeBytes: 72
             )
         ]
 
-        for index in 5...16 {
+        for index in 7...16 {
             items.append(makeItem(
                 id: "panel-smoke-extra-\(index)",
                 itemType: "text",
-                summary: "横向滚动填充条目 \(index)",
-                primaryText: "横向滚动填充条目 \(index)",
+                summary: "产品资料条目 \(index)",
+                primaryText: "产品资料条目 \(index)",
                 sourceAppName: "终端",
                 timestamp: now - Int64(index * 60_000),
                 contentHash: "panel-smoke-panel-smoke-extra-\(index)",
@@ -405,6 +659,7 @@ enum PanelQASamples {
         sourceAppIconHeaderColor: Int64? = nil,
         previewAssetPath: String? = nil,
         payloadAssetPath: String? = nil,
+        linkMetadata: RustLinkMetadataSummary? = nil,
         sizeBytes: Int64
     ) -> RustClipboardItemSummary {
         RustClipboardItemSummary(
@@ -425,8 +680,97 @@ enum PanelQASamples {
             copyCount: 1,
             isPinned: false,
             sizeBytes: sizeBytes,
-            previewState: "ready"
+            previewState: "ready",
+            linkMetadata: linkMetadata
         )
+    }
+
+    private static func fetchOpenGraphMetadata(from url: URL) throws -> OpenGraphMetadata {
+        let data = try Data(contentsOf: url)
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw PreviewQAError(message: "GitHub 首页元数据不是 UTF-8 文本")
+        }
+
+        let metadata = metaTagValues(from: html)
+        guard let title = nonEmptyHTMLText(metadata["og:title"]),
+              let imageText = nonEmptyHTMLText(metadata["og:image"]),
+              let imageURL = URL(string: imageText, relativeTo: url)?.absoluteURL
+        else {
+            throw PreviewQAError(message: "GitHub 首页缺少可用的 Open Graph 预览信息")
+        }
+
+        return OpenGraphMetadata(title: title, imageURL: imageURL)
+    }
+
+    private static func downloadImage(from sourceURL: URL, to outputURL: URL) throws -> URL {
+        let data = try Data(contentsOf: sourceURL)
+        guard NSImage(data: data) != nil
+        else {
+            throw PreviewQAError(message: "无法下载 GitHub 真实预览图片")
+        }
+        try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: outputURL, options: .atomic)
+        return outputURL
+    }
+
+    private static func metaTagValues(from html: String) -> [String: String] {
+        guard let tagExpression = try? NSRegularExpression(pattern: #"<meta\s+[^>]*>"#, options: [.caseInsensitive]),
+              let attributeExpression = try? NSRegularExpression(
+                pattern: #"([A-Za-z_:.-]+)\s*=\s*["']([^"']*)["']"#,
+                options: [.caseInsensitive]
+              )
+        else {
+            return [:]
+        }
+
+        var values: [String: String] = [:]
+        let nsHTML = html as NSString
+        let fullRange = NSRange(location: 0, length: nsHTML.length)
+        tagExpression.enumerateMatches(in: html, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            let tag = nsHTML.substring(with: match.range)
+            let nsTag = tag as NSString
+            let tagRange = NSRange(location: 0, length: nsTag.length)
+            var attributes: [String: String] = [:]
+            attributeExpression.enumerateMatches(in: tag, range: tagRange) { attributeMatch, _, _ in
+                guard let attributeMatch,
+                      attributeMatch.numberOfRanges == 3
+                else { return }
+                let name = nsTag.substring(with: attributeMatch.range(at: 1)).lowercased()
+                let value = nsTag.substring(with: attributeMatch.range(at: 2))
+                attributes[name] = decodedHTMLText(value)
+            }
+
+            guard let key = attributes["property"] ?? attributes["name"],
+                  let value = attributes["content"]
+            else {
+                return
+            }
+            values[key.lowercased()] = value
+        }
+        return values
+    }
+
+    private static func nonEmptyHTMLText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = decodedHTMLText(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func decodedHTMLText(_ value: String) -> String {
+        guard let data = value.data(using: .utf8),
+              let attributed = try? NSAttributedString(
+                data: data,
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue
+                ],
+                documentAttributes: nil
+              )
+        else {
+            return value
+        }
+        return attributed.string
     }
 
     struct PreviewQAError: LocalizedError {
