@@ -207,13 +207,11 @@
     }
 
     .mark {
-      width: 22px;
-      height: 22px;
-      border-radius: 7px;
-      background:
-        linear-gradient(135deg, rgba(255, 255, 255, .88), rgba(255, 255, 255, 0)),
-        linear-gradient(135deg, var(--accent), var(--cyan));
-      box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 36%, transparent);
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      object-fit: cover;
+      box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 24%, transparent);
     }
 
     .nav-links {
@@ -1343,7 +1341,7 @@
   <div class="scroll-meter" aria-hidden="true"></div>
   <header class="site-nav">
     <a class="brand" href="#top" aria-label="ClipShelf">
-      <span class="mark" aria-hidden="true"></span>
+      <img class="mark" src="assets/site/apple-touch-icon.png" width="30" height="30" alt="">
       <span>ClipShelf</span>
     </a>
     <nav class="nav-links" aria-label="Primary">
