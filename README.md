@@ -115,8 +115,7 @@ ClipShelf is open source because clipboard tools are personal. You should be abl
 
 ClipShelf 选择开源，是因为剪贴板工具足够贴近日常工作流。你应该可以看到它如何工作、本地运行它、提出改进，并一起把它打磨成更顺手的日常工具。
 
-<details>
-<summary>Developer Notes / 开发者说明</summary>
+## Developer Notes / 开发者说明
 
 ### Requirements / 环境要求
 
@@ -133,75 +132,3 @@ swift run ClipShelf
 ```
 
 The source executable and release product are both named `ClipShelf`.
-
-源码运行入口和发布产物统一命名为 `ClipShelf`。
-
-### Local Release Build / 本地发布构建
-
-```bash
-scripts/package-macos-app.sh
-scripts/release-macos.sh
-```
-
-Generated artifacts are written under `.codex/artifacts/`.
-
-生成产物会写入 `.codex/artifacts/`。
-
-### Verification / 验证
-
-```bash
-cargo test --manifest-path rust/Cargo.toml
-scripts/build-rust-core.sh
-swift build
-swift test
-```
-
-### Screenshot Refresh / 更新截图
-
-```bash
-swift build
-.build/debug/ClipShelf --show-pinboard-ui overview --qa-screen 1 \
-  --qa-sample-image /Users/ying/Downloads/pexels-ing-do-2160128514-36552442.jpg &
-PANEL_PID=$!
-sleep 2
-screencapture -x -D 2 docs/assets/marketing/clipshelf-panel-overview-screen-real.png
-kill "$PANEL_PID"
-
-.build/debug/ClipShelf --show-pinboard-ui ai --qa-screen 1 \
-  --qa-sample-image /Users/ying/Downloads/pexels-ing-do-2160128514-36552442.jpg &
-PANEL_PID=$!
-sleep 2
-screencapture -x -D 2 docs/assets/marketing/clipshelf-panel-pinboard-screen-real.png
-kill "$PANEL_PID"
-
-.build/debug/ClipShelf --show-pinboard-ui preview --qa-screen 1 \
-  --qa-sample-image /Users/ying/Downloads/pexels-ing-do-2160128514-36552442.jpg &
-PANEL_PID=$!
-sleep 2
-screencapture -x -D 2 docs/assets/marketing/clipshelf-preview-screen-real.png
-kill "$PANEL_PID"
-```
-
-The panel screenshots use a real local image file, real repository files, and the live `https://github.com/` Open Graph preview. The `--qa-screen 1` flag places the QA window on the secondary display, while `screencapture -D 2` captures that full display. Settings screenshots can be refreshed with `--show-preferences-ui --preferences-section ... --qa-screen 1` if needed, but the README intentionally keeps settings as supporting context.
-
-### Documentation Record / 文档记录
-
-Updated on 2026-05-17 by Codex.
-
-### Repository Map / 仓库结构
-
-- `Sources/ClipboardPanelApp`: app UI and product behavior.
-- `Sources/ClipShelf`: current macOS executable shell.
-- `rust/crates/clipboard_core`: local storage and clipboard history core.
-- `Generated/ClipboardCoreBridge`: generated bridge package.
-- `Tests/ClipboardPanelAppTests`: automated tests.
-- `docs/`: architecture, release, QA, and design notes.
-
-### Documentation / 文档
-
-- [Architecture](docs/architecture.md)
-- [Release workflow](docs/release.md)
-- [UI design](docs/ui-design.md)
-- [Feature QA log](docs/feature-qa-log.md)
-
-</details>

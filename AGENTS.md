@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is ClipShelf, a macOS clipboard shelf built from a Swift Package with a Rust storage core. Swift UI and app logic live in `Sources/ClipboardPanelApp`, while the executable entry point is `Sources/ClipShelf/main.swift`. Swift tests are in `Tests/ClipboardPanelAppTests`. Rust workspace code lives under `rust/crates`, with `clipboard_core` for domain/storage logic and `clipboard_core_ffi` for Swift bridge bindings. Generated Swift bridge and XCFramework artifacts are kept in `Generated/ClipboardCoreBridge`; regenerate them with the provided script instead of editing them by hand. Supporting architecture, release, and QA notes are in `docs/`.
+This repository is ClipShelf, a macOS clipboard shelf built from a Swift Package with a Rust storage core. Swift UI and app logic live in `Sources/ClipboardPanelApp`, while the executable entry point is `Sources/ClipShelf/main.swift`. Swift tests are in `Tests/ClipboardPanelAppTests`. Rust workspace code lives under `rust/crates`, with `clipboard_core` for domain/storage logic and `clipboard_core_ffi` for Swift bridge bindings. Generated Swift bridge and XCFramework artifacts are kept in `Generated/ClipboardCoreBridge`; regenerate them with the provided script instead of editing them by hand.
 
 ## Build, Test, and Development Commands
 

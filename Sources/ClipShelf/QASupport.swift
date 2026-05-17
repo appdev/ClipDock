@@ -119,7 +119,7 @@ enum PanelQASamples {
             .map { URL(fileURLWithPath: $0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !existingFiles.isEmpty else {
-            throw PreviewQAError(message: "无法读取真实文档文件")
+            throw PreviewQAError(message: "无法读取真实文件")
         }
 
         let canvasSize = NSSize(width: 720, height: 520)
@@ -185,12 +185,12 @@ enum PanelQASamples {
               let bitmap = NSBitmapImageRep(data: tiffData),
               let data = bitmap.representation(using: .png, properties: [:])
         else {
-            throw PreviewQAError(message: "无法生成真实文档预览缓存")
+            throw PreviewQAError(message: "无法生成真实文件预览缓存")
         }
 
         let samplesDirectory = appSupportURL.appendingPathComponent("real-samples", isDirectory: true)
         try FileManager.default.createDirectory(at: samplesDirectory, withIntermediateDirectories: true)
-        let outputURL = samplesDirectory.appendingPathComponent("repository-documents-preview.png")
+        let outputURL = samplesDirectory.appendingPathComponent("repository-files-preview.png")
         try data.write(to: outputURL, options: .atomic)
         return outputURL
     }
@@ -199,7 +199,7 @@ enum PanelQASamples {
         let rootURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         return [
             rootURL.appendingPathComponent("README.md").path,
-            rootURL.appendingPathComponent("docs/architecture.md").path
+            rootURL.appendingPathComponent("Package.swift").path
         ]
     }
 
@@ -447,7 +447,7 @@ enum PanelQASamples {
             makeItem(
                 id: "panel-smoke-file",
                 itemType: "file",
-                summary: "2 个真实文档 · README.md",
+                summary: "2 个真实文件 · README.md",
                 primaryText: realSampleFilePaths().joined(separator: "\n"),
                 sourceAppName: "Finder",
                 timestamp: now - 120_000,
