@@ -3,16 +3,6 @@ name: Build release artifacts
 "on":
   workflow_dispatch:
     inputs:
-      version:
-        description: "CFBundleShortVersionString, for example 0.1.0"
-        required: true
-        default: "0.1.0"
-        type: string
-      build:
-        description: "CFBundleVersion"
-        required: true
-        default: "1"
-        type: string
       tag:
         description: "Release tag. Defaults to v<version>."
         required: false
@@ -32,7 +22,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: build-release-artifacts-${{ github.ref }}-${{ inputs.version }}
+  group: build-release-artifacts-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -63,14 +53,14 @@ jobs:
       - name: Resolve release metadata
         id: release
         env:
-          INPUT_VERSION: ${{ inputs.version }}
-          INPUT_BUILD: ${{ inputs.build }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
-          version="$INPUT_VERSION"
-          build="$INPUT_BUILD"
+          source scripts/app-metadata.sh
+
+          version="$(read_app_info_value CFBundleShortVersionString 0.1.0)"
+          build="$(read_app_info_value CFBundleVersion 1)"
           tag="$INPUT_TAG"
 
           if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
@@ -99,7 +89,7 @@ jobs:
             echo "build=$build"
             echo "tag=$tag"
             echo "artifact_dir=$artifact_dir"
-            echo "zips=$artifact_dir/ClipShelf-$version-*.zip"
+            echo "dmgs=$artifact_dir/ClipShelf-$version-*.dmg"
             echo "checksums=$artifact_dir/SHA256SUMS"
             echo "manifest=$artifact_dir/ClipShelf-release-manifest.txt"
             echo "release_notes=$artifact_dir/ClipShelf-release-notes.md"
@@ -154,14 +144,11 @@ jobs:
 
       - name: Build release bundle
         env:
-          APP_VERSION: ${{ steps.release.outputs.version }}
-          APP_BUILD: ${{ steps.release.outputs.build }}
           RELEASE_DIR: ${{ steps.release.outputs.artifact_dir }}
           CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY || '-' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          CREATE_DMG: "0"
         run: scripts/release-macos.sh
 
       - name: Upload workflow artifact
@@ -169,7 +156,7 @@ jobs:
         with:
           name: ClipShelf-${{ steps.release.outputs.version }}-macos
           path: |
-            ${{ steps.release.outputs.zips }}
+            ${{ steps.release.outputs.dmgs }}
             ${{ steps.release.outputs.checksums }}
             ${{ steps.release.outputs.manifest }}
           if-no-files-found: error
@@ -187,6 +174,6 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: true
           files: |
-            ${{ steps.release.outputs.zips }}
+            ${{ steps.release.outputs.dmgs }}
             ${{ steps.release.outputs.checksums }}
             ${{ steps.release.outputs.manifest }}

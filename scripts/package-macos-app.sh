@@ -3,6 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+source scripts/app-metadata.sh
+
 export MACOSX_DEPLOYMENT_TARGET=13.0
 export CLANG_MODULE_CACHE_PATH="$(pwd)/.build/clang-module-cache"
 
@@ -27,8 +29,8 @@ macos_dir="$contents_dir/MacOS"
 resources_dir="$contents_dir/Resources"
 bundle_identifier="${BUNDLE_IDENTIFIER:-com.apkdv.clipshelf}"
 display_name="${APP_DISPLAY_NAME:-ClipShelf}"
-app_version="${APP_VERSION:-0.1.0}"
-app_build="${APP_BUILD:-1}"
+app_version="${APP_VERSION:-$(read_app_info_value CFBundleShortVersionString 0.1.0)}"
+app_build="${APP_BUILD:-$(read_app_info_value CFBundleVersion 1)}"
 codesign_identity="${CODESIGN_IDENTITY:--}"
 app_icon_file="${APP_ICON_FILE:-Sources/ClipShelf/Resources/AppIcon.icns}"
 status_icon_file="${STATUS_ICON_FILE:-Sources/ClipShelf/Resources/StatusBarClipboardTemplate.png}"

@@ -3,8 +3,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-version="${APP_VERSION:-0.1.0}"
-build="${APP_BUILD:-1}"
+source scripts/app-metadata.sh
+
+version="${APP_VERSION:-$(read_app_info_value CFBundleShortVersionString 0.1.0)}"
+build="${APP_BUILD:-$(read_app_info_value CFBundleVersion 1)}"
 app_bundle_name="${APP_BUNDLE_NAME:-ClipShelf}"
 bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipShelf}"
 app_archs="${APP_ARCHS:-arm64 x86_64}"
