@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClipShelf",
+    name: "ClipDock",
     platforms: [
         .macOS(.v13)
     ],
@@ -13,8 +13,8 @@ let package = Package(
             targets: ["ClipboardPanelApp"]
         ),
         .executable(
-            name: "ClipShelf",
-            targets: ["ClipShelf"]
+            name: "ClipDock",
+            targets: ["ClipDock"]
         )
     ],
     dependencies: [
@@ -29,9 +29,9 @@ let package = Package(
             path: "Sources/ClipboardPanelApp"
         ),
         .executableTarget(
-            name: "ClipShelf",
+            name: "ClipDock",
             dependencies: ["ClipboardPanelApp"],
-            path: "Sources/ClipShelf",
+            path: "Sources/ClipDock",
             resources: [
                 .process("Resources")
             ]
@@ -40,7 +40,7 @@ let package = Package(
             name: "ClipboardPanelAppTests",
             dependencies: [
                 "ClipboardPanelApp",
-                "ClipShelf"
+                "ClipDock"
             ]
         )
     ]

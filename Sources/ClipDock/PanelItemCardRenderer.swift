@@ -10,7 +10,7 @@ struct PanelItemCardRendererMetrics {
     let cardFooterHeight: CGFloat
     let sourceIconSize: CGFloat
     let linkPreviewHeight: CGFloat
-    let theme: ClipShelfThemePalette
+    let theme: ClipDockThemePalette
 }
 
 struct PanelItemCardRenderArtifacts {

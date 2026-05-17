@@ -2,12 +2,12 @@
 
 ## Project Structure & Module Organization
 
-This repository is ClipShelf, a macOS clipboard shelf built from a Swift Package with a Rust storage core. Swift UI and app logic live in `Sources/ClipboardPanelApp`, while the executable entry point is `Sources/ClipShelf/main.swift`. Swift tests are in `Tests/ClipboardPanelAppTests`. Rust workspace code lives under `rust/crates`, with `clipboard_core` for domain/storage logic and `clipboard_core_ffi` for Swift bridge bindings. Generated Swift bridge and XCFramework artifacts are kept in `Generated/ClipboardCoreBridge`; regenerate them with the provided script instead of editing them by hand.
+This repository is ClipDock, a macOS clipboard shelf built from a Swift Package with a Rust storage core. Swift UI and app logic live in `Sources/ClipboardPanelApp`, while the executable entry point is `Sources/ClipDock/main.swift`. Swift tests are in `Tests/ClipboardPanelAppTests`. Rust workspace code lives under `rust/crates`, with `clipboard_core` for domain/storage logic and `clipboard_core_ffi` for Swift bridge bindings. Generated Swift bridge and XCFramework artifacts are kept in `Generated/ClipboardCoreBridge`; regenerate them with the provided script instead of editing them by hand.
 
 ## Build, Test, and Development Commands
 
 - `scripts/build-rust-core.sh`: builds the Rust FFI library and refreshes `Generated/ClipboardCoreBridge`.
-- `swift run ClipShelf`: runs the macOS app after the bridge is built.
+- `swift run ClipDock`: runs the macOS app after the bridge is built.
 - `swift build`: builds the Swift package.
 - `swift test`: runs Swift Testing suites and writes the visual regression fixture to `.codex/artifacts/panel-visual-regression.png`.
 - `cargo test --manifest-path rust/Cargo.toml`: runs Rust workspace tests.
@@ -28,4 +28,4 @@ Recent commits use short, imperative, sentence-case subjects, for example `Focus
 
 ## Security & Configuration Tips
 
-The app stores local data at `~/Library/Application Support/ClipShelf/clipboard.sqlite`. Avoid committing private clipboard data, local databases, screenshots with sensitive content, or ad-hoc release artifacts outside the documented `.codex/artifacts` workflow.
+The app stores local data at `~/Library/Application Support/ClipDock/clipboard.sqlite`. Avoid committing private clipboard data, local databases, screenshots with sensitive content, or ad-hoc release artifacts outside the documented `.codex/artifacts` workflow.

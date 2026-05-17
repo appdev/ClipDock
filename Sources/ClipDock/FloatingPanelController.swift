@@ -164,13 +164,13 @@ final class FloatingPanelController {
     }
 
     func show() {
-        let showStart = ClipShelfPerformanceLog.mark()
+        let showStart = ClipDockPerformanceLog.mark()
         rememberPreviousFocusApplicationIfNeeded()
         guard let screen = targetScreenForPresentation() else { return }
 
         preferredHeight = clampedHeight(preferredHeight, for: screen)
         let finalFrame = targetPanelFrame(on: screen, height: preferredHeight)
-        ClipShelfPerformanceLog.measure("panel.show.updateHeight") {
+        ClipDockPerformanceLog.measure("panel.show.updateHeight") {
             contentView.updatePanelHeight(preferredHeight)
         }
 
@@ -182,7 +182,7 @@ final class FloatingPanelController {
 
         if shouldAnimateEntrance, !panel.isVisible {
             startFrame = PanelPresentationAnimation.entranceFrame(for: finalFrame)
-            ClipShelfPerformanceLog.measure("panel.show.setEntranceFrame") {
+            ClipDockPerformanceLog.measure("panel.show.setEntranceFrame") {
                 panel.setFrame(startFrame, display: true)
             }
         } else {
@@ -190,11 +190,11 @@ final class FloatingPanelController {
             panel.alphaValue = 1
         }
 
-        ClipShelfPerformanceLog.event(
+        ClipDockPerformanceLog.event(
             "panel.show.request",
             detail: "animated=\(shouldAnimateEntrance) alreadyVisible=\(panel.isVisible)"
         )
-        ClipShelfPerformanceLog.measure("panel.show.orderWindow") {
+        ClipDockPerformanceLog.measure("panel.show.orderWindow") {
             panel.makeKeyAndOrderFront(nil)
         }
         focusContentView()
@@ -203,7 +203,7 @@ final class FloatingPanelController {
         guard shouldAnimateEntrance else {
             cancelPanelAnimation()
             panel.setFrame(finalFrame, display: true)
-            ClipShelfPerformanceLog.finish("panel.show.finished", start: showStart, detail: "animated=false")
+            ClipDockPerformanceLog.finish("panel.show.finished", start: showStart, detail: "animated=false")
             return
         }
 
@@ -218,34 +218,34 @@ final class FloatingPanelController {
             guard let self, self.isPanelPresented else { return }
             self.panel.setFrame(finalFrame, display: true)
             self.panel.alphaValue = 1
-            ClipShelfPerformanceLog.finish("panel.show.finished", start: showStart, detail: "animated=true")
+            ClipDockPerformanceLog.finish("panel.show.finished", start: showStart, detail: "animated=true")
         }
     }
 
     func hide(restoresPreviousApplicationFocus: Bool = true) {
-        let hideStart = ClipShelfPerformanceLog.mark()
+        let hideStart = ClipDockPerformanceLog.mark()
         let wasPresented = isPanelPresented
         guard wasPresented || panel.isVisible else {
             previousFocusApplication = nil
             stopOutsideClickMonitoring()
-            ClipShelfPerformanceLog.finish("panel.hide.skipped", start: hideStart)
+            ClipDockPerformanceLog.finish("panel.hide.skipped", start: hideStart)
             return
         }
 
         let shouldRestoreFocus = wasPresented && restoresPreviousApplicationFocus
         let focusApplication = shouldRestoreFocus ? previousFocusApplication : nil
         previousFocusApplication = nil
-        ClipShelfPerformanceLog.measure("panel.hide.closePreview") {
+        ClipDockPerformanceLog.measure("panel.hide.closePreview") {
             contentView.closePreviewPopover()
         }
         isPanelPresented = false
         stopOutsideClickMonitoring()
-        ClipShelfPerformanceLog.measure("panel.hide.restoreFocus") {
+        ClipDockPerformanceLog.measure("panel.hide.restoreFocus") {
             restoreFocus(to: focusApplication)
         }
 
         guard panel.isVisible else {
-            ClipShelfPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "alreadyHidden=true")
+            ClipDockPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "alreadyHidden=true")
             return
         }
 
@@ -267,7 +267,7 @@ final class FloatingPanelController {
             self.panel.orderOut(nil)
             self.panel.setFrame(shownFrame, display: false)
             self.panel.alphaValue = 1
-            ClipShelfPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "animated=true")
+            ClipDockPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "animated=true")
         }
     }
 
@@ -400,7 +400,7 @@ final class FloatingPanelController {
     private func beginHeightResize() {
         resizeStartHeight = panel.frame.height
         resizeScreen = panel.screen ?? targetScreenForPresentation()
-        resizePerformanceStart = ClipShelfPerformanceLog.mark()
+        resizePerformanceStart = ClipDockPerformanceLog.mark()
         resizePerformanceEventCount = 0
         resizePerformanceSlowestFrameMilliseconds = 0
     }
@@ -413,18 +413,18 @@ final class FloatingPanelController {
             deltaY: deltaY,
             screenHeight: screen.frame.height
         )
-        let frameStart = ClipShelfPerformanceLog.mark()
+        let frameStart = ClipDockPerformanceLog.mark()
         applyPanelFrame(on: screen, height: preferredHeight, animate: false)
-        let frameMilliseconds = ClipShelfPerformanceLog.milliseconds(since: frameStart)
+        let frameMilliseconds = ClipDockPerformanceLog.milliseconds(since: frameStart)
         resizePerformanceEventCount += 1
         resizePerformanceSlowestFrameMilliseconds = max(
             resizePerformanceSlowestFrameMilliseconds,
             frameMilliseconds
         )
         if frameMilliseconds >= 24 {
-            ClipShelfPerformanceLog.event(
+            ClipDockPerformanceLog.event(
                 "panel.resize.slowFrame",
-                detail: "durationMs=\(ClipShelfPerformanceLog.format(frameMilliseconds)) height=\(ClipShelfPerformanceLog.format(Double(preferredHeight)))"
+                detail: "durationMs=\(ClipDockPerformanceLog.format(frameMilliseconds)) height=\(ClipDockPerformanceLog.format(Double(preferredHeight)))"
             )
         }
     }
@@ -433,14 +433,14 @@ final class FloatingPanelController {
         heightPreferenceStore.preferredPanelHeight = preferredHeight
         resizeScreen = nil
         if let resizePerformanceStart {
-            let totalMilliseconds = ClipShelfPerformanceLog.milliseconds(since: resizePerformanceStart)
-            ClipShelfPerformanceLog.event(
+            let totalMilliseconds = ClipDockPerformanceLog.milliseconds(since: resizePerformanceStart)
+            ClipDockPerformanceLog.event(
                 "panel.resize.finished",
                 detail: [
-                    "durationMs=\(ClipShelfPerformanceLog.format(totalMilliseconds))",
+                    "durationMs=\(ClipDockPerformanceLog.format(totalMilliseconds))",
                     "events=\(resizePerformanceEventCount)",
-                    "slowestFrameMs=\(ClipShelfPerformanceLog.format(resizePerformanceSlowestFrameMilliseconds))",
-                    "height=\(ClipShelfPerformanceLog.format(Double(preferredHeight)))"
+                    "slowestFrameMs=\(ClipDockPerformanceLog.format(resizePerformanceSlowestFrameMilliseconds))",
+                    "height=\(ClipDockPerformanceLog.format(Double(preferredHeight)))"
                 ].joined(separator: " ")
             )
         }
@@ -523,9 +523,9 @@ final class FloatingPanelController {
             guard !Task.isCancelled, self.animationGeneration == generation else { return }
             self.panel.setFrame(endFrame, display: true)
             self.panelAnimationTask = nil
-            ClipShelfPerformanceLog.event(
+            ClipDockPerformanceLog.event(
                 "panel.animation.finished",
-                detail: "name=\(name) durationMs=\(ClipShelfPerformanceLog.format((ProcessInfo.processInfo.systemUptime - startTime) * 1_000)) frames=\(frameCount)"
+                detail: "name=\(name) durationMs=\(ClipDockPerformanceLog.format((ProcessInfo.processInfo.systemUptime - startTime) * 1_000)) frames=\(frameCount)"
             )
             completion()
         }
@@ -580,14 +580,14 @@ final class FloatingPanelController {
     private func repairContentFocusIfNeeded(orderWindow: Bool) {
         guard panel.firstResponder !== contentView || !panel.isKeyWindow else { return }
 
-        let start = ClipShelfPerformanceLog.mark()
+        let start = ClipDockPerformanceLog.mark()
         if orderWindow {
             panel.makeKeyAndOrderFront(nil)
         } else {
             panel.makeKey()
         }
         panel.makeFirstResponder(contentView)
-        ClipShelfPerformanceLog.finish(
+        ClipDockPerformanceLog.finish(
             "panel.focus.repair",
             start: start,
             detail: "ordered=\(orderWindow) firstResponderRestored=\(panel.firstResponder === contentView)"

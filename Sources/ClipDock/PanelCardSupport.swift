@@ -825,7 +825,7 @@ final class PanelCardAssetResolver {
             in: .userDomainMask
         )
         .first?
-        .appendingPathComponent("ClipShelf", isDirectory: true)
+        .appendingPathComponent("ClipDock", isDirectory: true)
         ?? URL(fileURLWithPath: NSHomeDirectory())
     }
 

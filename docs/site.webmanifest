@@ -1,6 +1,6 @@
 {
-  "name": "ClipShelf",
-  "short_name": "ClipShelf",
+  "name": "ClipDock",
+  "short_name": "ClipDock",
   "description": "Find, pin, and reuse copied text, links, code, images, and files in a native local-first macOS shelf",
   "lang": "en",
   "start_url": "./",

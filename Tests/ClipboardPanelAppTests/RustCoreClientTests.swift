@@ -972,7 +972,7 @@ struct RustCoreClientTests {
         _ = try client.captureText(
             appSupportDirectory: tempDirectory,
             request: RustCaptureTextRequest(
-                text: "ClipShelf payload text\nsecond line",
+                text: "ClipDock payload text\nsecond line",
                 sourceBundleId: "com.apple.TextEdit",
                 sourceAppName: "TextEdit",
                 sourceBundlePath: "/System/Applications/TextEdit.app",
@@ -988,7 +988,7 @@ struct RustCoreClientTests {
             appSupportDirectory: tempDirectory
         )
 
-        #expect(payload == .text("ClipShelf payload text\nsecond line"))
+        #expect(payload == .text("ClipDock payload text\nsecond line"))
     }
 
     @Test

@@ -427,7 +427,7 @@ struct LaunchAtLoginFallbackAgent {
             "LimitLoadToSessionType": "Aqua",
             "ProgramArguments": [
                 executableURL.path,
-                ClipShelfLaunchArgument.launchedAtLogin
+                ClipDockLaunchArgument.launchedAtLogin
             ],
             "RunAtLoad": true
         ]
@@ -565,7 +565,7 @@ final class PreferencesWindowController: NSWindowController {
     private let viewModel = PreferencesSwiftUIViewModel()
     private let toolbarCoordinator = PreferencesToolbarCoordinator()
     private var splitViewController: PreferencesSplitViewController?
-    private var theme: ClipShelfPreferencesTheme {
+    private var theme: ClipDockPreferencesTheme {
         viewModel.preferencesTheme(fallbackAppearance: window?.effectiveAppearance)
     }
 
@@ -686,7 +686,7 @@ final class PreferencesWindowController: NSWindowController {
 @MainActor
 private final class PreferencesToolbarCoordinator: NSObject, NSToolbarDelegate {
     private enum Identifier {
-        static let toolbar = NSToolbar.Identifier("ClipShelf.Preferences.Toolbar")
+        static let toolbar = NSToolbar.Identifier("ClipDock.Preferences.Toolbar")
     }
 
     func makeToolbar() -> NSToolbar {
@@ -817,8 +817,8 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         }
     }
 
-    func preferencesTheme(fallbackAppearance: NSAppearance?) -> ClipShelfPreferencesTheme {
-        ClipShelfTheme.current(for: forcedAppearance ?? fallbackAppearance).preferences
+    func preferencesTheme(fallbackAppearance: NSAppearance?) -> ClipDockPreferencesTheme {
+        ClipDockTheme.current(for: forcedAppearance ?? fallbackAppearance).preferences
     }
 
     private func apply(_ update: PreferencesSceneUpdate) {
@@ -1043,15 +1043,15 @@ private final class PreferencesSplitViewController: NSSplitViewController {
                 $0.itemIdentifier == .sidebarTrackingSeparator
             } == true,
             toolbarHasNavigationItem: toolbar?.items.contains {
-                $0.itemIdentifier.rawValue == "ClipShelf.Preferences.Toolbar.Navigation"
+                $0.itemIdentifier.rawValue == "ClipDock.Preferences.Toolbar.Navigation"
             } == true,
             windowBackgroundMatchesTheme: preferenceColorsMatch(windowBackground, preferencesTheme.windowBackgroundColor),
             splitBackgroundMatchesTheme: preferenceColorsMatch(splitBackground, preferencesTheme.contentBackgroundColor),
             sidebarBackgroundMatchesTheme: preferenceColorsMatch(sidebarBackground, preferencesTheme.sidebarBackgroundColor),
             contentBackgroundMatchesTheme: preferenceColorsMatch(contentBackground, preferencesTheme.contentBackgroundColor),
             sidebarBackgroundWhiteComponent: preferenceWhiteComponent(sidebarBackground),
-            sidebarHostingAppearanceIsDark: ClipShelfTheme.isDark(sidebarController.view.effectiveAppearance),
-            contentHostingAppearanceIsDark: ClipShelfTheme.isDark(contentController.view.effectiveAppearance)
+            sidebarHostingAppearanceIsDark: ClipDockTheme.isDark(sidebarController.view.effectiveAppearance),
+            contentHostingAppearanceIsDark: ClipDockTheme.isDark(contentController.view.effectiveAppearance)
         )
     }
 
@@ -1091,11 +1091,11 @@ private final class PreferencesSplitViewController: NSSplitViewController {
 
 @MainActor
 private struct PreferencesThemeValues {
-    let palette: ClipShelfPreferencesTheme
+    let palette: ClipDockPreferencesTheme
 
     init(colorScheme: ColorScheme) {
         let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
-        self.palette = ClipShelfTheme.current(for: appearance).preferences
+        self.palette = ClipDockTheme.current(for: appearance).preferences
     }
 
     var windowBackground: Color { Color(nsColor: palette.windowBackgroundColor) }
@@ -1861,7 +1861,7 @@ private struct PreferenceAboutSection: View {
                         Text(aboutDisplayName())
                             .font(.system(size: 19, weight: .semibold))
                             .foregroundStyle(colors.primaryText)
-                        Text("本地剪贴架")
+                        Text("本地剪贴坞")
                             .font(.system(size: 13))
                             .foregroundStyle(colors.secondaryText)
                     }
@@ -2193,7 +2193,7 @@ private func aboutDisplayName() -> String {
         return name
     }
 
-    return "ClipShelf"
+    return "ClipDock"
 }
 
 private func aboutVersionText() -> String {
@@ -2251,8 +2251,8 @@ private final class LegacyPreferencesWindowController: NSWindowController {
 
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
     var onAccessibilityPermissionRequested: (() -> Void)?
-    private var theme: ClipShelfThemePalette {
-        ClipShelfTheme.current(for: window)
+    private var theme: ClipDockThemePalette {
+        ClipDockTheme.current(for: window)
     }
 
     init() {
@@ -2268,7 +2268,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
-        window.backgroundColor = ClipShelfTheme.current(for: window).preferences.windowBackgroundColor
+        window.backgroundColor = ClipDockTheme.current(for: window).preferences.windowBackgroundColor
         window.isOpaque = true
 
         super.init(window: window)
@@ -3255,7 +3255,7 @@ final class AboutWindowController: NSWindowController {
     private weak var versionLabel: NSTextField?
     private weak var copyrightLabel: NSTextField?
     private var theme: AboutWindowTheme {
-        AboutWindowTheme(palette: ClipShelfTheme.current(for: window))
+        AboutWindowTheme(palette: ClipDockTheme.current(for: window))
     }
 
     init() {
@@ -3273,7 +3273,7 @@ final class AboutWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
-        window.backgroundColor = ClipShelfTheme.current(for: window).preferences.windowBackgroundColor
+        window.backgroundColor = ClipDockTheme.current(for: window).preferences.windowBackgroundColor
         window.isOpaque = true
 
         super.init(window: window)
@@ -3330,7 +3330,7 @@ final class AboutWindowController: NSWindowController {
         )
         self.versionLabel = versionLabel
         let copyrightLabel = makeCenteredLabel(
-            "© 2026 ClipShelf\nBuilt with AppKit and Rust.",
+            "© 2026 ClipDock\nBuilt with AppKit and Rust.",
             font: .systemFont(ofSize: 12.5, weight: .medium),
             color: theme.mutedTextColor
         )
@@ -3369,7 +3369,7 @@ final class AboutWindowController: NSWindowController {
             return name
         }
 
-        return "ClipShelf"
+        return "ClipDock"
     }
 
     private var versionText: String {
@@ -3431,7 +3431,7 @@ private struct AboutWindowTheme {
     let secondaryTextColor: NSColor
     let mutedTextColor: NSColor
 
-    init(palette: ClipShelfThemePalette) {
+    init(palette: ClipDockThemePalette) {
         let preferences = palette.preferences
         windowBackgroundColor = preferences.windowBackgroundColor
         contentBackgroundColor = preferences.contentBackgroundColor

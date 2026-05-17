@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 
 @MainActor
-private func runClipShelfApp() {
+private func runClipDockApp() {
     if PreferencesSmokeCommand.shouldRun(arguments: CommandLine.arguments) {
         PreferencesSmokeCommand.run()
         Darwin.exit(0)
@@ -138,7 +138,7 @@ private func runClipShelfApp() {
 }
 
 MainActor.assumeIsolated {
-    runClipShelfApp()
+    runClipDockApp()
 }
 
 RunLoop.main.run()

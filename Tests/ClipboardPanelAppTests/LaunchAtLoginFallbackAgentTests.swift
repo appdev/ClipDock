@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ClipShelf
+@testable import ClipDock
 
 struct LaunchAtLoginFallbackAgentTests {
     @Test
@@ -13,12 +13,12 @@ struct LaunchAtLoginFallbackAgentTests {
 
         let launchAgentsDirectory = rootURL.appendingPathComponent("LaunchAgents", isDirectory: true)
         let executableURL = rootURL
-            .appendingPathComponent("ClipShelf.app", isDirectory: true)
+            .appendingPathComponent("ClipDock.app", isDirectory: true)
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("MacOS", isDirectory: true)
-            .appendingPathComponent("ClipShelf")
+            .appendingPathComponent("ClipDock")
         let agent = LaunchAtLoginFallbackAgent(
-            bundleIdentifier: "dev.codex.clipshelf",
+            bundleIdentifier: "dev.codex.clipdock",
             executableURL: executableURL,
             launchAgentsDirectory: launchAgentsDirectory
         )
@@ -33,12 +33,12 @@ struct LaunchAtLoginFallbackAgentTests {
             options: [],
             format: nil
         ) as? [String: Any])
-        #expect(plist["AssociatedBundleIdentifiers"] as? [String] == ["dev.codex.clipshelf"])
-        #expect(plist["Label"] as? String == "dev.codex.clipshelf.launch-at-login")
+        #expect(plist["AssociatedBundleIdentifiers"] as? [String] == ["dev.codex.clipdock"])
+        #expect(plist["Label"] as? String == "dev.codex.clipdock.launch-at-login")
         #expect(plist["LimitLoadToSessionType"] as? String == "Aqua")
         #expect(plist["ProgramArguments"] as? [String] == [
             executableURL.path,
-            ClipShelfLaunchArgument.launchedAtLogin
+            ClipDockLaunchArgument.launchedAtLogin
         ])
         #expect(plist["RunAtLoad"] as? Bool == true)
 

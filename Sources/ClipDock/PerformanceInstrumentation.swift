@@ -1,9 +1,9 @@
 import Foundation
 import OSLog
 
-enum ClipShelfPerformanceLog {
+enum ClipDockPerformanceLog {
     private static let logger = Logger(
-        subsystem: "com.clipboardworkbench.ClipShelf",
+        subsystem: "com.clipboardworkbench.ClipDock",
         category: "performance"
     )
 
@@ -17,11 +17,11 @@ enum ClipShelfPerformanceLog {
 
     static func event(_ name: String, detail: String = "") {
         guard detail.isEmpty else {
-            logger.notice("ClipShelfPerf \(name, privacy: .public) \(detail, privacy: .public)")
+            logger.notice("ClipDockPerf \(name, privacy: .public) \(detail, privacy: .public)")
             return
         }
 
-        logger.notice("ClipShelfPerf \(name, privacy: .public)")
+        logger.notice("ClipDockPerf \(name, privacy: .public)")
     }
 
     static func finish(_ name: String, start: TimeInterval, detail: String = "") {

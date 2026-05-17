@@ -1,14 +1,14 @@
 import AppKit
 
-struct ClipShelfThemePalette {
-    let scheme: ClipShelfTheme.Scheme
-    let panel: ClipShelfPanelTheme
-    let card: ClipShelfCardTheme
-    let preferences: ClipShelfPreferencesTheme
-    let preview: ClipShelfPreviewTheme
+struct ClipDockThemePalette {
+    let scheme: ClipDockTheme.Scheme
+    let panel: ClipDockPanelTheme
+    let card: ClipDockCardTheme
+    let preferences: ClipDockPreferencesTheme
+    let preview: ClipDockPreviewTheme
 }
 
-struct ClipShelfPanelTheme {
+struct ClipDockPanelTheme {
     let backgroundColor: NSColor
     let toolbarIconColor: NSColor
     let toolbarTextColor: NSColor
@@ -18,7 +18,7 @@ struct ClipShelfPanelTheme {
     let resizeHandleColor: NSColor
 }
 
-struct ClipShelfCardTheme {
+struct ClipDockCardTheme {
     let backgroundColor: NSColor
     let textItemBackgroundColor: NSColor
     let borderColor: NSColor
@@ -48,7 +48,7 @@ struct ClipShelfCardTheme {
     let imagePreviewCheckerboardAlternateColor: NSColor
 }
 
-struct ClipShelfPreferencesTheme {
+struct ClipDockPreferencesTheme {
     let windowBackgroundColor: NSColor
     let contentBackgroundColor: NSColor
     let sidebarBackgroundColor: NSColor
@@ -64,7 +64,7 @@ struct ClipShelfPreferencesTheme {
     let controlBackgroundColor: NSColor
 }
 
-struct ClipShelfPreviewTheme {
+struct ClipDockPreviewTheme {
     let backgroundColor: NSColor
     let borderColor: NSColor
     let chromeBackgroundColor: NSColor
@@ -79,7 +79,7 @@ struct ClipShelfPreviewTheme {
 }
 
 @MainActor
-enum ClipShelfTheme {
+enum ClipDockTheme {
     enum Scheme {
         case light
         case dark
@@ -96,15 +96,15 @@ enum ClipShelfTheme {
         }
     }
 
-    static func current(for view: NSView?) -> ClipShelfThemePalette {
+    static func current(for view: NSView?) -> ClipDockThemePalette {
         current(for: view?.effectiveAppearance)
     }
 
-    static func current(for window: NSWindow?) -> ClipShelfThemePalette {
+    static func current(for window: NSWindow?) -> ClipDockThemePalette {
         current(for: window?.effectiveAppearance)
     }
 
-    static func current(for appearance: NSAppearance?) -> ClipShelfThemePalette {
+    static func current(for appearance: NSAppearance?) -> ClipDockThemePalette {
         let scheme: Scheme = isDark(appearance) ? .dark : .light
         switch scheme {
         case .light:
@@ -120,9 +120,9 @@ enum ClipShelfTheme {
         return match == .darkAqua
     }
 
-    private static let lightPalette = ClipShelfThemePalette(
+    private static let lightPalette = ClipDockThemePalette(
         scheme: .light,
-        panel: ClipShelfPanelTheme(
+        panel: ClipDockPanelTheme(
             backgroundColor: NSColor.white.withAlphaComponent(0.32),
             toolbarIconColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
             toolbarTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.94),
@@ -131,7 +131,7 @@ enum ClipShelfTheme {
             toolbarSelectedTextColor: NSColor(calibratedWhite: 0.04, alpha: 0.98),
             resizeHandleColor: NSColor(calibratedWhite: 0.26, alpha: 0.22)
         ),
-        card: ClipShelfCardTheme(
+        card: ClipDockCardTheme(
             backgroundColor: NSColor(calibratedWhite: 0.98, alpha: 0.98),
             textItemBackgroundColor: NSColor.white,
             borderColor: NSColor(calibratedWhite: 0.0, alpha: 0.13),
@@ -170,7 +170,7 @@ enum ClipShelfTheme {
             imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.96, alpha: 1),
             imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.88, alpha: 1)
         ),
-        preferences: ClipShelfPreferencesTheme(
+        preferences: ClipDockPreferencesTheme(
             windowBackgroundColor: NSColor(calibratedWhite: 0.93, alpha: 1),
             contentBackgroundColor: NSColor(calibratedWhite: 0.94, alpha: 1),
             sidebarBackgroundColor: NSColor(calibratedWhite: 0.88, alpha: 1),
@@ -185,7 +185,7 @@ enum ClipShelfTheme {
             separatorColor: NSColor(calibratedWhite: 0.0, alpha: 0.16),
             controlBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.92)
         ),
-        preview: ClipShelfPreviewTheme(
+        preview: ClipDockPreviewTheme(
             backgroundColor: NSColor(calibratedWhite: 0.96, alpha: 0.94),
             borderColor: NSColor(calibratedWhite: 0.0, alpha: 0.16),
             chromeBackgroundColor: NSColor(calibratedWhite: 0.88, alpha: 0.46),
@@ -200,9 +200,9 @@ enum ClipShelfTheme {
         )
     )
 
-    private static let darkPalette = ClipShelfThemePalette(
+    private static let darkPalette = ClipDockThemePalette(
         scheme: .dark,
-        panel: ClipShelfPanelTheme(
+        panel: ClipDockPanelTheme(
             backgroundColor: NSColor.white.withAlphaComponent(0.32),
             toolbarIconColor: NSColor.white.withAlphaComponent(0.72),
             toolbarTextColor: NSColor.white.withAlphaComponent(0.72),
@@ -211,7 +211,7 @@ enum ClipShelfTheme {
             toolbarSelectedTextColor: NSColor.white.withAlphaComponent(0.90),
             resizeHandleColor: NSColor.white.withAlphaComponent(0.18)
         ),
-        card: ClipShelfCardTheme(
+        card: ClipDockCardTheme(
             backgroundColor: NSColor(calibratedWhite: 0.075, alpha: 0.98),
             textItemBackgroundColor: NSColor(
                 srgbRed: 20.0 / 255.0,
@@ -265,7 +265,7 @@ enum ClipShelfTheme {
             imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.09, alpha: 1),
             imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.15, alpha: 1)
         ),
-        preferences: ClipShelfPreferencesTheme(
+        preferences: ClipDockPreferencesTheme(
             windowBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),
             contentBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),
             sidebarBackgroundColor: NSColor(calibratedWhite: 0.145, alpha: 1),
@@ -280,7 +280,7 @@ enum ClipShelfTheme {
             separatorColor: NSColor.separatorColor.withAlphaComponent(0.36),
             controlBackgroundColor: NSColor.windowBackgroundColor.withAlphaComponent(0.90)
         ),
-        preview: ClipShelfPreviewTheme(
+        preview: ClipDockPreviewTheme(
             backgroundColor: NSColor(calibratedWhite: 0.07, alpha: 0.84),
             borderColor: NSColor.white.withAlphaComponent(0.13),
             chromeBackgroundColor: NSColor(calibratedWhite: 0.06, alpha: 0.18),

@@ -198,8 +198,8 @@ private final class ClipboardPreviewViewController: NSViewController {
     private var quickLookPreviewView: QLPreviewView?
     private var linkWebView: WKWebView?
     private var linkNavigationDelegate: LinkPreviewNavigationDelegate?
-    private var theme: ClipShelfThemePalette {
-        isViewLoaded ? ClipShelfTheme.current(for: view) : ClipShelfTheme.current(for: NSApp.effectiveAppearance)
+    private var theme: ClipDockThemePalette {
+        isViewLoaded ? ClipDockTheme.current(for: view) : ClipDockTheme.current(for: NSApp.effectiveAppearance)
     }
 
     init(content: ClipboardPreviewContent, linkWebPreviewEnabled: Bool = true) {
@@ -1052,7 +1052,7 @@ private final class ClipboardPreviewViewController: NSViewController {
             return NSSize(width: Layout.minWidth - Layout.previewHorizontalInset * 2, height: Layout.minContentHeight)
         }
 
-        // 图片预览遵循 ClipShelf 的窗口策略：小图保持原尺寸，大图只按主屏半幅等比缩小。
+        // 图片预览遵循 ClipDock 的窗口策略：小图保持原尺寸，大图只按主屏半幅等比缩小。
         let maximumContentWidth = max(1, screenFrame.width * Layout.previewMaximumScreenFraction)
         let maximumContentHeight = max(1, screenFrame.height * Layout.previewMaximumScreenFraction)
         let scale = (imageSize.width > maximumContentWidth || imageSize.height > maximumContentHeight)

@@ -10,8 +10,8 @@ export CLANG_MODULE_CACHE_PATH="$(pwd)/.build/clang-module-cache"
 
 mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
-app_bundle_name="${APP_BUNDLE_NAME:-ClipShelf}"
-bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipShelf}"
+app_bundle_name="${APP_BUNDLE_NAME:-ClipDock}"
+bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipDock}"
 
 app_path="${1:-.codex/artifacts/${app_bundle_name}.app}"
 if [[ "$app_path" != *.app ]]; then
@@ -27,13 +27,13 @@ app_name="$(basename "$app_path" .app)"
 contents_dir="$app_path/Contents"
 macos_dir="$contents_dir/MacOS"
 resources_dir="$contents_dir/Resources"
-bundle_identifier="${BUNDLE_IDENTIFIER:-com.apkdv.clipshelf}"
-display_name="${APP_DISPLAY_NAME:-ClipShelf}"
+bundle_identifier="${BUNDLE_IDENTIFIER:-com.apkdv.clipdock}"
+display_name="${APP_DISPLAY_NAME:-ClipDock}"
 app_version="${APP_VERSION:-$(read_app_info_value CFBundleShortVersionString 0.1.0)}"
 app_build="${APP_BUILD:-$(read_app_info_value CFBundleVersion 1)}"
 codesign_identity="${CODESIGN_IDENTITY:--}"
-app_icon_file="${APP_ICON_FILE:-Sources/ClipShelf/Resources/AppIcon.icns}"
-status_icon_file="${STATUS_ICON_FILE:-Sources/ClipShelf/Resources/StatusBarClipboardTemplate.png}"
+app_icon_file="${APP_ICON_FILE:-Sources/ClipDock/Resources/AppIcon.icns}"
+status_icon_file="${STATUS_ICON_FILE:-Sources/ClipDock/Resources/StatusBarClipboardTemplate.png}"
 app_arch_inputs="${APP_ARCHS:-arm64 x86_64}"
 app_arch_inputs="${app_arch_inputs//,/ }"
 app_archs=()
@@ -97,9 +97,9 @@ fi
 
 built_executables=()
 for swift_triple in "${swift_triples[@]}"; do
-    swift build -c release --product ClipShelf --triple "$swift_triple"
+    swift build -c release --product ClipDock --triple "$swift_triple"
     release_bin_dir="$(swift build -c release --triple "$swift_triple" --show-bin-path)"
-    arch_executable_path="$release_bin_dir/ClipShelf"
+    arch_executable_path="$release_bin_dir/ClipDock"
 
     if [[ ! -x "$arch_executable_path" ]]; then
         echo "release executable not found: $arch_executable_path" >&2

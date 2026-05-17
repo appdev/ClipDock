@@ -217,7 +217,7 @@ private final class PanelSnapshotBackdropView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        // 模拟 ClipShelf 面板背后的编辑器底色，不能作为产品面板背景使用。
+        // 模拟 ClipDock 面板背后的编辑器底色，不能作为产品面板背景使用。
         NSColor(calibratedRed: 0.96, green: 0.94, blue: 0.88, alpha: 1).setFill()
         NSBezierPath(rect: bounds).fill()
 
@@ -264,7 +264,7 @@ enum PreferencesSnapshotCommand {
             "Private"
         ]
 
-        ClipShelfTheme.applyAppearanceMode(preferences.appearance.mode)
+        ClipDockTheme.applyAppearanceMode(preferences.appearance.mode)
         controller.updatePreferences(preferences)
         controller.showSection(PreferencesCommandArguments.section(arguments: arguments, flag: sectionFlag))
         controller.updateLaunchAtLoginState(
@@ -376,7 +376,7 @@ enum PreferencesRealUICommand {
             "Private"
         ]
 
-        ClipShelfTheme.applyAppearanceMode(preferences.appearance.mode)
+        ClipDockTheme.applyAppearanceMode(preferences.appearance.mode)
 
         let controller = PreferencesWindowController()
         controller.updatePreferences(preferences)

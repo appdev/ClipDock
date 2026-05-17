@@ -3,7 +3,7 @@ import Carbon.HIToolbox
 import Foundation
 import Testing
 import WebKit
-@testable import ClipShelf
+@testable import ClipDock
 @testable import ClipboardPanelApp
 
 struct PanelRuntimeSeamTests {
@@ -921,8 +921,8 @@ struct PanelRuntimeSeamTests {
     func cardRenderPathDoesNotUseNetworkOrWebRenderingAPIs() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let cardPathSources = [
-            root.appendingPathComponent("Sources/ClipShelf/PanelItemCardRenderer.swift"),
-            root.appendingPathComponent("Sources/ClipShelf/PanelCardSupport.swift")
+            root.appendingPathComponent("Sources/ClipDock/PanelItemCardRenderer.swift"),
+            root.appendingPathComponent("Sources/ClipDock/PanelCardSupport.swift")
         ]
         let forbiddenSymbols = [
             "URLSession",
@@ -1409,7 +1409,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func singleWordTextPreviewUsesClipShelfMinimumWindow() {
+    func singleWordTextPreviewUsesClipDockMinimumWindow() {
         let content = makeTextPreviewContent(body: "Vault")
 
         let size = smokePreferredClipboardPreviewSize(for: content)
@@ -1420,11 +1420,11 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func textPreviewSizeUsesClipShelfMeasuredContent() {
+    func textPreviewSizeUsesClipDockMeasuredContent() {
         let content = makeTextPreviewContent(body: "短文本预览\nsecond line")
 
         let size = smokePreferredClipboardPreviewSize(for: content)
-        let expectedSize = expectedClipShelfTextPreviewSize(for: content.body)
+        let expectedSize = expectedClipDockTextPreviewSize(for: content.body)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -1432,14 +1432,14 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func richTextPreviewSizeUsesClipShelfTextMetrics() {
+    func richTextPreviewSizeUsesClipDockTextMetrics() {
         let content = makeTextPreviewContent(
             body: "富文本预览\nbold title\nregular body",
             itemType: "rich_text"
         )
 
         let size = smokePreferredClipboardPreviewSize(for: content)
-        let expectedSize = expectedClipShelfTextPreviewSize(for: content.body)
+        let expectedSize = expectedClipDockTextPreviewSize(for: content.body)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -1447,16 +1447,16 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func longTextPreviewSizeUsesClipShelfMeasurementLimitAndHalfScreenCap() {
+    func longTextPreviewSizeUsesClipDockMeasurementLimitAndHalfScreenCap() {
         let body = Array(
-            repeating: "ClipShelf preview sizing should measure a bounded prefix and cap the viewport by half of the screen.",
+            repeating: "ClipDock preview sizing should measure a bounded prefix and cap the viewport by half of the screen.",
             count: 80
         ).joined(separator: "\n")
         let content = makeTextPreviewContent(body: body)
 
         let size = smokePreferredClipboardPreviewSize(for: content)
-        let expectedSize = expectedClipShelfTextPreviewSize(for: body)
-        let maximumContentSize = expectedClipShelfTextMaximumContentSize()
+        let expectedSize = expectedClipDockTextPreviewSize(for: body)
+        let maximumContentSize = expectedClipDockTextMaximumContentSize()
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -1515,11 +1515,11 @@ struct PanelRuntimeSeamTests {
         PanelQAHarness.drainMainRunLoop()
 
         #expect(await waitForMainActor { contentView.smokeIsPreviewShown })
-        let expectedBackground = ClipShelfTheme.current(for: contentView).panel.backgroundColor
+        let expectedBackground = ClipDockTheme.current(for: contentView).panel.backgroundColor
         let actualBackground = try #require(contentView.smokePreviewRootBackgroundColor())
         #expect(colorAndAlphaDistance(actualBackground, expectedBackground) < 0.001)
         let directSubviewBackgrounds = contentView.smokePreviewDirectSubviewBackgroundColors()
-        let expectedSurface = ClipShelfTheme.current(for: contentView)
+        let expectedSurface = ClipDockTheme.current(for: contentView)
             .preview
             .surfaceBackgroundColor
             .withAlphaComponent(1)
@@ -1631,7 +1631,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func imagePreviewSizeKeepsNaturalImageSizeWithClipShelfShellInsets() throws {
+    func imagePreviewSizeKeepsNaturalImageSizeWithClipDockShellInsets() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -1639,7 +1639,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: imageURL, width: 220, height: 140)
 
         let size = smokePreferredClipboardPreviewSize(for: makeImagePreviewContent(imageURL: imageURL))
-        let expectedSize = expectedClipShelfImagePreviewSize(imageWidth: 220, imageHeight: 140)
+        let expectedSize = expectedClipDockImagePreviewSize(imageWidth: 220, imageHeight: 140)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -1647,7 +1647,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func imagePreviewSizeDownscalesLargeImageToHalfScreenLikeClipShelf() throws {
+    func imagePreviewSizeDownscalesLargeImageToHalfScreenLikeClipDock() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -1655,7 +1655,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: imageURL, width: 2000, height: 1000)
 
         let size = smokePreferredClipboardPreviewSize(for: makeImagePreviewContent(imageURL: imageURL))
-        let expectedSize = expectedClipShelfImagePreviewSize(imageWidth: 2000, imageHeight: 1000)
+        let expectedSize = expectedClipDockImagePreviewSize(imageWidth: 2000, imageHeight: 1000)
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -1710,7 +1710,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: imageURL, width: 1200, height: 600)
 
         let app = NSApplication.shared
-        let theme = ClipShelfTheme.current(for: app.effectiveAppearance)
+        let theme = ClipDockTheme.current(for: app.effectiveAppearance)
         let itemSide: CGFloat = 218
         let headerHeight: CGFloat = 48
         let renderer = PanelItemCardRenderer(
@@ -1787,7 +1787,7 @@ struct PanelRuntimeSeamTests {
         try writePNG(to: smallImageURL, width: 60, height: 40)
 
         let app = NSApplication.shared
-        let theme = ClipShelfTheme.current(for: app.effectiveAppearance)
+        let theme = ClipDockTheme.current(for: app.effectiveAppearance)
         let itemSide: CGFloat = 218
         let headerHeight: CGFloat = 48
         let renderer = PanelItemCardRenderer(
@@ -2363,7 +2363,7 @@ struct PanelRuntimeSeamTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
         let itemSide: CGFloat = 218
-        let theme = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
+        let theme = ClipDockTheme.current(for: NSAppearance(named: .aqua))
         let renderer = makeRuntimeCardRenderer(
             appSupportDirectory: tempDirectory,
             itemSide: itemSide,
@@ -2416,7 +2416,7 @@ struct PanelRuntimeSeamTests {
         let sourceIconURL = tempDirectory.appendingPathComponent("source-icon.png")
         try writePNG(to: sourceIconURL, width: 20, height: 20)
 
-        let theme = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
+        let theme = ClipDockTheme.current(for: NSAppearance(named: .aqua))
         let renderedCard = renderLinkCard(
             itemSide: 218,
             appSupportDirectory: tempDirectory,
@@ -2464,8 +2464,8 @@ struct PanelRuntimeSeamTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
-        let lightTheme = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
-        let darkTheme = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+        let lightTheme = ClipDockTheme.current(for: NSAppearance(named: .aqua))
+        let darkTheme = ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
         let lightCard = renderLinkCard(
             itemSide: 218,
             appSupportDirectory: tempDirectory,
@@ -2498,7 +2498,7 @@ struct PanelRuntimeSeamTests {
             itemSide: 218,
             appSupportDirectory: tempDirectory,
             sourceAppIconPath: nil,
-            theme: ClipShelfTheme.current(for: NSAppearance(named: .aqua))
+            theme: ClipDockTheme.current(for: NSAppearance(named: .aqua))
         )
         let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
         let linkIconView = try #require(renderedCard.artifacts.linkIconViews.first)
@@ -2626,8 +2626,8 @@ struct PanelRuntimeSeamTests {
             appSupportDirectory: tempDirectory,
             sourceAppIconPath: nil,
             linkTitle: "",
-            footnoteText: "github.com/clipshelf/clipshelf",
-            primaryText: "https://github.com/clipshelf/clipshelf"
+            footnoteText: "github.com/clipdock/clipdock",
+            primaryText: "https://github.com/clipdock/clipdock"
         )
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
         host.addSubview(renderedCard.view)
@@ -2643,7 +2643,7 @@ struct PanelRuntimeSeamTests {
         let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
         let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.view)
 
-        #expect(visibleLabels.contains { $0.stringValue == "github.com/clipshelf/clipshelf" })
+        #expect(visibleLabels.contains { $0.stringValue == "github.com/clipdock/clipdock" })
         #expect(!visibleLabels.contains { $0.stringValue == "github.com" })
         #expect(abs(previewFrame.height - 138) <= 1.5)
     }
@@ -2667,8 +2667,8 @@ struct PanelRuntimeSeamTests {
             appSupportDirectory: tempDirectory,
             sourceAppIconPath: nil,
             linkTitle: "",
-            footnoteText: "github.com/clipshelf/clipshelf",
-            primaryText: "https://github.com/clipshelf/clipshelf"
+            footnoteText: "github.com/clipdock/clipdock",
+            primaryText: "https://github.com/clipdock/clipdock"
         )
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 436, height: 218))
         host.addSubview(titledCard.view)
@@ -2693,7 +2693,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func videoFilePreviewSizeUsesClipShelfDocumentQuickLookViewport() throws {
+    func videoFilePreviewSizeUsesClipDockDocumentQuickLookViewport() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
@@ -2701,7 +2701,7 @@ struct PanelRuntimeSeamTests {
         try Data().write(to: videoURL)
 
         let size = smokePreferredClipboardPreviewSize(for: makePreviewContent(fileURLs: [videoURL]))
-        let expectedSize = expectedClipShelfDocumentPreviewSize()
+        let expectedSize = expectedClipDockDocumentPreviewSize()
 
         #expect(abs(size.width - expectedSize.width) < 1)
         #expect(abs(size.height - expectedSize.height) < 1)
@@ -3023,7 +3023,7 @@ struct PanelRuntimeSeamTests {
     func appRuntimeKeepsPanelHiddenForDefaultInitialPresentation() async throws {
         let delegate = AppDelegate()
 
-        delegate.smokeApplyInitialPresentationForRealFunctionQA(arguments: ["ClipShelf"])
+        delegate.smokeApplyInitialPresentationForRealFunctionQA(arguments: ["ClipDock"])
 
         #expect(!delegate.smokePanelIsVisibleForRealFunctionQA)
     }
@@ -3036,7 +3036,7 @@ struct PanelRuntimeSeamTests {
 
         let delegate = AppDelegate()
         delegate.smokeApplyInitialPresentationForRealFunctionQA(
-            arguments: ["/Applications/ClipShelf.app/Contents/MacOS/ClipShelf"],
+            arguments: ["/Applications/ClipDock.app/Contents/MacOS/ClipDock"],
             isRunningAsApplicationBundle: true
         )
 
@@ -3054,8 +3054,8 @@ struct PanelRuntimeSeamTests {
         let delegate = AppDelegate()
         delegate.smokeApplyInitialPresentationForRealFunctionQA(
             arguments: [
-                "/Applications/ClipShelf.app/Contents/MacOS/ClipShelf",
-                ClipShelfLaunchArgument.launchedAtLogin
+                "/Applications/ClipDock.app/Contents/MacOS/ClipDock",
+                ClipDockLaunchArgument.launchedAtLogin
             ],
             isRunningAsApplicationBundle: true
         )
@@ -3771,8 +3771,8 @@ private func makeImagePreviewContent(imageURL: URL) -> ClipboardPreviewContent {
     )
 }
 
-private func expectedClipShelfTextPreviewSize(for text: String) -> NSSize {
-    let maximumContentSize = expectedClipShelfTextMaximumContentSize()
+private func expectedClipDockTextPreviewSize(for text: String) -> NSSize {
+    let maximumContentSize = expectedClipDockTextMaximumContentSize()
     let measuredText = NSAttributedString(
         string: text.isEmpty ? " " : text,
         attributes: [
@@ -3801,7 +3801,7 @@ private func expectedClipShelfTextPreviewSize(for text: String) -> NSSize {
     )
 }
 
-private func expectedClipShelfTextMaximumContentSize() -> NSSize {
+private func expectedClipDockTextMaximumContentSize() -> NSSize {
     guard let screenFrame = NSScreen.main?.frame else {
         return NSSize(width: 1_000, height: 1_000)
     }
@@ -3812,7 +3812,7 @@ private func expectedClipShelfTextMaximumContentSize() -> NSSize {
     )
 }
 
-private func expectedClipShelfDocumentPreviewSize() -> NSSize {
+private func expectedClipDockDocumentPreviewSize() -> NSSize {
     let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
     return NSSize(
         width: floor(screenFrame.width * 0.5 + 10),
@@ -3820,7 +3820,7 @@ private func expectedClipShelfDocumentPreviewSize() -> NSSize {
     )
 }
 
-private func expectedClipShelfImagePreviewSize(imageWidth: CGFloat, imageHeight: CGFloat) -> NSSize {
+private func expectedClipDockImagePreviewSize(imageWidth: CGFloat, imageHeight: CGFloat) -> NSSize {
     let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
     let maximumContentWidth = screenFrame.width * 0.5
     let maximumContentHeight = screenFrame.height * 0.5
@@ -3927,10 +3927,10 @@ private final class SourceColorWriteRecorder: @unchecked Sendable {
 private func makeRuntimeCardRenderer(
     appSupportDirectory: URL,
     itemSide: CGFloat,
-    theme: ClipShelfThemePalette? = nil
+    theme: ClipDockThemePalette? = nil
 ) -> PanelItemCardRenderer {
     let app = NSApplication.shared
-    let theme = theme ?? ClipShelfTheme.current(for: app.effectiveAppearance)
+    let theme = theme ?? ClipDockTheme.current(for: app.effectiveAppearance)
     return PanelItemCardRenderer(
         cardAssetResolver: PanelCardAssetResolver(appSupportDirectory: appSupportDirectory),
         metrics: PanelItemCardRendererMetrics(
@@ -3958,7 +3958,7 @@ private func renderLinkCard(
     primaryText: String = "https://github.com/",
     iconPath: String? = nil,
     imagePath: String? = nil,
-    theme: ClipShelfThemePalette? = nil
+    theme: ClipDockThemePalette? = nil
 ) -> PanelRenderedItemCard {
     let renderer = makeRuntimeCardRenderer(
         appSupportDirectory: appSupportDirectory,

@@ -1,7 +1,7 @@
 import AppKit
 import ClipboardPanelApp
 import Testing
-@testable import ClipShelf
+@testable import ClipDock
 
 struct PreferencesShellTests {
     @Test

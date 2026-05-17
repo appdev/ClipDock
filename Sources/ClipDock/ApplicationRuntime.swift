@@ -3,7 +3,7 @@ import Carbon.HIToolbox
 import ClipboardPanelApp
 import UniformTypeIdentifiers
 
-enum ClipShelfLaunchArgument {
+enum ClipDockLaunchArgument {
     static let launchedAtLogin = "--launched-at-login"
 }
 
@@ -99,27 +99,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastPanelToggleUptime: TimeInterval = 0
     private var directInsertTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
-    private let delegateInitUptime = ClipShelfPerformanceLog.mark()
+    private let delegateInitUptime = ClipDockPerformanceLog.mark()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let launchStart = ClipShelfPerformanceLog.mark()
-        ClipShelfPerformanceLog.event(
+        let launchStart = ClipDockPerformanceLog.mark()
+        ClipDockPerformanceLog.event(
             "application.didFinishLaunching.enter",
             detail: "pid=\(ProcessInfo.processInfo.processIdentifier)"
         )
-        ClipShelfPerformanceLog.measure("application.setActivationPolicy") {
+        ClipDockPerformanceLog.measure("application.setActivationPolicy") {
             NSApp.setActivationPolicy(.accessory)
         }
-        ClipShelfPerformanceLog.measure("application.configureMainMenu") {
+        ClipDockPerformanceLog.measure("application.configureMainMenu") {
             configureMainMenu()
         }
-        ClipShelfPerformanceLog.measure("application.configureStatusItem") {
+        ClipDockPerformanceLog.measure("application.configureStatusItem") {
             configureStatusItem()
         }
-        ClipShelfPerformanceLog.measure("application.configurePanelCallbacks") {
+        ClipDockPerformanceLog.measure("application.configurePanelCallbacks") {
             configurePanelCallbacks()
         }
-        ClipShelfPerformanceLog.measure("application.applyInitialPresentation") {
+        ClipDockPerformanceLog.measure("application.applyInitialPresentation") {
             applyInitialPresentation(arguments: CommandLine.arguments)
         }
 
@@ -128,10 +128,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard !Task.isCancelled else { return }
             continueStartupAfterInitialPresentation()
         }
-        ClipShelfPerformanceLog.finish(
+        ClipDockPerformanceLog.finish(
             "application.didFinishLaunching.finished",
             start: launchStart,
-            detail: "sinceDelegateInitMs=\(ClipShelfPerformanceLog.format(ClipShelfPerformanceLog.milliseconds(since: delegateInitUptime)))"
+            detail: "sinceDelegateInitMs=\(ClipDockPerformanceLog.format(ClipDockPerformanceLog.milliseconds(since: delegateInitUptime)))"
         )
     }
 
@@ -167,10 +167,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePanel(_ sender: Any?) {
         guard shouldAcceptPanelToggle() else { return }
-        let toggleStart = ClipShelfPerformanceLog.mark()
+        let toggleStart = ClipDockPerformanceLog.mark()
         let wasVisible = panelController.isVisible
         panelController.toggle()
-        ClipShelfPerformanceLog.finish(
+        ClipDockPerformanceLog.finish(
             "panel.toggle.dispatched",
             start: toggleStart,
             detail: "wasVisible=\(wasVisible) isVisible=\(panelController.isVisible)"
@@ -178,15 +178,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showPanel(_ sender: Any?) {
-        let start = ClipShelfPerformanceLog.mark()
+        let start = ClipDockPerformanceLog.mark()
         panelController.show()
-        ClipShelfPerformanceLog.finish("panel.show.commandDispatched", start: start)
+        ClipDockPerformanceLog.finish("panel.show.commandDispatched", start: start)
     }
 
     @objc private func hidePanel(_ sender: Any?) {
-        let start = ClipShelfPerformanceLog.mark()
+        let start = ClipDockPerformanceLog.mark()
         panelController.hide()
-        ClipShelfPerformanceLog.finish("panel.hide.commandDispatched", start: start)
+        ClipDockPerformanceLog.finish("panel.hide.commandDispatched", start: start)
     }
 
     @objc private func repositionPanel(_ sender: Any?) {
@@ -229,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshAccessibilityPermissionState()
             preferencesController.showPreferences()
         } else if isRunningAsApplicationBundle,
-                  !arguments.contains(ClipShelfLaunchArgument.launchedAtLogin) {
+                  !arguments.contains(ClipDockLaunchArgument.launchedAtLogin) {
             showPreferences(nil)
         }
     }
@@ -240,26 +240,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func continueStartupAfterInitialPresentation() {
-        let startupStart = ClipShelfPerformanceLog.mark()
-        ClipShelfPerformanceLog.measure("startup.configureClipboardCapture") {
+        let startupStart = ClipDockPerformanceLog.mark()
+        ClipDockPerformanceLog.measure("startup.configureClipboardCapture") {
             configureClipboardCapture()
         }
-        ClipShelfPerformanceLog.measure("startup.sourceTracker.start") {
+        ClipDockPerformanceLog.measure("startup.sourceTracker.start") {
             sourceApplicationTracker.start()
         }
-        ClipShelfPerformanceLog.measure("startup.bootstrapLocalStorage") {
+        ClipDockPerformanceLog.measure("startup.bootstrapLocalStorage") {
             bootstrapLocalStorage()
         }
-        ClipShelfPerformanceLog.measure("startup.clipboardMonitor.start") {
+        ClipDockPerformanceLog.measure("startup.clipboardMonitor.start") {
             clipboardMonitor.start()
         }
-        ClipShelfPerformanceLog.measure("startup.registerGlobalHotKey") {
+        ClipDockPerformanceLog.measure("startup.registerGlobalHotKey") {
             registerGlobalHotKey()
         }
-        ClipShelfPerformanceLog.measure("startup.refreshStatusText") {
+        ClipDockPerformanceLog.measure("startup.refreshStatusText") {
             refreshStatusText()
         }
-        ClipShelfPerformanceLog.finish("startup.finished", start: startupStart)
+        ClipDockPerformanceLog.finish("startup.finished", start: startupStart)
     }
 
     private func commandLineValue(for flag: String, in arguments: [String]) -> String? {
@@ -325,7 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .failure(let error):
                 detail = "error=\(error.code) append=\(update.append) filtered=\(update.isFiltered)"
             }
-            ClipShelfPerformanceLog.measure("list.applyToPanel", detail: detail) {
+            ClipDockPerformanceLog.measure("list.applyToPanel", detail: detail) {
                 self.panelController.updateListState(
                     update.result,
                     isFiltered: update.isFiltered,
@@ -335,7 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         listCoordinator.onLoadingMoreChanged = { [weak self] isLoading in
-            ClipShelfPerformanceLog.event("list.loadingMore", detail: "isLoading=\(isLoading)")
+            ClipDockPerformanceLog.event("list.loadingMore", detail: "isLoading=\(isLoading)")
             self?.panelController.updateLoadingMoreState(isLoading)
         }
         listCoordinator.onStatusTextChanged = { [weak self] statusText in
@@ -746,22 +746,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bootstrapLocalStorage() {
-        let bootstrapStart = ClipShelfPerformanceLog.mark()
+        let bootstrapStart = ClipDockPerformanceLog.mark()
         let defaultAppSupportURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         )
         .first?
-        .appendingPathComponent("ClipShelf", isDirectory: true)
+        .appendingPathComponent("ClipDock", isDirectory: true)
 
         let appSupportURL = appSupportURLOverride(arguments: CommandLine.arguments) ?? defaultAppSupportURL
 
         guard let appSupportURL else {
             storageStatusText = "存储：无法定位 Application Support"
-            ClipShelfPerformanceLog.finish("storage.bootstrap.failed", start: bootstrapStart, detail: "reason=missingAppSupport")
+            ClipDockPerformanceLog.finish("storage.bootstrap.failed", start: bootstrapStart, detail: "reason=missingAppSupport")
             return
         }
-        ClipShelfPerformanceLog.event("storage.bootstrap.start", detail: "path=\(appSupportURL.path)")
+        ClipDockPerformanceLog.event("storage.bootstrap.start", detail: "path=\(appSupportURL.path)")
         self.appSupportURL = appSupportURL
         iconProvider = SourceAppIconProvider(appSupportURL: appSupportURL)
         imageAssetProvider = ClipboardImageAssetProvider(appSupportURL: appSupportURL)
@@ -772,40 +772,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let maintenanceCoordinator else { return }
 
-        let openResult = ClipShelfPerformanceLog.measure("storage.openCore") {
+        let openResult = ClipDockPerformanceLog.measure("storage.openCore") {
             maintenanceCoordinator.openCore()
         }
         switch openResult {
         case .success(let result):
-            ClipShelfPerformanceLog.event("storage.openCore.success", detail: "items=\(result.itemCount)")
+            ClipDockPerformanceLog.event("storage.openCore.success", detail: "items=\(result.itemCount)")
             updateStorageStatus("存储：已连接（\(result.itemCount) 条）")
-            ClipShelfPerformanceLog.measure("preferences.load") {
+            ClipDockPerformanceLog.measure("preferences.load") {
                 loadPreferences()
             }
-            ClipShelfPerformanceLog.measure("storage.recoverPendingImages") {
+            ClipDockPerformanceLog.measure("storage.recoverPendingImages") {
                 _ = rustCoreClient.recoverPendingImages(
                     appSupportDirectory: appSupportURL,
                     request: RustRecoverPendingImagesRequest(ownerSessionId: imageCaptureSessionID)
                 )
             }
-            let maintenanceResult = ClipShelfPerformanceLog.measure("storage.maintenance") {
+            let maintenanceResult = ClipDockPerformanceLog.measure("storage.maintenance") {
                 runLocalMaintenance()
             }
-            ClipShelfPerformanceLog.measure("pinboards.refresh") {
+            ClipDockPerformanceLog.measure("pinboards.refresh") {
                 refreshPinboards()
             }
-            ClipShelfPerformanceLog.measure("list.refresh.initial") {
+            ClipDockPerformanceLog.measure("list.refresh.initial") {
                 refreshClipboardList()
             }
             if let maintenanceResult, hasMaintenanceChanges(maintenanceResult) {
                 updateStorageStatus(maintenanceStatusText(maintenanceResult))
             }
-            ClipShelfPerformanceLog.finish("storage.bootstrap.finished", start: bootstrapStart, detail: "status=success")
+            ClipDockPerformanceLog.finish("storage.bootstrap.finished", start: bootstrapStart, detail: "status=success")
 
         case .failure(let error):
             updateStorageStatus("存储：\(error.code)")
             panelController.updateStorageState(.failure(error))
-            ClipShelfPerformanceLog.finish("storage.bootstrap.finished", start: bootstrapStart, detail: "status=failure error=\(error.code)")
+            ClipDockPerformanceLog.finish("storage.bootstrap.finished", start: bootstrapStart, detail: "status=failure error=\(error.code)")
         }
     }
 
@@ -881,7 +881,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updatePreferencesController: Bool
     ) {
         currentPreferences = result.preferences
-        ClipShelfTheme.applyAppearanceMode(result.preferences.appearance.mode)
+        ClipDockTheme.applyAppearanceMode(result.preferences.appearance.mode)
         panelController.setConfiguredDefaultHeight(CGFloat(result.preferences.general.defaultPanelHeight))
         panelController.setPreviewPopoverEnabled(result.preferences.appearance.previewPopoverEnabled)
         panelController.setLinkWebPreviewEnabled(result.preferences.linkPreview.webPreviewEnabled)
@@ -957,12 +957,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshClipboardList(debounce: Bool = false) {
-        ClipShelfPerformanceLog.event("list.refresh.requested", detail: "debounce=\(debounce)")
+        ClipDockPerformanceLog.event("list.refresh.requested", detail: "debounce=\(debounce)")
         listCoordinator?.refresh(debounce: debounce)
     }
 
     private func loadMoreClipboardItems() {
-        ClipShelfPerformanceLog.event("list.loadMore.requested")
+        ClipDockPerformanceLog.event("list.loadMore.requested")
         listCoordinator?.loadMore()
     }
 
@@ -1242,9 +1242,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureMainMenu() {
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
-        let appMenu = NSMenu(title: "ClipShelf")
+        let appMenu = NSMenu(title: "ClipDock")
 
-        appMenu.addItem(makeMenuItem(title: "关于 ClipShelf", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        appMenu.addItem(makeMenuItem(title: "关于 ClipDock", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
         appMenu.addItem(.separator())
         let togglePanelMenuItem = makeMenuItem(
             title: "显示/隐藏面板",
@@ -1271,7 +1271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.title = ""
 
         let menu = NSMenu()
-        menu.addItem(makeMenuItem(title: "关于 ClipShelf", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: "关于 ClipDock", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: "显示面板", imageName: "eye", action: #selector(showPanel(_:)), key: "", modifiers: []))
         menu.addItem(makeMenuItem(title: "隐藏面板", imageName: "eye.slash", action: #selector(hidePanel(_:)), key: "", modifiers: []))
@@ -1291,14 +1291,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .flatMap(NSImage.init(contentsOf:)) {
             image.isTemplate = true
             image.size = NSSize(width: 19, height: 19)
-            image.accessibilityDescription = "ClipShelf"
+            image.accessibilityDescription = "ClipDock"
             return image
         }
 
-        let fallbackImage = NSImage(systemSymbolName: "list.clipboard", accessibilityDescription: "ClipShelf")
+        let fallbackImage = NSImage(systemSymbolName: "list.clipboard", accessibilityDescription: "ClipDock")
         fallbackImage?.isTemplate = true
         fallbackImage?.size = NSSize(width: 19, height: 19)
-        fallbackImage?.accessibilityDescription = "ClipShelf"
+        fallbackImage?.accessibilityDescription = "ClipDock"
         return fallbackImage
     }
 
@@ -1317,10 +1317,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func registerGlobalHotKey() {
-        let registrationStart = ClipShelfPerformanceLog.mark()
+        let registrationStart = ClipDockPerformanceLog.mark()
         let shortcut = KeyboardShortcutPresenter.normalized(currentPreferences.shortcuts.openPanel)
         guard registeredOpenPanelShortcut != shortcut || hotKeyRef == nil else {
-            ClipShelfPerformanceLog.finish("hotkey.register.skipped", start: registrationStart)
+            ClipDockPerformanceLog.finish("hotkey.register.skipped", start: registrationStart)
             return
         }
 
@@ -1353,7 +1353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard handlerStatus == noErr else {
                 storageStatusText = "快捷键：监听失败 \(handlerStatus)"
                 refreshStatusText()
-                ClipShelfPerformanceLog.finish("hotkey.register.failed", start: registrationStart, detail: "phase=handler status=\(handlerStatus)")
+                ClipDockPerformanceLog.finish("hotkey.register.failed", start: registrationStart, detail: "phase=handler status=\(handlerStatus)")
                 return
             }
         }
@@ -1372,14 +1372,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             registeredOpenPanelShortcut = nil
             storageStatusText = "快捷键：注册失败 \(registerStatus)"
             refreshStatusText()
-            ClipShelfPerformanceLog.finish("hotkey.register.failed", start: registrationStart, detail: "phase=register status=\(registerStatus)")
+            ClipDockPerformanceLog.finish("hotkey.register.failed", start: registrationStart, detail: "phase=register status=\(registerStatus)")
             return
         }
 
         hotKeyRef = nextHotKeyRef
         registeredOpenPanelShortcut = shortcut
         let modifiersText = shortcut.modifiers.joined(separator: "+")
-        ClipShelfPerformanceLog.finish(
+        ClipDockPerformanceLog.finish(
             "hotkey.register.finished",
             start: registrationStart,
             detail: "keyCode=\(shortcut.keyCode) modifiers=\(modifiersText)"
@@ -1476,7 +1476,7 @@ extension AppDelegate {
     func smokeStoredItems() throws -> [RustClipboardItemSummary] {
         guard let appSupportURL else {
             throw NSError(
-                domain: "ClipShelf.RealFunctionQA",
+                domain: "ClipDock.RealFunctionQA",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "真实功能 QA 未配置独立存储目录"]
             )
@@ -1491,7 +1491,7 @@ extension AppDelegate {
     func smokeRenderStoredItems() throws -> [RustClipboardItemSummary] {
         guard let appSupportURL else {
             throw NSError(
-                domain: "ClipShelf.RealFunctionQA",
+                domain: "ClipDock.RealFunctionQA",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "真实功能 QA 未配置独立存储目录"]
             )

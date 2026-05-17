@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 app_info_plist_path() {
-    printf '%s' "${APP_INFO_PLIST:-Sources/ClipShelf/Resources/AppInfo.plist}"
+    printf '%s' "${APP_INFO_PLIST:-Sources/ClipDock/Resources/AppInfo.plist}"
 }
 
 read_app_info_value() {

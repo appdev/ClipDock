@@ -7,8 +7,8 @@ source scripts/app-metadata.sh
 
 version="${APP_VERSION:-$(read_app_info_value CFBundleShortVersionString 0.1.0)}"
 build="${APP_BUILD:-$(read_app_info_value CFBundleVersion 1)}"
-app_bundle_name="${APP_BUNDLE_NAME:-ClipShelf}"
-bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipShelf}"
+app_bundle_name="${APP_BUNDLE_NAME:-ClipDock}"
+bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipDock}"
 app_archs="${APP_ARCHS:-arm64 x86_64}"
 artifact_root="${RELEASE_DIR:-.codex/artifacts/release/$version}"
 checksums_path="$artifact_root/SHA256SUMS"
@@ -104,7 +104,7 @@ for arch in "${release_archs[@]}"; do
     cp -R "$app_path" "$staging_dir/${app_bundle_name}.app"
     ln -s /Applications "$staging_dir/Applications"
     hdiutil create \
-        -volname "ClipShelf $version $arch" \
+        -volname "ClipDock $version $arch" \
         -srcfolder "$staging_dir" \
         -ov \
         -format UDZO \

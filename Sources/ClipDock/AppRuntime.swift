@@ -9,7 +9,7 @@ import WebKit
 
 @MainActor
 func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView {
-    let tintColor = ClipShelfTheme.current(for: contentView).panel.backgroundColor
+    let tintColor = ClipDockTheme.current(for: contentView).panel.backgroundColor
     let hostView: NSView
 
     if let glassView = makeSystemGlassPanelHostView(contentView: contentView) {
@@ -396,8 +396,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             loadSourceIconsSynchronously: false
         )
     }
-    private var theme: ClipShelfThemePalette {
-        ClipShelfTheme.current(for: self)
+    private var theme: ClipDockThemePalette {
+        ClipDockTheme.current(for: self)
     }
     private var activeListPage: ListPageSurface {
         pageSurface(for: currentListScope)
@@ -726,7 +726,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         updatePinboardChipAppearance()
     }
 
-    private func panelStableBackgroundColor(theme: ClipShelfThemePalette) -> NSColor {
+    private func panelStableBackgroundColor(theme: ClipDockThemePalette) -> NSColor {
         switch backgroundHostState {
         case .systemGlass, .legacyVisualEffect:
             return .clear
@@ -762,7 +762,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                             cardFooterHeight: Layout.cardFooterHeight,
                             sourceIconSize: Layout.sourceIconSize,
                             linkPreviewHeight: Layout.linkPreviewHeight,
-                            theme: ClipShelfTheme.current(for: NSView())
+                            theme: ClipDockTheme.current(for: NSView())
                         ),
                         backingScaleFactor: NSScreen.main?.backingScaleFactor ?? 2
                     )
@@ -1301,7 +1301,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             scope: updateScope
         )
         if shouldReuseRenderedPage {
-            ClipShelfPerformanceLog.event("list.render.reuse", detail: "scope=\(updateScope)")
+            ClipDockPerformanceLog.event("list.render.reuse", detail: "scope=\(updateScope)")
             updateLoadMoreSuppressionAfterListUpdate(
                 result: result,
                 append: append,
@@ -1474,20 +1474,20 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
         switch panelViewState().list.presentation {
         case .emptyHistory, .filteredEmpty:
-            ClipShelfPerformanceLog.measure("list.render.empty") {
+            ClipDockPerformanceLog.measure("list.render.empty") {
                 renderItemEntries([])
             }
             return
         case .databaseError:
-            ClipShelfPerformanceLog.measure("list.render.databaseError") {
+            ClipDockPerformanceLog.measure("list.render.databaseError") {
                 renderItemEntries([])
             }
             return
         case .items(let items):
-            let entries = ClipShelfPerformanceLog.measure("list.makeItemEntries", detail: "count=\(items.count)") {
+            let entries = ClipDockPerformanceLog.measure("list.makeItemEntries", detail: "count=\(items.count)") {
                 items.map(makeItemEntry)
             }
-            ClipShelfPerformanceLog.measure("list.renderItemEntries", detail: "count=\(entries.count)") {
+            ClipDockPerformanceLog.measure("list.renderItemEntries", detail: "count=\(entries.count)") {
                 renderItemEntries(entries)
             }
         }
@@ -1535,10 +1535,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     ) {
         let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
         let previewedItemID = previewPopoverController.previewedItemID
-        let entries = ClipShelfPerformanceLog.measure("list.reconcile.makeEntries", detail: "count=\(items.count)") {
+        let entries = ClipDockPerformanceLog.measure("list.reconcile.makeEntries", detail: "count=\(items.count)") {
             items.map(makeItemEntry)
         }
-        ClipShelfPerformanceLog.measure("list.reconcile.collection", detail: "count=\(entries.count)") {
+        ClipDockPerformanceLog.measure("list.reconcile.collection", detail: "count=\(entries.count)") {
             activeListPage.reconcile(entries: entries)
             refreshItemBandLayout(preservedOrigin: preservedOrigin, preserveScrollPosition: preserveScrollPosition)
         }
@@ -2276,19 +2276,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func renderItemEntries(_ entries: [PanelItemCollectionEntry]) {
         activeListPage.reload(entries: entries)
-        ClipShelfPerformanceLog.measure("list.updatePanelHeightAfterRender", detail: "count=\(entries.count)") {
+        ClipDockPerformanceLog.measure("list.updatePanelHeightAfterRender", detail: "count=\(entries.count)") {
             updatePanelHeight(currentPanelHeight)
         }
-        ClipShelfPerformanceLog.measure("list.refreshHintsAfterRender", detail: "count=\(entries.count)") {
+        ClipDockPerformanceLog.measure("list.refreshHintsAfterRender", detail: "count=\(entries.count)") {
             refreshVisibleCommandHints()
         }
     }
 
     private func makeDatabaseErrorEntry() -> PanelItemCollectionEntry {
         PanelItemCollectionEntry(
-            id: "__clipshelf_database_error__",
+            id: "__clipdock_database_error__",
             state: statusCardState(
-                itemID: "__clipshelf_database_error__",
+                itemID: "__clipdock_database_error__",
                 sourceAppName: "数据库不可用",
                 relativeTimeText: "可重试",
                 symbolName: "exclamationmark.triangle",

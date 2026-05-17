@@ -5,7 +5,7 @@ struct LinkDisplayURLFormatterTests {
     @Test
     func hidesDefaultHTTPSURLParts() {
         #expect(LinkDisplayURLFormatter.displayURL(from: "https://www.example.com/") == "example.com")
-        #expect(LinkDisplayURLFormatter.displayURL(from: "https://github.com/clipshelf/app") == "github.com/clipshelf/app")
+        #expect(LinkDisplayURLFormatter.displayURL(from: "https://github.com/clipdock/app") == "github.com/clipdock/app")
     }
 
     @Test

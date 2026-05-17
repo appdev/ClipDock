@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import UniformTypeIdentifiers
 @testable import ClipboardPanelApp
-@testable import ClipShelf
+@testable import ClipDock
 
 struct LinkMetadataCoordinatorTests {
     @Test

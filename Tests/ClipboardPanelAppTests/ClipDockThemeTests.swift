@@ -1,13 +1,13 @@
 import AppKit
 import Testing
-@testable import ClipShelf
+@testable import ClipDock
 
-struct ClipShelfThemeTests {
+struct ClipDockThemeTests {
     @Test
     @MainActor
     func resolvesSeparateLightAndDarkPalettes() throws {
-        let light = ClipShelfTheme.current(for: NSAppearance(named: .aqua))
-        let dark = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+        let light = ClipDockTheme.current(for: NSAppearance(named: .aqua))
+        let dark = ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
 
         #expect(light.scheme == .light)
         #expect(dark.scheme == .dark)
@@ -29,13 +29,13 @@ struct ClipShelfThemeTests {
         let originalAppearance = app.appearance
         defer { NSApp.appearance = originalAppearance }
 
-        ClipShelfTheme.applyAppearanceMode("dark")
+        ClipDockTheme.applyAppearanceMode("dark")
         #expect(app.appearance?.name == .darkAqua)
 
-        ClipShelfTheme.applyAppearanceMode("light")
+        ClipDockTheme.applyAppearanceMode("light")
         #expect(app.appearance?.name == .aqua)
 
-        ClipShelfTheme.applyAppearanceMode("system")
+        ClipDockTheme.applyAppearanceMode("system")
         #expect(app.appearance == nil)
     }
 
@@ -43,8 +43,8 @@ struct ClipShelfThemeTests {
     @MainActor
     func coreSurfacesKeepReadableContrastInBothSchemes() throws {
         let palettes = [
-            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
-            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+            ClipDockTheme.current(for: NSAppearance(named: .aqua)),
+            ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
         ]
 
         for palette in palettes {
@@ -60,8 +60,8 @@ struct ClipShelfThemeTests {
     @MainActor
     func textBodyFadeUsesSemanticThemeRampForTextItemSurface() throws {
         let palettes = [
-            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
-            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+            ClipDockTheme.current(for: NSAppearance(named: .aqua)),
+            ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
         ]
 
         for palette in palettes {
@@ -86,8 +86,8 @@ struct ClipShelfThemeTests {
     @Test
     @MainActor
     func textItemBackgroundUsesPureWhiteAndReferenceDarkGray() throws {
-        let light = ClipShelfTheme.current(for: NSAppearance(named: .aqua)).card
-        let dark = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua)).card
+        let light = ClipDockTheme.current(for: NSAppearance(named: .aqua)).card
+        let dark = ClipDockTheme.current(for: NSAppearance(named: .darkAqua)).card
 
         #expect(colorAndAlphaDistance(light.textItemBackgroundColor, NSColor.white) < 0.001)
         #expect(colorAndAlphaDistance(
@@ -99,7 +99,7 @@ struct ClipShelfThemeTests {
     @Test
     @MainActor
     func darkLinkCardSurfacesStayInReferenceGrayRange() throws {
-        let card = ClipShelfTheme.current(for: NSAppearance(named: .darkAqua)).card
+        let card = ClipDockTheme.current(for: NSAppearance(named: .darkAqua)).card
         let previewLuminance = relativeLuminance(card.linkPreviewBackgroundColor)
         let footerLuminance = relativeLuminance(card.linkFooterBackgroundColor)
 
@@ -114,8 +114,8 @@ struct ClipShelfThemeTests {
     @MainActor
     func panelTintStaysLightAndTranslucent() throws {
         let palettes = [
-            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
-            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+            ClipDockTheme.current(for: NSAppearance(named: .aqua)),
+            ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
         ]
 
         for palette in palettes {
@@ -130,8 +130,8 @@ struct ClipShelfThemeTests {
     @MainActor
     func toolbarIconsUseToolbarTextColorInBothSchemes() throws {
         let palettes = [
-            ClipShelfTheme.current(for: NSAppearance(named: .aqua)),
-            ClipShelfTheme.current(for: NSAppearance(named: .darkAqua))
+            ClipDockTheme.current(for: NSAppearance(named: .aqua)),
+            ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
         ]
 
         for palette in palettes {
