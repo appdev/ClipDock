@@ -15,6 +15,10 @@
   <img alt="Open source" src="https://img.shields.io/badge/open%20source-yes-blue">
 </p>
 
+<p align="center">
+  <a href="https://clip.run.ci/">Product Website / 产品官网</a>
+</p>
+
 ![ClipShelf current shelf](docs/assets/marketing/clipshelf-panel-overview-screen-real.webp)
 
 > The ClipShelf screenshots in this README are captured from a real running app window on a secondary display with sample clipboard content.<br>
@@ -39,8 +43,8 @@ Modern work frequently moves small pieces of information between apps: text, lin
 ## What You Can Do / 你可以做什么
 
 - **Open from anywhere / 全局呼出**<br>
-  Press `Command + Shift + V` to open the shelf from the bottom of the screen.<br>
-  按下 `Command + Shift + V`，从屏幕底部呼出内容架。
+  Press `Command + Shift + X` to open the shelf from the bottom of the screen.<br>
+  按下 `Command + Shift + X`，从屏幕底部呼出内容架。
 
 - **Review recent content / 浏览最近内容**<br>
   Browse recent items visually, or search when the list grows.<br>
@@ -102,9 +106,13 @@ Your clipboard history stays on your Mac in the current version. ClipShelf does 
 
 ## Install / 安装
 
-Download the latest release, drag ClipShelf into Applications, then press `Command + Shift + V` to open the shelf.
+Visit the official product page for the current introduction and release information: [https://clip.run.ci/](https://clip.run.ci/).
 
-下载最新版本，将 ClipShelf 拖入“应用程序”，然后按 `Command + Shift + V` 呼出内容架。
+访问产品官网获取当前介绍与发布信息：[https://clip.run.ci/](https://clip.run.ci/)。
+
+Download the latest release, drag ClipShelf into Applications, then press `Command + Shift + X` to open the shelf.
+
+下载最新版本，将 ClipShelf 拖入“应用程序”，然后按 `Command + Shift + X` 呼出内容架。
 
 > Public release packages will be published with the first GitHub release.<br>
 > 公开安装包会随首个 GitHub Release 一起发布。

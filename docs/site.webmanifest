@@ -1,0 +1,31 @@
+{
+  "name": "ClipShelf",
+  "short_name": "ClipShelf",
+  "description": "Find, pin, and reuse copied text, links, code, images, and files in a native local-first macOS shelf",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f5f7",
+  "theme_color": "#0b0c10",
+  "icons": [
+    {
+      "src": "assets/site/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/site/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/site/maskable-icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
