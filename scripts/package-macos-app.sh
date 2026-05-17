@@ -32,16 +32,86 @@ app_build="${APP_BUILD:-1}"
 codesign_identity="${CODESIGN_IDENTITY:--}"
 app_icon_file="${APP_ICON_FILE:-Sources/ClipShelf/Resources/AppIcon.icns}"
 status_icon_file="${STATUS_ICON_FILE:-Sources/ClipShelf/Resources/StatusBarClipboardTemplate.png}"
+app_arch_inputs="${APP_ARCHS:-arm64 x86_64}"
+app_arch_inputs="${app_arch_inputs//,/ }"
+app_archs=()
+swift_triples=()
+rust_targets=()
 
-scripts/build-rust-core.sh
-swift build -c release --product ClipShelf
+normalize_app_arch() {
+    case "$1" in
+        arm64|aarch64) printf 'arm64' ;;
+        x64|x86_64) printf 'x86_64' ;;
+        *)
+            echo "unsupported app architecture: $1" >&2
+            exit 1
+            ;;
+    esac
+}
 
-release_bin_dir="$(swift build -c release --show-bin-path)"
-executable_path="$release_bin_dir/ClipShelf"
+for app_arch_input in $app_arch_inputs; do
+    app_arch="$(normalize_app_arch "$app_arch_input")"
+    already_added=0
+    if [[ "${#app_archs[@]}" -gt 0 ]]; then
+        for existing_arch in "${app_archs[@]}"; do
+            if [[ "$existing_arch" == "$app_arch" ]]; then
+                already_added=1
+                break
+            fi
+        done
+    fi
+    if [[ "$already_added" == "1" ]]; then
+        continue
+    fi
 
-if [[ ! -x "$executable_path" ]]; then
-    echo "release executable not found: $executable_path" >&2
+    app_archs+=("$app_arch")
+    swift_triples+=("$app_arch-apple-macosx13.0")
+    case "$app_arch" in
+        arm64) rust_targets+=("aarch64-apple-darwin") ;;
+        x86_64) rust_targets+=("x86_64-apple-darwin") ;;
+    esac
+done
+
+if [[ "${#app_archs[@]}" -eq 0 ]]; then
+    echo "no app architectures requested" >&2
     exit 1
+fi
+
+join_by_space() {
+    local joined=""
+    for value in "$@"; do
+        if [[ -z "$joined" ]]; then
+            joined="$value"
+        else
+            joined="$joined $value"
+        fi
+    done
+    printf '%s' "$joined"
+}
+
+RUST_DARWIN_TARGETS="$(join_by_space "${rust_targets[@]}")" scripts/build-rust-core.sh
+
+built_executables=()
+for swift_triple in "${swift_triples[@]}"; do
+    swift build -c release --product ClipShelf --triple "$swift_triple"
+    release_bin_dir="$(swift build -c release --triple "$swift_triple" --show-bin-path)"
+    arch_executable_path="$release_bin_dir/ClipShelf"
+
+    if [[ ! -x "$arch_executable_path" ]]; then
+        echo "release executable not found: $arch_executable_path" >&2
+        exit 1
+    fi
+
+    built_executables+=("$arch_executable_path")
+done
+
+if [[ "${#built_executables[@]}" -eq 1 ]]; then
+    executable_path="${built_executables[0]}"
+else
+    executable_path=".build/universal/$bundle_executable_name"
+    mkdir -p "$(dirname "$executable_path")"
+    rm -f "$executable_path"
+    lipo -create "${built_executables[@]}" -output "$executable_path"
 fi
 
 rm -rf "$app_path"
@@ -92,6 +162,10 @@ PLIST
 
 if [[ "${SKIP_CODESIGN:-0}" != "1" ]] && command -v codesign >/dev/null 2>&1; then
     codesign --force --deep --sign "$codesign_identity" "$app_path" >/dev/null
+fi
+
+if command -v lipo >/dev/null 2>&1; then
+    lipo "$macos_dir/$bundle_executable_name" -verify_arch "${app_archs[@]}"
 fi
 
 "$macos_dir/$bundle_executable_name" --print-ui-diagnostics >/dev/null

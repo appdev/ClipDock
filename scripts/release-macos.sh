@@ -7,6 +7,7 @@ version="${APP_VERSION:-0.1.0}"
 build="${APP_BUILD:-1}"
 app_bundle_name="${APP_BUNDLE_NAME:-ClipShelf}"
 bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipShelf}"
+app_archs="${APP_ARCHS:-arm64 x86_64}"
 artifact_root="${RELEASE_DIR:-.codex/artifacts/release/$version}"
 app_path="$artifact_root/${app_bundle_name}.app"
 zip_path="$artifact_root/${app_bundle_name}-$version.zip"
@@ -27,7 +28,7 @@ manifest_path="$artifact_root/${app_bundle_name}-release-manifest.txt"
 
 mkdir -p "$artifact_root"
 
-APP_VERSION="$version" APP_BUILD="$build" APP_BUNDLE_NAME="$app_bundle_name" APP_EXECUTABLE_NAME="$bundle_executable_name" scripts/package-macos-app.sh "$app_path"
+APP_VERSION="$version" APP_BUILD="$build" APP_BUNDLE_NAME="$app_bundle_name" APP_EXECUTABLE_NAME="$bundle_executable_name" APP_ARCHS="$app_archs" scripts/package-macos-app.sh "$app_path"
 
 rm -f "$zip_path" "$dmg_path" "$checksums_path" "$manifest_path"
 
@@ -89,6 +90,7 @@ fi
     printf 'name=%s\n' "$app_bundle_name"
     printf 'version=%s\n' "$version"
     printf 'build=%s\n' "$build"
+    printf 'archs=%s\n' "$app_archs"
     printf 'bundle_executable=%s\n' "$bundle_executable_name"
     printf 'bundle=%s\n' "$app_path"
     printf 'zip=%s\n' "$zip_path"

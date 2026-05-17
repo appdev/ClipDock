@@ -1,0 +1,144 @@
+name: Build release artifacts
+
+"on":
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "CFBundleShortVersionString, for example 0.1.0"
+        required: true
+        default: "0.1.0"
+        type: string
+      build:
+        description: "CFBundleVersion"
+        required: true
+        default: "1"
+        type: string
+      tag:
+        description: "Release tag. Defaults to v<version>."
+        required: false
+        type: string
+      draft:
+        description: "Create the GitHub Release as a draft"
+        required: true
+        default: false
+        type: boolean
+      prerelease:
+        description: "Mark the GitHub Release as a prerelease"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-release-artifacts-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build macOS release artifacts
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    env:
+      APP_BUNDLE_NAME: ClipShelf
+      APP_EXECUTABLE_NAME: ClipShelf
+      BUNDLE_IDENTIFIER: com.apkdv.clipshelf
+      APP_ARCHS: arm64 x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Print toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          cargo --version
+
+      - name: Resolve release metadata
+        id: release
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUILD: ${{ inputs.build }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          version="$INPUT_VERSION"
+          build="$INPUT_BUILD"
+          tag="$INPUT_TAG"
+
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+            echo "version must be numeric, such as 0.1.0" >&2
+            exit 1
+          fi
+
+          if [[ ! "$build" =~ ^[0-9]+$ ]]; then
+            echo "build must be a positive integer" >&2
+            exit 1
+          fi
+
+          if [[ -z "$tag" ]]; then
+            tag="v$version"
+          fi
+
+          if [[ ! "$tag" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+            echo "tag may only contain letters, numbers, dot, underscore, slash, or dash" >&2
+            exit 1
+          fi
+
+          artifact_dir="$GITHUB_WORKSPACE/.codex/artifacts/release/$version"
+
+          {
+            echo "version=$version"
+            echo "build=$build"
+            echo "tag=$tag"
+            echo "artifact_dir=$artifact_dir"
+            echo "zip=$artifact_dir/ClipShelf-$version.zip"
+            echo "dmg=$artifact_dir/ClipShelf-$version.dmg"
+            echo "checksums=$artifact_dir/SHA256SUMS"
+            echo "manifest=$artifact_dir/ClipShelf-release-manifest.txt"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build release bundle
+        env:
+          APP_VERSION: ${{ steps.release.outputs.version }}
+          APP_BUILD: ${{ steps.release.outputs.build }}
+          RELEASE_DIR: ${{ steps.release.outputs.artifact_dir }}
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY || '-' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: scripts/release-macos.sh
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ClipShelf-${{ steps.release.outputs.version }}-macos
+          path: |
+            ${{ steps.release.outputs.zip }}
+            ${{ steps.release.outputs.dmg }}
+            ${{ steps.release.outputs.checksums }}
+            ${{ steps.release.outputs.manifest }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ClipShelf ${{ steps.release.outputs.version }}
+          generate_release_notes: true
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: |
+            ${{ steps.release.outputs.zip }}
+            ${{ steps.release.outputs.dmg }}
+            ${{ steps.release.outputs.checksums }}
+            ${{ steps.release.outputs.manifest }}
