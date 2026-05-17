@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>ClipShelf - Clipboard shelf for macOS</title>
-  <meta name="description" content="ClipShelf is a native macOS clipboard shelf for searching, pinning, and reusing copied text, links, code, images, and files.">
+  <title>ClipShelf - Native clipboard shelf for macOS</title>
+  <meta name="description" content="ClipShelf helps you find, pin, and reuse copied text, links, code, images, and files in a native local-first macOS shelf">
   <link rel="icon" href="data:,">
   <style>
     :root {
@@ -39,6 +39,9 @@
       --pointer-x: 0;
       --pointer-y: 0;
       --scroll-progress: 0;
+      --hero-progress: 0;
+      --story-progress: 0;
+      --privacy-progress: 0;
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", sans-serif;
       letter-spacing: 0;
     }
@@ -270,9 +273,17 @@
       text-align: center;
     }
 
+    .hero-kicker {
+      margin: 0 0 14px;
+      color: var(--faint);
+      font-size: clamp(18px, 1.8vw, 24px);
+      font-weight: 760;
+      line-height: 1.1;
+    }
+
     .hero-title {
       margin: 0;
-      font-size: clamp(48px, 7vw, 92px);
+      font-size: clamp(44px, 6.2vw, 80px);
       font-weight: 760;
       line-height: .98;
       letter-spacing: 0;
@@ -332,36 +343,28 @@
       background: color-mix(in srgb, var(--canvas-raised) 82%, transparent);
     }
 
-    .shortcut-line {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px;
-      align-items: center;
-      margin-top: 24px;
-      color: var(--faint);
-      font-size: 14px;
-      font-weight: 650;
+    .button.text-link {
+      min-height: 46px;
+      padding: 0 4px;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      box-shadow: none;
     }
 
-    .shortcut-key {
-      display: inline-flex;
-      align-items: center;
-      min-height: 28px;
-      padding: 0 10px;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      background: color-mix(in srgb, var(--canvas-raised) 76%, transparent);
-      color: var(--ink);
-      box-shadow: 0 10px 26px rgba(0, 0, 0, .06);
+    .button.text-link:hover,
+    .button.text-link:focus-visible {
+      background: transparent;
+      color: var(--accent-strong);
+      transform: translateX(2px);
     }
 
     .hero-stage {
       position: relative;
-      min-height: clamp(430px, 40vw, 560px);
-      margin-top: clamp(18px, 3vw, 34px);
+      min-height: clamp(260px, 27vw, 380px);
+      margin-top: clamp(14px, 2.4vw, 28px);
       perspective: 1600px;
-      transform: translate3d(calc(var(--pointer-x) * .018px), calc(var(--pointer-y) * .014px), 0);
+      transform: translate3d(0, calc(var(--hero-progress) * -18px), 0);
       transition: transform .16s ease-out;
     }
 
@@ -369,13 +372,16 @@
       position: absolute;
       top: 7%;
       left: 50%;
-      width: min(840px, 82%);
+      width: min(760px, 78%);
       overflow: hidden;
       border: 1px solid var(--line);
-      border-radius: 28px;
+      border-radius: 24px;
       background: var(--stage-bg);
       box-shadow: var(--deep-shadow);
-      transform: translateX(-50%) rotateX(calc(var(--pointer-y) * -.006deg)) rotateY(calc(var(--pointer-x) * .008deg)) translateZ(0);
+      transform:
+        translateX(-50%)
+        scale(calc(1 - var(--hero-progress) * .025))
+        translateZ(0);
       transform-origin: 50% 70%;
       transition: transform .18s ease-out;
     }
@@ -432,6 +438,15 @@
       transition: transform .16s ease-out;
     }
 
+    .hero .float-card {
+      transform: translateY(calc(var(--hero-progress) * -12px));
+    }
+
+    .hero .card-c,
+    .hero .card-d {
+      display: none;
+    }
+
     .float-card strong {
       display: block;
       margin-top: 10px;
@@ -440,7 +455,7 @@
     }
 
     .float-card .type {
-      color: var(--accent);
+      color: var(--card-accent, var(--accent));
       font-size: 12px;
       font-weight: 800;
     }
@@ -448,13 +463,15 @@
     .card-a {
       left: 8%;
       top: 28%;
+      --card-accent: var(--green);
       --mx: -.03px;
       --my: .024px;
     }
 
     .card-b {
       right: 7%;
-      bottom: 9%;
+      top: 18%;
+      --card-accent: var(--violet);
       --mx: .028px;
       --my: -.018px;
     }
@@ -462,8 +479,17 @@
     .card-c {
       left: 20%;
       bottom: 1%;
+      --card-accent: var(--orange);
       --mx: -.02px;
       --my: -.026px;
+    }
+
+    .card-d {
+      right: 14%;
+      bottom: 0;
+      --card-accent: var(--accent);
+      --mx: .022px;
+      --my: .02px;
     }
 
     .line {
@@ -477,24 +503,199 @@
       width: 54%;
     }
 
-    .next-signal {
-      display: flex;
-      justify-content: center;
-      margin: -38px auto 0;
-      color: var(--faint);
-      font-size: 13px;
-      font-weight: 700;
+    .space-section {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: clamp(72px, 10vw, 132px) 0 clamp(48px, 7vw, 90px);
+      --space-x: 0;
+      --space-y: 0;
+      --space-scale: 1;
     }
 
-    .next-signal span {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
+    .space-copy {
+      max-width: 930px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .space-copy .section-sub {
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .space-stage {
+      position: relative;
+      height: clamp(470px, 48vw, 620px);
+      margin-top: clamp(34px, 5vw, 64px);
+      overflow: hidden;
+      border-radius: 34px;
+    }
+
+    .space-scene {
+      position: absolute;
+      left: 50%;
+      top: clamp(18px, 3vw, 42px);
+      width: 1080px;
+      height: 430px;
+      transform:
+        translateX(-50%)
+        translate3d(calc(var(--space-x) * 18px), calc(var(--space-y) * 12px), 0)
+        scale(var(--space-scale));
+      transform-origin: 50% 0;
+      transition: transform .18s ease-out;
+    }
+
+    .space-window {
+      position: absolute;
+      left: 118px;
+      top: 0;
+      width: 844px;
+      height: 392px;
+      overflow: hidden;
       border: 1px solid var(--line);
-      border-radius: 999px;
-      background: color-mix(in srgb, var(--chrome) 74%, transparent);
+      border-radius: 24px;
+      background: var(--stage-bg);
+      box-shadow: var(--deep-shadow);
+    }
+
+    .space-screen {
+      position: absolute;
+      inset: 46px 0 0;
+      background:
+        radial-gradient(circle at 18% 25%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 24%),
+        linear-gradient(135deg, color-mix(in srgb, var(--canvas-raised) 95%, #f2f4f7) 0%, color-mix(in srgb, var(--canvas) 86%, #dfe7f5) 100%);
+    }
+
+    .space-search {
+      position: absolute;
+      left: 86px;
+      top: 82px;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 300px;
+      height: 54px;
+      padding: 0 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--canvas-raised) 82%, transparent);
+      color: var(--faint);
+      font-size: 16px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, .09);
       backdrop-filter: blur(18px);
+    }
+
+    .space-search::before {
+      content: "";
+      width: 15px;
+      height: 15px;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+      box-shadow: 9px 9px 0 -7px currentColor;
+      transform: rotate(-18deg);
+    }
+
+    .space-strip {
+      position: absolute;
+      left: 64px;
+      right: 64px;
+      bottom: 78px;
+      height: 128px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--canvas-raised);
+      box-shadow: 0 22px 50px rgba(0, 0, 0, .14);
+    }
+
+    .space-strip img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .space-card {
+      position: absolute;
+      width: 194px;
+      min-height: 118px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--canvas-raised) 90%, transparent);
+      color: var(--ink);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(22px);
+      transform:
+        translate3d(calc(var(--space-x) * var(--tx)), calc(var(--space-y) * var(--ty)), 0)
+        rotateX(calc(var(--space-y) * -4deg))
+        rotateY(calc(var(--space-x) * 5deg));
+      transition: transform .18s ease-out;
+    }
+
+    .space-card .type {
+      margin-bottom: 10px;
+      color: var(--card-accent, var(--accent));
+      font-size: 12px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+
+    .space-card strong {
+      display: block;
+      font-size: 17px;
+      line-height: 1.22;
+    }
+
+    .space-card .line {
+      height: 9px;
+      margin-top: 9px;
+    }
+
+    .space-card.pinned {
+      left: 28px;
+      top: 140px;
+      --card-accent: var(--green);
+      --tx: -24px;
+      --ty: 18px;
+    }
+
+    .space-card.snippet {
+      right: 20px;
+      top: 72px;
+      --card-accent: var(--violet);
+      --tx: 22px;
+      --ty: -16px;
+    }
+
+    .space-card.recent {
+      right: 118px;
+      bottom: 14px;
+      --card-accent: var(--accent);
+      --tx: 18px;
+      --ty: 20px;
+    }
+
+    .space-card.image {
+      left: 156px;
+      bottom: 20px;
+      --card-accent: var(--orange);
+      --tx: -16px;
+      --ty: 12px;
+    }
+
+    .space-cursor {
+      position: absolute;
+      z-index: 5;
+      left: 720px;
+      top: 170px;
+      width: 22px;
+      height: 22px;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 16%, transparent);
+      transform: translate3d(calc(var(--space-x) * 20px), calc(var(--space-y) * 14px), 0);
+      transition: transform .18s ease-out;
     }
 
     .story {
@@ -513,9 +714,9 @@
 
     .section-title {
       margin: 0;
-      font-size: clamp(38px, 5.6vw, 70px);
+      font-size: clamp(32px, 4.1vw, 52px);
       font-weight: 760;
-      line-height: 1.02;
+      line-height: 1.06;
       letter-spacing: 0;
     }
 
@@ -587,7 +788,7 @@
       border-radius: 30px;
       background: var(--stage-bg);
       box-shadow: var(--shadow);
-      transform: translateY(calc((.5 - var(--scroll-progress)) * 16px));
+      transform: translateY(calc((.5 - var(--story-progress)) * 24px));
     }
 
     .showcase::after {
@@ -595,7 +796,7 @@
       position: absolute;
       inset: 0;
       pointer-events: none;
-      background: radial-gradient(circle at calc(20% + var(--scroll-progress) * 60%) 10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 28rem);
+      background: radial-gradient(circle at calc(20% + var(--story-progress) * 60%) 10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 28rem);
     }
 
     .showcase-shot {
@@ -612,11 +813,13 @@
 
     .showcase-shot.pinboard {
       top: 44%;
-      transform: translateX(calc((1 - var(--scroll-progress)) * 80px)) rotate(-2deg);
+      opacity: calc(.45 + var(--story-progress) * .55);
+      transform: translateX(calc((1 - var(--story-progress)) * 96px)) rotate(calc(-3deg + var(--story-progress) * 2deg));
     }
 
     .showcase-shot.overview {
-      transform: translateX(calc(var(--scroll-progress) * -48px)) rotate(1deg);
+      opacity: calc(1 - var(--story-progress) * .16);
+      transform: translateX(calc(var(--story-progress) * -70px)) rotate(1deg);
     }
 
     .feature-band {
@@ -726,7 +929,7 @@
       justify-self: end;
       border-radius: 26px;
       background: #111318;
-      transform: translateY(calc(var(--scroll-progress) * -18px));
+      transform: translateY(calc(var(--privacy-progress) * -28px));
     }
 
     .privacy-window img {
@@ -782,8 +985,8 @@
     .download-section h2 {
       max-width: 720px;
       margin: 0;
-      font-size: clamp(42px, 6vw, 78px);
-      line-height: 1;
+      font-size: clamp(34px, 4.2vw, 52px);
+      line-height: 1.06;
       letter-spacing: 0;
     }
 
@@ -813,11 +1016,11 @@
     }
 
     .release-item strong,
-    .release-item span {
+    .release-item > span {
       display: block;
     }
 
-    .release-item span {
+    .release-item > span {
       margin-top: 5px;
       color: rgba(255, 255, 255, .66);
       font-size: 14px;
@@ -885,8 +1088,7 @@
         margin-right: 0;
       }
 
-      .hero-actions,
-      .shortcut-line {
+      .hero-actions {
         justify-content: flex-start;
       }
 
@@ -943,7 +1145,7 @@
       }
 
       .hero-title {
-        font-size: clamp(42px, 12vw, 58px);
+        font-size: clamp(40px, 10.5vw, 46px);
       }
 
       .hero-sub,
@@ -980,12 +1182,33 @@
       }
 
       .card-b {
+        top: auto;
         bottom: 2%;
       }
 
       .card-c {
         left: 2%;
         bottom: 15%;
+      }
+
+      .card-d {
+        right: 4%;
+        bottom: 20%;
+      }
+
+      .space-section {
+        --space-scale: .74;
+      }
+
+      .space-copy {
+        max-width: 650px;
+        margin: 0;
+        text-align: left;
+      }
+
+      .space-copy .section-sub {
+        margin-left: 0;
+        margin-right: 0;
       }
 
       .story,
@@ -1028,7 +1251,22 @@
       }
 
       .download-section h2 {
-        font-size: clamp(38px, 12vw, 54px);
+        font-size: clamp(32px, 9vw, 40px);
+      }
+
+      .space-section {
+        width: min(100% - 24px, 520px);
+        --space-scale: .5;
+      }
+
+      .space-stage {
+        height: 430px;
+        margin-top: 28px;
+        border-radius: 24px;
+      }
+
+      .space-scene {
+        top: 26px;
       }
     }
 
@@ -1048,6 +1286,9 @@
 
       .hero-stage,
       .float-card,
+      .space-scene,
+      .space-card,
+      .space-cursor,
       .showcase,
       .showcase-shot,
       .privacy-window,
@@ -1095,25 +1336,22 @@
   <main id="top" class="page">
     <section class="section hero">
       <div class="hero-copy reveal is-visible">
+        <p class="hero-kicker">ClipShelf for macOS</p>
         <h1 class="hero-title">
-          <span data-copy="zh"><span class="title-line">复制过的内容，</span><span class="title-line">随手可取。</span></span>
-          <span data-copy="en"><span class="title-line">A clipboard shelf</span><span class="title-line">ready when you are.</span></span>
+          <span data-copy="zh"><span class="title-line">复制过的内容 </span><span class="title-line">随手可取</span></span>
+          <span data-copy="en"><span class="title-line">Copy once </span><span class="title-line">Reuse anytime</span></span>
         </h1>
         <p class="hero-sub">
-          <span data-copy="zh">把文字、链接、代码、图片和文件收进一个原生 macOS 工作台，搜索、固定、再次粘贴都保持轻快。</span>
-          <span data-copy="en">Collect text, links, code, images, and files in a native macOS workspace built for fast search, pinning, and paste-back.</span>
+          <span data-copy="zh">文字、链接、代码、图片和文件，复制后自动进入 ClipShelf。需要时一键唤出，搜索、固定、再次粘贴，不打断手头工作</span>
+          <span data-copy="en">ClipShelf keeps text, links, code, images, and files close at hand, so you can search, pin, and paste them back without breaking flow</span>
         </p>
         <div class="hero-actions">
           <a class="button" href="https://github.com/appdev/ClipShelf/releases">
             <span data-copy="zh">免费下载</span><span data-copy="en">Free download</span>
           </a>
-          <a class="button secondary" href="#features">
-            <span data-copy="zh">查看功能</span><span data-copy="en">Explore features</span>
+          <a class="button text-link" href="#features">
+            <span data-copy="zh">查看亮点 ›</span><span data-copy="en">See what it does ›</span>
           </a>
-        </div>
-        <div class="shortcut-line">
-          <span data-copy="zh">默认唤出</span><span data-copy="en">Default shortcut</span>
-          <span class="shortcut-key">Command + Shift + X</span>
         </div>
       </div>
 
@@ -1126,49 +1364,106 @@
         </div>
         <div class="float-card card-a" aria-hidden="true">
           <div class="type">Text</div>
-          <strong>Launch summary</strong>
+          <strong>发布说明摘要</strong>
           <div class="line"></div>
           <div class="line short"></div>
         </div>
         <div class="float-card card-b" aria-hidden="true">
-          <div class="type">Code</div>
-          <strong>swift build</strong>
+          <div class="type">Snippet</div>
+          <strong>git tag v0.1.0</strong>
           <div class="line"></div>
           <div class="line short"></div>
         </div>
         <div class="float-card card-c" aria-hidden="true">
           <div class="type">Image</div>
-          <strong>Design review</strong>
+          <strong>素材预览</strong>
+          <div class="line"></div>
+          <div class="line short"></div>
+        </div>
+        <div class="float-card card-d" aria-hidden="true">
+          <div class="type">Link</div>
+          <strong><span data-copy="zh">设计评审</span><span data-copy="en">Design review</span></strong>
           <div class="line"></div>
           <div class="line short"></div>
         </div>
       </div>
     </section>
 
-    <div class="next-signal" aria-hidden="true"><span>Recall · Pinboard · Privacy</span></div>
+    <section class="space-section" id="space">
+      <div class="space-copy reveal">
+        <h2 class="section-title">
+          <span data-copy="zh">最近复制与固定资料，分得清、找得快</span>
+          <span data-copy="en">Recents and pinned clips, easy to tell apart</span>
+        </h2>
+        <p class="section-sub">
+          <span data-copy="zh">新内容自动进入最近列表；常用片段固定到 Pinboard。文字、链接、代码、图片按类型整理，打开就能判断该用哪一条</span>
+          <span data-copy="en">New clips flow into Recents automatically. Save the ones you reuse to Pinboard, with text, links, code, and images kept clear by type</span>
+        </p>
+      </div>
+
+      <div class="space-stage" aria-label="Pointer-following ClipShelf preview">
+        <div class="space-scene">
+          <div class="space-window">
+            <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="space-screen">
+              <div class="space-search"><span data-copy="zh">筛选：Pinboard + 代码</span><span data-copy="en">Filter: Pinboard + code</span></div>
+              <div class="space-strip">
+                <img src="assets/clipshelf-launch-20260517/pinboard.png" alt="ClipShelf Pinboard filtered by code">
+              </div>
+            </div>
+          </div>
+          <span class="space-cursor" aria-hidden="true"></span>
+          <div class="space-card pinned" aria-hidden="true">
+            <div class="type">Pinned</div>
+            <strong>API token format</strong>
+            <div class="line medium"></div>
+            <div class="line"></div>
+            <div class="line short"></div>
+          </div>
+          <div class="space-card snippet" aria-hidden="true">
+            <div class="type">Snippet</div>
+            <strong>git tag v0.1.0</strong>
+            <div class="line"></div>
+            <div class="line short"></div>
+          </div>
+          <div class="space-card recent" aria-hidden="true">
+            <div class="type">Recent</div>
+            <strong><span data-copy="zh">发布记录</span><span data-copy="en">Launch notes</span></strong>
+            <div class="line"></div>
+            <div class="line short"></div>
+          </div>
+          <div class="space-card image" aria-hidden="true">
+            <div class="type">Image</div>
+            <strong>素材预览</strong>
+            <div class="line"></div>
+            <div class="line short"></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <section id="features" class="section story">
       <div class="story-copy reveal">
         <h2 class="section-title">
-          <span data-copy="zh">从临时复制，到可复用的工作材料。</span>
-          <span data-copy="en">From temporary copy to reusable work material.</span>
+          <span data-copy="zh">刚复制的内容，不该转眼就找不到</span>
+          <span data-copy="en">Your last copy should not disappear into the next one</span>
         </h2>
         <p class="section-sub">
-          <span data-copy="zh">ClipShelf 不把历史记录堆成列表，而是把刚复制过、经常复用、需要临时保存的内容组织成可以扫描的原生面板。</span>
-          <span data-copy="en">ClipShelf turns recent and frequently reused clips into a scannable native panel instead of a long history dump.</span>
+          <span data-copy="zh">ClipShelf 把剪贴板历史整理成可扫描的原生面板。临时资料随时找回，高频内容固定保存，复制不再只是一次性动作</span>
+          <span data-copy="en">ClipShelf turns clipboard history into a fast native panel: recover recent material, save frequent clips, and make copying feel less disposable</span>
         </p>
         <div class="steps">
           <div class="step" style="--step-color: var(--accent);">
             <span class="step-index">1</span>
-            <div><h3>Recall</h3><p><span data-copy="zh">按内容类型、来源和时间快速找回最近复制。</span><span data-copy="en">Find recent clips by type, source, and time.</span></p></div>
+            <div><h3>Recall</h3><p><span data-copy="zh">按类型、来源和时间快速定位刚复制的内容</span><span data-copy="en">Find recent clips by type, source, and time</span></p></div>
           </div>
           <div class="step" style="--step-color: var(--green);">
             <span class="step-index">2</span>
-            <div><h3>Pinboard</h3><p><span data-copy="zh">把常用内容固定成项目资料、客服回复或开发片段。</span><span data-copy="en">Pin reusable material for projects, replies, and snippets.</span></p></div>
+            <div><h3>Pinboard</h3><p><span data-copy="zh">把模板回复、项目资料和代码片段固定到 Pinboard</span><span data-copy="en">Pin templates, project notes, and snippets for repeated use</span></p></div>
           </div>
           <div class="step" style="--step-color: var(--orange);">
             <span class="step-index">3</span>
-            <div><h3>Paste</h3><p><span data-copy="zh">搜索后直接粘贴回当前工作流，减少窗口切换。</span><span data-copy="en">Search and paste back without breaking your current flow.</span></p></div>
+            <div><h3>Paste</h3><p><span data-copy="zh">选中后直接粘贴回当前应用，少切窗口，少打断</span><span data-copy="en">Pick a clip and paste it back into the app you are already using</span></p></div>
           </div>
         </div>
       </div>
@@ -1188,12 +1483,12 @@
     <section class="section feature-band">
       <div class="feature-head reveal">
         <h2 class="section-title">
-          <span data-copy="zh">一个面板，覆盖日常复制路径。</span>
-          <span data-copy="en">One shelf for everyday copy paths.</span>
+          <span data-copy="zh">少翻找，多复用</span>
+          <span data-copy="en">Less hunting. More reusing</span>
         </h2>
         <p class="feature-note">
-          <span data-copy="zh">保持设置克制，把页面重点留给真实工作流。</span>
-          <span data-copy="en">The page keeps settings quiet and keeps the workflow visible.</span>
+          <span data-copy="zh">围绕真实复制路径组织信息：刚复制的先找回，常用的固定住，敏感的留在本地</span>
+          <span data-copy="en">Built around the real clipboard loop: recover what is recent, pin what matters, and keep private material local</span>
         </p>
       </div>
 
@@ -1201,22 +1496,22 @@
         <article class="feature-card" style="--card-accent: var(--accent);">
           <span class="feature-symbol">R</span>
           <h3>Recall</h3>
-          <p><span data-copy="zh">最近复制的文本、链接、代码、图片和文件以卡片呈现。</span><span data-copy="en">Text, links, code, images, and files appear as readable cards.</span></p>
+          <p><span data-copy="zh">多类型内容按卡片呈现，扫一眼就能识别</span><span data-copy="en">Text, links, code, images, and files stay scannable at a glance</span></p>
         </article>
         <article class="feature-card" style="--card-accent: var(--green);">
           <span class="feature-symbol">P</span>
           <h3>Pinboard</h3>
-          <p><span data-copy="zh">常用片段固定到 Pinboard，不用再临时翻找。</span><span data-copy="en">Pin reusable clips to Pinboard instead of searching again.</span></p>
+          <p><span data-copy="zh">把高频片段沉淀成轻量资料库，需要时直接取用</span><span data-copy="en">Turn repeat clips into a lightweight library that is always ready</span></p>
         </article>
         <article class="feature-card" style="--card-accent: var(--orange);">
           <span class="feature-symbol">X</span>
           <h3>Command + Shift + X</h3>
-          <p><span data-copy="zh">从当前应用直接唤出，再把内容粘贴回去。</span><span data-copy="en">Open from the current app, then paste the selected content back.</span></p>
+          <p><span data-copy="zh">在当前应用唤出 ClipShelf，找到内容后直接粘贴回去</span><span data-copy="en">Open ClipShelf from any app, find the right clip, and paste it back</span></p>
         </article>
         <article class="feature-card" style="--card-accent: var(--violet);">
           <span class="feature-symbol">L</span>
           <h3>Local-first</h3>
-          <p><span data-copy="zh">内容保存在本机，隐私承诺不需要复杂话术。</span><span data-copy="en">Clipboard content stays local, with privacy kept understandable.</span></p>
+          <p><span data-copy="zh">剪贴板内容保存在本地。隐私不靠口号，而是默认方式</span><span data-copy="en">Clipboard content stays on your Mac. Privacy is the default, not a pitch</span></p>
         </article>
       </div>
     </section>
@@ -1224,12 +1519,12 @@
     <section id="pinboard" class="section pinboard-section">
       <div class="reveal">
         <h2 class="section-title">
-          <span data-copy="zh">把高频内容固定下来。</span>
-          <span data-copy="en">Pin what you keep reusing.</span>
+          <span data-copy="zh">常用内容，固定在该在的位置</span>
+          <span data-copy="en">Keep your repeat material where it belongs</span>
         </h2>
         <p class="section-sub">
-          <span data-copy="zh">Pinboard 用来收纳稳定、反复使用的材料：发布命令、模板回复、项目链接和常用图片。最近记录继续保持轻快，固定内容则更有秩序。</span>
-          <span data-copy="en">Pinboard holds stable material you use again and again: release commands, reply templates, project links, and reusable images.</span>
+          <span data-copy="zh">模板回复、项目链接、发布命令、常用图片，都可以固定到 Pinboard。临时内容继续轻快流动，长期资料保持清楚有序</span>
+          <span data-copy="en">Pin reply templates, project links, release commands, and images you reuse often. Let temporary clips move quickly while durable material stays organized</span>
         </p>
       </div>
       <div class="pinboard-window reveal">
@@ -1240,19 +1535,19 @@
     <section id="privacy" class="section privacy-section">
       <div class="privacy-copy reveal">
         <h2 class="section-title">
-          <span data-copy="zh">隐私信息不必离开你的 Mac。</span>
-          <span data-copy="en">Private material can stay on your Mac.</span>
+          <span data-copy="zh">剪贴板属于你，也应该留在本地</span>
+          <span data-copy="en">Your clipboard is yours. It should stay on your Mac</span>
         </h2>
         <p class="section-sub">
-          <span data-copy="zh">发布页不需要大面积展示设置界面。只保留一个清晰的证明点：ClipShelf 以本地体验为核心，让隐私成为默认气质。</span>
-          <span data-copy="en">The page keeps settings in the background and makes the promise clear: ClipShelf is designed around a local macOS experience.</span>
+          <span data-copy="zh">ClipShelf 以本地体验为核心。历史内容保存在本地，隐私控制清晰可见</span>
+          <span data-copy="en">ClipShelf is built around a local macOS experience. History stays on this Mac, with privacy controls kept clear and visible</span>
         </p>
       </div>
       <div class="privacy-window reveal">
         <img src="assets/clipshelf-launch-20260517/privacy.png" alt="ClipShelf privacy preferences">
         <div class="privacy-badge">
-          <strong><span data-copy="zh">本地优先</span><span data-copy="en">Local-first</span></strong>
-          <span><span data-copy="zh">设置只作为信任证明出现，不抢走产品使用场景。</span><span data-copy="en">Settings support the trust story without taking over the page.</span></span>
+          <strong><span data-copy="zh">本地体验优先</span><span data-copy="en">Local by default</span></strong>
+          <span><span data-copy="zh">保存、忽略、清理，都从本地开始</span><span data-copy="en">Save, ignore, and clean up from the Mac you are using</span></span>
         </div>
       </div>
     </section>
@@ -1260,17 +1555,17 @@
     <section id="download" class="download-section">
       <div class="download-inner">
         <div>
-          <h2><span data-copy="zh">把 ClipShelf 放进你的菜单栏。</span><span data-copy="en">Put ClipShelf in your menu bar.</span></h2>
-          <p><span data-copy="zh">轻量、原生、随叫随到。下载最新版本，使用 Command + Shift + X 唤出你的剪贴板工作台。</span><span data-copy="en">Native, light, and always nearby. Download the latest release and open your clipboard shelf with Command + Shift + X.</span></p>
+          <h2><span data-copy="zh">把 ClipShelf 放进菜单栏</span><span data-copy="en">Bring ClipShelf to your menu bar</span></h2>
+          <p><span data-copy="zh">下载最新版本，使用 Command + Shift + X 唤出。让复制过的内容留得住、找得到、用得上</span><span data-copy="en">Download the latest release, open it with Command + Shift + X, and turn copied material into something you can actually reuse</span></p>
           <div class="hero-actions">
-            <a class="button" href="https://github.com/appdev/ClipShelf/releases"><span data-copy="zh">免费下载</span><span data-copy="en">Free download</span></a>
+            <a class="button" href="https://github.com/appdev/ClipShelf/releases"><span data-copy="zh">立即下载</span><span data-copy="en">Download free</span></a>
             <a class="button secondary" href="https://github.com/appdev/ClipShelf/releases"><span data-copy="zh">查看发行说明</span><span data-copy="en">Release notes</span></a>
           </div>
         </div>
         <div class="release-list" aria-label="Release details">
-          <div class="release-item"><strong>Universal build</strong><span>Apple Silicon and Intel Mac</span></div>
-          <div class="release-item"><strong>Native shelf</strong><span>Menu bar resident, shortcut driven</span></div>
-          <div class="release-item"><strong>Pinboard</strong><span>Reusable clips without a heavy workspace</span></div>
+          <div class="release-item"><strong><span data-copy="zh">通用版本</span><span data-copy="en">Universal build</span></strong><span><span data-copy="zh">支持 Apple Silicon 和 Intel Mac</span><span data-copy="en">Apple Silicon and Intel Mac</span></span></div>
+          <div class="release-item"><strong><span data-copy="zh">原生体验</span><span data-copy="en">Native shelf</span></strong><span><span data-copy="zh">驻留菜单栏，快捷键随时唤出</span><span data-copy="en">Menu bar resident, shortcut driven</span></span></div>
+          <div class="release-item"><strong>Pinboard</strong><span><span data-copy="zh">高频片段固定保存，不需要复杂配置</span><span data-copy="en">Reusable clips without a heavy setup</span></span></div>
         </div>
       </div>
     </section>
@@ -1298,14 +1593,31 @@
       button.addEventListener('click', () => setLocale(button.dataset.setLocale));
     });
 
-    const updateScrollProgress = () => {
-      const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-      root.style.setProperty('--scroll-progress', (window.scrollY / maxScroll).toFixed(4));
+    const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
+
+    const progressFor = (selector) => {
+      const section = document.querySelector(selector);
+      if (!section) {
+        return 0;
+      }
+      const rect = section.getBoundingClientRect();
+      const travel = rect.height + window.innerHeight;
+      return clamp((window.innerHeight - rect.top) / Math.max(1, travel));
     };
 
-    updateScrollProgress();
-    window.addEventListener('scroll', updateScrollProgress, { passive: true });
-    window.addEventListener('resize', updateScrollProgress);
+    const updateScrollState = () => {
+      const maxScroll = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+      const hero = document.querySelector('.hero');
+      const heroProgress = hero ? clamp(window.scrollY / Math.max(1, hero.offsetHeight)) : 0;
+      root.style.setProperty('--scroll-progress', (window.scrollY / maxScroll).toFixed(4));
+      root.style.setProperty('--hero-progress', heroProgress.toFixed(4));
+      root.style.setProperty('--story-progress', progressFor('.story').toFixed(4));
+      root.style.setProperty('--privacy-progress', progressFor('.privacy-section').toFixed(4));
+    };
+
+    updateScrollState();
+    window.addEventListener('scroll', updateScrollState, { passive: true });
+    window.addEventListener('resize', updateScrollState);
 
     if (!prefersReducedMotion.matches) {
       window.addEventListener('pointermove', (event) => {
@@ -1316,6 +1628,21 @@
         root.style.setProperty('--spot-x', `${event.clientX}px`);
         root.style.setProperty('--spot-y', `${event.clientY}px`);
       }, { passive: true });
+
+      document.querySelectorAll('.space-section').forEach((section) => {
+        section.addEventListener('pointermove', (event) => {
+          const rect = section.getBoundingClientRect();
+          const x = ((event.clientX - rect.left) / rect.width - .5) * 2;
+          const y = ((event.clientY - rect.top) / rect.height - .5) * 2;
+          section.style.setProperty('--space-x', clamp(x, -1, 1).toFixed(3));
+          section.style.setProperty('--space-y', clamp(y, -1, 1).toFixed(3));
+        }, { passive: true });
+
+        section.addEventListener('pointerleave', () => {
+          section.style.setProperty('--space-x', '0');
+          section.style.setProperty('--space-y', '0');
+        });
+      });
     }
 
     const observer = new IntersectionObserver((entries) => {
