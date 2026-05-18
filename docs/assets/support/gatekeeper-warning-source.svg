@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="28" stdDeviation="36" flood-color="#5f5848" flood-opacity="0.24"/>
+    </filter>
+    <linearGradient id="warningBg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff9ea"/>
+      <stop offset="1" stop-color="#f3ead4"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#0071e3"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#0a84ff"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#warningBg)"/>
+  <rect x="290" y="88" width="1020" height="760" rx="86" fill="#fffaf0" stroke="#cfc6ae" stroke-width="2" filter="url(#shadow)"/>
+  <circle cx="1198" cy="178" r="57" fill="#ece3d3"/>
+  <text x="1198" y="203" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="64" font-weight="500" fill="#2b2925">?</text>
+
+  <g transform="translate(384 178)">
+    <path d="M118 0 L188 42 L188 138 L118 180 L48 138 L48 42 Z" fill="#d7e4ee" stroke="#9fb2c0" stroke-width="4"/>
+    <circle cx="118" cy="90" r="48" fill="#303843"/>
+    <circle cx="118" cy="90" r="34" fill="#c7d8e3"/>
+    <path d="M198 105 L252 204 H144 Z" fill="#f7c948" stroke="#fff" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M198 105 L252 204 H144 Z" fill="none" stroke="#d4a51e" stroke-width="4" stroke-linejoin="round"/>
+    <rect x="193" y="137" width="10" height="39" rx="5" fill="#fff"/>
+    <circle cx="198" cy="188" r="6" fill="#fff"/>
+  </g>
+
+  <text x="386" y="438" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="52" font-weight="800" fill="#282623">未打开“ClipDock”</text>
+  <text x="386" y="520" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="37" font-weight="500" fill="#282623">Apple 无法验证“ClipDock”是否包含</text>
+  <text x="386" y="575" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="37" font-weight="500" fill="#282623">可能危害 Mac 安全或泄漏隐私的</text>
+  <text x="386" y="630" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="37" font-weight="500" fill="#282623">恶意软件。</text>
+
+  <rect x="360" y="705" width="440" height="122" rx="56" fill="#e9e1d1"/>
+  <text x="580" y="780" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="43" font-weight="700" fill="#272521">完成</text>
+  <rect x="836" y="705" width="480" height="122" rx="56" fill="url(#blue)"/>
+  <text x="1076" y="780" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="43" font-weight="800" fill="#fff">移到废纸篓</text>
+
+  <path d="M585 854 C618 836 624 810 585 778" fill="none" stroke="#0a84ff" stroke-width="9" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="72" y="838" width="520" height="132" rx="30" fill="#ffffff" stroke="#b7d7ff" stroke-width="3" filter="url(#shadow)"/>
+  <text x="104" y="891" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="33" font-weight="800" fill="#0a66cc">第一步</text>
+  <text x="104" y="938" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="28" font-weight="500" fill="#222">
+    先点“完成”，不要点“移到废纸篓”
+  </text>
+</svg>

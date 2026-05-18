@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>第一次打开 ClipDock 时 macOS 提示无法验证怎么办？</title>
+  <meta name="description" content="如果第一次打开 ClipDock 时看到 Apple 无法验证的安全提示，可以按本文步骤在系统设置中允许打开。">
+  <link rel="canonical" href="https://clip.run.ci/open-clipdock.html">
+  <link rel="icon" href="assets/site/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/site/apple-touch-icon.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f5f5f7;
+      --paper: #ffffff;
+      --ink: #1d1d1f;
+      --muted: #6e6e73;
+      --line: rgba(0, 0, 0, .12);
+      --accent: #0071e3;
+      --accent-soft: #e8f2ff;
+      --warning: #8a4f00;
+      --warning-bg: #fff7e6;
+      --shadow: 0 26px 80px rgba(24, 27, 35, .14);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", sans-serif;
+      letter-spacing: 0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --canvas: #090a0d;
+        --paper: #15171d;
+        --ink: #f5f5f7;
+        --muted: #a1a1a6;
+        --line: rgba(255, 255, 255, .14);
+        --accent: #2997ff;
+        --accent-soft: rgba(41, 151, 255, .16);
+        --warning: #ffd18a;
+        --warning-bg: rgba(255, 184, 77, .12);
+        --shadow: 0 28px 90px rgba(0, 0, 0, .5);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--canvas);
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1.62;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover,
+    a:focus-visible {
+      text-decoration: underline;
+    }
+
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .page {
+      width: min(980px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 64px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 56px;
+      margin-bottom: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 760;
+    }
+
+    .brand img {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      box-shadow: 0 8px 22px rgba(0, 113, 227, .2);
+    }
+
+    .back-link {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .hero {
+      padding: clamp(24px, 4vw, 36px);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: linear-gradient(135deg, var(--paper), color-mix(in srgb, var(--accent-soft) 46%, var(--paper)));
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 760;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 0;
+      font-size: clamp(28px, 3.8vw, 40px);
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: clamp(16px, 1.8vw, 18px);
+      line-height: 1.58;
+    }
+
+    .notice {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border: 1px solid color-mix(in srgb, var(--warning) 24%, transparent);
+      border-radius: 12px;
+      background: var(--warning-bg);
+      color: var(--warning);
+      font-weight: 650;
+    }
+
+    .content {
+      display: grid;
+      gap: 22px;
+      margin-top: 26px;
+    }
+
+    .section {
+      padding: clamp(20px, 3vw, 28px);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--paper);
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: clamp(21px, 2.2vw, 26px);
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    ol,
+    ul {
+      margin: 0;
+      padding-left: 1.35em;
+    }
+
+    li + li {
+      margin-top: 10px;
+    }
+
+    strong {
+      font-weight: 760;
+    }
+
+    .steps {
+      counter-reset: step;
+      display: grid;
+      gap: 20px;
+      margin-top: 16px;
+    }
+
+    .step {
+      counter-increment: step;
+      display: grid;
+      gap: 12px;
+    }
+
+    .step-title {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin: 0;
+      font-size: 18px;
+      font-weight: 780;
+      line-height: 1.3;
+    }
+
+    .step-title::before {
+      content: counter(step);
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    figure {
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--paper) 82%, var(--canvas));
+    }
+
+    figcaption {
+      padding: 10px 14px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .checklist {
+      display: grid;
+      gap: 10px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .checklist li {
+      margin: 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--canvas) 62%, var(--paper));
+    }
+
+    .meta {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 680px) {
+      .page {
+        width: min(100% - 24px, 980px);
+        padding-top: 18px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        margin-bottom: 20px;
+      }
+
+      .hero,
+      .section {
+        border-radius: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <nav class="topbar" aria-label="页面导航">
+      <a class="brand" href="./">
+        <img src="assets/site/apple-touch-icon.png" alt="" aria-hidden="true">
+        <span>ClipDock</span>
+      </a>
+      <a class="back-link" href="./">返回官网</a>
+    </nav>
+
+    <header class="hero">
+      <p class="eyebrow">首次打开帮助</p>
+      <h1>macOS 提示“Apple 无法验证 ClipDock”时，应该怎么处理？</h1>
+      <p class="lead">这是 macOS 的安全保护提示。当前如果你拿到的是未经过 Apple Developer ID 公证的测试版或开源构建，第一次打开时可能需要手动允许一次。</p>
+      <p class="notice">请只在确认安装包来自 ClipDock 官方下载页、GitHub Releases，或你信任的团队成员时继续。如果来源不确定，请不要绕过提示，直接删除并重新下载。</p>
+    </header>
+
+    <div class="content">
+      <section class="section" aria-labelledby="quick-steps">
+        <h2 id="quick-steps">推荐做法：从系统设置里允许打开</h2>
+        <p>下面的步骤不需要使用终端，也不需要关闭 macOS 的系统安全保护。不同 macOS 版本的按钮文案可能略有差异，例如“仍要打开”“Open Anyway”或“打开”。</p>
+
+        <div class="steps">
+          <article class="step">
+            <h3 class="step-title">在提示窗口中点击“完成”</h3>
+            <p>看到“未打开 ClipDock”时，先点击左侧的“完成”。不要点击“移到废纸篓”，否则 app 会被移除。</p>
+            <figure>
+              <img src="assets/support/gatekeeper-warning.webp" alt="macOS 提示未打开 ClipDock，示意点击完成而不是移到废纸篓" width="1200" height="750">
+              <figcaption>示意图：先关闭提示窗口，保留 ClipDock。</figcaption>
+            </figure>
+          </article>
+
+          <article class="step">
+            <h3 class="step-title">打开“系统设置 > 隐私与安全性”</h3>
+            <p>打开 Mac 的“系统设置”，进入“隐私与安全性”。向下找到与 ClipDock 相关的拦截提示，然后点击“仍要打开”。如果没有看到这个按钮，请再次从“应用程序”里打开一次 ClipDock，再回到这里查看。</p>
+            <figure>
+              <img src="assets/support/privacy-security-open-anyway.webp" alt="系统设置隐私与安全性页面中点击仍要打开 ClipDock 的示意图" width="1200" height="750">
+              <figcaption>示意图：“仍要打开”通常会出现在你尝试打开 app 后的一段时间内。</figcaption>
+            </figure>
+          </article>
+
+          <article class="step">
+            <h3 class="step-title">在确认窗口中点击“打开”</h3>
+            <p>macOS 可能会再次弹出确认窗口，并要求输入本机登录密码或使用 Touch ID。确认来源可信后，点击“打开”。之后再打开 ClipDock 时，通常就不会重复出现同样的拦截。</p>
+            <figure>
+              <img src="assets/support/gatekeeper-final-open.webp" alt="macOS 最终确认打开 ClipDock 的示意图" width="1200" height="750">
+              <figcaption>示意图：最后一次确认后，ClipDock 会被记录为允许打开的 app。</figcaption>
+            </figure>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="before-open">
+        <h2 id="before-open">打开前请先确认这几件事</h2>
+        <ul class="checklist">
+          <li><strong>来源可信：</strong>安装包来自 ClipDock 官网、GitHub Releases，或你信任的团队分发链接。</li>
+          <li><strong>名称一致：</strong>app 名称为 ClipDock，下载文件没有被陌生网站重新打包或改名。</li>
+          <li><strong>你确实需要它：</strong>ClipDock 是剪贴板工具，会读取你主动复制到剪贴板的内容；如果你正在处理高度敏感内容，请先理解这一点再启用。</li>
+        </ul>
+      </section>
+
+      <section class="section" aria-labelledby="why">
+        <h2 id="why">为什么会出现这个提示？</h2>
+        <p>macOS 会使用 Gatekeeper 检查从网络下载的 app。对于 Mac App Store 之外分发的软件，Apple 推荐开发者使用 Developer ID 签名，并提交给 Apple 公证。经过签名和公证的版本，用户第一次打开时会少很多额外步骤。</p>
+        <p>ClipDock 在没有开发者签名的测试构建中可能无法通过这项检查，因此 macOS 会要求用户手动确认。我们会在具备 Developer ID 签名与公证条件后，优先提供更顺滑的安装体验。</p>
+      </section>
+
+      <section class="section" aria-labelledby="more-help">
+        <h2 id="more-help">仍然打不开怎么办？</h2>
+        <ol>
+          <li>确认 ClipDock 已经拖入“应用程序”文件夹。</li>
+          <li>再打开一次 ClipDock，然后回到“系统设置 > 隐私与安全性”查看是否出现“仍要打开”。</li>
+          <li>重新从官方或团队可信链接下载安装包。</li>
+          <li>如果仍失败，请把 macOS 版本、下载来源和提示截图发给 ClipDock 维护者。</li>
+        </ol>
+      </section>
+
+      <section class="section" aria-labelledby="sources">
+        <h2 id="sources">参考资料</h2>
+        <ul>
+          <li><a href="https://support.apple.com/guide/mac-help/open-an-app-by-overriding-security-settings-mh40617/mac">Apple Support：通过覆盖安全设置打开 app</a></li>
+          <li><a href="https://developer.apple.com/developer-id/">Apple Developer：使用 Developer ID 为 Mac 软件签名和公证</a></li>
+        </ul>
+        <p class="meta">文档更新日期：2026-05-18。页面截图为说明用示意图，具体界面会随 macOS 版本和系统语言略有变化。</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

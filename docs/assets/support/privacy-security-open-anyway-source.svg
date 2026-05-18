@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="26" stdDeviation="32" flood-color="#152238" flood-opacity="0.18"/>
+    </filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#0a84ff"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="1000" fill="#edf2f7"/>
+  <rect x="96" y="68" width="1408" height="864" rx="34" fill="#fbfbfd" stroke="#d8dde6" stroke-width="2" filter="url(#shadow)"/>
+
+  <rect x="96" y="68" width="360" height="864" rx="34" fill="#eef1f6"/>
+  <rect x="96" y="68" width="360" height="864" rx="34" fill="#eef1f6"/>
+  <rect x="456" y="68" width="1048" height="864" rx="34" fill="#fbfbfd"/>
+  <circle cx="148" cy="118" r="13" fill="#ff5f57"/>
+  <circle cx="190" cy="118" r="13" fill="#febc2e"/>
+  <circle cx="232" cy="118" r="13" fill="#28c840"/>
+
+  <text x="148" y="190" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="34" font-weight="800" fill="#1d1d1f">系统设置</text>
+  <rect x="128" y="244" width="298" height="54" rx="14" fill="#fff" stroke="#dfe3ea"/>
+  <text x="162" y="280" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="22" fill="#8a8f98">搜索</text>
+
+  <text x="148" y="356" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="25" fill="#636a73">外观</text>
+  <rect x="128" y="388" width="298" height="62" rx="16" fill="#dbe9ff"/>
+  <text x="148" y="428" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="25" font-weight="700" fill="#0a66cc">隐私与安全性</text>
+  <text x="148" y="500" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="25" fill="#636a73">桌面与程序坞</text>
+  <text x="148" y="562" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="25" fill="#636a73">显示器</text>
+  <text x="148" y="624" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="25" fill="#636a73">控制中心</text>
+
+  <text x="524" y="168" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="47" font-weight="800" fill="#1d1d1f">隐私与安全性</text>
+  <text x="524" y="252" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="29" font-weight="700" fill="#1d1d1f">安全性</text>
+
+  <rect x="524" y="286" width="874" height="106" rx="24" fill="#f1f3f7" stroke="#e0e4eb"/>
+  <text x="552" y="338" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="25" font-weight="650" fill="#1d1d1f">允许从以下位置下载的应用程序</text>
+  <text x="552" y="372" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="21" fill="#6e6e73">App Store 和已知开发者</text>
+
+  <rect x="524" y="442" width="874" height="196" rx="26" fill="#fff" stroke="#dfe4ed" stroke-width="2"/>
+  <text x="552" y="498" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="25" font-weight="700" fill="#1d1d1f">“ClipDock”已被阻止使用，因为它来自身份不明的开发者。</text>
+  <text x="552" y="542" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="22" fill="#6e6e73">如果你确定此 app 来自可信来源，可以在这里允许打开。</text>
+  <rect x="1144" y="559" width="214" height="54" rx="15" fill="#0a84ff"/>
+  <text x="1251" y="594" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="24" font-weight="800" fill="#fff">仍要打开</text>
+
+  <rect x="524" y="690" width="874" height="86" rx="24" fill="#f8f9fb" stroke="#e4e8ef"/>
+  <text x="552" y="744" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="24" fill="#4b5563">文件保险箱</text>
+
+  <path d="M1320 742 C1428 720 1487 640 1360 588" fill="none" stroke="#0a84ff" stroke-width="9" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="1054" y="742" width="448" height="142" rx="30" fill="#ffffff" stroke="#b7d7ff" stroke-width="3" filter="url(#shadow)"/>
+  <text x="1086" y="800" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="33" font-weight="800" fill="#0a66cc">第二步</text>
+  <text x="1086" y="850" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="30" font-weight="500" fill="#222">在这里点击“仍要打开”</text>
+</svg>

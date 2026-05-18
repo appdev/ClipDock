@@ -114,6 +114,10 @@ Download the latest release, drag ClipDock into Applications, then press `Comman
 
 下载最新版本，将 ClipDock 拖入“应用程序”，然后按 `Command + Shift + X` 呼出剪贴坞。
 
+If macOS says Apple cannot verify ClipDock the first time you open it, follow the ordinary-user guide: [First-open help](https://clip.run.ci/open-clipdock.html).
+
+如果首次打开时 macOS 提示 Apple 无法验证 ClipDock，请参考普通用户指南：[首次打开帮助](https://clip.run.ci/open-clipdock.html)。
+
 > Public release packages will be published with the first GitHub release.<br>
 > 公开安装包会随首个 GitHub Release 一起发布。
 

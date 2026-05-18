@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="28" stdDeviation="36" flood-color="#3e4858" flood-opacity="0.22"/>
+    </filter>
+    <linearGradient id="blue" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#0071e3"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#0a84ff"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="1000" fill="#eef3f8"/>
+  <rect x="312" y="116" width="976" height="694" rx="72" fill="#fff" stroke="#d7dce4" stroke-width="2" filter="url(#shadow)"/>
+
+  <g transform="translate(420 194)">
+    <rect x="0" y="0" width="140" height="140" rx="32" fill="#eef7ff" stroke="#a9c5dd" stroke-width="4"/>
+    <path d="M38 74 L70 38 L102 74 L82 74 L82 106 L58 106 L58 74 Z" fill="#9db8cd"/>
+    <path d="M124 78 L168 158 H80 Z" fill="#f7c948" stroke="#fff" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M124 78 L168 158 H80 Z" fill="none" stroke="#d4a51e" stroke-width="4" stroke-linejoin="round"/>
+    <rect x="119" y="105" width="10" height="32" rx="5" fill="#fff"/>
+    <circle cx="124" cy="147" r="6" fill="#fff"/>
+  </g>
+
+  <text x="606" y="246" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="45" font-weight="800" fill="#1d1d1f">确定要打开“ClipDock”吗？</text>
+  <text x="606" y="326" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="29" fill="#35383d">macOS 无法验证此 app 的开发者。</text>
+  <text x="606" y="374" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="29" fill="#35383d">请只在确认安装包来自 ClipDock 官方下载页面</text>
+  <text x="606" y="422" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="29" fill="#35383d">或可信团队链接时继续。</text>
+
+  <rect x="412" y="612" width="348" height="96" rx="48" fill="#edf0f4"/>
+  <text x="586" y="672" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="35" font-weight="700" fill="#262a30">取消</text>
+  <rect x="840" y="612" width="348" height="96" rx="48" fill="url(#blue)"/>
+  <text x="1014" y="672" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="35" font-weight="800" fill="#fff">打开</text>
+
+  <path d="M1168 842 C1248 807 1278 720 1126 666" fill="none" stroke="#0a84ff" stroke-width="9" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="786" y="798" width="466" height="136" rx="30" fill="#ffffff" stroke="#b7d7ff" stroke-width="3" filter="url(#shadow)"/>
+  <text x="818" y="854" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="33" font-weight="800" fill="#0a66cc">第三步</text>
+  <text x="818" y="904" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif" font-size="30" font-weight="500" fill="#222">最后确认“打开”即可</text>
+</svg>
