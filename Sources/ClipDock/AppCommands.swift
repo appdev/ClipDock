@@ -181,6 +181,8 @@ private struct CommandLineQAError: LocalizedError {
 enum PanelSnapshotCommand {
     private static let flag = "--render-panel-snapshot"
     private static let selectedPinboardFlag = "--snapshot-selected-pinboard"
+    private static let searchOpenFlag = "--snapshot-search-open"
+    private static let searchTextFlag = "--snapshot-search-text"
 
     static func outputURL(arguments: [String]) -> URL? {
         CommandLineArgumentReader.outputURL(
@@ -215,6 +217,9 @@ enum PanelSnapshotCommand {
         )
         view.smokeSelectItem(id: "snapshot-text", scrollIntoView: false)
         view.updatePanelHeight(frame.height)
+        if arguments.contains(searchOpenFlag) {
+            view.smokeOpenSearch(text: searchText(arguments: arguments))
+        }
         RunLoop.main.run(until: Date().addingTimeInterval(0.12))
 
         let window = NSWindow(
@@ -234,6 +239,10 @@ enum PanelSnapshotCommand {
 
     private static func selectedPinboardID(arguments: [String]) -> String? {
         CommandLineArgumentReader.value(after: selectedPinboardFlag, in: arguments)
+    }
+
+    private static func searchText(arguments: [String]) -> String {
+        CommandLineArgumentReader.value(after: searchTextFlag, in: arguments) ?? ""
     }
 
     private static var snapshotPinboards: [RustPinboardSummary] {

@@ -1518,7 +1518,7 @@ enum PanelInteractionSmokeScenario {
         try verifyScrolling(in: contentView)
         let menuPreviewShown = try verifyManagementMenu(in: contentView, probe: probe)
         try verifyFilteringAndSearch(in: contentView, probe: probe)
-        try verifySearchCancelButtonClear(in: contentView, probe: probe)
+        try verifySearchClearButton(in: contentView, probe: probe)
         try verifyEmptySearchClickAway(in: contentView)
         contentView.smokeOpenSearch(text: "report")
         PanelQAHarness.drainMainRunLoop()
@@ -1615,29 +1615,29 @@ enum PanelInteractionSmokeScenario {
         try PanelQAHarness.require(probe.lastQuery?.searchText == "report", "搜索输入未触发查询回调")
     }
 
-    private static func verifySearchCancelButtonClear(
+    private static func verifySearchClearButton(
         in contentView: FloatingPanelContentView,
         probe: PanelInteractionSmokeProbe
     ) throws {
         let queryCountBeforeCancel = probe.queries.count
         try PanelQAHarness.require(
-            contentView.smokeNativeSearchCancelTextChangeBeforeAction(),
-            "搜索框原生清除按钮未命中"
+            contentView.smokeClickCustomSearchClearButton(),
+            "搜索框自定义清除按钮未命中"
         )
         PanelQAHarness.drainMainRunLoop()
 
         let cancelQueries = Array(probe.queries.dropFirst(queryCountBeforeCancel))
-        try PanelQAHarness.require(cancelQueries.count == 1, "搜索框原生清除按钮应只触发一次查询")
+        try PanelQAHarness.require(cancelQueries.count == 1, "搜索框自定义清除按钮应只触发一次查询")
         try PanelQAHarness.require(
             cancelQueries.first?.searchText == "" && cancelQueries.first?.debounce == false,
-            "搜索框原生清除按钮应触发一次立即空查询"
+            "搜索框自定义清除按钮应触发一次立即空查询"
         )
         try PanelQAHarness.require(
             !cancelQueries.contains { $0.debounce },
-            "搜索框原生清除按钮不应额外触发 debounce 查询"
+            "搜索框自定义清除按钮不应额外触发 debounce 查询"
         )
-        try PanelQAHarness.require(contentView.smokeIsSearchVisible, "搜索框原生清除按钮不应关闭搜索框")
-        try PanelQAHarness.require(contentView.smokeFirstResponderIsSearchField, "搜索框原生清除按钮后焦点应保留在搜索框")
+        try PanelQAHarness.require(contentView.smokeIsSearchVisible, "搜索框自定义清除按钮不应关闭搜索框")
+        try PanelQAHarness.require(contentView.smokeFirstResponderIsSearchField, "搜索框自定义清除按钮后焦点应保留在搜索框")
     }
 
     private static func verifyEmptySearchClickAway(in contentView: FloatingPanelContentView) throws {

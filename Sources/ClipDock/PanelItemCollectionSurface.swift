@@ -8,11 +8,38 @@ struct PanelItemCollectionLayoutMetrics {
     let imagePreviewMinHeight: CGFloat
     let imagePreviewMaxHeight: CGFloat
     let cardInset: CGFloat
+    let shadowOutset: CGFloat
+
+    init(
+        itemSide: CGFloat,
+        itemSpacing: CGFloat,
+        horizontalContentInset: CGFloat,
+        imagePreviewMinHeight: CGFloat,
+        imagePreviewMaxHeight: CGFloat,
+        cardInset: CGFloat,
+        shadowOutset: CGFloat = 4
+    ) {
+        self.itemSide = itemSide
+        self.itemSpacing = itemSpacing
+        self.horizontalContentInset = horizontalContentInset
+        self.imagePreviewMinHeight = imagePreviewMinHeight
+        self.imagePreviewMaxHeight = imagePreviewMaxHeight
+        self.cardInset = cardInset
+        self.shadowOutset = shadowOutset
+    }
 }
 
-private enum PanelItemCollectionGeometry {
+enum PanelItemCollectionGeometry {
     static func renderedItemSide(for itemSide: CGFloat) -> CGFloat {
         max(1, itemSide - 2)
+    }
+
+    static func hostSide(for itemSide: CGFloat, shadowOutset: CGFloat) -> CGFloat {
+        renderedItemSide(for: itemSide) + 2 * shadowOutset
+    }
+
+    static func effectiveItemSpacing(itemSpacing: CGFloat, shadowOutset: CGFloat) -> CGFloat {
+        max(0, itemSpacing - 2 * shadowOutset)
     }
 }
 
@@ -35,6 +62,7 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
 
     private(set) var itemID: String?
     private(set) var hostedCard: ClipboardItemCardBox?
+    private var hostedRootView: NSView?
     private var artifacts: PanelItemCardRenderArtifacts?
     private var currentState: PanelItemCardViewState?
     private var currentIdentityState: PanelItemCardViewState?
@@ -82,19 +110,19 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
             onDoubleClick: entry.callbacks.onDoubleClick,
             onContextMenu: entry.callbacks.onContextMenu
         )
-        guard let card = renderedCard.view as? ClipboardItemCardBox else { return }
-
-        card.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(card)
+        let rootView = renderedCard.view
+        rootView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(rootView)
         NSLayoutConstraint.activate([
-            card.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            card.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            card.topAnchor.constraint(equalTo: view.topAnchor),
-            card.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            rootView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            rootView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            rootView.topAnchor.constraint(equalTo: view.topAnchor),
+            rootView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
         itemID = entry.id
-        hostedCard = card
+        hostedCard = renderedCard.cardView
+        hostedRootView = rootView
         artifacts = renderedCard.artifacts
         currentState = entry.state
         currentIdentityState = nextIdentityState
@@ -121,6 +149,10 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
             max(metrics.imagePreviewMinHeight, itemSide * 0.48)
         )
         let bodyTextWidth = max(80, itemSide - metrics.cardInset * 2 - 4)
+        if let shadowHost = hostedRootView as? PanelItemCardShadowHostView {
+            shadowHost.visualCardSide = itemSide
+            shadowHost.shadowOutset = metrics.shadowOutset
+        }
 
         artifacts.itemWidthConstraint.constant = itemSide
         artifacts.itemHeightConstraint.constant = itemSide
@@ -138,8 +170,9 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
     private func cleanupHostedCard() {
         artifacts?.prepareForRemoval()
         hostedCard?.prepareForRemoval()
-        hostedCard?.removeFromSuperview()
+        hostedRootView?.removeFromSuperview()
         hostedCard = nil
+        hostedRootView = nil
         artifacts = nil
         itemID = nil
         currentState = nil
@@ -271,9 +304,12 @@ final class PanelItemCollectionSurface: NSObject,
             horizontalContentInset: metrics.horizontalContentInset,
             imagePreviewMinHeight: metrics.imagePreviewMinHeight,
             imagePreviewMaxHeight: metrics.imagePreviewMaxHeight,
-            cardInset: metrics.cardInset
+            cardInset: metrics.cardInset,
+            shadowOutset: metrics.shadowOutset
         )
         flowLayout.itemSize = layoutItemSize(for: itemSide)
+        flowLayout.minimumInteritemSpacing = effectiveItemSpacing(for: metrics)
+        flowLayout.minimumLineSpacing = effectiveItemSpacing(for: metrics)
         flowLayout.invalidateLayout()
         updateCollectionFrameWidth()
         for cell in visibleCells() {
@@ -527,8 +563,8 @@ final class PanelItemCollectionSurface: NSObject,
     private func configureCollectionView() {
         flowLayout.scrollDirection = .horizontal
         flowLayout.itemSize = layoutItemSize(for: metrics.itemSide)
-        flowLayout.minimumInteritemSpacing = metrics.itemSpacing
-        flowLayout.minimumLineSpacing = metrics.itemSpacing
+        flowLayout.minimumInteritemSpacing = effectiveItemSpacing(for: metrics)
+        flowLayout.minimumLineSpacing = effectiveItemSpacing(for: metrics)
         flowLayout.sectionInset = NSEdgeInsets(
             top: 0,
             left: metrics.horizontalContentInset,
@@ -559,12 +595,16 @@ final class PanelItemCollectionSurface: NSObject,
     private func updateCollectionFrameWidth() {
         let itemCount = entries.count
         let width: CGFloat
-        let itemSide = PanelItemCollectionGeometry.renderedItemSide(for: metrics.itemSide)
+        let hostSide = PanelItemCollectionGeometry.hostSide(
+            for: metrics.itemSide,
+            shadowOutset: metrics.shadowOutset
+        )
+        let effectiveItemSpacing = effectiveItemSpacing(for: metrics)
         if itemCount == 0 {
             width = metrics.horizontalContentInset * 2
         } else {
-            width = CGFloat(itemCount) * itemSide
-                + CGFloat(max(0, itemCount - 1)) * metrics.itemSpacing
+            width = CGFloat(itemCount) * hostSide
+                + CGFloat(max(0, itemCount - 1)) * effectiveItemSpacing
                 + metrics.horizontalContentInset * 2
         }
         collectionView.frame = NSRect(x: 0, y: 0, width: width, height: collectionHeight(for: metrics.itemSide))
@@ -573,12 +613,25 @@ final class PanelItemCollectionSurface: NSObject,
     }
 
     private func collectionHeight(for itemSide: CGFloat) -> CGFloat {
-        itemSide + 1
+        PanelItemCollectionGeometry.hostSide(
+            for: itemSide,
+            shadowOutset: metrics.shadowOutset
+        ) + 1
     }
 
     private func layoutItemSize(for itemSide: CGFloat) -> NSSize {
-        let renderedItemSide = PanelItemCollectionGeometry.renderedItemSide(for: itemSide)
-        return NSSize(width: renderedItemSide, height: renderedItemSide)
+        let hostSide = PanelItemCollectionGeometry.hostSide(
+            for: itemSide,
+            shadowOutset: metrics.shadowOutset
+        )
+        return NSSize(width: hostSide, height: hostSide)
+    }
+
+    private func effectiveItemSpacing(for metrics: PanelItemCollectionLayoutMetrics) -> CGFloat {
+        PanelItemCollectionGeometry.effectiveItemSpacing(
+            itemSpacing: metrics.itemSpacing,
+            shadowOutset: metrics.shadowOutset
+        )
     }
 
     private func layoutForCurrentBounds() {

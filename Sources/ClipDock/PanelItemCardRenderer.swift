@@ -51,7 +51,117 @@ struct PanelItemCardRenderArtifacts {
 struct PanelRenderedItemCard {
     let state: PanelItemCardViewState
     let view: NSView
+    let cardView: ClipboardItemCardBox
     let artifacts: PanelItemCardRenderArtifacts
+}
+
+@MainActor
+final class PanelItemCardShadowHostView: NSView {
+    let cardView: ClipboardItemCardBox
+    var visualCardSide: CGFloat {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsLayout = true
+        }
+    }
+    var shadowOutset: CGFloat {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsLayout = true
+        }
+    }
+    var cardCornerRadius: CGFloat {
+        didSet {
+            updateShadowPath()
+        }
+    }
+
+    init(
+        cardView: ClipboardItemCardBox,
+        visualCardSide: CGFloat,
+        shadowOutset: CGFloat,
+        cardCornerRadius: CGFloat,
+        shadowOpacity: Float,
+        shadowRadius: CGFloat,
+        shadowOffset: CGSize,
+        backingScaleFactor: CGFloat
+    ) {
+        self.cardView = cardView
+        self.visualCardSide = visualCardSide
+        self.shadowOutset = shadowOutset
+        self.cardCornerRadius = cardCornerRadius
+        super.init(frame: .zero)
+
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = shadowOpacity
+        layer?.shadowRadius = shadowRadius
+        layer?.shadowOffset = shadowOffset
+        layer?.contentsScale = backingScaleFactor
+        translatesAutoresizingMaskIntoConstraints = false
+        addSubview(cardView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cardView.frame = cardFrameInHost
+        updateShadowPath()
+        CATransaction.commit()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let hostSide = visualCardSide + 2 * shadowOutset
+        return NSSize(width: hostSide, height: hostSide)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        refreshBackingScaleAndShadowPath()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        refreshBackingScaleAndShadowPath()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard cardFrameInHost.contains(point) else { return nil }
+        return super.hitTest(point)
+    }
+
+    private var cardFrameInHost: NSRect {
+        bounds.insetBy(dx: shadowOutset, dy: shadowOutset)
+    }
+
+    private func refreshBackingScaleAndShadowPath() {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        layer?.contentsScale = scale
+        cardView.layer?.contentsScale = scale
+        cardView.contentView?.layer?.contentsScale = scale
+        updateShadowPath()
+    }
+
+    private func updateShadowPath() {
+        guard !bounds.isEmpty else {
+            layer?.shadowPath = nil
+            return
+        }
+        layer?.shadowPath = CGPath(
+            roundedRect: cardFrameInHost,
+            cornerWidth: cardCornerRadius,
+            cornerHeight: cardCornerRadius,
+            transform: nil
+        )
+    }
 }
 
 @MainActor
@@ -415,9 +525,21 @@ final class PanelItemCardRenderer {
             indexLabel.leadingAnchor.constraint(greaterThanOrEqualTo: footnoteView.trailingAnchor, constant: 8)
         ])
 
+        let shadowHost = PanelItemCardShadowHostView(
+            cardView: container,
+            visualCardSide: metrics.defaultItemSide,
+            shadowOutset: metrics.theme.card.cardShadowOutset,
+            cardCornerRadius: metrics.cardCornerRadius,
+            shadowOpacity: metrics.theme.card.cardShadowOpacity,
+            shadowRadius: metrics.theme.card.cardShadowRadius,
+            shadowOffset: metrics.theme.card.cardShadowOffset,
+            backingScaleFactor: backingScaleFactor
+        )
+
         return PanelRenderedItemCard(
             state: state,
-            view: container,
+            view: shadowHost,
+            cardView: container,
             artifacts: PanelItemCardRenderArtifacts(
                 itemWidthConstraint: widthConstraint,
                 itemHeightConstraint: heightConstraint,

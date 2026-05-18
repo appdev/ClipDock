@@ -165,10 +165,20 @@ struct PanelRuntimeSeamTests {
             abs(contentView.smokeSearchFieldWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldInnerWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldHeight - 48) < 0.5
+                && abs(contentView.smokeSearchInputFieldHeight - 30) < 0.5
                 && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
                 && !contentView.smokeSearchFieldIsHidden
                 && contentView.smokeToolbarSearchButtonIsHidden
+                && !contentView.smokeToolbarSearchButtonAllowsHitTesting
         })
+        #expect(contentView.smokeSearchClearButtonIsVisible)
+        #expect(contentView.smokeSearchLeadingIconIsVisible)
+        #expect(contentView.smokeSearchChromeCornerRadius >= 16)
+        #expect(contentView.smokeSearchChromeBackgroundAlpha > 0.1)
+        #expect(contentView.smokeSearchChromeBorderAlpha > 0.05)
+        #expect(contentView.smokeSearchFieldAccessibilityLabel == "搜索剪贴板内容或来源应用")
+        #expect(contentView.smokeToolbarSearchButtonAccessibilityLabel == "搜索")
+        #expect(contentView.smokeSearchClearButtonAccessibilityLabel == "清除搜索")
 
         controller.hide()
     }
@@ -240,8 +250,9 @@ struct PanelRuntimeSeamTests {
         #expect(await waitForMainActor(attempts: 120) {
             !contentView.smokeIsSearchVisible
                 && contentView.smokeSearchFieldIsHidden
-                && abs(contentView.smokeSearchFieldWidth) < 0.5
+                && abs(contentView.smokeSearchFieldWidth - 28) < 0.5
                 && abs(contentView.smokeSearchFieldAlpha) < 0.01
+                && contentView.smokeToolbarSearchButtonAllowsHitTesting
                 && controller.smokeFirstResponderIsContentView
         })
         #expect(queries.count == queryCountAfterClear)
@@ -251,7 +262,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func nativeSearchCancelTextChangeBeforeActionEmitsOneImmediateClearQuery() async throws {
+    func customSearchClearButtonEmitsOneImmediateClearQueryKeepsVisibleAndFocused() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.activate(ignoringOtherApps: true)
@@ -269,11 +280,13 @@ struct PanelRuntimeSeamTests {
         contentView.smokeOpenSearch(text: "report")
         let queryCountBeforeCancel = queries.count
 
-        #expect(contentView.smokeNativeSearchCancelTextChangeBeforeAction())
+        #expect(contentView.smokeSearchClearButtonIsVisible)
+        #expect(contentView.smokeClickCustomSearchClearButton())
         #expect(await waitForMainActor {
             contentView.smokeIsSearchVisible
                 && contentView.smokeSearchText.isEmpty
                 && contentView.smokeFirstResponderIsSearchField
+                && !contentView.smokeSearchClearButtonIsVisible
         })
         let cancelQueries = Array(queries.dropFirst(queryCountBeforeCancel))
         #expect(cancelQueries.count == 1)
@@ -286,7 +299,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func nativeSearchCancelActionBeforeTextChangeEmitsOneImmediateClearQuery() async throws {
+    func customSearchClearButtonWhenEmptyKeepsSearchVisibleFocusedWithoutQuery() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.activate(ignoringOtherApps: true)
@@ -301,20 +314,91 @@ struct PanelRuntimeSeamTests {
         }
 
         controller.show()
-        contentView.smokeOpenSearch(text: "report")
-        let queryCountBeforeCancel = queries.count
+        contentView.smokeOpenSearch(text: "")
+        let queryCountBeforeClear = queries.count
 
-        #expect(contentView.smokeNativeSearchCancelActionBeforeTextChange())
+        #expect(!contentView.smokeSearchClearButtonIsVisible)
+        #expect(!contentView.smokeClickCustomSearchClearButton())
+        PanelQAHarness.drainMainRunLoop()
         #expect(await waitForMainActor {
             contentView.smokeIsSearchVisible
                 && contentView.smokeSearchText.isEmpty
                 && contentView.smokeFirstResponderIsSearchField
         })
-        let cancelQueries = Array(queries.dropFirst(queryCountBeforeCancel))
-        #expect(cancelQueries.count == 1)
-        #expect(cancelQueries.first?.searchText == "")
-        #expect(cancelQueries.first?.debounce == false)
-        #expect(!cancelQueries.contains { $0.debounce })
+        #expect(queries.count == queryCountBeforeClear)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func toolbarSearchButtonIsNonHitTestableDuringOpeningAndLeadingChromeClickDoesNotToggle() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+
+        controller.show()
+        contentView.layoutSubtreeIfNeeded()
+        #expect(contentView.smokeToolbarSearchButtonAllowsHitTesting)
+        #expect(contentView.smokeToggleSearchFromToolbarButton())
+        #expect(contentView.smokeIsSearchVisible)
+        #expect(!contentView.smokeToolbarSearchButtonAllowsHitTesting)
+        #expect(contentView.smokeClickLeadingSearchChrome())
+        #expect(await waitForMainActor {
+            contentView.smokeIsSearchVisible
+                && contentView.smokeFirstResponderIsSearchField
+                && !contentView.smokeToolbarSearchButtonAllowsHitTesting
+        })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func clearFiltersClosesSearchButPinboardScopeChangePreservesVisibility() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var pinboardQueries: [String?] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(_, _, _, let pinboardID, _) = action {
+                pinboardQueries.append(pinboardID)
+            }
+        }
+
+        controller.show()
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "default",
+                title: "固定",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+        contentView.layoutSubtreeIfNeeded()
+        contentView.smokeOpenSearch(text: "report")
+        #expect(!contentView.smokeClickPinboardFilterWithSearchClickAway(pinboardID: "default"))
+        #expect(await waitForMainActor {
+            contentView.smokeIsSearchVisible
+                && contentView.smokeSearchText == "report"
+                && pinboardQueries.last == "default"
+        })
+
+        contentView.smokeClearFilters()
+        #expect(await waitForMainActor(attempts: 120) {
+            !contentView.smokeIsSearchVisible
+                && contentView.smokeSearchFieldIsHidden
+                && abs(contentView.smokeSearchFieldWidth - 28) < 0.5
+        })
 
         controller.hide()
     }
@@ -754,7 +838,8 @@ struct PanelRuntimeSeamTests {
 
         #expect(abs(metrics.leadingInset) < 0.5)
         #expect(abs(metrics.trailingInset) < 0.5)
-        #expect(abs(smallestBandVerticalInset - 22) < 0.5)
+        #expect(metrics.itemBandBottomPadding >= 12)
+        #expect(abs(smallestBandVerticalInset - metrics.itemBandBottomPadding) < 0.5)
         #expect(abs(largestBandVerticalInset - 64) < 0.5)
         #expect(abs(metrics.scrollOriginX) < 0.5)
         #expect(abs((metrics.firstCardVisibleMinX ?? -1) - 22) < 0.5)
@@ -913,6 +998,153 @@ struct PanelRuntimeSeamTests {
         #expect(abs(farFrameAfter.minY - clickedFrameBefore.minY) < 0.5)
         #expect(abs(farFrameAfter.height - clickedFrameBefore.height) < 0.5)
         #expect(abs(contentView.smokeScrollOrigin.y - scrollOriginBeforeClick.y) < 0.5)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func renderedItemCardUsesShadowHostAroundMaskedInteractiveCard() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+
+        let itemSide: CGFloat = 218
+        let renderedCard = renderLinkCard(
+            itemSide: itemSide,
+            appSupportDirectory: tempDirectory,
+            sourceAppIconPath: nil
+        )
+        let host = try #require(renderedCard.view as? PanelItemCardShadowHostView)
+        let card = renderedCard.cardView
+        let lightTheme = ClipDockTheme.current(for: NSAppearance(named: .aqua))
+        let shadowOutset = lightTheme.card.cardShadowOutset
+
+        #expect(host.cardView === card)
+        #expect(host.layer?.masksToBounds == false)
+        #expect(abs((host.layer?.shadowOpacity ?? 0) - lightTheme.card.cardShadowOpacity) < 0.001)
+        #expect(lightTheme.card.cardShadowOpacity <= 0.05)
+        #expect(lightTheme.card.cardShadowRadius >= 6)
+        #expect(lightTheme.card.cardShadowOffset == .zero)
+        #expect(card.layer?.masksToBounds == true)
+        #expect(card.contentView?.layer?.masksToBounds == true)
+        #expect(card.toolTip == nil)
+
+        host.setFrameSize(host.intrinsicContentSize)
+        host.layoutSubtreeIfNeeded()
+
+        #expect(host.layer?.shadowPath != nil)
+        #expect(abs(card.frame.minX - shadowOutset) < 0.5)
+        #expect(abs(card.frame.minY - shadowOutset) < 0.5)
+        #expect(abs(card.frame.width - itemSide) < 0.5)
+        #expect(abs(card.frame.height - itemSide) < 0.5)
+    }
+
+    @Test
+    @MainActor
+    func itemCollectionGeometryUsesShadowHostSizeAndClampedSpacing() throws {
+        let metrics = PanelItemCollectionLayoutMetrics(
+            itemSide: 218,
+            itemSpacing: 6,
+            horizontalContentInset: 11,
+            imagePreviewMinHeight: 78,
+            imagePreviewMaxHeight: 116,
+            cardInset: 12,
+            shadowOutset: 4
+        )
+        let visualCardSide = PanelItemCollectionGeometry.renderedItemSide(for: metrics.itemSide)
+        let hostSide = PanelItemCollectionGeometry.hostSide(
+            for: metrics.itemSide,
+            shadowOutset: metrics.shadowOutset
+        )
+        let effectiveSpacing = PanelItemCollectionGeometry.effectiveItemSpacing(
+            itemSpacing: metrics.itemSpacing,
+            shadowOutset: metrics.shadowOutset
+        )
+
+        #expect(abs(visualCardSide - 216) < 0.5)
+        #expect(abs(hostSide - 224) < 0.5)
+        #expect(abs(effectiveSpacing - 0) < 0.5)
+        #expect(hostSide + effectiveSpacing >= visualCardSide + metrics.itemSpacing)
+        #expect(abs(
+            PanelItemCollectionGeometry.hostSide(for: 218, shadowOutset: 4)
+                + PanelItemCollectionGeometry.effectiveItemSpacing(itemSpacing: 22, shadowOutset: 4)
+                - (PanelItemCollectionGeometry.renderedItemSide(for: 218) + 22)
+        ) < 0.5)
+
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: metrics.itemSide)
+        let surface = PanelItemCollectionSurface(
+            metrics: metrics,
+            rendererProvider: { renderer },
+            onScrollDidChange: {},
+            onTailPrefetch: {}
+        )
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 260))
+        surface.attach(to: container)
+        surface.reload(entries: (0..<3).map { index in
+            PanelItemCollectionEntry(
+                id: "geometry-\(index)",
+                state: makeRuntimeCardState(itemID: "geometry-\(index)"),
+                callbacks: PanelItemCollectionCallbacks(toolTip: nil, onSelect: nil, onDoubleClick: nil, onContextMenu: nil)
+            )
+        })
+        container.layoutSubtreeIfNeeded()
+        surface.collectionView.layoutSubtreeIfNeeded()
+
+        let firstFrame = try #require(surface.firstItemFrame())
+        let lastFrame = try #require(surface.lastItemFrame())
+        #expect(abs(firstFrame.minX - metrics.horizontalContentInset) < 0.5)
+        #expect(abs(firstFrame.width - hostSide) < 0.5)
+        #expect(abs(lastFrame.minX - (metrics.horizontalContentInset + 2 * (hostSide + effectiveSpacing))) < 0.5)
+        #expect(abs(surface.collectionDocumentWidth() - (metrics.horizontalContentInset * 2 + 3 * hostSide)) < 0.5)
+    }
+
+    @Test
+    @MainActor
+    func shadowHostPaddingIsNotInteractiveButInnerCardStillSelects() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 3)
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor {
+            contentView.smokeCardBoxes().count == items.count
+        })
+
+        let firstCard = try #require(contentView.smokeOrderedCardBoxes().first)
+        let host = try #require(firstCard.superview as? PanelItemCardShadowHostView)
+        host.layoutSubtreeIfNeeded()
+        let selectedItemIDBeforePaddingHitTest = contentView.smokeSelectedItemID
+        let layoutMetrics = contentView.smokeItemBandLayoutMetrics
+        let expectedHostSide = firstCard.frame.width + 2 * layoutMetrics.shadowOutset
+
+        #expect(contentView.smokeOrderedCardBoxes().first === firstCard)
+        #expect(host.hitTest(NSPoint(x: 1, y: 1)) == nil)
+        #expect(contentView.smokeSelectedItemID == selectedItemIDBeforePaddingHitTest)
+        #expect(host.hitTest(NSPoint(x: host.bounds.midX, y: host.bounds.midY)) != nil)
+        #expect(abs(firstCard.frame.width - 214) < 0.5)
+        #expect(abs(firstCard.frame.height - 214) < 0.5)
+        #expect(layoutMetrics.itemBandBottomPadding >= 12)
+        #expect(layoutMetrics.itemBandHeight >= layoutMetrics.collectionDocumentHeight)
+        #expect(layoutMetrics.collectionDocumentHeight >= expectedHostSide + 1)
+
+        contentView.smokeClickCard(itemID: items[0].id)
+        #expect(contentView.smokeSelectedItemID == items[0].id)
+
+        contentView.smokeSelectItem(id: items[1].id, scrollIntoView: false)
+        contentView.layoutSubtreeIfNeeded()
+        #expect(contentView.smokeSelectedItemID == items[1].id)
 
         controller.hide()
     }
@@ -1758,19 +1990,24 @@ struct PanelRuntimeSeamTests {
         host.layoutSubtreeIfNeeded()
 
         let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
-        let imageFrame = imageView.convert(imageView.bounds, to: renderedCard.view)
+        let imageFrame = imageView.convert(imageView.bounds, to: renderedCard.cardView)
 
         #expect(renderedCard.artifacts.previewHeightConstraints.isEmpty)
         #expect(abs(imageFrame.width - itemSide) <= 1.5)
         #expect(abs(imageFrame.height - (itemSide - headerHeight)) <= 1.5)
 
         let resizedItemSide: CGFloat = 234
-        host.setFrameSize(NSSize(width: resizedItemSide, height: resizedItemSide))
         renderedCard.artifacts.itemWidthConstraint.constant = resizedItemSide
         renderedCard.artifacts.itemHeightConstraint.constant = resizedItemSide
+        if let rootShadowHost = renderedCard.view as? PanelItemCardShadowHostView {
+            rootShadowHost.visualCardSide = resizedItemSide
+            host.setFrameSize(rootShadowHost.intrinsicContentSize)
+        } else {
+            host.setFrameSize(NSSize(width: resizedItemSide, height: resizedItemSide))
+        }
         host.layoutSubtreeIfNeeded()
 
-        let resizedImageFrame = imageView.convert(imageView.bounds, to: renderedCard.view)
+        let resizedImageFrame = imageView.convert(imageView.bounds, to: renderedCard.cardView)
         #expect(abs(resizedImageFrame.width - resizedItemSide) <= 1.5)
         #expect(abs(resizedImageFrame.height - (resizedItemSide - headerHeight)) <= 1.5)
     }
@@ -2123,7 +2360,7 @@ struct PanelRuntimeSeamTests {
         })
         let surfaceColor = try #require(surface.layer?.backgroundColor.flatMap(NSColor.init(cgColor:)))
         let headerColor = try #require(header.layer?.backgroundColor.flatMap(NSColor.init(cgColor:)))
-        let surfaceFrame = surface.convert(surface.bounds, to: renderedCard.view)
+        let surfaceFrame = surface.convert(surface.bounds, to: renderedCard.cardView)
 
         #expect(typeLabel.stringValue == "颜色")
         #expect(timeLabel.stringValue == "now")
@@ -2350,7 +2587,7 @@ struct PanelRuntimeSeamTests {
             appSupportDirectory: tempDirectory,
             sourceAppIconPath: nil
         )
-        let cardBox = try #require(renderedCard.view as? NSBox)
+        let cardBox = renderedCard.cardView
 
         #expect(abs(cardBox.borderWidth) < 0.001)
         #expect(cardBox.borderColor.alphaComponent < 0.001)
@@ -2391,12 +2628,12 @@ struct PanelRuntimeSeamTests {
         host.layoutSubtreeIfNeeded()
 
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
-        let cardBox = try #require(renderedCard.view as? NSBox)
+        let cardBox = renderedCard.cardView
         let fadeView = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
             $0.identifier?.rawValue == "TextBodyBottomFade"
         })
-        let bodyFrame = bodyLabel.convert(bodyLabel.bounds, to: renderedCard.view)
-        let fadeFrame = fadeView.convert(fadeView.bounds, to: renderedCard.view)
+        let bodyFrame = bodyLabel.convert(bodyLabel.bounds, to: renderedCard.cardView)
+        let fadeFrame = fadeView.convert(fadeView.bounds, to: renderedCard.cardView)
 
         #expect(colorAndAlphaDistance(
             cardBox.fillColor,
@@ -2432,11 +2669,11 @@ struct PanelRuntimeSeamTests {
         host.layoutSubtreeIfNeeded()
 
         let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
-        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.view)
+        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.cardView)
         let footerBackgroundView = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
             $0.identifier?.rawValue == "LinkFooterBackground"
         })
-        let footerBackgroundFrame = footerBackgroundView.convert(footerBackgroundView.bounds, to: renderedCard.view)
+        let footerBackgroundFrame = footerBackgroundView.convert(footerBackgroundView.bounds, to: renderedCard.cardView)
         let footerBackgroundColor = try #require(footerBackgroundView.layer?.backgroundColor)
         let linkIconView = try #require(renderedCard.artifacts.linkIconViews.first)
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
@@ -2537,7 +2774,7 @@ struct PanelRuntimeSeamTests {
         host.layoutSubtreeIfNeeded()
 
         let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
-        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.view)
+        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.cardView)
 
         #expect(abs(previewFrame.width - 274) <= 1.5)
         #expect(abs(previewFrame.height - 176) <= 1.5)
@@ -2600,7 +2837,7 @@ struct PanelRuntimeSeamTests {
         host.layoutSubtreeIfNeeded()
 
         let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
-        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.view)
+        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.cardView)
         let linkIconView = try #require(renderedCard.artifacts.linkIconViews.first)
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
         let visibleGithubLabels = renderedCard.view.subviewsRecursiveForSmoke()
@@ -2641,7 +2878,7 @@ struct PanelRuntimeSeamTests {
             .compactMap { $0 as? NSTextField }
             .filter { !$0.isHidden }
         let previewView = try #require(renderedCard.artifacts.linkPreviewViews.first)
-        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.view)
+        let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.cardView)
 
         #expect(visibleLabels.contains { $0.stringValue == "github.com/clipdock/clipdock" })
         #expect(!visibleLabels.contains { $0.stringValue == "github.com" })
@@ -3522,6 +3759,7 @@ struct PanelRuntimeSeamTests {
         ])
 
         #expect(contentView.smokeItemTypeFilterButton(itemType: "color") == nil)
+        #expect(contentView.smokeCreatePinboardButtonFollowsPinboardChipsInToolbarOrder)
         contentView.smokePinboardFilterButton(pinboardID: "board-a")?.onPress?()
 
         #expect(queries.map(\.pinboardID) == ["board-a"])
@@ -3945,6 +4183,21 @@ private func makeRuntimeCardRenderer(
             theme: theme
         ),
         backingScaleFactor: NSScreen.main?.backingScaleFactor ?? 2
+    )
+}
+
+private func makeRuntimeCardState(itemID: String) -> PanelItemCardViewState {
+    PanelItemCardViewState(
+        itemID: itemID,
+        sourceAppName: "TextEdit",
+        relativeTimeText: "now",
+        symbolName: "doc.text",
+        typeText: "文本",
+        summaryText: "Runtime seam text item",
+        footnoteText: "23 个字符",
+        isSelected: false,
+        preview: .none,
+        assetRequest: PanelCardAssetRequest(sourceAppName: "TextEdit")
     )
 }
 

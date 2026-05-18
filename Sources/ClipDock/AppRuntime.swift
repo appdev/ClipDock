@@ -150,6 +150,165 @@ final class PanelSearchField: NSSearchField {
     }
 }
 
+private final class SearchToolbarButton: PanelActionButton {
+    var allowsSearchHitTesting = true
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard allowsSearchHitTesting,
+              isEnabled,
+              !isHidden,
+              alphaValue > 0.01
+        else {
+            return nil
+        }
+
+        return super.hitTest(point)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard allowsSearchHitTesting else { return }
+        super.mouseDown(with: event)
+    }
+}
+
+private final class PanelSearchClearButton: NSButton {
+    var onPress: (() -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden,
+              isEnabled,
+              alphaValue > 0.01
+        else {
+            return nil
+        }
+
+        return super.hitTest(point)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        onPress?()
+    }
+}
+
+private final class PanelSearchBarView: NSView {
+    private enum Metrics {
+        static let leadingInset: CGFloat = 13
+        static let iconSide: CGFloat = 17
+        static let textLeading: CGFloat = 38
+        static let textTrailing: CGFloat = 38
+        static let textFieldHeight: CGFloat = 30
+        static let clearSide: CGFloat = 22
+        static let clearTrailing: CGFloat = 10
+    }
+
+    let searchField: PanelSearchField
+    let leadingIconView = NSImageView()
+    let clearButton = PanelSearchClearButton()
+    var onActivateSearchField: (() -> Void)?
+    var onClear: (() -> Void)?
+
+    init(searchField: PanelSearchField) {
+        self.searchField = searchField
+        super.init(frame: .zero)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        onActivateSearchField?()
+    }
+
+    private func configure() {
+        wantsLayer = true
+        layer?.masksToBounds = true
+        translatesAutoresizingMaskIntoConstraints = false
+
+        leadingIconView.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 15, weight: .medium))
+        leadingIconView.imageScaling = .scaleProportionallyDown
+        leadingIconView.translatesAutoresizingMaskIntoConstraints = false
+        leadingIconView.setAccessibilityElement(false)
+
+        clearButton.isBordered = false
+        clearButton.imagePosition = .imageOnly
+        clearButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "清除搜索")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+        clearButton.imageScaling = .scaleProportionallyDown
+        clearButton.target = nil
+        clearButton.action = nil
+        clearButton.focusRingType = .none
+        clearButton.toolTip = "清除搜索"
+        clearButton.setAccessibilityLabel("清除搜索")
+        clearButton.translatesAutoresizingMaskIntoConstraints = false
+        clearButton.onPress = { [weak self] in
+            self?.onClear?()
+        }
+
+        addSubview(leadingIconView)
+        addSubview(searchField)
+        addSubview(clearButton)
+
+        NSLayoutConstraint.activate([
+            leadingIconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.leadingInset),
+            leadingIconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            leadingIconView.widthAnchor.constraint(equalToConstant: Metrics.iconSide),
+            leadingIconView.heightAnchor.constraint(equalToConstant: Metrics.iconSide),
+
+            clearButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.clearTrailing),
+            clearButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            clearButton.widthAnchor.constraint(equalToConstant: Metrics.clearSide),
+            clearButton.heightAnchor.constraint(equalToConstant: Metrics.clearSide),
+
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.textLeading),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.textTrailing),
+            searchField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            searchField.heightAnchor.constraint(equalToConstant: Metrics.textFieldHeight)
+        ])
+    }
+
+    func applyTheme(_ theme: ClipDockThemePalette, isActive: Bool = false) {
+        layer?.cornerRadius = 18
+        layer?.backgroundColor = theme.panel.toolbarSelectedBackgroundColor
+            .withAlphaComponent(theme.scheme == .dark ? 0.18 : 0.30)
+            .cgColor
+        if isActive {
+            layer?.borderWidth = 3
+            layer?.borderColor = NSColor.systemBlue.withAlphaComponent(theme.scheme == .dark ? 0.70 : 0.62).cgColor
+        } else {
+            layer?.borderWidth = 1
+            layer?.borderColor = theme.panel.toolbarSelectedBorderColor
+                .withAlphaComponent(theme.scheme == .dark ? 0.16 : 0.12)
+                .cgColor
+        }
+        leadingIconView.contentTintColor = theme.panel.toolbarIconColor.withAlphaComponent(0.62)
+        clearButton.contentTintColor = theme.panel.toolbarIconColor.withAlphaComponent(0.55)
+    }
+
+    func updateClearButton(hasText: Bool) {
+        clearButton.isHidden = !hasText
+        clearButton.isEnabled = hasText
+        clearButton.alphaValue = hasText ? 1 : 0
+    }
+
+    var smokeCornerRadius: CGFloat {
+        layer?.cornerRadius ?? 0
+    }
+
+    var smokeBackgroundAlpha: CGFloat {
+        layer?.backgroundColor?.alpha ?? 0
+    }
+
+    var smokeBorderAlpha: CGFloat {
+        layer?.borderColor?.alpha ?? 0
+    }
+}
+
 final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     static let panelBackgroundCornerRadius: CGFloat = 26
 
@@ -170,8 +329,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         static let controlBarHeight: CGFloat = 52
         static let sectionSpacing: CGFloat = 12
         static let searchFieldWidth: CGFloat = 330
+        static let searchSlotClosedWidth: CGFloat = 28
         static let searchFieldHeight: CGFloat = 48
-        static let searchFieldAnimationDuration: TimeInterval = 0.14
+        static let searchFieldAnimationDuration: TimeInterval = 0.15
         static let horizontalContentInset: CGFloat = 22
         static let defaultItemSide: CGFloat = 218
         static let compactItemSide: CGFloat = 156
@@ -351,8 +511,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let blockingGeneration: Int
     }
 
+    private let searchSlotView = NSView()
     private let searchFieldRevealView = NSView()
     private let searchField = PanelSearchField()
+    private var searchBarView: PanelSearchBarView?
     private let previewPopoverController = ClipboardPreviewPopoverController()
     private let itemBandContainerView = NSView()
     private static let maxRetainedPinboardListPages = 3
@@ -371,7 +533,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var activeRenamePinboardID: String?
     private var activeRenameOriginalTitle: String?
     private var isInstallingRenameField = false
-    private var searchFieldWidthConstraint: NSLayoutConstraint?
+    private var searchSlotWidthConstraint: NSLayoutConstraint?
     private var searchFieldVisibilityTarget = false
     private var searchFieldVisibilityGeneration = 0
     private var searchCancelButtonClickArmed = false
@@ -381,7 +543,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var menuTrackingDepth = 0
     private var blockingPanelOperationGeneration = 0
     private weak var filterRow: NSStackView?
-    private weak var toolbarSearchButton: PanelActionButton?
+    private weak var createPinboardButton: PanelActionButton?
+    private var toolbarSearchButton: PanelActionButton?
+    private var toolbarSearchButtonDefaultImage: NSImage?
     private var appSupportDirectory: URL?
     private var sourceIconHeaderColorWriter: SourceAppIconHeaderColorWriter?
     private var linkWebPreviewEnabled = true
@@ -692,6 +856,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         )
     }
 
+    private func itemBandBottomPadding(shadowOutset: CGFloat) -> CGFloat {
+        max(12, Layout.padding - (2 * shadowOutset - 1))
+    }
+
     private func handleItemBandScrollDidChange() {
         activeListPage.savedScrollOrigin = activeListPage.saveScrollOrigin()
         let reachedLoadMoreThreshold = activeListPage.hasReachedLoadMoreThreshold()
@@ -723,6 +891,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         toolbarIconButtons.forEach { button in
             button.contentTintColor = theme.panel.toolbarIconColor
         }
+        searchBarView?.applyTheme(theme, isActive: panelViewState().toolbar.isSearchVisible)
         updatePinboardChipAppearance()
     }
 
@@ -781,13 +950,15 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func itemCollectionLayoutMetrics() -> PanelItemCollectionLayoutMetrics {
-        PanelItemCollectionLayoutMetrics(
+        let shadowOutset = ClipDockTheme.current(for: self).card.cardShadowOutset
+        return PanelItemCollectionLayoutMetrics(
             itemSide: itemSideLength(for: currentPanelHeight),
             itemSpacing: 22,
             horizontalContentInset: Layout.horizontalContentInset,
             imagePreviewMinHeight: Layout.imagePreviewMinHeight,
             imagePreviewMaxHeight: Layout.imagePreviewMaxHeight,
-            cardInset: Layout.cardInset
+            cardInset: Layout.cardInset,
+            shadowOutset: shadowOutset
         )
     }
 
@@ -878,7 +1049,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             itemBand.leadingAnchor.constraint(equalTo: leadingAnchor),
             itemBand.trailingAnchor.constraint(equalTo: trailingAnchor),
             itemBand.topAnchor.constraint(equalTo: controlBar.bottomAnchor, constant: Layout.sectionSpacing),
-            itemBand.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.padding)
+            itemBand.bottomAnchor.constraint(
+                equalTo: bottomAnchor,
+                constant: -itemBandBottomPadding(shadowOutset: itemCollectionLayoutMetrics().shadowOutset)
+            )
         ])
 
         renderItemEntries([])
@@ -888,16 +1062,31 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makeControlBar() -> NSView {
         let container = NSView()
 
-        searchField.placeholderString = "搜索剪贴板内容或来源应用"
         searchField.controlSize = .large
-        searchField.font = .systemFont(ofSize: 13)
+        searchField.placeholderString = "搜索"
+        searchField.font = .systemFont(ofSize: 15, weight: .semibold)
         searchField.focusRingType = .none
+        searchField.isBezeled = false
+        searchField.isBordered = false
+        searchField.drawsBackground = false
+        searchField.backgroundColor = .clear
+        searchField.setAccessibilityLabel("搜索剪贴板内容或来源应用")
+        searchField.setAccessibilityHelp("搜索剪贴板内容或来源应用")
         searchField.delegate = self
         searchField.target = nil
         searchField.action = nil
         if let cell = searchField.cell as? NSSearchFieldCell {
             cell.controlSize = .large
             cell.font = searchField.font
+            cell.isBezeled = false
+            cell.isBordered = false
+            cell.drawsBackground = false
+            cell.backgroundColor = .clear
+            cell.usesSingleLineMode = true
+            cell.lineBreakMode = .byTruncatingTail
+            cell.isScrollable = true
+            cell.searchButtonCell = nil
+            cell.cancelButtonCell = nil
         }
         searchField.onCancelButtonMouseDown = { [weak self] in
             self?.armSearchCancelButtonClick() ?? false
@@ -908,20 +1097,41 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchField.isHidden = true
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
+        let searchBar = PanelSearchBarView(searchField: searchField)
+        searchBar.onActivateSearchField = { [weak self] in
+            guard let self else { return }
+            self.window?.makeFirstResponder(self.searchField)
+        }
+        searchBar.onClear = { [weak self] in
+            self?.handleCustomSearchClearButtonClick()
+        }
+        searchBar.applyTheme(theme)
+        searchBar.updateClearButton(hasText: false)
+        searchBarView = searchBar
+
+        searchSlotView.wantsLayer = true
+        searchSlotView.layer?.masksToBounds = true
+        searchSlotView.translatesAutoresizingMaskIntoConstraints = false
+
         searchFieldRevealView.wantsLayer = true
         searchFieldRevealView.layer?.masksToBounds = true
         searchFieldRevealView.isHidden = true
         searchFieldRevealView.alphaValue = 0
         searchFieldRevealView.translatesAutoresizingMaskIntoConstraints = false
-        searchFieldRevealView.addSubview(searchField)
+        searchFieldRevealView.addSubview(searchBar)
 
         let searchButton = makeToolbarIconButton(
             symbolName: "magnifyingglass",
-            accessibilityLabel: "搜索"
+            accessibilityLabel: "搜索",
+            button: SearchToolbarButton()
         ) { [weak self] in
             self?.toggleSearchField()
         }
         toolbarSearchButton = searchButton
+        toolbarSearchButtonDefaultImage = searchButton.image
+        setToolbarSearchButtonHitTesting(true)
+        searchSlotView.addSubview(searchButton)
+        searchSlotView.addSubview(searchFieldRevealView)
 
         let chips = makeFilterChips()
         pinboardButtons = chips
@@ -933,6 +1143,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         ) { [weak self] in
             self?.showCreatePinboardDialog()
         }
+        createPinboardButton = addButton
         let moreButton = makeToolbarIconButton(
             symbolName: "ellipsis.circle",
             accessibilityLabel: "更多功能"
@@ -942,7 +1153,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             self?.showPanelOverflowMenu(from: moreButton)
         }
 
-        let row = NSStackView(views: [searchButton, searchFieldRevealView] + chips + [addButton])
+        let row = NSStackView(views: [searchSlotView] + chips + [addButton])
         row.orientation = NSUserInterfaceLayoutOrientation.horizontal
         row.alignment = NSLayoutConstraint.Attribute.centerY
         row.spacing = 9
@@ -951,8 +1162,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         filterRow = row
 
         container.addSubview(row)
-        searchFieldWidthConstraint = searchFieldRevealView.widthAnchor.constraint(equalToConstant: 0)
-        searchFieldWidthConstraint?.isActive = true
+        searchSlotWidthConstraint = searchSlotView.widthAnchor.constraint(equalToConstant: Layout.searchSlotClosedWidth)
+        searchSlotWidthConstraint?.isActive = true
 
         let leadingConstraint = row.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor)
         leadingConstraint.priority = .defaultLow
@@ -965,11 +1176,17 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             row.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             leadingConstraint,
             row.trailingAnchor.constraint(lessThanOrEqualTo: moreButton.leadingAnchor, constant: -Layout.sectionSpacing),
+            searchSlotView.heightAnchor.constraint(equalToConstant: Layout.searchFieldHeight),
+            searchButton.leadingAnchor.constraint(equalTo: searchSlotView.leadingAnchor),
+            searchButton.centerYAnchor.constraint(equalTo: searchSlotView.centerYAnchor),
             searchFieldRevealView.heightAnchor.constraint(equalToConstant: Layout.searchFieldHeight),
-            searchField.leadingAnchor.constraint(equalTo: searchFieldRevealView.leadingAnchor),
-            searchField.centerYAnchor.constraint(equalTo: searchFieldRevealView.centerYAnchor),
-            searchField.widthAnchor.constraint(equalToConstant: Layout.searchFieldWidth),
-            searchField.heightAnchor.constraint(equalTo: searchFieldRevealView.heightAnchor),
+            searchFieldRevealView.widthAnchor.constraint(equalToConstant: Layout.searchFieldWidth),
+            searchFieldRevealView.leadingAnchor.constraint(equalTo: searchSlotView.leadingAnchor),
+            searchFieldRevealView.centerYAnchor.constraint(equalTo: searchSlotView.centerYAnchor),
+            searchBar.leadingAnchor.constraint(equalTo: searchFieldRevealView.leadingAnchor),
+            searchBar.trailingAnchor.constraint(equalTo: searchFieldRevealView.trailingAnchor),
+            searchBar.topAnchor.constraint(equalTo: searchFieldRevealView.topAnchor),
+            searchBar.bottomAnchor.constraint(equalTo: searchFieldRevealView.bottomAnchor),
             moreButton.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             moreButton.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
@@ -1002,7 +1219,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             filterRow.removeArrangedSubview(oldButton)
             oldButton.removeFromSuperview()
         }
-        let insertionIndex = max(filterRow.arrangedSubviews.count - 1, 2)
+        let insertionIndex = createPinboardButton
+            .flatMap { button in filterRow.arrangedSubviews.firstIndex { $0 === button } }
+            ?? filterRow.arrangedSubviews.count
         for (offset, newButton) in newButtons.enumerated() {
             filterRow.insertArrangedSubview(newButton, at: insertionIndex + offset)
         }
@@ -1663,6 +1882,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         if searchField.stringValue != viewState.toolbar.searchText {
             searchField.stringValue = viewState.toolbar.searchText
         }
+        updateSearchChromeState()
         setSearchFieldVisible(viewState.toolbar.isSearchVisible, animated: true)
         updatePinboardChipAppearance()
     }
@@ -1677,14 +1897,18 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchFieldVisibilityGeneration += 1
         let generation = searchFieldVisibilityGeneration
 
+        setToolbarSearchButtonHitTesting(false)
+        toolbarSearchButton?.image = toolbarSearchButtonDefaultImage
         if visible {
-            toolbarSearchButton?.isHidden = true
             searchFieldRevealView.isHidden = false
+            searchField.isHidden = false
+        } else if !searchFieldRevealView.isHidden {
             searchField.isHidden = false
         }
 
-        let targetWidth = visible ? Layout.searchFieldWidth : 0
+        let targetWidth = visible ? Layout.searchFieldWidth : Layout.searchSlotClosedWidth
         let targetAlpha: CGFloat = visible ? 1 : 0
+        let targetButtonAlpha: CGFloat = visible ? 0 : 1
         guard animated, window != nil else {
             applySearchFieldVisibilityFinalState(visible)
             return
@@ -1692,9 +1916,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Layout.searchFieldAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            searchFieldWidthConstraint?.animator().constant = targetWidth
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
+            searchSlotWidthConstraint?.animator().constant = targetWidth
             searchFieldRevealView.animator().alphaValue = targetAlpha
+            toolbarSearchButton?.animator().alphaValue = targetButtonAlpha
             filterRow?.layoutSubtreeIfNeeded()
             filterRow?.superview?.layoutSubtreeIfNeeded()
         } completionHandler: { [weak self] in
@@ -1709,17 +1934,52 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 self.applySearchFieldVisibilityFinalState(visible)
             }
         }
+        scheduleSearchFieldVisibilityFinalState(visible, generation: generation)
     }
 
     private func applySearchFieldVisibilityFinalState(_ visible: Bool) {
-        let targetWidth = visible ? Layout.searchFieldWidth : 0
-        searchFieldWidthConstraint?.constant = targetWidth
+        let targetWidth = visible ? Layout.searchFieldWidth : Layout.searchSlotClosedWidth
+        searchSlotWidthConstraint?.constant = targetWidth
         searchFieldRevealView.alphaValue = visible ? 1 : 0
         searchFieldRevealView.isHidden = !visible
         searchField.isHidden = !visible
-        toolbarSearchButton?.isHidden = visible
+        toolbarSearchButton?.image = toolbarSearchButtonDefaultImage
+        toolbarSearchButton?.alphaValue = visible ? 0 : 1
+        setToolbarSearchButtonHitTesting(!visible)
+        let firstResponder = window?.firstResponder
+        if !visible,
+           (firstResponder === searchField || firstResponder === searchField.currentEditor()) {
+            window?.makeFirstResponder(self)
+        }
         filterRow?.layoutSubtreeIfNeeded()
         filterRow?.superview?.layoutSubtreeIfNeeded()
+    }
+
+    private func scheduleSearchFieldVisibilityFinalState(_ visible: Bool, generation: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Layout.searchFieldAnimationDuration + 0.03) { [weak self] in
+            guard let self,
+                  self.searchFieldVisibilityGeneration == generation,
+                  self.searchFieldVisibilityTarget == visible
+            else {
+                return
+            }
+
+            self.applySearchFieldVisibilityFinalState(visible)
+        }
+    }
+
+    private func setToolbarSearchButtonHitTesting(_ enabled: Bool) {
+        guard let toolbarSearchButton else { return }
+        toolbarSearchButton.isEnabled = enabled
+        if let searchButton = toolbarSearchButton as? SearchToolbarButton {
+            searchButton.allowsSearchHitTesting = enabled
+        }
+        toolbarSearchButton.needsDisplay = true
+    }
+
+    private func updateSearchChromeState() {
+        searchBarView?.updateClearButton(hasText: !searchField.stringValue.isEmpty)
+        searchBarView?.applyTheme(theme, isActive: panelViewState().toolbar.isSearchVisible)
     }
 
     private func emitRuntimeAction(_ action: PanelExternalAction) {
@@ -2051,13 +2311,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
               !hasBlockingPanelOperation,
               !previewPopoverController.isShown,
               menuTrackingDepth == 0,
-              !eventLocation(event, isInside: searchFieldRevealView)
+              !eventLocationIsInsideSearchControls(event)
         else {
-            return false
-        }
-
-        if let toolbarSearchButton,
-           eventLocation(event, isInside: toolbarSearchButton) {
             return false
         }
 
@@ -2086,13 +2341,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return
         }
 
-        if pointInWindow(pending.locationInWindow, isInside: searchFieldRevealView) {
-            pendingEmptySearchClose = nil
-            return
-        }
-
-        if let toolbarSearchButton,
-           pointInWindow(pending.locationInWindow, isInside: toolbarSearchButton) {
+        if pointInWindowIsInsideSearchControls(pending.locationInWindow) {
             pendingEmptySearchClose = nil
             return
         }
@@ -2123,9 +2372,22 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             || (event.window == nil && event.windowNumber == window?.windowNumber)
     }
 
+    private func eventLocationIsInsideSearchControls(_ event: NSEvent) -> Bool {
+        eventLocation(event, isInside: searchSlotView)
+            || eventLocation(event, isInside: searchFieldRevealView)
+            || searchBarView.map { eventLocation(event, isInside: $0) } == true
+    }
+
+    private func pointInWindowIsInsideSearchControls(_ point: NSPoint) -> Bool {
+        pointInWindow(point, isInside: searchSlotView)
+            || pointInWindow(point, isInside: searchFieldRevealView)
+            || searchBarView.map { pointInWindow(point, isInside: $0) } == true
+    }
+
     private func pointInWindow(_ pointInWindow: NSPoint, isInside view: NSView) -> Bool {
         guard view.window === window,
-              !view.isHidden
+              !view.isHidden,
+              view.alphaValue > 0.01
         else { return false }
         let point = view.convert(pointInWindow, from: nil)
         return view.bounds.contains(point)
@@ -2205,10 +2467,18 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchCancelButtonClickArmed = false
         searchCancelTextChangeSuppressionDepth += 1
         applyInteractionAction(.clearSearchText)
+        updateSearchChromeState()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.searchCancelTextChangeSuppressionDepth = max(0, self.searchCancelTextChangeSuppressionDepth - 1)
         }
+    }
+
+    private func handleCustomSearchClearButtonClick() {
+        guard panelViewState().toolbar.isSearchVisible else { return }
+        applyInteractionAction(.clearSearchText)
+        window?.makeFirstResponder(searchField)
+        updateSearchChromeState()
     }
 
     private func shouldSuppressSearchTextChangeForCancelButton() -> Bool {
@@ -2222,6 +2492,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 return
             }
             applyInteractionAction(.setSearchText(searchField.stringValue))
+            updateSearchChromeState()
             return
         }
 
@@ -2399,9 +2670,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makeToolbarIconButton(
         symbolName: String,
         accessibilityLabel: String,
+        button: PanelActionButton = PanelActionButton(),
         onPress: @escaping () -> Void
     ) -> PanelActionButton {
-        let button = PanelActionButton()
         button.bezelStyle = .texturedRounded
         button.isBordered = false
         button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityLabel)?
@@ -2414,6 +2685,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         button.action = nil
         button.onPress = onPress
         button.toolTip = accessibilityLabel
+        button.setAccessibilityLabel(accessibilityLabel)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
         button.contentTintColor = theme.panel.toolbarIconColor
@@ -2574,6 +2846,7 @@ extension FloatingPanelContentView {
 
     var smokeIsSearchVisible: Bool {
         panelViewState().toolbar.isSearchVisible
+            && !searchSlotView.isHidden
             && !searchFieldRevealView.isHidden
             && !searchField.isHidden
     }
@@ -2583,15 +2856,19 @@ extension FloatingPanelContentView {
     }
 
     var smokeSearchFieldWidth: CGFloat {
-        searchFieldWidthConstraint?.constant ?? searchField.frame.width
+        searchSlotWidthConstraint?.constant ?? searchSlotView.frame.width
     }
 
     var smokeSearchFieldHeight: CGFloat {
+        searchFieldRevealView.frame.height
+    }
+
+    var smokeSearchInputFieldHeight: CGFloat {
         searchField.frame.height
     }
 
     var smokeSearchFieldInnerWidth: CGFloat {
-        searchField.frame.width
+        searchBarView?.frame.width ?? searchFieldRevealView.frame.width
     }
 
     var smokeSearchFieldAlpha: CGFloat {
@@ -2603,7 +2880,47 @@ extension FloatingPanelContentView {
     }
 
     var smokeToolbarSearchButtonIsHidden: Bool {
-        toolbarSearchButton?.isHidden ?? false
+        guard let toolbarSearchButton else { return false }
+        return toolbarSearchButton.isHidden || toolbarSearchButton.alphaValue < 0.01
+    }
+
+    var smokeToolbarSearchButtonAllowsHitTesting: Bool {
+        guard let toolbarSearchButton else { return false }
+        return toolbarSearchButton.hitTest(NSPoint(x: toolbarSearchButton.bounds.midX, y: toolbarSearchButton.bounds.midY)) != nil
+    }
+
+    var smokeSearchClearButtonIsVisible: Bool {
+        guard let clearButton = searchBarView?.clearButton else { return false }
+        return !clearButton.isHidden && clearButton.isEnabled && clearButton.alphaValue > 0.01
+    }
+
+    var smokeSearchClearButtonAccessibilityLabel: String? {
+        searchBarView?.clearButton.accessibilityLabel()
+    }
+
+    var smokeSearchFieldAccessibilityLabel: String? {
+        searchField.accessibilityLabel()
+    }
+
+    var smokeToolbarSearchButtonAccessibilityLabel: String? {
+        toolbarSearchButton?.accessibilityLabel()
+    }
+
+    var smokeSearchChromeCornerRadius: CGFloat {
+        searchBarView?.smokeCornerRadius ?? 0
+    }
+
+    var smokeSearchChromeBackgroundAlpha: CGFloat {
+        searchBarView?.smokeBackgroundAlpha ?? 0
+    }
+
+    var smokeSearchChromeBorderAlpha: CGFloat {
+        searchBarView?.smokeBorderAlpha ?? 0
+    }
+
+    var smokeSearchLeadingIconIsVisible: Bool {
+        guard let icon = searchBarView?.leadingIconView else { return false }
+        return !icon.isHidden && icon.image != nil && icon.alphaValue > 0.01
     }
 
     var smokeSearchClickAwayDiagnostic: String {
@@ -2613,8 +2930,57 @@ extension FloatingPanelContentView {
 
     func smokeOpenSearch(text: String) {
         applyInteractionAction(.focusSearch)
+        applySearchFieldVisibilityFinalState(true)
         searchField.stringValue = text
         controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+        updateSearchChromeState()
+        layoutSubtreeIfNeeded()
+    }
+
+    @discardableResult
+    func smokeClickLeadingSearchChrome() -> Bool {
+        guard let searchBarView,
+              let window = searchBarView.window
+        else { return false }
+        let localPoint = NSPoint(x: 18, y: searchBarView.bounds.midY)
+        let windowPoint = searchBarView.convert(localPoint, to: nil)
+        guard let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ) else { return false }
+        searchBarView.mouseDown(with: event)
+        return true
+    }
+
+    @discardableResult
+    func smokeClickCustomSearchClearButton() -> Bool {
+        guard let clearButton = searchBarView?.clearButton,
+              !clearButton.isHidden,
+              clearButton.isEnabled,
+              let event = smokeMouseDownEvent(centeredIn: clearButton)
+        else { return false }
+        clearButton.mouseDown(with: event)
+        return true
+    }
+
+    @discardableResult
+    func smokeToggleSearchFromToolbarButton() -> Bool {
+        guard let toolbarSearchButton,
+              let event = smokeMouseDownEvent(centeredIn: toolbarSearchButton)
+        else { return false }
+        toolbarSearchButton.mouseDown(with: event)
+        return true
+    }
+
+    func smokeClearFilters() {
+        applyInteractionAction(.clearFilters)
     }
 
     @discardableResult
@@ -2773,8 +3139,16 @@ extension FloatingPanelContentView {
 
     var smokeCollectionRetainedCellBound: Int {
         let viewportWidth = itemBandScrollView?.contentView.bounds.width ?? bounds.width
-        let itemSide = itemSideLength(for: currentPanelHeight)
-        return Int(ceil((viewportWidth + 22) / (itemSide + 22))) + 8
+        let metrics = itemCollectionLayoutMetrics()
+        let hostSide = PanelItemCollectionGeometry.hostSide(
+            for: metrics.itemSide,
+            shadowOutset: metrics.shadowOutset
+        )
+        let effectiveSpacing = PanelItemCollectionGeometry.effectiveItemSpacing(
+            itemSpacing: metrics.itemSpacing,
+            shadowOutset: metrics.shadowOutset
+        )
+        return Int(ceil((viewportWidth + effectiveSpacing) / (hostSide + effectiveSpacing))) + 8
     }
 
     func smokeVisibleCommandItemIDs(limit: Int = 9) -> [String] {
@@ -2787,6 +3161,20 @@ extension FloatingPanelContentView {
 
     func smokeItemTypeFilterButton(itemType: String) -> PinboardChipButton? {
         pinboardButtons.first { $0.itemType == itemType }
+    }
+
+    var smokeCreatePinboardButtonFollowsPinboardChipsInToolbarOrder: Bool {
+        guard let filterRow,
+              let createPinboardButton,
+              let createIndex = filterRow.arrangedSubviews.firstIndex(where: { $0 === createPinboardButton })
+        else { return false }
+
+        return pinboardButtons.allSatisfy { button in
+            guard let chipIndex = filterRow.arrangedSubviews.firstIndex(where: { $0 === button }) else {
+                return false
+            }
+            return chipIndex < createIndex
+        }
     }
 
     func smokePinboardChipAllowsLongIntrinsicWidth() -> Bool {
@@ -2898,11 +3286,16 @@ extension FloatingPanelContentView {
         firstCardVisibleMinX: CGFloat?,
         lastCardVisibleMaxXAtTrailingEdge: CGFloat?,
         firstCardDocumentMinX: CGFloat?,
-        lastCardDocumentTrailingInset: CGFloat?
+        lastCardDocumentTrailingInset: CGFloat?,
+        itemBandHeight: CGFloat,
+        collectionDocumentHeight: CGFloat,
+        itemBandBottomPadding: CGFloat,
+        shadowOutset: CGFloat
     ) {
         layoutSubtreeIfNeeded()
         itemBandDocumentView.layoutSubtreeIfNeeded()
 
+        let metrics = itemCollectionLayoutMetrics()
         let bandFrame = itemBandContainerView.frame
         let scrollView = itemBandScrollView
         let scrollOriginX = scrollView?.contentView.bounds.origin.x ?? 0
@@ -2928,7 +3321,11 @@ extension FloatingPanelContentView {
             firstCardVisibleMinX: firstCardVisibleMinX,
             lastCardVisibleMaxXAtTrailingEdge: lastCardVisibleMaxXAtTrailingEdge,
             firstCardDocumentMinX: firstCardMinX,
-            lastCardDocumentTrailingInset: lastCardTrailingInset
+            lastCardDocumentTrailingInset: lastCardTrailingInset,
+            itemBandHeight: bandFrame.height,
+            collectionDocumentHeight: itemBandDocumentView.frame.height,
+            itemBandBottomPadding: itemBandBottomPadding(shadowOutset: metrics.shadowOutset),
+            shadowOutset: metrics.shadowOutset
         )
     }
 

@@ -44,6 +44,10 @@ struct ClipDockCardTheme {
     let imageFootnoteBadgeBorderColor: NSColor
     let imageFootnoteTextColor: NSColor
     let imageFootnoteBadgeShadowOpacity: Float
+    let cardShadowOpacity: Float
+    let cardShadowRadius: CGFloat
+    let cardShadowOffset: CGSize
+    let cardShadowOutset: CGFloat
     let imagePreviewCheckerboardBackgroundColor: NSColor
     let imagePreviewCheckerboardAlternateColor: NSColor
 }
@@ -167,6 +171,10 @@ enum ClipDockTheme {
             imageFootnoteBadgeBorderColor: NSColor.white.withAlphaComponent(0.62),
             imageFootnoteTextColor: NSColor(calibratedWhite: 0.38, alpha: 0.92),
             imageFootnoteBadgeShadowOpacity: 0.12,
+            cardShadowOpacity: 0.045,
+            cardShadowRadius: 6,
+            cardShadowOffset: .zero,
+            cardShadowOutset: 4,
             imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.96, alpha: 1),
             imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.88, alpha: 1)
         ),
@@ -262,6 +270,10 @@ enum ClipDockTheme {
             imageFootnoteBadgeBorderColor: NSColor.white.withAlphaComponent(0.18),
             imageFootnoteTextColor: NSColor.white.withAlphaComponent(0.88),
             imageFootnoteBadgeShadowOpacity: 0.22,
+            cardShadowOpacity: 0.13,
+            cardShadowRadius: 6,
+            cardShadowOffset: .zero,
+            cardShadowOutset: 4,
             imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.09, alpha: 1),
             imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.15, alpha: 1)
         ),
