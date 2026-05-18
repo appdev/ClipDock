@@ -32,9 +32,9 @@ jobs:
     timeout-minutes: 60
 
     env:
-      APP_BUNDLE_NAME: ClipShelf
-      APP_EXECUTABLE_NAME: ClipShelf
-      BUNDLE_IDENTIFIER: com.apkdv.clipshelf
+      APP_BUNDLE_NAME: ClipDock
+      APP_EXECUTABLE_NAME: ClipDock
+      BUNDLE_IDENTIFIER: com.apkdv.clipdock
       APP_ARCHS: arm64 x86_64
 
     steps:
@@ -89,10 +89,10 @@ jobs:
             echo "build=$build"
             echo "tag=$tag"
             echo "artifact_dir=$artifact_dir"
-            echo "dmgs=$artifact_dir/ClipShelf-$version-*.dmg"
+            echo "dmgs=$artifact_dir/ClipDock-$version-*.dmg"
             echo "checksums=$artifact_dir/SHA256SUMS"
-            echo "manifest=$artifact_dir/ClipShelf-release-manifest.txt"
-            echo "release_notes=$artifact_dir/ClipShelf-release-notes.md"
+            echo "manifest=$artifact_dir/ClipDock-release-manifest.txt"
+            echo "release_notes=$artifact_dir/ClipDock-release-notes.md"
           } >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes from commits
@@ -121,7 +121,7 @@ jobs:
           fi
 
           {
-            echo "## ClipShelf $RELEASE_VERSION"
+            echo "## ClipDock $RELEASE_VERSION"
             echo
             echo "- Build: $RELEASE_BUILD"
             echo "- Commit: $target_commit"
@@ -154,7 +154,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ClipShelf-${{ steps.release.outputs.version }}-macos
+          name: ClipDock-${{ steps.release.outputs.version }}-macos
           path: |
             ${{ steps.release.outputs.dmgs }}
             ${{ steps.release.outputs.checksums }}
@@ -167,7 +167,7 @@ jobs:
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: ClipShelf ${{ steps.release.outputs.version }}
+          name: ClipDock ${{ steps.release.outputs.version }}
           body_path: ${{ steps.release.outputs.release_notes }}
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
