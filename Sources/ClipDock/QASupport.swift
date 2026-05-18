@@ -8,9 +8,123 @@ enum PanelQASamples {
         let linkMetadata: RustLinkMetadataSummary
     }
 
+    private struct SourceAppIconFixture {
+        let key: String
+        let fileStem: String
+        let appPaths: [String]
+    }
+
     private struct OpenGraphMetadata {
         let title: String
         let imageURL: URL
+    }
+
+    private static let sourceAppIconFixtures: [SourceAppIconFixture] = [
+        SourceAppIconFixture(
+            key: "Chrome",
+            fileStem: "chrome",
+            appPaths: ["/Applications/Google Chrome.app", "/Applications/Safari.app"]
+        ),
+        SourceAppIconFixture(
+            key: "Safari",
+            fileStem: "safari",
+            appPaths: ["/Applications/Safari.app", "/System/Applications/Safari.app"]
+        ),
+        SourceAppIconFixture(
+            key: "Finder",
+            fileStem: "finder",
+            appPaths: ["/System/Library/CoreServices/Finder.app"]
+        ),
+        SourceAppIconFixture(
+            key: "Preview",
+            fileStem: "preview",
+            appPaths: ["/System/Applications/Preview.app"]
+        ),
+        SourceAppIconFixture(
+            key: "Notes",
+            fileStem: "notes",
+            appPaths: ["/System/Applications/Notes.app"]
+        ),
+        SourceAppIconFixture(
+            key: "Xcode",
+            fileStem: "xcode",
+            appPaths: ["/Applications/Xcode.app"]
+        ),
+        SourceAppIconFixture(
+            key: "TextEdit",
+            fileStem: "textedit",
+            appPaths: ["/System/Applications/TextEdit.app"]
+        ),
+        SourceAppIconFixture(
+            key: "Terminal",
+            fileStem: "terminal",
+            appPaths: ["/System/Applications/Utilities/Terminal.app"]
+        ),
+        SourceAppIconFixture(
+            key: "Digital Color Meter",
+            fileStem: "digital-color-meter",
+            appPaths: ["/System/Applications/Utilities/Digital Color Meter.app"]
+        )
+    ]
+
+    @MainActor
+    static func makeSourceAppIconPaths(outputDirectory: URL) throws -> [String: String] {
+        let iconDirectory = outputDirectory.appendingPathComponent("source-app-icons", isDirectory: true)
+        try FileManager.default.createDirectory(at: iconDirectory, withIntermediateDirectories: true)
+
+        var pathsByKey: [String: String] = [:]
+        for fixture in sourceAppIconFixtures {
+            guard let appPath = fixture.appPaths.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+                continue
+            }
+            let outputURL = iconDirectory.appendingPathComponent("\(fixture.fileStem).png")
+            try writeSourceAppIcon(fromAppAtPath: appPath, to: outputURL)
+            pathsByKey[fixture.key] = outputURL.path
+        }
+        return pathsByKey
+    }
+
+    @MainActor
+    private static func writeSourceAppIcon(fromAppAtPath appPath: String, to outputURL: URL) throws {
+        let icon = NSWorkspace.shared.icon(forFile: appPath)
+        let pointSize = NSSize(width: 128, height: 128)
+        let pixelSize = 256
+
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bitmapFormat: [.alphaFirst],
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        bitmap.size = pointSize
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        NSColor.clear.setFill()
+        NSRect(origin: .zero, size: pointSize).fill()
+        icon.draw(
+            in: NSRect(origin: .zero, size: pointSize),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: false,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try pngData.write(to: outputURL, options: .atomic)
     }
 
     static func makeRealSampleImageURL() throws -> URL {
@@ -314,7 +428,7 @@ enum PanelQASamples {
 
     static func makePanelSnapshotItems(
         imagePath: String,
-        chromeIconPath: String? = nil,
+        sourceIconPaths: [String: String] = [:],
         linkMetadata: RustLinkMetadataSummary? = nil
     ) -> [RustClipboardItemSummary] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
@@ -330,7 +444,7 @@ enum PanelQASamples {
                 sourceAppName: "Chrome",
                 timestamp: now - 79_200_000,
                 contentHash: "snapshot-snapshot-text",
-                sourceAppIconPath: chromeIconPath,
+                sourceAppIconPath: sourceIconPaths["Chrome"],
                 sourceAppIconHeaderColor: 0xFFF0C928,
                 sizeBytes: Int64(htmlText.utf8.count)
             ),
@@ -339,9 +453,10 @@ enum PanelQASamples {
                 itemType: "color",
                 summary: "#FF00AA",
                 primaryText: "#FF00AA",
-                sourceAppName: "Figma",
+                sourceAppName: "数码测色计",
                 timestamp: now - 120_000,
                 contentHash: "snapshot-snapshot-color",
+                sourceAppIconPath: sourceIconPaths["Digital Color Meter"],
                 sizeBytes: 7
             ),
             makeItem(
@@ -352,6 +467,7 @@ enum PanelQASamples {
                 sourceAppName: "Xcode",
                 timestamp: now - 240_000,
                 contentHash: "snapshot-snapshot-rich-text",
+                sourceAppIconPath: sourceIconPaths["Xcode"],
                 sizeBytes: 64
             ),
             makeItem(
@@ -362,6 +478,7 @@ enum PanelQASamples {
                 sourceAppName: "预览",
                 timestamp: now - 360_000,
                 contentHash: "snapshot-snapshot-image",
+                sourceAppIconPath: sourceIconPaths["Preview"],
                 previewAssetPath: imagePath,
                 payloadAssetPath: imagePath,
                 sizeBytes: 184_000
@@ -374,6 +491,7 @@ enum PanelQASamples {
                 sourceAppName: "Finder",
                 timestamp: now - 1_620_000,
                 contentHash: "snapshot-snapshot-file",
+                sourceAppIconPath: sourceIconPaths["Finder"],
                 sizeBytes: 2048
             ),
             makeItem(
@@ -384,6 +502,7 @@ enum PanelQASamples {
                 sourceAppName: "Safari",
                 timestamp: now - 50_400_000,
                 contentHash: "snapshot-snapshot-link",
+                sourceAppIconPath: sourceIconPaths["Safari"],
                 linkMetadata: linkMetadata,
                 sizeBytes: 19
             )
@@ -418,7 +537,8 @@ enum PanelQASamples {
         imagePath: String,
         imagePayloadPath: String? = nil,
         filePreviewPath: String? = nil,
-        linkMetadata: RustLinkMetadataSummary? = nil
+        linkMetadata: RustLinkMetadataSummary? = nil,
+        sourceIconPaths: [String: String] = [:]
     ) -> [RustClipboardItemSummary] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         var items = [
@@ -430,6 +550,7 @@ enum PanelQASamples {
                 sourceAppName: "备忘录",
                 timestamp: now,
                 contentHash: "panel-smoke-panel-smoke-text",
+                sourceAppIconPath: sourceIconPaths["Notes"],
                 sizeBytes: 112
             ),
             makeItem(
@@ -440,6 +561,7 @@ enum PanelQASamples {
                 sourceAppName: "预览",
                 timestamp: now - 60_000,
                 contentHash: "panel-smoke-panel-smoke-image",
+                sourceAppIconPath: sourceIconPaths["Preview"],
                 previewAssetPath: imagePath,
                 payloadAssetPath: imagePayloadPath ?? imagePath,
                 sizeBytes: 124_000
@@ -452,6 +574,7 @@ enum PanelQASamples {
                 sourceAppName: "Finder",
                 timestamp: now - 120_000,
                 contentHash: "panel-smoke-panel-smoke-file",
+                sourceAppIconPath: sourceIconPaths["Finder"],
                 previewAssetPath: filePreviewPath,
                 sizeBytes: 2048
             ),
@@ -463,6 +586,7 @@ enum PanelQASamples {
                 sourceAppName: "Safari",
                 timestamp: now - 180_000,
                 contentHash: "panel-smoke-panel-smoke-link",
+                sourceAppIconPath: sourceIconPaths["Safari"],
                 linkMetadata: linkMetadata,
                 sizeBytes: 19
             ),
@@ -471,9 +595,10 @@ enum PanelQASamples {
                 itemType: "color",
                 summary: "#FF00AA",
                 primaryText: "#FF00AA",
-                sourceAppName: "Figma",
+                sourceAppName: "数码测色计",
                 timestamp: now - 240_000,
                 contentHash: "panel-smoke-panel-smoke-color",
+                sourceAppIconPath: sourceIconPaths["Digital Color Meter"],
                 sizeBytes: 7
             ),
             makeItem(
@@ -481,9 +606,10 @@ enum PanelQASamples {
                 itemType: "rich_text",
                 summary: "产品说明\n• 本地历史记录\n• 分类固定内容\n• 快捷键快速取用",
                 primaryText: "产品说明\n• 本地历史记录\n• 分类固定内容\n• 快捷键快速取用",
-                sourceAppName: "Pages",
+                sourceAppName: "文本编辑",
                 timestamp: now - 300_000,
                 contentHash: "panel-smoke-panel-smoke-rich-text",
+                sourceAppIconPath: sourceIconPaths["TextEdit"],
                 sizeBytes: 72
             )
         ]
@@ -497,6 +623,7 @@ enum PanelQASamples {
                 sourceAppName: "终端",
                 timestamp: now - Int64(index * 60_000),
                 contentHash: "panel-smoke-panel-smoke-extra-\(index)",
+                sourceAppIconPath: sourceIconPaths["Terminal"],
                 sizeBytes: 28
             ))
         }
@@ -522,7 +649,10 @@ enum PanelQASamples {
         }
     }
 
-    static func makePreviewItem(isLongText: Bool) -> RustClipboardItemSummary {
+    static func makePreviewItem(
+        isLongText: Bool,
+        sourceIconPaths: [String: String] = [:]
+    ) -> RustClipboardItemSummary {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let body = isLongText
             ? Array(repeating: """
@@ -541,8 +671,8 @@ enum PanelQASamples {
             primaryText: body,
             contentHash: "preview-real-qa-text",
             sourceAppId: nil,
-            sourceAppName: "设置",
-            sourceAppIconPath: nil,
+            sourceAppName: "备忘录",
+            sourceAppIconPath: sourceIconPaths["Notes"],
             previewAssetPath: nil,
             payloadAssetPath: nil,
             sourceConfidence: "high",
@@ -556,7 +686,10 @@ enum PanelQASamples {
     }
 
     @MainActor
-    static func makePreviewImageItem(outputDirectory: URL) throws -> RustClipboardItemSummary {
+    static func makePreviewImageItem(
+        outputDirectory: URL,
+        sourceIconPaths: [String: String] = [:]
+    ) throws -> RustClipboardItemSummary {
         let imageURL = outputDirectory.appendingPathComponent("preview-real-qa-image.png")
         let imageWidth = 1096
         let imageHeight = 1262
@@ -634,7 +767,7 @@ enum PanelQASamples {
             contentHash: "preview-real-qa-image",
             sourceAppId: nil,
             sourceAppName: "预览",
-            sourceAppIconPath: nil,
+            sourceAppIconPath: sourceIconPaths["Preview"],
             previewAssetPath: imageURL.path,
             payloadAssetPath: imageURL.path,
             sourceConfidence: "high",

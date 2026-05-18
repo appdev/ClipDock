@@ -21,8 +21,8 @@
 
 ![ClipDock current shelf](docs/assets/marketing/clipdock-panel-overview-screen-real.webp)
 
-> The ClipDock screenshots in this README are captured from a real running app window on a secondary display with sample clipboard content.<br>
-> 本 README 中的 ClipDock 截图来自副屏上真实运行的应用窗口，内容为样例剪贴板数据。
+> The ClipDock screenshots in this README are captured from a real running macOS app window with sample clipboard content on a clean desktop background.<br>
+> 本 README 中的 ClipDock 截图来自真实运行的 macOS 应用窗口，使用干净桌面背景与样例剪贴板数据截取。
 
 ## What It Is / 它是什么
 

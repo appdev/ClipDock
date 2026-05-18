@@ -83,13 +83,33 @@ private enum CommandLineWindowPlacement {
         arguments: [String],
         preferredHeight: CGFloat
     ) -> NSRect {
-        let targetScreenFrame = screenFrame(arguments: arguments)
-            ?? NSScreen.main?.frame
-            ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let targetScreenFrame = targetScreenFrame(arguments: arguments)
         return BottomPanelGeometryPlanner.frame(
             screenFrame: targetScreenFrame,
             preferredHeight: preferredHeight
         )
+    }
+
+    @MainActor
+    static func targetScreen(arguments: [String]) -> NSScreen? {
+        guard let value = CommandLineArgumentReader.value(after: screenFlag, in: arguments),
+              let index = Int(value),
+              NSScreen.screens.indices.contains(index)
+        else {
+            return NSScreen.main
+        }
+        return NSScreen.screens[index]
+    }
+
+    @MainActor
+    static func targetScreenFrame(arguments: [String]) -> NSRect {
+        targetScreen(arguments: arguments)?.frame
+            ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+    }
+
+    @MainActor
+    static func cleanDesktopFrame(arguments: [String]) -> NSRect {
+        targetScreenFrame(arguments: arguments)
     }
 
     @MainActor
@@ -101,6 +121,52 @@ private enum CommandLineWindowPlacement {
             return nil
         }
         return NSScreen.screens[index].frame
+    }
+}
+
+private final class QACleanDesktopBackdropView: NSView {
+    private let desktopImage: NSImage?
+
+    init(frame: NSRect, desktopImage: NSImage?) {
+        self.desktopImage = desktopImage
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isOpaque: Bool {
+        true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(calibratedRed: 0.045, green: 0.058, blue: 0.070, alpha: 1).setFill()
+        bounds.fill()
+
+        guard let desktopImage, desktopImage.size.width > 0, desktopImage.size.height > 0 else {
+            return
+        }
+
+        let imageSize = desktopImage.size
+        let scale = max(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        let drawSize = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        let drawRect = NSRect(
+            x: bounds.midX - drawSize.width / 2,
+            y: bounds.midY - drawSize.height / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        desktopImage.draw(
+            in: drawRect,
+            from: NSRect(origin: .zero, size: imageSize),
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: false,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
     }
 }
 
@@ -134,10 +200,10 @@ enum PanelSnapshotCommand {
             pinboardButton.onPress?()
         }
         let previewURL = try PanelQASamples.makeRealSampleImageURL()
-        let chromeIconURL = try PanelQASamples.makePanelSnapshotChromeIconURL(outputDirectory: outputURL.deletingLastPathComponent())
+        let sourceIconPaths = try PanelQASamples.makeSourceAppIconPaths(outputDirectory: outputURL.deletingLastPathComponent())
         let sampleItems = PanelQASamples.makePanelSnapshotItems(
             imagePath: previewURL.path,
-            chromeIconPath: chromeIconURL.path
+            sourceIconPaths: sourceIconPaths
         )
         view.updateListState(
             .success(RustCoreListResult(
@@ -927,6 +993,10 @@ enum ContextMenuRealQACommand {
 enum PinboardRealQACommand {
     private static let flag = "--show-pinboard-ui"
     private static let sampleImageFlag = "--qa-sample-image"
+    private static let cleanDesktopFlag = "--qa-clean-desktop"
+    private static let cleanDesktopImageFlag = "--qa-clean-desktop-image"
+    @MainActor
+    private static var qaBackdropWindow: NSWindow?
     @MainActor
     private static var qaWindow: NSWindow?
     @MainActor
@@ -941,6 +1011,7 @@ enum PinboardRealQACommand {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
+        installCleanDesktopBackdropIfNeeded(arguments: arguments)
 
         let appSupportURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent(".codex", isDirectory: true)
@@ -960,6 +1031,7 @@ enum PinboardRealQACommand {
             appSupportURL: appSupportURL
         )
         let githubAssets = try PanelQASamples.prepareRealGitHubSampleAssets(appSupportURL: appSupportURL)
+        let sourceIconPaths = try PanelQASamples.makeSourceAppIconPaths(outputDirectory: appSupportURL)
         PanelCardAssetResolver.primePreviewImageCacheForSmoke(paths: [
             imagePreviewURL.path,
             filePreviewURL.path,
@@ -969,7 +1041,8 @@ enum PinboardRealQACommand {
             imagePath: imagePreviewURL.path,
             imagePayloadPath: imageURL.path,
             filePreviewPath: filePreviewURL.path,
-            linkMetadata: githubAssets.linkMetadata
+            linkMetadata: githubAssets.linkMetadata,
+            sourceIconPaths: sourceIconPaths
         )
         let frame = CommandLineWindowPlacement.bottomPanelFrame(
             arguments: arguments,
@@ -994,7 +1067,7 @@ enum PinboardRealQACommand {
             backing: .buffered,
             defer: false
         )
-        window.level = .floating
+        window.level = panelWindowLevel(arguments: arguments)
         window.isOpaque = false
         window.backgroundColor = .clear
         window.contentView = makeFloatingPanelHostView(contentView: contentView)
@@ -1062,6 +1135,50 @@ enum PinboardRealQACommand {
 
     private static func mode(arguments: [String]) -> String {
         CommandLineArgumentReader.value(after: flag, in: arguments) ?? "toolbar"
+    }
+
+    @MainActor
+    private static func installCleanDesktopBackdropIfNeeded(arguments: [String]) {
+        guard arguments.contains(cleanDesktopFlag) else {
+            return
+        }
+
+        let screen = CommandLineWindowPlacement.targetScreen(arguments: arguments)
+        let explicitImage = CommandLineArgumentReader
+            .value(after: cleanDesktopImageFlag, in: arguments)
+            .map(URL.init(fileURLWithPath:))
+            .flatMap(NSImage.init(contentsOf:))
+        let desktopImageURL = screen.flatMap { NSWorkspace.shared.desktopImageURL(for: $0) }
+        let desktopImage = explicitImage ?? desktopImageURL.flatMap(NSImage.init(contentsOf:))
+        let frame = CommandLineWindowPlacement.cleanDesktopFrame(arguments: arguments)
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.level = cleanDesktopWindowLevel
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        window.hasShadow = false
+        window.isOpaque = true
+        window.backgroundColor = .black
+        window.contentView = QACleanDesktopBackdropView(
+            frame: NSRect(origin: .zero, size: frame.size),
+            desktopImage: desktopImage
+        )
+        qaBackdropWindow = window
+        window.orderFrontRegardless()
+    }
+
+    private static var cleanDesktopWindowLevel: NSWindow.Level {
+        NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+    }
+
+    private static func panelWindowLevel(arguments: [String]) -> NSWindow.Level {
+        guard arguments.contains(cleanDesktopFlag) else {
+            return .floating
+        }
+        return NSWindow.Level(rawValue: cleanDesktopWindowLevel.rawValue + 1)
     }
 
     private static var samplePinboards: [RustPinboardSummary] {
@@ -1137,11 +1254,18 @@ enum PreviewRealQACommand {
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
 
         let controller = FloatingPanelController()
+        let sourceIconPaths = try PanelQASamples.makeSourceAppIconPaths(outputDirectory: outputDirectory)
         let item: RustClipboardItemSummary
         if CommandLine.arguments.contains(imageFlag) {
-            item = try PanelQASamples.makePreviewImageItem(outputDirectory: outputDirectory)
+            item = try PanelQASamples.makePreviewImageItem(
+                outputDirectory: outputDirectory,
+                sourceIconPaths: sourceIconPaths
+            )
         } else {
-            item = PanelQASamples.makePreviewItem(isLongText: CommandLine.arguments.contains(longTextFlag))
+            item = PanelQASamples.makePreviewItem(
+                isLongText: CommandLine.arguments.contains(longTextFlag),
+                sourceIconPaths: sourceIconPaths
+            )
         }
         controller.setAppSupportDirectory(outputDirectory)
         controller.show()

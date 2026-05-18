@@ -1,8 +1,8 @@
 {
   "name": "ClipDock",
   "short_name": "ClipDock",
-  "description": "Find, pin, and reuse copied text, links, code, images, and files in a native local-first macOS shelf",
-  "lang": "en",
+  "description": "在 macOS 上找回、预览、固定并复用复制过的文字、链接、代码、图片和文件",
+  "lang": "zh-CN",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
