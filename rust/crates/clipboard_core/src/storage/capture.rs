@@ -757,7 +757,9 @@ fn prepare_optional_rtf_asset(
     mime_type: Option<&str>,
     requested_byte_count: i64,
 ) -> Result<Option<PreparedRTFAsset>> {
-    let Some(relative_path) = relative_path.map(str::trim).filter(|value| !value.is_empty())
+    let Some(relative_path) = relative_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
     else {
         return Ok(None);
     };
