@@ -46,6 +46,10 @@ Most clipboard work is small but frequent: a paragraph from a document, a link f
   Press `Command + Shift + X` to open the shelf from the bottom edge of the screen.<br>
   按下 `Command + Shift + X`，剪贴坞从屏幕底部出现，不需要离开当前应用。
 
+- **Use it entirely from the keyboard / 全键盘操作**<br>
+  Move with arrow keys, search with `Command + F`, preview with `Space`, copy with `Command + C`, use `Command + 1` through `Command + 9` for visible clips, delete with `Delete`, and close with `Esc`.<br>
+  可以用方向键移动选择，`Command + F` 搜索，`Space` 预览，`Command + C` 复制，`Command + 1` 到 `Command + 9` 快速取用可见内容，`Delete` 删除，`Esc` 收起或返回。
+
 - **Find recent copies quickly / 快速找回刚复制过的内容**<br>
   Scan recent clips visually, or search when the history grows.<br>
   最近复制过的内容以横向卡片呈现；内容多了以后，也可以直接搜索定位。
@@ -78,9 +82,9 @@ The goal is not to archive everything forever. It is to make the things you just
 
 ## Preview And Pinboards / 预览与固定
 
-The shelf combines search, Pinboard shortcuts, and typed content cards in one horizontal workspace. You can move through recent clips without opening a full library view.
+The shelf combines search, Pinboard shortcuts, and typed content cards in one horizontal workspace. You can move through recent clips without opening a full library view, and the core flow works from the keyboard.
 
-主面板把搜索、Pinboard 快捷入口和类型化内容卡片放在同一条横向工作区里。你可以直接扫最近内容，而不是进入一个完整的管理后台。
+主面板把搜索、Pinboard 快捷入口和类型化内容卡片放在同一条横向工作区里。你可以直接扫最近内容，而不是进入一个完整的管理后台；核心流程也可以全程键盘完成。
 
 Preview is part of the core interaction. Text stays readable, images show the real image, files expose a document preview, colors render as swatches, and links can show page metadata. The GitHub card in the screenshot is backed by a ready Open Graph preview for `https://github.com/`.
 
@@ -147,4 +151,4 @@ The source executable and release product are both named `ClipDock`.
 
 ### Documentation Record / 文档记录
 
-Updated on 2026-05-18 by Codex.
+Updated on 2026-05-19 by Codex.
