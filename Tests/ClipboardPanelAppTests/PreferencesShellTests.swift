@@ -150,6 +150,22 @@ struct PreferencesShellTests {
     }
 
     @Test
+    @MainActor
+    func copyCompletionHUDControllerReusesOnePanelForRepeatedShows() throws {
+        let controller = CopyCompletionHUDController()
+
+        controller.show(eventID: "self-copy-1")
+        let firstWindow = try #require(controller.debugWindowIdentity)
+        #expect(controller.lastEventID == "self-copy-1")
+
+        controller.show(eventID: "self-copy-2")
+        #expect(controller.debugWindowIdentity == firstWindow)
+        #expect(controller.lastEventID == "self-copy-2")
+
+        controller.hideImmediatelyForTesting()
+    }
+
+    @Test
     func ignoredApplicationResolverUsesBundleIdentifierFromSelectedApp() throws {
         let appURL = try makeTemporaryApplicationBundle(
             bundleIdentifier: "com.example.SecretApp",

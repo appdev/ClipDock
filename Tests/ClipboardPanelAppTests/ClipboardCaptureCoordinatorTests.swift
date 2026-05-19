@@ -183,6 +183,7 @@ struct ClipboardCaptureCoordinatorTests {
         )
 
         #expect(result.shouldRefreshList)
+        #expect(result.hudTrigger == .none)
         #expect(capturedRequest?.text == "github.com")
         #expect(capturedRequest?.detectedLink == nil)
     }
@@ -248,6 +249,7 @@ struct ClipboardCaptureCoordinatorTests {
         )
 
         #expect(result.shouldRefreshList)
+        #expect(result.hudTrigger == .none)
         #expect(!didCaptureTextFallback)
         #expect(capturedRequest?.text == "Bold")
         #expect(capturedRequest?.rtfRelativePath == "assets/rich-text/bold.rtf")
@@ -301,6 +303,7 @@ struct ClipboardCaptureCoordinatorTests {
         )
 
         #expect(result.shouldRefreshList)
+        #expect(result.hudTrigger == .none)
         #expect(capturedTextRequest?.text == "Fallback")
         #expect(capturedTextRequest?.pasteboardChangeCount == 13)
     }
@@ -356,6 +359,7 @@ struct ClipboardCaptureCoordinatorTests {
         #expect(!didCaptureText)
         #expect(result.statusText == "捕获：标题命中 验证码")
         #expect(!result.shouldRefreshList)
+        #expect(result.hudTrigger == .none)
         #expect(result.storageError == nil)
     }
 
@@ -405,6 +409,7 @@ struct ClipboardCaptureCoordinatorTests {
         if let result = coordinator.preflightCapture(source: source, preferences: preferences) {
             #expect(result.statusText == "捕获：已忽略 Preview")
             #expect(!result.shouldRefreshList)
+            #expect(result.hudTrigger == .none)
         } else {
             didFinalizeImage = true
             _ = coordinator.captureImage(
@@ -483,6 +488,7 @@ struct ClipboardCaptureCoordinatorTests {
         )
 
         #expect(result.shouldRefreshList)
+        #expect(result.hudTrigger == .none)
         #expect(capturedRequest?.payloadRelativePath == "assets/image.png")
         #expect(capturedRequest?.previewRelativePath == "thumbnails/image.png")
         #expect(capturedRequest?.mimeType == "image/png")
@@ -572,6 +578,7 @@ struct ClipboardCaptureCoordinatorTests {
         )
 
         #expect(result.shouldRefreshList)
+        #expect(result.hudTrigger == .none)
         #expect(capturedRequest?.snapshotRelativePath == nil)
         #expect(capturedRequest?.snapshotByteCount == 0)
         #expect(capturedRequest?.previewRelativePath == "thumbnails/files-12.png")
@@ -583,5 +590,17 @@ struct ClipboardCaptureCoordinatorTests {
         #expect(capturedRequest?.fileItems.map(\.byteCount) == [24, 40])
         #expect(capturedRequest?.fileItems.first?.contentType == "public.plain-text")
         #expect(capturedRequest?.sourceAppName == "Finder")
+    }
+
+    @Test
+    func handlingResultDefaultsHUDTriggerToNoneEvenWhenListRefreshes() {
+        let result = ClipboardCaptureHandlingResult(
+            statusText: nil,
+            shouldRefreshList: true,
+            storageError: nil
+        )
+
+        #expect(result.shouldRefreshList)
+        #expect(result.hudTrigger == .none)
     }
 }

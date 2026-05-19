@@ -814,6 +814,7 @@ struct RustCoreClientTests {
         #expect(result.schemaVersion == 11)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
+        #expect(result.preferences.general.copyCompletionHUDEnabled)
         #expect(result.preferences.history.maxItems == 5000)
         #expect(result.preferences.history.retentionDays == 30)
         #expect(result.preferences.history.recordImages)
@@ -838,6 +839,7 @@ struct RustCoreClientTests {
         let client = RustCoreClient()
         var preferences = RustPreferencesDocument()
         preferences.general.defaultPanelHeight = 999
+        preferences.general.copyCompletionHUDEnabled = false
         preferences.history.maxItems = 10
         preferences.history.retentionDays = 999
         preferences.history.recordImages = false
@@ -872,6 +874,7 @@ struct RustCoreClientTests {
         let reloaded = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
         #expect(saved.preferences.general.defaultPanelHeight == 560)
+        #expect(!saved.preferences.general.copyCompletionHUDEnabled)
         #expect(saved.preferences.history.maxItems == 5000)
         #expect(saved.preferences.history.retentionDays == 365)
         #expect(saved.preferences.history.recordImages)
@@ -919,6 +922,7 @@ struct RustCoreClientTests {
         )
 
         #expect(preferences.ignoreList == RustIgnoreListPreferences())
+        #expect(preferences.general.copyCompletionHUDEnabled)
         #expect(preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)
         #expect(preferences.shortcuts == RustShortcutsPreferences())
         #expect(!preferences.shortcuts.pasteDirectlyToTarget)

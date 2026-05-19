@@ -120,22 +120,40 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
 public struct RustGeneralPreferences: Equatable, Codable, Sendable {
     public var launchAtLogin: Bool
     public var showMenuBarItem: Bool
+    public var copyCompletionHUDEnabled: Bool
     public var defaultPanelHeight: Int64
 
     public init(
         launchAtLogin: Bool = false,
         showMenuBarItem: Bool = true,
+        copyCompletionHUDEnabled: Bool = true,
         defaultPanelHeight: Int64 = 302
     ) {
         self.launchAtLogin = launchAtLogin
         self.showMenuBarItem = showMenuBarItem
+        self.copyCompletionHUDEnabled = copyCompletionHUDEnabled
         self.defaultPanelHeight = defaultPanelHeight
     }
 
     private enum CodingKeys: String, CodingKey {
         case launchAtLogin = "launch_at_login"
         case showMenuBarItem = "show_menu_bar_item"
+        case copyCompletionHUDEnabled = "copy_completion_hud_enabled"
         case defaultPanelHeight = "default_panel_height"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        self.showMenuBarItem = try container.decodeIfPresent(Bool.self, forKey: .showMenuBarItem) ?? true
+        self.copyCompletionHUDEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .copyCompletionHUDEnabled
+        ) ?? true
+        self.defaultPanelHeight = try container.decodeIfPresent(
+            Int64.self,
+            forKey: .defaultPanelHeight
+        ) ?? 302
     }
 }
 

@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let rustCoreClient = RustCoreClient()
     private let launchAtLoginController = LaunchAtLoginController()
     private let accessibilityPermissionController = AccessibilityPermissionController()
+    private let copyCompletionHUDController = CopyCompletionHUDController()
     private let sourceApplicationTracker = SourceApplicationTracker()
     private let clipboardMonitor = ClipboardMonitor()
     private let commandVKeystrokeSender: CommandVKeystrokeSending = SystemCommandVKeystrokeSender()
@@ -491,6 +492,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshStatusText()
     }
 
+    private func showCopyCompletionHUDIfEnabled(eventID: String) {
+        guard currentPreferences.general.copyCompletionHUDEnabled else { return }
+        copyCompletionHUDController.show(eventID: eventID)
+    }
+
+    private func selfCopyCompletionEventID(changeCount: Int?, token: String) -> String {
+        if let changeCount {
+            return "self-copy-\(changeCount)"
+        }
+        return "self-copy-\(token)"
+    }
+
     private func configurePanelCallbacks() {
         panelController.onRuntimeAction = { [weak self] action in
             switch action {
@@ -602,6 +615,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 from: startChangeCount,
                 through: changeCount
             )
+            showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
             let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
             let didScheduleDirectPaste = pasteDirectlyToTarget && scheduleCommandVToTargetIfPermitted()
             storageStatusText = if pasteDirectlyToTarget {
@@ -634,6 +648,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 from: startChangeCount,
                 through: changeCount
             )
+            showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
             storageStatusText = "复制为纯文本：已写入剪贴板"
             refreshStatusText()
             performItemMutation(.recordCopied(itemID: item.id))
@@ -663,6 +678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 from: startChangeCount,
                 through: changeCount
             )
+            showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
             storageStatusText = "复制路径：已写入剪贴板"
             refreshStatusText()
             panelController.hide()

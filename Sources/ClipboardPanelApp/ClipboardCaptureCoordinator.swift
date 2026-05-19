@@ -266,18 +266,26 @@ public struct ClipboardStoredFilePreview: Equatable, Sendable {
     }
 }
 
+public enum ClipboardCaptureHUDTrigger: Equatable, Sendable {
+    case none
+    case copyCompleted(eventID: String)
+}
+
 public struct ClipboardCaptureHandlingResult: Equatable, Sendable {
     public let statusText: String?
     public let shouldRefreshList: Bool
+    public let hudTrigger: ClipboardCaptureHUDTrigger
     public let storageError: RustCoreError?
 
     public init(
         statusText: String?,
         shouldRefreshList: Bool,
+        hudTrigger: ClipboardCaptureHUDTrigger = .none,
         storageError: RustCoreError?
     ) {
         self.statusText = statusText
         self.shouldRefreshList = shouldRefreshList
+        self.hudTrigger = hudTrigger
         self.storageError = storageError
     }
 }

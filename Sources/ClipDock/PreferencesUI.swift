@@ -43,7 +43,7 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
     var subtitle: String {
         switch self {
         case .general:
-            return "启动、菜单栏、粘贴项目、主题、预览与保留策略"
+            return "启动、菜单栏、粘贴项目、复制提示、主题、预览与保留策略"
         case .appearance:
             return "主题与预览浮层"
         case .history:
@@ -656,6 +656,7 @@ final class PreferencesWindowController: NSWindowController {
             viewModel.selectSection(section)
         }
         viewModel.persist { $0.general.showMenuBarItem.toggle() }
+        viewModel.persist { $0.general.copyCompletionHUDEnabled.toggle() }
         viewModel.persist { $0.appearance.previewPopoverEnabled.toggle() }
         viewModel.persist { $0.linkPreview.webPreviewEnabled.toggle() }
         viewModel.persist { $0.shortcuts.pasteDirectlyToTarget.toggle() }
@@ -1373,6 +1374,19 @@ private struct PreferenceGeneralSection: View {
                         isOn: Binding(
                             get: { model.state.preferences.general.showMenuBarItem },
                             set: { isOn in model.persist { $0.general.showMenuBarItem = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "复制完成提示", detail: "复制成功后显示短暂提示") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.general.copyCompletionHUDEnabled },
+                            set: { isOn in model.persist { $0.general.copyCompletionHUDEnabled = isOn } }
                         )
                     )
                     .labelsHidden()
@@ -2533,6 +2547,13 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             detail: "保留状态栏入口与快速菜单",
                             control: makeSwitch(isOn: preferences.general.showMenuBarItem) { [weak self] isOn in
                                 self?.persist { $0.general.showMenuBarItem = isOn }
+                            }
+                        ),
+                        makeSettingRow(
+                            title: "复制完成提示",
+                            detail: "复制成功后显示短暂提示",
+                            control: makeSwitch(isOn: preferences.general.copyCompletionHUDEnabled) { [weak self] isOn in
+                                self?.persist { $0.general.copyCompletionHUDEnabled = isOn }
                             }
                         )
                     ]),
