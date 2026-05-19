@@ -164,8 +164,10 @@ struct PanelRuntimeSeamTests {
         #expect(await waitForMainActor(attempts: 120) {
             abs(contentView.smokeSearchFieldWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldInnerWidth - 330) < 0.5
-                && abs(contentView.smokeSearchFieldHeight - 48) < 0.5
-                && abs(contentView.smokeSearchInputFieldHeight - 30) < 0.5
+                && abs(contentView.smokeSearchFieldHeight - 32) < 0.5
+                && abs(contentView.smokeSearchInputFieldHeight - 22) < 0.5
+                && abs(contentView.smokeSearchInputFieldVerticalCenterOffset) < 0.5
+                && contentView.smokeSearchFieldFontWeight <= NSFont.Weight.regular.rawValue + 0.05
                 && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
                 && !contentView.smokeSearchFieldIsHidden
                 && contentView.smokeToolbarSearchButtonIsHidden

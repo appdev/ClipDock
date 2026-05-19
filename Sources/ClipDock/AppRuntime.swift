@@ -197,8 +197,8 @@ private final class PanelSearchBarView: NSView {
         static let iconSide: CGFloat = 17
         static let textLeading: CGFloat = 38
         static let textTrailing: CGFloat = 38
-        static let textFieldHeight: CGFloat = 30
-        static let clearSide: CGFloat = 22
+        static let textFieldHeight: CGFloat = 22
+        static let clearSide: CGFloat = 18
         static let clearTrailing: CGFloat = 10
     }
 
@@ -238,7 +238,7 @@ private final class PanelSearchBarView: NSView {
         clearButton.isBordered = false
         clearButton.imagePosition = .imageOnly
         clearButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "清除搜索")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
         clearButton.imageScaling = .scaleProportionallyDown
         clearButton.target = nil
         clearButton.action = nil
@@ -273,12 +273,12 @@ private final class PanelSearchBarView: NSView {
     }
 
     func applyTheme(_ theme: ClipDockThemePalette, isActive: Bool = false) {
-        layer?.cornerRadius = 18
+        layer?.cornerRadius = 16
         layer?.backgroundColor = theme.panel.toolbarSelectedBackgroundColor
             .withAlphaComponent(theme.scheme == .dark ? 0.18 : 0.30)
             .cgColor
         if isActive {
-            layer?.borderWidth = 3
+            layer?.borderWidth = 2.5
             layer?.borderColor = NSColor.systemBlue.withAlphaComponent(theme.scheme == .dark ? 0.70 : 0.62).cgColor
         } else {
             layer?.borderWidth = 1
@@ -330,7 +330,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         static let sectionSpacing: CGFloat = 12
         static let searchFieldWidth: CGFloat = 330
         static let searchSlotClosedWidth: CGFloat = 28
-        static let searchFieldHeight: CGFloat = 48
+        static let searchFieldHeight: CGFloat = 32
         static let searchFieldAnimationDuration: TimeInterval = 0.15
         static let horizontalContentInset: CGFloat = 22
         static let defaultItemSide: CGFloat = 218
@@ -1062,9 +1062,17 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makeControlBar() -> NSView {
         let container = NSView()
 
-        searchField.controlSize = .large
-        searchField.placeholderString = "搜索"
-        searchField.font = .systemFont(ofSize: 15, weight: .semibold)
+        let searchTextFont = NSFont.systemFont(ofSize: 15, weight: .regular)
+        searchField.controlSize = .regular
+        searchField.font = searchTextFont
+        searchField.textColor = .labelColor
+        searchField.placeholderAttributedString = NSAttributedString(
+            string: "搜索",
+            attributes: [
+                .font: searchTextFont,
+                .foregroundColor: NSColor.placeholderTextColor
+            ]
+        )
         searchField.focusRingType = .none
         searchField.isBezeled = false
         searchField.isBordered = false
@@ -1076,8 +1084,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchField.target = nil
         searchField.action = nil
         if let cell = searchField.cell as? NSSearchFieldCell {
-            cell.controlSize = .large
+            cell.controlSize = .regular
             cell.font = searchField.font
+            cell.alignment = .left
             cell.isBezeled = false
             cell.isBordered = false
             cell.drawsBackground = false
@@ -2608,13 +2617,13 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makeItemCardCallbacks(
         for item: RustClipboardItemSummary
     ) -> (
-        toolTip: String,
+        toolTip: String?,
         onSelect: () -> Void,
         onDoubleClick: () -> Void,
         onContextMenu: (NSEvent) -> Void
     ) {
         (
-            toolTip: "单击选中，双击复制到剪贴板，右键管理",
+            toolTip: nil,
             onSelect: { [weak self] in
                 self?.applyInteractionAction(.selectItem(id: item.id, scrollIntoView: true))
             },
@@ -2873,6 +2882,26 @@ extension FloatingPanelContentView {
 
     var smokeSearchInputFieldHeight: CGFloat {
         searchField.frame.height
+    }
+
+    var smokeSearchInputFieldVerticalCenterOffset: CGFloat {
+        guard let searchBarView else { return .greatestFiniteMagnitude }
+        let inputMidY = searchField.convert(searchField.bounds, to: searchBarView).midY
+        return inputMidY - searchBarView.bounds.midY
+    }
+
+    var smokeSearchFieldFontWeight: CGFloat {
+        guard
+            let font = searchField.font,
+            let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any],
+            let weight = traits[.weight]
+        else {
+            return .greatestFiniteMagnitude
+        }
+        if let number = weight as? NSNumber {
+            return CGFloat(number.doubleValue)
+        }
+        return weight as? CGFloat ?? .greatestFiniteMagnitude
     }
 
     var smokeSearchFieldInnerWidth: CGFloat {
