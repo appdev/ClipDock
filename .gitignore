@@ -43,3 +43,5 @@ SCR-*.png
 *.app/
 *.dmg
 *.md
+!README.md
+!README.en.md
