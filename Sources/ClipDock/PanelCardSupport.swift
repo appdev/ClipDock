@@ -52,6 +52,7 @@ private struct LoadedPreviewImage: @unchecked Sendable {
 @MainActor
 final class PanelCardAssetResolver {
     private static let imageCache = NSCache<NSString, NSImage>()
+    private static let richTextPreviewCache = NSCache<NSString, NSAttributedString>()
     private static let fileThumbnailCache = NSCache<NSString, NSImage>()
     private static var fileThumbnailInFlight: [String: FileThumbnailInFlight] = [:]
     static var fileThumbnailGenerationDelayForSmoke: Duration?
@@ -89,6 +90,7 @@ final class PanelCardAssetResolver {
     private let sourceIconImageLoader: @MainActor (String) -> NSImage?
     private let dominantHeaderColorProvider: @MainActor (NSImage, String?, String?) -> NSColor?
     private let loadSourceIconsSynchronously: Bool
+    private let maxRichTextPreviewBytes = 5 * 1024 * 1024
 
     init(
         appSupportDirectory: URL?,
@@ -137,6 +139,35 @@ final class PanelCardAssetResolver {
             tooltip: [previewPath, payloadPath].compactMap { $0 }.joined(separator: "\n"),
             fallbackText: paths.isEmpty ? "预览不可用" : "载入预览"
         )
+    }
+
+    func richTextPreviewAttributedString(for request: PanelCardAssetRequest) -> NSAttributedString? {
+        guard let path = request.previewAssetPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty,
+              path.lowercased().hasSuffix(".rtf")
+        else {
+            return nil
+        }
+
+        let url = resolvedAssetURL(for: path)
+        let key = url.path as NSString
+        if let cached = Self.richTextPreviewCache.object(forKey: key) {
+            return cached
+        }
+
+        guard FileManager.default.fileExists(atPath: url.path),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let byteCount = attributes[.size] as? NSNumber,
+              byteCount.intValue <= maxRichTextPreviewBytes,
+              let data = try? Data(contentsOf: url),
+              let attributed = NSAttributedString(rtf: data, documentAttributes: nil),
+              attributed.length > 0
+        else {
+            return nil
+        }
+
+        Self.richTextPreviewCache.setObject(attributed, forKey: key)
+        return attributed
     }
 
     func sourceIconImage(for request: PanelCardAssetRequest) -> NSImage? {
@@ -765,6 +796,10 @@ final class PanelCardAssetResolver {
     }
 
     private func resolvedImageURL(for path: String) -> URL {
+        resolvedAssetURL(for: path)
+    }
+
+    private func resolvedAssetURL(for path: String) -> URL {
         if path.hasPrefix("/") {
             return URL(fileURLWithPath: path)
         }

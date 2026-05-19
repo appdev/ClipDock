@@ -1,6 +1,7 @@
 use crate::domain::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureResult,
-    CaptureTextRequest, CapturedFileMetadata, LinkMetadataState, SourceConfidence,
+    CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata, LinkMetadataState,
+    SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
@@ -17,6 +18,8 @@ use super::support::{
 };
 use super::ClipboardCore;
 
+const MAX_RTF_CAPTURE_BYTES: i64 = 5 * 1024 * 1024;
+
 impl ClipboardCore {
     pub fn capture_text(&mut self, request: CaptureTextRequest) -> Result<CaptureResult> {
         let normalized_text = normalize_text(&request.text);
@@ -26,6 +29,12 @@ impl ClipboardCore {
                 "text capture cannot be empty",
             ));
         }
+        let display_rtf_asset = prepare_optional_rtf_asset(
+            self.root_dir()?,
+            request.display_rtf_relative_path.as_deref(),
+            request.display_rtf_mime_type.as_deref(),
+            request.display_rtf_byte_count,
+        )?;
 
         let now = now_ms();
         let detected_link = normalized_detected_link(&normalized_text, request.detected_link);
@@ -64,7 +73,12 @@ impl ClipboardCore {
         )?;
         let source_app_name = request.source_app_name.as_deref();
         let source_confidence = request.source_confidence;
-        let size_bytes = primary_text.len() as i64;
+        let size_bytes = (primary_text.len() as i64).max(
+            display_rtf_asset
+                .as_ref()
+                .map(|asset| asset.byte_count)
+                .unwrap_or(0),
+        );
         let transaction = self.connection.transaction()?;
 
         let (item_id, copy_count, inserted) = match find_existing_item(&transaction, &content_hash)?
@@ -80,8 +94,9 @@ impl ClipboardCore {
                         source_app_id = ?3,
                         source_app_name = ?4,
                         source_confidence = ?5,
+                        size_bytes = ?6,
                         updated_at_ms = ?1
-                    WHERE id = ?6
+                    WHERE id = ?7
                     "#,
                     params![
                         now,
@@ -89,6 +104,7 @@ impl ClipboardCore {
                         source_app_id.as_deref(),
                         source_app_name,
                         source_confidence.as_str(),
+                        size_bytes,
                         item_id
                     ],
                 )?;
@@ -123,6 +139,25 @@ impl ClipboardCore {
                 (item_id, 1, true)
             }
         };
+        if let Some(display_rtf_asset) = display_rtf_asset.as_ref() {
+            insert_asset(
+                &transaction,
+                &item_id,
+                "rtf",
+                &display_rtf_asset.mime_type,
+                &display_rtf_asset.relative_path,
+                display_rtf_asset.byte_count,
+                None,
+                None,
+                &display_rtf_asset.digest,
+                now,
+            )?;
+        } else {
+            transaction.execute(
+                "DELETE FROM clipboard_assets WHERE item_id = ?1 AND kind = 'rtf'",
+                params![&item_id],
+            )?;
+        }
 
         record_capture_event(
             &transaction,
@@ -143,6 +178,194 @@ impl ClipboardCore {
         if let Some(detected_link) = detected_link.as_ref() {
             upsert_link_metadata(&transaction, &item_id, detected_link, now)?;
         }
+
+        transaction.commit()?;
+        self.apply_post_capture()?;
+
+        Ok(CaptureResult {
+            item_id,
+            content_hash,
+            copy_count,
+            inserted,
+        })
+    }
+
+    pub fn capture_rich_text(&mut self, request: CaptureRichTextRequest) -> Result<CaptureResult> {
+        let normalized_text = normalize_text(&request.text);
+        if normalized_text.is_empty() {
+            return Err(CoreError::new(
+                CoreErrorCode::InvalidInput,
+                "rich text capture cannot be empty",
+            ));
+        }
+
+        let rtf_relative_path = normalize_relative_asset_path(&request.rtf_relative_path)?;
+        if !rtf_relative_path.starts_with("assets/rich-text/") {
+            return Err(CoreError::new(
+                CoreErrorCode::InvalidInput,
+                "rich text asset must be under assets/rich-text",
+            ));
+        }
+
+        let root = self.root_dir()?.to_path_buf();
+        let rtf_path = root.join(&rtf_relative_path);
+        let metadata = fs::metadata(&rtf_path).map_err(|error| {
+            CoreError::new(CoreErrorCode::IoFailed, error.to_string())
+                .with_detail("path", rtf_path.display().to_string())
+        })?;
+        if !metadata.is_file() {
+            return Err(CoreError::new(
+                CoreErrorCode::InvalidInput,
+                "rich text asset must be a flat file",
+            ));
+        }
+
+        let actual_byte_count = metadata.len() as i64;
+        if actual_byte_count <= 0 || actual_byte_count > MAX_RTF_CAPTURE_BYTES {
+            return Err(CoreError::new(
+                CoreErrorCode::InvalidInput,
+                "rich text asset byte count is outside the accepted range",
+            ));
+        }
+        if request.byte_count > 0 && request.byte_count != actual_byte_count {
+            return Err(CoreError::new(
+                CoreErrorCode::InvalidInput,
+                "rich text asset byte count does not match stored file",
+            ));
+        }
+
+        let asset_digest = hash_file(&rtf_path)?;
+        let now = now_ms();
+        let summary = summarize_text(&normalized_text);
+        let content_hash = stable_hash(&format!("rich_text:{asset_digest}"));
+        let source_app_id = self.upsert_source_app(
+            SourceAppInput {
+                bundle_id: request.source_bundle_id.as_deref(),
+                app_name: request.source_app_name.as_deref(),
+                bundle_path: request.source_bundle_path.as_deref(),
+                icon_relative_path: request.source_icon_relative_path.as_deref(),
+            },
+            now,
+        )?;
+        let source_app_name = request.source_app_name.as_deref();
+        let source_confidence = request.source_confidence;
+        let size_bytes = (normalized_text.len() as i64).max(actual_byte_count);
+        let mime_type = request
+            .mime_type
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("application/rtf")
+            .to_string();
+        let transaction = self.connection.transaction()?;
+
+        let (item_id, copy_count, inserted) = match find_existing_item(&transaction, &content_hash)?
+        {
+            Some((item_id, copy_count)) => {
+                let next_copy_count = copy_count + 1;
+                transaction.execute(
+                    r#"
+                    UPDATE clipboard_items
+                    SET
+                        summary = ?1,
+                        primary_text = ?2,
+                        last_copied_at_ms = ?3,
+                        copy_count = ?4,
+                        source_app_id = ?5,
+                        source_app_name = ?6,
+                        source_confidence = ?7,
+                        size_bytes = ?8,
+                        preview_state = 'ready',
+                        payload_state = 'ready',
+                        updated_at_ms = ?3
+                    WHERE id = ?9
+                    "#,
+                    params![
+                        summary,
+                        normalized_text,
+                        now,
+                        next_copy_count,
+                        source_app_id.as_deref(),
+                        source_app_name,
+                        source_confidence.as_str(),
+                        size_bytes,
+                        item_id
+                    ],
+                )?;
+                (item_id, next_copy_count, false)
+            }
+            None => {
+                let item_id = make_item_id(&content_hash);
+                transaction.execute(
+                    r#"
+                    INSERT INTO clipboard_items (
+                        id, type, summary, primary_text, content_hash,
+                        source_app_id, source_app_name, source_confidence,
+                        first_copied_at_ms, last_copied_at_ms, copy_count,
+                        is_pinned, size_bytes, preview_state, payload_state,
+                        created_at_ms, updated_at_ms
+                    )
+                    VALUES (?1, 'rich_text', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 1, 0, ?9, 'ready', 'ready', ?8, ?8)
+                    "#,
+                    params![
+                        item_id,
+                        summary,
+                        normalized_text,
+                        content_hash,
+                        source_app_id.as_deref(),
+                        source_app_name,
+                        source_confidence.as_str(),
+                        now,
+                        size_bytes
+                    ],
+                )?;
+                (item_id, 1, true)
+            }
+        };
+
+        insert_asset(
+            &transaction,
+            &item_id,
+            "rtf",
+            &mime_type,
+            &rtf_relative_path,
+            actual_byte_count,
+            None,
+            None,
+            &asset_digest,
+            now,
+        )?;
+
+        let format_id = format!(
+            "format_{}",
+            &stable_hash(&format!("{item_id}:rtf:{asset_digest}"))[..24]
+        );
+        transaction.execute(
+            r#"
+            INSERT OR IGNORE INTO clipboard_formats (
+                id, item_id, uti, role, storage, byte_count
+            )
+            VALUES (?1, ?2, 'public.rtf', 'primary', 'staged_asset', ?3)
+            "#,
+            params![format_id, item_id, actual_byte_count],
+        )?;
+
+        record_capture_event(
+            &transaction,
+            &item_id,
+            source_app_id.as_deref(),
+            source_confidence,
+            request.pasteboard_change_count,
+            request.self_write_token.as_deref(),
+            now,
+        )?;
+        update_search_index(
+            &transaction,
+            &item_id,
+            &summary,
+            &normalized_text,
+            source_app_name.unwrap_or_default(),
+        )?;
 
         transaction.commit()?;
         self.apply_post_capture()?;
@@ -519,6 +742,73 @@ impl ClipboardCore {
         self.apply_history_preferences(&preferences)?;
         Ok(())
     }
+}
+
+struct PreparedRTFAsset {
+    relative_path: String,
+    mime_type: String,
+    byte_count: i64,
+    digest: String,
+}
+
+fn prepare_optional_rtf_asset(
+    root: &Path,
+    relative_path: Option<&str>,
+    mime_type: Option<&str>,
+    requested_byte_count: i64,
+) -> Result<Option<PreparedRTFAsset>> {
+    let Some(relative_path) = relative_path.map(str::trim).filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    let relative_path = normalize_relative_asset_path(relative_path)?;
+    if !relative_path.starts_with("assets/rich-text/") {
+        return Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "text display rich text asset must be under assets/rich-text",
+        ));
+    }
+
+    let rtf_path = root.join(&relative_path);
+    let metadata = fs::metadata(&rtf_path).map_err(|error| {
+        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
+            .with_detail("path", rtf_path.display().to_string())
+    })?;
+    if !metadata.is_file() {
+        return Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "text display rich text asset must be a flat file",
+        ));
+    }
+
+    let byte_count = metadata.len() as i64;
+    if byte_count <= 0 || byte_count > MAX_RTF_CAPTURE_BYTES {
+        return Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "text display rich text asset byte count is outside the accepted range",
+        ));
+    }
+    if requested_byte_count > 0 && requested_byte_count != byte_count {
+        return Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "text display rich text asset byte count does not match stored file",
+        ));
+    }
+
+    let mime_type = mime_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("application/rtf")
+        .to_string();
+    let digest = hash_file(&rtf_path)?;
+
+    Ok(Some(PreparedRTFAsset {
+        relative_path,
+        mime_type,
+        byte_count,
+        digest,
+    }))
 }
 
 pub(super) fn make_item_id(content_hash: &str) -> String {

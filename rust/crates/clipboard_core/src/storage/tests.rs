@@ -4,8 +4,8 @@ use crate::migrations::MIGRATIONS;
 use crate::time::now_ms;
 use crate::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CapturePendingImageRequest,
-    CaptureResult, CaptureTextRequest, CapturedFileMetadata, ClipboardItemType,
-    CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
+    CaptureResult, CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata,
+    ClipboardItemType, CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
     FailPendingImagePayloadRequest, ItemQuery, LinkMetadataState, PageRequest, PreferencesDocument,
     RecoverPendingImagesRequest, SourceConfidence, ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION,
     CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
@@ -38,6 +38,9 @@ fn capture_pending_link(core: &mut ClipboardCore, text: &str, url: &str) -> Capt
             host,
             metadata_state: LinkMetadataState::Pending,
         }),
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -53,6 +56,9 @@ fn text_capture_request(text: &str, change_count: i64) -> CaptureTextRequest {
     CaptureTextRequest {
         text: text.to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.example.TestApp".to_string()),
         source_app_name: Some("TestApp".to_string()),
         source_bundle_path: None,
@@ -99,6 +105,12 @@ fn write_test_webp(root: &std::path::Path, relative_path: &str, payload: &[u8]) 
     let path = root.join(relative_path);
     fs::create_dir_all(path.parent().unwrap()).expect("webp parent");
     fs::write(path, test_webp_bytes(payload)).expect("webp file");
+}
+
+fn write_test_rtf(root: &std::path::Path, relative_path: &str, payload: &[u8]) {
+    let path = root.join(relative_path);
+    fs::create_dir_all(path.parent().unwrap()).expect("rtf parent");
+    fs::write(path, payload).expect("rtf file");
 }
 
 fn test_webp_byte_count(payload: &[u8]) -> i64 {
@@ -162,6 +174,9 @@ fn capture_text_inserts_source_and_updates_empty_history() {
         .capture_text(CaptureTextRequest {
             text: "Hello from Safari".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.Safari".to_string()),
             source_app_name: Some("Safari".to_string()),
             source_bundle_path: Some("/Applications/Safari.app".to_string()),
@@ -214,6 +229,9 @@ fn updating_source_icon_replaces_previous_icon_row() {
     core.capture_text(CaptureTextRequest {
         text: "First icon path".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: Some("/Applications/Safari.app".to_string()),
@@ -226,6 +244,9 @@ fn updating_source_icon_replaces_previous_icon_row() {
     core.capture_text(CaptureTextRequest {
         text: "Second icon path".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: Some("/Applications/Safari.app".to_string()),
@@ -267,6 +288,9 @@ fn source_app_icon_header_color_roundtrips_after_reopen() {
     core.capture_text(CaptureTextRequest {
         text: "Header color cache".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: Some("/Applications/Safari.app".to_string()),
@@ -331,6 +355,9 @@ fn stale_source_app_icon_header_color_version_is_not_surfaced() {
     core.capture_text(CaptureTextRequest {
         text: "Stale header color".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -373,6 +400,9 @@ fn source_app_icon_header_color_write_requires_matching_path() {
     core.capture_text(CaptureTextRequest {
         text: "Mismatched icon path".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -417,6 +447,9 @@ fn source_app_icon_header_color_accepts_absolute_swift_returned_path() {
     core.capture_text(CaptureTextRequest {
         text: "Absolute icon path".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -460,6 +493,9 @@ fn capture_text_deduplicates_by_content_hash() {
     let request = CaptureTextRequest {
         text: "https://example.com".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -653,6 +689,9 @@ fn capture_detected_link_keeps_priority_over_color_classification() {
             host: "example.com".to_string(),
             metadata_state: LinkMetadataState::Pending,
         }),
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -679,6 +718,9 @@ fn record_item_copied_updates_recent_order_and_copy_count() {
         .capture_text(CaptureTextRequest {
             text: "Older copied item".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: None,
             source_app_name: Some("Notes".to_string()),
             source_bundle_path: None,
@@ -691,6 +733,9 @@ fn record_item_copied_updates_recent_order_and_copy_count() {
     core.capture_text(CaptureTextRequest {
         text: "Newer copied item".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: None,
         source_app_name: Some("Notes".to_string()),
         source_bundle_path: None,
@@ -742,6 +787,9 @@ fn capture_detected_link_persists_metadata_summary() {
                 host: "example.com".to_string(),
                 metadata_state: LinkMetadataState::Pending,
             }),
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.Safari".to_string()),
             source_app_name: Some("Safari".to_string()),
             source_bundle_path: None,
@@ -973,6 +1021,256 @@ fn privacy_sensitive_failure_does_not_auto_retry() {
         .claim_link_metadata_fetch_batch(1, 60_000)
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn capture_rich_text_inserts_rtf_asset_and_payload_path() {
+    let (temp_dir, mut core) = open_temp_core();
+    let rtf = br#"{\rtf1\ansi{\fonttbl\f0 Helvetica;}\f0\b Bold rich text\b0}"#;
+    write_test_rtf(temp_dir.path(), "assets/rich-text/sample.rtf", rtf);
+
+    let result = core
+        .capture_rich_text(CaptureRichTextRequest {
+            text: "Bold rich text".to_string(),
+            rtf_relative_path: "assets/rich-text/sample.rtf".to_string(),
+            mime_type: Some("application/rtf".to_string()),
+            byte_count: rtf.len() as i64,
+            content_hash: Some("swift-ignored".to_string()),
+            source_bundle_id: Some("com.apple.TextEdit".to_string()),
+            source_app_name: Some("TextEdit".to_string()),
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::High,
+            pasteboard_change_count: 41,
+            self_write_token: None,
+        })
+        .unwrap();
+
+    assert!(result.inserted);
+    assert_eq!(result.copy_count, 1);
+    assert_ne!(result.content_hash, "swift-ignored");
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(page.total_count, 1);
+    let item = &page.items[0];
+    assert_eq!(item.item_type, ClipboardItemType::RichText);
+    assert_eq!(item.primary_text.as_deref(), Some("Bold rich text"));
+    assert_eq!(item.summary, "Bold rich text");
+    assert!(item
+        .preview_asset_path
+        .as_deref()
+        .unwrap()
+        .ends_with("assets/rich-text/sample.rtf"));
+    assert!(item
+        .payload_asset_path
+        .as_deref()
+        .unwrap()
+        .ends_with("assets/rich-text/sample.rtf"));
+
+    let asset_kind: String = core
+        .connection
+        .query_row(
+            "SELECT kind FROM clipboard_assets WHERE item_id = ?1",
+            params![item.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(asset_kind, "rtf");
+}
+
+#[test]
+fn capture_rich_text_deduplicates_by_rtf_digest_not_plain_text() {
+    let (temp_dir, mut core) = open_temp_core();
+    let first_rtf = br#"{\rtf1\ansi\b Same plain\b0}"#;
+    let second_rtf = br#"{\rtf1\ansi\i Same plain\i0}"#;
+    write_test_rtf(temp_dir.path(), "assets/rich-text/first.rtf", first_rtf);
+    write_test_rtf(temp_dir.path(), "assets/rich-text/second.rtf", second_rtf);
+    write_test_rtf(temp_dir.path(), "assets/rich-text/duplicate.rtf", first_rtf);
+
+    let first = core
+        .capture_rich_text(CaptureRichTextRequest {
+            text: "Same plain".to_string(),
+            rtf_relative_path: "assets/rich-text/first.rtf".to_string(),
+            mime_type: Some("application/rtf".to_string()),
+            byte_count: first_rtf.len() as i64,
+            content_hash: None,
+            source_bundle_id: None,
+            source_app_name: None,
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::Unknown,
+            pasteboard_change_count: 1,
+            self_write_token: None,
+        })
+        .unwrap();
+    let second = core
+        .capture_rich_text(CaptureRichTextRequest {
+            text: "Same plain".to_string(),
+            rtf_relative_path: "assets/rich-text/second.rtf".to_string(),
+            mime_type: Some("application/rtf".to_string()),
+            byte_count: second_rtf.len() as i64,
+            content_hash: None,
+            source_bundle_id: None,
+            source_app_name: None,
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::Unknown,
+            pasteboard_change_count: 2,
+            self_write_token: None,
+        })
+        .unwrap();
+    let duplicate = core
+        .capture_rich_text(CaptureRichTextRequest {
+            text: "Same plain".to_string(),
+            rtf_relative_path: "assets/rich-text/duplicate.rtf".to_string(),
+            mime_type: Some("application/rtf".to_string()),
+            byte_count: first_rtf.len() as i64,
+            content_hash: None,
+            source_bundle_id: None,
+            source_app_name: None,
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::Unknown,
+            pasteboard_change_count: 3,
+            self_write_token: None,
+        })
+        .unwrap();
+
+    assert_ne!(first.item_id, second.item_id);
+    assert_eq!(duplicate.item_id, first.item_id);
+    assert_eq!(duplicate.copy_count, 2);
+    assert!(!duplicate.inserted);
+
+    let total_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(total_count, 2);
+}
+
+#[test]
+fn list_items_exposes_rtf_payload_only_for_rich_text() {
+    let (temp_dir, mut core) = open_temp_core();
+    let rtf = br#"{\rtf1\ansi\b Rich\b0}"#;
+    write_test_rtf(temp_dir.path(), "assets/rich-text/rich.rtf", rtf);
+    let rich = core
+        .capture_rich_text(CaptureRichTextRequest {
+            text: "Rich".to_string(),
+            rtf_relative_path: "assets/rich-text/rich.rtf".to_string(),
+            mime_type: Some("application/rtf".to_string()),
+            byte_count: rtf.len() as i64,
+            content_hash: None,
+            source_bundle_id: None,
+            source_app_name: None,
+            source_bundle_path: None,
+            source_icon_relative_path: None,
+            source_confidence: SourceConfidence::Unknown,
+            pasteboard_change_count: 4,
+            self_write_token: None,
+        })
+        .unwrap();
+    let text = core.capture_text(text_capture_request("Plain", 5)).unwrap();
+    core.connection
+        .execute(
+            r#"
+            INSERT INTO clipboard_assets (
+                id, item_id, kind, mime_type, relative_path, byte_count, created_at_ms
+            )
+            VALUES ('asset_manual_text_rtf', ?1, 'rtf', 'application/rtf', 'assets/rich-text/rich.rtf', ?2, 1)
+            "#,
+            params![text.item_id, rtf.len() as i64],
+        )
+        .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let rich_item = page
+        .items
+        .iter()
+        .find(|item| item.id == rich.item_id)
+        .unwrap();
+    let text_item = page
+        .items
+        .iter()
+        .find(|item| item.id == text.item_id)
+        .unwrap();
+
+    assert!(rich_item.payload_asset_path.is_some());
+    assert!(rich_item.preview_asset_path.is_some());
+    assert!(text_item.preview_asset_path.is_some());
+    assert!(text_item.payload_asset_path.is_none());
+}
+
+#[test]
+fn capture_text_with_display_rtf_exposes_preview_without_payload() {
+    let (temp_dir, mut core) = open_temp_core();
+    let rtf = br#"{\rtf1\ansi{\colortbl;\red0\green128\blue0;}\cf1 Code\cf0}"#;
+    write_test_rtf(temp_dir.path(), "assets/rich-text/text-display.rtf", rtf);
+
+    let mut request = text_capture_request("Code", 6);
+    request.display_rtf_relative_path = Some("assets/rich-text/text-display.rtf".to_string());
+    request.display_rtf_mime_type = Some("application/rtf".to_string());
+    request.display_rtf_byte_count = rtf.len() as i64;
+    let captured = core.capture_text(request).unwrap();
+
+    let item = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap()
+        .items
+        .into_iter()
+        .find(|item| item.id == captured.item_id)
+        .unwrap();
+
+    assert_eq!(item.item_type, ClipboardItemType::Text);
+    assert!(item
+        .preview_asset_path
+        .as_deref()
+        .is_some_and(|path| path.ends_with("assets/rich-text/text-display.rtf")));
+    assert!(item.payload_asset_path.is_none());
+}
+
+#[test]
+fn capture_text_plain_only_recapture_clears_stale_display_rtf_association() {
+    let (temp_dir, mut core) = open_temp_core();
+    let rtf = br#"{\rtf1\ansi{\colortbl;\red0\green128\blue0;}\cf1 Code\cf0}"#;
+    write_test_rtf(temp_dir.path(), "assets/rich-text/stale-display.rtf", rtf);
+
+    let mut styled_request = text_capture_request("Code", 6);
+    styled_request.display_rtf_relative_path = Some("assets/rich-text/stale-display.rtf".to_string());
+    styled_request.display_rtf_mime_type = Some("application/rtf".to_string());
+    styled_request.display_rtf_byte_count = rtf.len() as i64;
+    let first = core.capture_text(styled_request).unwrap();
+    let second = core.capture_text(text_capture_request("Code", 7)).unwrap();
+
+    assert_eq!(second.item_id, first.item_id);
+    assert_eq!(second.copy_count, 2);
+    assert!(!second.inserted);
+
+    let item = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap()
+        .items
+        .into_iter()
+        .find(|item| item.id == first.item_id)
+        .unwrap();
+
+    assert_eq!(item.item_type, ClipboardItemType::Text);
+    assert!(item.preview_asset_path.is_none());
+    assert!(item.payload_asset_path.is_none());
+
+    let rtf_asset_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_assets WHERE item_id = ?1 AND kind = 'rtf'",
+            params![&item.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(rtf_asset_count, 0);
+    assert!(temp_dir.path().join("assets/rich-text/stale-display.rtf").exists());
 }
 
 #[test]
@@ -1704,6 +2002,9 @@ fn list_items_filters_by_type_and_search_text() {
     core.capture_text(CaptureTextRequest {
         text: "Alpha search target from Safari".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -1772,6 +2073,9 @@ fn list_items_searches_full_primary_text_beyond_ui_preview_prefix() {
         .capture_text(CaptureTextRequest {
             text: long_text.clone(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -1806,6 +2110,9 @@ fn list_source_apps_and_filter_items_by_source_app_id() {
     core.capture_text(CaptureTextRequest {
         text: "Source filter text from Safari".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -1882,6 +2189,9 @@ fn item_management_pins_and_deletes_single_item() {
         .capture_text(CaptureTextRequest {
             text: "Pinned management sample".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -1896,6 +2206,9 @@ fn item_management_pins_and_deletes_single_item() {
         .capture_text(CaptureTextRequest {
             text: "Regular management sample".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.Safari".to_string()),
             source_app_name: Some("Safari".to_string()),
             source_bundle_path: None,
@@ -2005,6 +2318,9 @@ fn pinned_items_enter_default_pinboard_and_leave_on_unpin() {
         .capture_text(CaptureTextRequest {
             text: "Pinboard membership sample".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -2070,6 +2386,9 @@ fn pinboard_crud_updates_title_color_and_deletes_owned_items() {
         .capture_text(CaptureTextRequest {
             text: "Pinboard CRUD owned item".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -2083,6 +2402,9 @@ fn pinboard_crud_updates_title_color_and_deletes_owned_items() {
         .capture_text(CaptureTextRequest {
             text: "Pinboard CRUD shared item".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.Notes".to_string()),
             source_app_name: Some("Notes".to_string()),
             source_bundle_path: None,
@@ -2174,6 +2496,9 @@ fn delete_pinboard_cleans_many_items_in_bulk_and_keeps_shared_members() {
             .capture_text(CaptureTextRequest {
                 text: format!("Bulk Pinboard item {index}"),
                 detected_link: None,
+                display_rtf_relative_path: None,
+                display_rtf_mime_type: None,
+                display_rtf_byte_count: 0,
                 source_bundle_id: Some("com.apple.TextEdit".to_string()),
                 source_app_name: Some("TextEdit".to_string()),
                 source_bundle_path: None,
@@ -2240,6 +2565,9 @@ fn pinned_items_survive_history_retention_and_max_item_pruning() {
         .capture_text(CaptureTextRequest {
             text: "Protected pinboard item".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -2254,6 +2582,9 @@ fn pinned_items_survive_history_retention_and_max_item_pruning() {
     core.capture_text(CaptureTextRequest {
         text: "Removable old item".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -2307,6 +2638,9 @@ fn clear_items_deletes_matching_unpinned_items_only() {
         .capture_text(CaptureTextRequest {
             text: "Clear scope pinned text".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -2321,6 +2655,9 @@ fn clear_items_deletes_matching_unpinned_items_only() {
     core.capture_text(CaptureTextRequest {
         text: "Clear scope removable text".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Safari".to_string()),
         source_app_name: Some("Safari".to_string()),
         source_bundle_path: None,
@@ -2333,6 +2670,9 @@ fn clear_items_deletes_matching_unpinned_items_only() {
     core.capture_text(CaptureTextRequest {
         text: "Different scope sample".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.Notes".to_string()),
         source_app_name: Some("Notes".to_string()),
         source_bundle_path: None,
@@ -2628,6 +2968,9 @@ fn preferences_update_keeps_internal_max_items_as_high_guard() {
         core.capture_text(CaptureTextRequest {
             text: format!("Max item pruning sample {index:02}"),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -2674,6 +3017,9 @@ fn preferences_update_prunes_history_by_retention_days() {
         .capture_text(CaptureTextRequest {
             text: "Old retention sample".to_string(),
             detected_link: None,
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.TextEdit".to_string()),
             source_app_name: Some("TextEdit".to_string()),
             source_bundle_path: None,
@@ -2686,6 +3032,9 @@ fn preferences_update_prunes_history_by_retention_days() {
     core.capture_text(CaptureTextRequest {
         text: "Fresh retention sample".to_string(),
         detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
         source_bundle_id: Some("com.apple.TextEdit".to_string()),
         source_app_name: Some("TextEdit".to_string()),
         source_bundle_path: None,
@@ -2988,6 +3337,9 @@ fn maintenance_preserves_and_purges_link_metadata_assets() {
                 host: "example.com".to_string(),
                 metadata_state: LinkMetadataState::Ready,
             }),
+            display_rtf_relative_path: None,
+            display_rtf_mime_type: None,
+            display_rtf_byte_count: 0,
             source_bundle_id: Some("com.apple.Safari".to_string()),
             source_app_name: Some("Safari".to_string()),
             source_bundle_path: None,

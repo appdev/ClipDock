@@ -51,12 +51,17 @@ impl ClipboardCore {
                 (
                     SELECT a.relative_path
                     FROM clipboard_assets a
-                    WHERE a.item_id = i.id AND a.kind IN ('thumbnail', 'payload', 'file_snapshot')
+                    WHERE a.item_id = i.id
+                        AND (
+                            a.kind IN ('thumbnail', 'payload', 'file_snapshot')
+                            OR (i.type IN ('text', 'rich_text') AND a.kind = 'rtf')
+                        )
                     ORDER BY
                         CASE a.kind
                             WHEN 'thumbnail' THEN 0
                             WHEN 'payload' THEN 1
-                            ELSE 2
+                            WHEN 'rtf' THEN 2
+                            ELSE 3
                         END,
                         a.created_at_ms DESC
                     LIMIT 1
@@ -64,9 +69,17 @@ impl ClipboardCore {
                 (
                     SELECT a.relative_path
                     FROM clipboard_assets a
-                    WHERE a.item_id = i.id AND a.kind IN ('payload', 'file_snapshot')
+                    WHERE a.item_id = i.id
+                        AND (
+                            a.kind IN ('payload', 'file_snapshot')
+                            OR (i.type = 'rich_text' AND a.kind = 'rtf')
+                        )
                     ORDER BY
-                        CASE a.kind WHEN 'payload' THEN 0 ELSE 1 END,
+                        CASE a.kind
+                            WHEN 'payload' THEN 0
+                            WHEN 'rtf' THEN 1
+                            ELSE 2
+                        END,
                         a.created_at_ms DESC
                     LIMIT 1
                 ),

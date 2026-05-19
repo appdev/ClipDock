@@ -429,24 +429,34 @@ enum PanelQASamples {
     static func makePanelSnapshotItems(
         imagePath: String,
         sourceIconPaths: [String: String] = [:],
-        linkMetadata: RustLinkMetadataSummary? = nil
+        linkMetadata: RustLinkMetadataSummary? = nil,
+        styledTextPreviewPath: String? = nil
     ) -> [RustClipboardItemSummary] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        let htmlText = """
-        ClipDock maintains a local clipboard history for macOS, with fast review, reuse, and organization directly from the shelf.
-        """
+        let text = styledTextPreviewPath == nil
+            ? """
+            ClipDock maintains a local clipboard history for macOS, with fast review, reuse, and organization directly from the shelf.
+            """
+            : """
+            UgAdaptiveDialog(
+                modifier = ugAdaptiveDialogModifier,
+                visible = isShowScanDeviceDialog,
+                dismissOnSwipeDown = false
+            )
+            """
         return [
             makeItem(
                 id: "snapshot-text",
                 itemType: "text",
-                summary: htmlText,
-                primaryText: htmlText,
+                summary: text,
+                primaryText: text,
                 sourceAppName: "Chrome",
                 timestamp: now - 79_200_000,
                 contentHash: "snapshot-snapshot-text",
                 sourceAppIconPath: sourceIconPaths["Chrome"],
                 sourceAppIconHeaderColor: 0xFFF0C928,
-                sizeBytes: Int64(htmlText.utf8.count)
+                previewAssetPath: styledTextPreviewPath,
+                sizeBytes: Int64(text.utf8.count)
             ),
             makeItem(
                 id: "snapshot-color",
@@ -507,6 +517,46 @@ enum PanelQASamples {
                 sizeBytes: 19
             )
         ]
+    }
+
+    static func makeStyledCodeRTFPreviewURL(outputDirectory: URL) throws -> URL {
+        let code = """
+        UgAdaptiveDialog(
+            modifier = ugAdaptiveDialogModifier,
+            visible = isShowScanDeviceDialog,
+            dismissOnSwipeDown = false
+        )
+        """
+        let attributed = NSMutableAttributedString(
+            string: code,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+                .foregroundColor: NSColor(deviceWhite: 0.88, alpha: 1),
+                .backgroundColor: NSColor(deviceWhite: 0.12, alpha: 1)
+            ]
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemGreen,
+            range: (code as NSString).range(of: "UgAdaptiveDialog")
+        )
+        for keyword in ["modifier", "visible", "dismissOnSwipeDown"] {
+            attributed.addAttribute(
+                .foregroundColor,
+                value: NSColor.systemBlue,
+                range: (code as NSString).range(of: keyword)
+            )
+        }
+
+        let data = try attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let directory = outputDirectory.appendingPathComponent("styled-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("paste-like-code.rtf")
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     @MainActor
@@ -2025,6 +2075,9 @@ final class PanelInteractionSmokeProbe {
                     debounce: debounce
                 ))
             case .copyItem(let item):
+                self?.copiedItemID = item.id
+                controller?.hide()
+            case .copyItemAsPlainText(let item):
                 self?.copiedItemID = item.id
                 controller?.hide()
             case .copyPath:

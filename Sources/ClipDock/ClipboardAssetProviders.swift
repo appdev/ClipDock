@@ -31,6 +31,10 @@ protocol ClipboardImageAssetCaching {
     func cacheImage(_ capturedImage: ClipboardCapturedImage, changeCount: Int) -> ClipboardStoredImageAsset?
 }
 
+protocol ClipboardRichTextAssetCaching {
+    func cacheRichText(_ richText: ClipboardCapturedRichText, changeCount: Int) -> ClipboardStoredRichTextAsset?
+}
+
 @MainActor
 protocol ClipboardFileSnapshotCaching {
     func cacheFiles(_ files: ClipboardCapturedFiles, changeCount: Int) -> ClipboardStoredFileSnapshot?
@@ -41,6 +45,7 @@ struct PlatformAssetDirectories {
     let iconCacheDirectoryURL: URL
     let imagePayloadDirectoryURL: URL
     let imageThumbnailDirectoryURL: URL
+    let richTextDirectoryURL: URL
     let fileSnapshotDirectoryURL: URL
 
     init(appSupportURL: URL) {
@@ -48,6 +53,9 @@ struct PlatformAssetDirectories {
         self.iconCacheDirectoryURL = appSupportURL.appendingPathComponent("app-icons", isDirectory: true)
         self.imagePayloadDirectoryURL = appSupportURL.appendingPathComponent("assets", isDirectory: true)
         self.imageThumbnailDirectoryURL = appSupportURL.appendingPathComponent("thumbnails", isDirectory: true)
+        self.richTextDirectoryURL = appSupportURL
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
         self.fileSnapshotDirectoryURL = appSupportURL
             .appendingPathComponent("assets", isDirectory: true)
             .appendingPathComponent("file-snapshots", isDirectory: true)
@@ -393,6 +401,62 @@ final class ClipboardFileSnapshotProvider: ClipboardFileSnapshotCaching {
         } catch {
             return nil
         }
+    }
+}
+
+final class ClipboardRichTextAssetProvider: ClipboardRichTextAssetCaching, @unchecked Sendable {
+    private let directories: PlatformAssetDirectories
+    private let fileManager: FileManager
+    private let fileStemFactory: PlatformAssetFileStemFactory
+
+    init(
+        appSupportURL: URL,
+        fileManager: FileManager = .default,
+        fileStemFactory: PlatformAssetFileStemFactory = PlatformAssetFileStemFactory()
+    ) {
+        self.directories = PlatformAssetDirectories(appSupportURL: appSupportURL)
+        self.fileManager = fileManager
+        self.fileStemFactory = fileStemFactory
+    }
+
+    func cacheRichText(_ richText: ClipboardCapturedRichText, changeCount: Int) -> ClipboardStoredRichTextAsset? {
+        guard !richText.rtfData.isEmpty else { return nil }
+
+        let fileStem = fileStemFactory.makeFileStem(prefix: "rich-text", changeCount: changeCount)
+        let fileName = "\(fileStem).rtf"
+        let assetURL = directories.richTextDirectoryURL.appendingPathComponent(fileName)
+        let stagingDirectoryURL = directories.appSupportURL
+            .appendingPathComponent(".staging", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        let stagingURL = stagingDirectoryURL.appendingPathComponent(fileName)
+
+        do {
+            try fileManager.createDirectory(
+                at: directories.richTextDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: stagingDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            try richText.rtfData.write(to: stagingURL, options: .atomic)
+            try fileManager.moveItem(at: stagingURL, to: assetURL)
+        } catch {
+            removeFileIfExists(assetURL)
+            removeFileIfExists(stagingURL)
+            return nil
+        }
+
+        return ClipboardStoredRichTextAsset(
+            rtfRelativePath: "assets/rich-text/\(fileName)",
+            mimeType: "application/rtf",
+            byteCount: richText.rtfData.count
+        )
+    }
+
+    private func removeFileIfExists(_ url: URL) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try? fileManager.removeItem(at: url)
     }
 }
 

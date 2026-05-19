@@ -2004,6 +2004,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         case .copyItem(let itemID):
             guard let item = interactionController.item(withID: itemID) else { return }
             onRuntimeAction?(.copyItem(item))
+        case .copyItemAsPlainText(let itemID):
+            guard let item = interactionController.item(withID: itemID) else { return }
+            onRuntimeAction?(.copyItemAsPlainText(item))
         case .setPinboardMembership(let itemID, let pinboardID, let isMember):
             guard let item = interactionController.item(withID: itemID) else { return }
             onRuntimeAction?(.setPinboardMembership(
@@ -2162,6 +2165,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         menu.addItem(ActionMenuItem(title: "复制", imageName: "doc.on.doc", keyEquivalent: "c", modifierMask: [.command]) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .copy))
         })
+        if item.supportsPlainTextCopyAction {
+            menu.addItem(ActionMenuItem(title: "复制为纯文本", imageName: "text.alignleft") { [weak self] in
+                self?.applyInteractionAction(.management(itemID: item.id, action: .copyAsPlainText))
+            })
+        }
         if let pathText = originalImagePathText(for: item) {
             menu.addItem(ActionMenuItem(title: "复制路径", imageName: "folder") { [weak self] in
                 self?.onRuntimeAction?(.copyPath(pathText))
@@ -3866,5 +3874,17 @@ extension FloatingPanelContentView {
 
     private func allSmokeSubviews(of view: NSView) -> [NSView] {
         view.subviews + view.subviews.flatMap(allSmokeSubviews(of:))
+    }
+}
+
+private extension RustClipboardItemSummary {
+    var supportsPlainTextCopyAction: Bool {
+        switch itemType {
+        case "text", "rich_text":
+            let text = primaryText ?? summary
+            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        default:
+            return false
+        }
     }
 }

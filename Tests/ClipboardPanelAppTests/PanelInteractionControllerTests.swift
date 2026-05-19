@@ -362,6 +362,33 @@ struct PanelInteractionControllerTests {
     }
 
     @Test
+    func managementCopyAsPlainTextEmitsPlainTextCopyAction() {
+        let items = [makePanelInteractionItem(id: "a"), makePanelInteractionItem(id: "b")]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(selectedItemID: "a")
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 2,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.management(
+            itemID: "b",
+            action: .copyAsPlainText
+        ))
+
+        #expect(result.viewState.selectedItemID == "b")
+        #expect(result.effects == [
+            .preview(.close),
+            .external(.copyItemAsPlainText(itemID: "b"))
+        ])
+    }
+
+    @Test
     func managementPreviewUsesActionBoundaryInsteadOfExternalMutation() {
         let items = [makePanelInteractionItem(id: "a"), makePanelInteractionItem(id: "b")]
         let controller = makePanelInteractionController(

@@ -42,6 +42,35 @@ struct ClipboardAssetProviderTests {
         #expect(reusedPath == relativePath)
         #expect(try Data(contentsOf: iconURL) == cachedData)
     }
+
+    @Test
+    func richTextAssetProviderPersistsFlatRTFUnderRichTextAssets() throws {
+        let appSupportURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let provider = ClipboardRichTextAssetProvider(
+            appSupportURL: appSupportURL,
+            fileStemFactory: PlatformAssetFileStemFactory(
+                timestampProvider: { 3000 },
+                uuidProvider: { UUID(uuidString: "00000000-0000-0000-0000-000000000004")! }
+            )
+        )
+        let rtfData = Data(#"{\rtf1\ansi\b Stored\b0}"#.utf8)
+
+        let asset = try #require(provider.cacheRichText(
+            ClipboardCapturedRichText(text: "Stored", rtfData: rtfData),
+            changeCount: 14
+        ))
+
+        #expect(asset.rtfRelativePath == "assets/rich-text/rich-text-14-3000-00000000-0000-0000-0000-000000000004.rtf")
+        #expect(asset.mimeType == "application/rtf")
+        #expect(asset.byteCount == rtfData.count)
+        #expect(try Data(contentsOf: appSupportURL.appendingPathComponent(asset.rtfRelativePath)) == rtfData)
+        #expect(!FileManager.default.fileExists(
+            atPath: appSupportURL
+                .appendingPathComponent(".staging/rich-text/rich-text-14-3000-00000000-0000-0000-0000-000000000004.rtf")
+                .path
+        ))
+    }
 }
 
 private func makeIconTIFFData(width: Int, height: Int) throws -> Data {

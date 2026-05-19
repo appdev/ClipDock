@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appSupportURL: URL?
     private var iconProvider: SourceAppIconProvider?
     private var imageAssetProvider: ClipboardImageAssetProvider?
+    private var richTextAssetProvider: ClipboardRichTextAssetProvider?
     private var fileSnapshotProvider: ClipboardFileSnapshotProvider?
     private var filePreviewProvider: ClipboardFilePreviewProvider?
     private var listCoordinator: ClipboardListCoordinator?
@@ -431,6 +432,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             captureText: { [client, appSupportURL] request in
                 client.captureText(appSupportDirectory: appSupportURL, request: request)
             },
+            captureRichText: { [client, appSupportURL] request in
+                client.captureRichText(appSupportDirectory: appSupportURL, request: request)
+            },
             captureImage: { [client, appSupportURL] request in
                 client.captureImage(appSupportDirectory: appSupportURL, request: request)
             },
@@ -451,6 +455,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             cacheImageAsset: { [weak imageAssetProvider] image, changeCount in
                 imageAssetProvider?.cacheImage(image, changeCount: changeCount)
+            },
+            cacheRichTextAsset: { [weak richTextAssetProvider] richText, changeCount in
+                richTextAssetProvider?.cacheRichText(richText, changeCount: changeCount)
             },
             cacheFileSnapshot: { [weak fileSnapshotProvider] files, changeCount in
                 fileSnapshotProvider?.cacheFiles(files, changeCount: changeCount)
@@ -501,6 +508,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             case .copyItem(let item):
                 self?.copySelectedItemToPasteboard(item)
+            case .copyItemAsPlainText(let item):
+                self?.copyItemAsPlainTextToPasteboard(item)
             case .copyPath(let pathText):
                 self?.copyPathToPasteboard(pathText)
             case .setPinboardMembership(let item, let pinboardID, let isMember):
@@ -607,6 +616,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func copyItemAsPlainTextToPasteboard(_ item: RustClipboardItemSummary) {
+        let payload = ClipboardPastePayloadPlanner.plainTextPayload(for: item)
+        let token = "self-\(UUID().uuidString)"
+        let startChangeCount = NSPasteboard.general.changeCount + 1
+
+        switch writeClipboardPayload(payload, token: token) {
+        case .success(let changeCount):
+            clipboardMonitor.markSelfWrite(
+                token: token,
+                from: startChangeCount,
+                through: changeCount
+            )
+            storageStatusText = "复制为纯文本：已写入剪贴板"
+            refreshStatusText()
+            performItemMutation(.recordCopied(itemID: item.id))
+            panelController.hide()
+
+        case .failure(let message):
+            storageStatusText = "复制为纯文本：\(message)"
+            refreshStatusText()
+        }
+    }
+
     private func copyPathToPasteboard(_ pathText: String) {
         let normalizedPathText = pathText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedPathText.isEmpty else {
@@ -655,6 +687,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.setString(token, forType: ClipboardMonitor.selfWriteTokenPasteboardType)
             pasteboard.clearContents()
             didWrite = pasteboard.writeObjects([item])
+
+        case .richText(let rtfURL, let fallbackText):
+            let rtfData = rtfURL.flatMap { try? Data(contentsOf: $0) }
+            pasteboard.clearContents()
+            var wroteRichText = false
+            if let rtfData, !rtfData.isEmpty {
+                wroteRichText = pasteboard.setData(rtfData, forType: .rtf)
+                wroteRichText = pasteboard.setData(
+                    rtfData,
+                    forType: NSPasteboard.PasteboardType("public.rtf")
+                ) || wroteRichText
+            }
+            let wroteString = pasteboard.setString(fallbackText, forType: .string)
+            didWrite = wroteRichText || wroteString
 
         case .imageFile(let url):
             let sourceData = try? Data(contentsOf: url)
@@ -765,6 +811,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.appSupportURL = appSupportURL
         iconProvider = SourceAppIconProvider(appSupportURL: appSupportURL)
         imageAssetProvider = ClipboardImageAssetProvider(appSupportURL: appSupportURL)
+        richTextAssetProvider = ClipboardRichTextAssetProvider(appSupportURL: appSupportURL)
         fileSnapshotProvider = ClipboardFileSnapshotProvider(appSupportURL: appSupportURL)
         filePreviewProvider = ClipboardFilePreviewProvider(appSupportURL: appSupportURL)
         panelController.setAppSupportDirectory(appSupportURL)
@@ -967,8 +1014,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureClipboardCapture() {
-        clipboardMonitor.onTextCaptured = { [weak self] text, changeCount in
-            self?.captureClipboardText(text, changeCount: changeCount)
+        clipboardMonitor.onTextCaptured = { [weak self] text, displayRichText, changeCount in
+            self?.captureClipboardText(
+                text,
+                displayRichText: displayRichText,
+                changeCount: changeCount
+            )
+        }
+        clipboardMonitor.onRichTextCaptured = { [weak self] richText, changeCount in
+            self?.captureClipboardRichText(richText, changeCount: changeCount)
         }
         clipboardMonitor.onImageCaptured = { [weak self] image, changeCount in
             self?.captureClipboardImage(image, changeCount: changeCount)
@@ -999,7 +1053,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func captureClipboardText(_ text: String, changeCount: Int) {
+    private func captureClipboardText(
+        _ text: String,
+        displayRichText: ClipboardCapturedRichText? = nil,
+        changeCount: Int
+    ) {
         guard let captureCoordinator else {
             return
         }
@@ -1014,7 +1072,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        enqueueCaptureRegistration { [weak self, text, changeCount, preferences, source] in
+        enqueueCaptureRegistration { [weak self, text, displayRichText, changeCount, preferences, source] in
             guard let self,
                   let captureCoordinator = self.captureCoordinator
             else {
@@ -1023,6 +1081,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let result = captureCoordinator.captureText(
                 text,
+                displayRichText: displayRichText,
                 changeCount: changeCount,
                 preferences: preferences,
                 source: source
@@ -1033,6 +1092,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     await linkMetadataCoordinator?.scheduleSoon()
                 }
             }
+        }
+    }
+
+    private func captureClipboardRichText(_ richText: ClipboardCapturedRichText, changeCount: Int) {
+        guard let captureCoordinator else {
+            return
+        }
+
+        let preferences = currentPreferences
+        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
+        if let skipResult = captureCoordinator.preflightCapture(
+            source: source,
+            preferences: preferences
+        ) {
+            applyCaptureResult(skipResult)
+            return
+        }
+
+        enqueueCaptureRegistration { [weak self, richText, changeCount, preferences, source] in
+            guard let self,
+                  let captureCoordinator = self.captureCoordinator
+            else {
+                return
+            }
+
+            let result = captureCoordinator.captureRichText(
+                richText,
+                changeCount: changeCount,
+                preferences: preferences,
+                source: source
+            )
+            self.applyCaptureResult(result)
         }
     }
 

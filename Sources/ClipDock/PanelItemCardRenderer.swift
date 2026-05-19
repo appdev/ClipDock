@@ -330,7 +330,11 @@ final class PanelItemCardRenderer {
             && isTextLikeItem
             && !state.summaryText.isEmpty
 
-        let summaryLabel = makeBodyLabel(state.summaryText)
+        let summaryLabel = makeBodyLabel(
+            state.summaryText,
+            assetRequest: state.assetRequest,
+            usesRichTextPreview: isTextLikeItem
+        )
         let contentFillsAvailableArea = isImageCard || isLinkCard || isColorCard
         let contentContainer = makeCardContentContainer(
             previewView: previewBundle.view,
@@ -620,15 +624,56 @@ final class PanelItemCardRenderer {
         return container
     }
 
-    private func makeBodyLabel(_ text: String) -> PanelItemCardBodyTextView {
-        let label = PanelItemCardBodyTextView(
-            text: leftToRightDisplayText(text),
-            font: .systemFont(ofSize: 12.5),
-            textColor: metrics.theme.card.primaryTextColor
-        )
+    private func makeBodyLabel(
+        _ text: String,
+        assetRequest: PanelCardAssetRequest,
+        usesRichTextPreview: Bool
+    ) -> PanelItemCardBodyTextView {
+        let font = NSFont.systemFont(ofSize: 12.5)
+        let textColor = metrics.theme.card.primaryTextColor
+        let label: PanelItemCardBodyTextView
+        if usesRichTextPreview,
+           let attributedText = richTextBodyPreview(
+            fallbackText: text,
+            assetRequest: assetRequest
+           ) {
+            label = PanelItemCardBodyTextView(
+                attributedString: attributedText,
+                fallbackFont: font,
+                fallbackTextColor: textColor
+            )
+        } else {
+            label = PanelItemCardBodyTextView(
+                text: leftToRightDisplayText(text),
+                font: font,
+                textColor: textColor
+            )
+        }
         label.preferredTextWidth = metrics.defaultItemSide - metrics.cardInset * 2 - 4
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
+    }
+
+    private func richTextBodyPreview(
+        fallbackText: String,
+        assetRequest: PanelCardAssetRequest
+    ) -> NSAttributedString? {
+        guard let attributed = cardAssetResolver.richTextPreviewAttributedString(for: assetRequest),
+              attributed.length > 0,
+              !fallbackText.isEmpty
+        else {
+            return nil
+        }
+
+        let fallbackLength = (fallbackText as NSString).length
+        let boundedLength = min(attributed.length, fallbackLength)
+        guard boundedLength > 0 else {
+            return nil
+        }
+
+        let preview = NSMutableAttributedString(string: "\u{200E}")
+        preview.append(attributed.attributedSubstring(from: NSRange(location: 0, length: boundedLength)))
+        return preview
     }
 
     private func makeImageFootnoteBadgeView(isHidden: Bool) -> NSView {
@@ -1088,24 +1133,26 @@ final class PanelItemCardBodyTextView: NSView {
         self.font = font
         self.textColor = textColor
         self.preferredTextWidth = 0
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        paragraphStyle.lineSpacing = Self.lineSpacing
-        textStorage = NSTextStorage(
-            string: text,
-            attributes: [
-                .font: font,
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraphStyle
-            ]
-        )
+        textStorage = NSTextStorage(attributedString: Self.normalizedAttributedString(
+            NSAttributedString(string: text),
+            fallbackFont: font,
+            fallbackTextColor: textColor
+        ))
         super.init(frame: .zero)
-        textContainer.lineFragmentPadding = 0
-        textContainer.lineBreakMode = .byWordWrapping
-        textContainer.widthTracksTextView = false
-        textContainer.heightTracksTextView = false
-        layoutManager.addTextContainer(textContainer)
-        textStorage.addLayoutManager(layoutManager)
+        configureTextLayout()
+    }
+
+    init(attributedString: NSAttributedString, fallbackFont: NSFont, fallbackTextColor: NSColor) {
+        self.font = fallbackFont
+        self.textColor = fallbackTextColor
+        self.preferredTextWidth = 0
+        textStorage = NSTextStorage(attributedString: Self.normalizedAttributedString(
+            attributedString,
+            fallbackFont: fallbackFont,
+            fallbackTextColor: fallbackTextColor
+        ))
+        super.init(frame: .zero)
+        configureTextLayout()
     }
 
     required init?(coder: NSCoder) {
@@ -1129,6 +1176,67 @@ final class PanelItemCardBodyTextView: NSView {
         let glyphRange = layoutManager.glyphRange(for: textContainer)
         layoutManager.drawBackground(forGlyphRange: glyphRange, at: .zero)
         layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: .zero)
+    }
+
+    var attributedStringForTesting: NSAttributedString {
+        NSAttributedString(attributedString: textStorage)
+    }
+
+    private func configureTextLayout() {
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = .byWordWrapping
+        textContainer.widthTracksTextView = false
+        textContainer.heightTracksTextView = false
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+    }
+
+    private static func normalizedAttributedString(
+        _ attributedString: NSAttributedString,
+        fallbackFont: NSFont,
+        fallbackTextColor: NSColor
+    ) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attributedString)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+        guard fullRange.length > 0 else {
+            return mutable
+        }
+
+        var missingFontRanges: [NSRange] = []
+        var missingColorRanges: [NSRange] = []
+        var paragraphRanges: [(NSRange, NSParagraphStyle?)] = []
+
+        mutable.enumerateAttribute(.font, in: fullRange, options: []) { value, range, _ in
+            if value == nil {
+                missingFontRanges.append(range)
+            }
+        }
+        mutable.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+            if value == nil {
+                missingColorRanges.append(range)
+            }
+        }
+        mutable.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) { value, range, _ in
+            paragraphRanges.append((range, value as? NSParagraphStyle))
+        }
+
+        for range in missingFontRanges {
+            mutable.addAttribute(.font, value: fallbackFont, range: range)
+        }
+        for range in missingColorRanges {
+            mutable.addAttribute(.foregroundColor, value: fallbackTextColor, range: range)
+        }
+        for (range, style) in paragraphRanges {
+            let paragraph = (style?.mutableCopy() as? NSMutableParagraphStyle)
+                ?? NSMutableParagraphStyle()
+            paragraph.alignment = .left
+            paragraph.lineBreakMode = .byWordWrapping
+            paragraph.lineSpacing = Self.lineSpacing
+            paragraph.baseWritingDirection = .leftToRight
+            mutable.addAttribute(.paragraphStyle, value: paragraph, range: range)
+        }
+
+        return mutable
     }
 
     private func invalidateTextContainer() {

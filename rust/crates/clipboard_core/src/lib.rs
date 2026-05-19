@@ -6,13 +6,14 @@ mod time;
 
 pub use domain::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CapturePendingImageRequest,
-    CaptureResult, CaptureTextRequest, CapturedFileMetadata, ClipboardFileItemSummary,
-    ClipboardItemSummary, ClipboardItemType, CompleteLinkMetadataFetchRequest,
-    CompletePendingImagePayloadRequest, CoreInfo, FailPendingImagePayloadRequest,
-    ItemManagementResult, ItemPage, ItemQuery, LinkMetadataFetchCandidate, LinkMetadataState,
-    LinkMetadataSummary, MaintenanceResult, PageRequest, PayloadState, PendingImageCaptureResult,
-    PendingImageCompletionResult, PinboardPage, PinboardSummary, PreferencesDocument, PreviewState,
-    RecoverPendingImagesRequest, SourceAppPage, SourceAppSummary, SourceConfidence,
+    CaptureResult, CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata,
+    ClipboardFileItemSummary, ClipboardItemSummary, ClipboardItemType,
+    CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest, CoreInfo,
+    FailPendingImagePayloadRequest, ItemManagementResult, ItemPage, ItemQuery,
+    LinkMetadataFetchCandidate, LinkMetadataState, LinkMetadataSummary, MaintenanceResult,
+    PageRequest, PayloadState, PendingImageCaptureResult, PendingImageCompletionResult,
+    PinboardPage, PinboardSummary, PreferencesDocument, PreviewState, RecoverPendingImagesRequest,
+    SourceAppPage, SourceAppSummary, SourceConfidence,
 };
 pub use error::{CoreError, CoreErrorCode, Result};
 pub use storage::ClipboardCore;

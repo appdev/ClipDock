@@ -5,6 +5,168 @@ import QuickLookUI
 import UniformTypeIdentifiers
 import WebKit
 
+enum ClipboardRichTextPreviewStyler {
+    struct DisplayPlan {
+        let attributedString: NSAttributedString
+        let promotedBackgroundColor: NSColor?
+    }
+
+    static func displayAttributedString(
+        _ source: NSAttributedString,
+        bodyColor: NSColor,
+        surfaceColor: NSColor,
+        linkColor: NSColor = .linkColor
+    ) -> NSAttributedString {
+        displayPlan(
+            source,
+            bodyColor: bodyColor,
+            surfaceColor: surfaceColor,
+            linkColor: linkColor
+        ).attributedString
+    }
+
+    static func displayPlan(
+        _ source: NSAttributedString,
+        bodyColor: NSColor,
+        surfaceColor: NSColor,
+        linkColor: NSColor = .linkColor
+    ) -> DisplayPlan {
+        let mutable = NSMutableAttributedString(attributedString: source)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+        guard fullRange.length > 0 else {
+            return DisplayPlan(attributedString: mutable, promotedBackgroundColor: nil)
+        }
+
+        let promotedBackgroundColor = contentBackgroundColor(
+            in: source,
+            surfaceColor: surfaceColor
+        )
+        mutable.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+            let targetBackground = promotedBackgroundColor
+                ?? (attributes[.backgroundColor] as? NSColor)
+                ?? surfaceColor
+            let originalForeground = attributes[.foregroundColor] as? NSColor
+            let preferredFallback = attributes[.link] == nil ? bodyColor : linkColor
+            let displayForeground = adjustedForegroundColor(
+                originalForeground,
+                fallback: preferredFallback,
+                against: targetBackground
+            )
+            mutable.addAttribute(.foregroundColor, value: displayForeground, range: range)
+            if promotedBackgroundColor != nil {
+                mutable.removeAttribute(.backgroundColor, range: range)
+            }
+        }
+
+        return DisplayPlan(
+            attributedString: mutable,
+            promotedBackgroundColor: promotedBackgroundColor
+        )
+    }
+
+    private static func contentBackgroundColor(
+        in source: NSAttributedString,
+        surfaceColor: NSColor
+    ) -> NSColor? {
+        let fullRange = NSRange(location: 0, length: source.length)
+        guard fullRange.length > 0 else { return nil }
+
+        var candidates: [String: (length: Int, color: NSColor)] = [:]
+        var coveredLength = 0
+        source.enumerateAttribute(.backgroundColor, in: fullRange, options: []) { value, range, _ in
+            guard let color = (value as? NSColor)?.usingColorSpace(.deviceRGB),
+                  color.alphaComponent >= 0.05,
+                  colorDistance(color, surfaceColor) >= 0.08
+            else {
+                return
+            }
+
+            let key = colorKey(color)
+            let existing = candidates[key]
+            candidates[key] = (
+                length: (existing?.length ?? 0) + range.length,
+                color: existing?.color ?? color
+            )
+            coveredLength += range.length
+        }
+
+        guard coveredLength > 0,
+              let dominant = candidates.values.max(by: { $0.length < $1.length })
+        else {
+            return nil
+        }
+
+        let dominantCoverage = CGFloat(dominant.length) / CGFloat(fullRange.length)
+        let totalCoverage = CGFloat(coveredLength) / CGFloat(fullRange.length)
+        guard dominantCoverage >= 0.55 || (dominantCoverage >= 0.45 && totalCoverage >= 0.70) else {
+            return nil
+        }
+        return dominant.color
+    }
+
+    private static func colorKey(_ color: NSColor) -> String {
+        let red = Int((color.redComponent * 255).rounded())
+        let green = Int((color.greenComponent * 255).rounded())
+        let blue = Int((color.blueComponent * 255).rounded())
+        let alpha = Int((color.alphaComponent * 255).rounded())
+        return "\(red):\(green):\(blue):\(alpha)"
+    }
+
+    private static func colorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        guard let lhs = lhs.usingColorSpace(.deviceRGB),
+              let rhs = rhs.usingColorSpace(.deviceRGB)
+        else {
+            return 0
+        }
+
+        return max(
+            abs(lhs.redComponent - rhs.redComponent),
+            abs(lhs.greenComponent - rhs.greenComponent),
+            abs(lhs.blueComponent - rhs.blueComponent)
+        )
+    }
+
+    private static func adjustedForegroundColor(
+        _ color: NSColor?,
+        fallback: NSColor,
+        against background: NSColor
+    ) -> NSColor {
+        guard let color else {
+            return fallback
+        }
+
+        guard contrastRatio(color, background) < 3.0 else {
+            return color
+        }
+
+        return fallback
+    }
+
+    private static func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        let first = relativeLuminance(lhs)
+        let second = relativeLuminance(rhs)
+        let lighter = max(first, second)
+        let darker = min(first, second)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private static func relativeLuminance(_ color: NSColor) -> CGFloat {
+        guard let rgb = color.usingColorSpace(.deviceRGB) else {
+            return 0
+        }
+
+        func channel(_ value: CGFloat) -> CGFloat {
+            value <= 0.03928
+                ? value / 12.92
+                : pow((value + 0.055) / 1.055, 2.4)
+        }
+
+        return 0.2126 * channel(rgb.redComponent)
+            + 0.7152 * channel(rgb.greenComponent)
+            + 0.0722 * channel(rgb.blueComponent)
+    }
+}
+
 @MainActor
 final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
@@ -198,6 +360,7 @@ private final class ClipboardPreviewViewController: NSViewController {
     private var quickLookPreviewView: QLPreviewView?
     private var linkWebView: WKWebView?
     private var linkNavigationDelegate: LinkPreviewNavigationDelegate?
+    private var richTextLoadTask: Task<Void, Never>?
     private var theme: ClipDockThemePalette {
         isViewLoaded ? ClipDockTheme.current(for: view) : ClipDockTheme.current(for: NSApp.effectiveAppearance)
     }
@@ -582,6 +745,7 @@ private final class ClipboardPreviewViewController: NSViewController {
         textView.translatesAutoresizingMaskIntoConstraints = true
 
         scrollView.documentView = textView
+        loadRichTextPreviewIfNeeded(into: textView)
 
         container.addSubview(scrollView)
         NSLayoutConstraint.activate([
@@ -599,6 +763,51 @@ private final class ClipboardPreviewViewController: NSViewController {
         }
 
         return container
+    }
+
+    private func loadRichTextPreviewIfNeeded(into textView: NSTextView) {
+        guard content.itemType == "rich_text",
+              let richTextURL = content.richTextURL
+        else {
+            return
+        }
+
+        let itemID = content.itemID
+        richTextLoadTask?.cancel()
+        richTextLoadTask = Task { @MainActor [weak self, weak textView] in
+            let data = await Task.detached(priority: .utility) {
+                try? Data(contentsOf: richTextURL)
+            }.value
+            guard !Task.isCancelled,
+                  let self,
+                  self.content.itemID == itemID,
+                  let textView,
+                  let data,
+                  !data.isEmpty,
+                  let attributed = try? NSAttributedString(
+                    data: data,
+                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                    documentAttributes: nil
+                  )
+            else {
+                return
+            }
+
+            let displayPlan = ClipboardRichTextPreviewStyler.displayPlan(
+                attributed,
+                bodyColor: self.theme.preview.bodyTextColor,
+                surfaceColor: self.theme.preview.surfaceBackgroundColor
+            )
+            textView.textStorage?.setAttributedString(displayPlan.attributedString)
+            if let promotedBackgroundColor = displayPlan.promotedBackgroundColor {
+                textView.drawsBackground = true
+                textView.backgroundColor = promotedBackgroundColor
+                textView.enclosingScrollView?.backgroundColor = promotedBackgroundColor
+                textView.enclosingScrollView?.contentView.backgroundColor = promotedBackgroundColor
+            }
+            textView.setSelectedRange(NSRange(location: 0, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        }
     }
 
     private func makeFilePreview() -> NSView? {
@@ -1099,13 +1308,20 @@ private final class ClipboardPreviewViewController: NSViewController {
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
+        clearRichTextPreview()
         clearLinkWebPreview()
         clearQuickLookPreview()
     }
 
     func prepareForClose() {
+        clearRichTextPreview()
         clearLinkWebPreview()
         clearQuickLookPreview()
+    }
+
+    private func clearRichTextPreview() {
+        richTextLoadTask?.cancel()
+        richTextLoadTask = nil
     }
 
     private func clearLinkWebPreview() {

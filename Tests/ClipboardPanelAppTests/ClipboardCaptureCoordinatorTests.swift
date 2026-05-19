@@ -74,6 +74,74 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
+    func capturesTextWithDisplayRichTextPreviewAsset() {
+        let rtfData = Data(#"{\rtf1\ansi{\colortbl;\red0\green128\blue0;}\cf1 let value = 1\cf0}"#.utf8)
+        let displayRichText = ClipboardCapturedRichText(text: "let value = 1", rtfData: rtfData)
+        var capturedRequest: RustCaptureTextRequest?
+        var cachedRichText: ClipboardCapturedRichText?
+        var cachedChangeCount: Int?
+        let coordinator = ClipboardCaptureCoordinator(
+            captureText: { request in
+                capturedRequest = request
+                return .success(RustCaptureTextResult(
+                    itemId: "text-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureImage: { _ in
+                .success(RustCaptureImageResult(
+                    itemId: "image-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureFiles: { _ in
+                .success(RustCaptureFilesResult(
+                    itemId: "files-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            cacheIcon: { _ in nil },
+            cacheImageAsset: { _, _ in nil },
+            cacheRichTextAsset: { richText, changeCount in
+                cachedRichText = richText
+                cachedChangeCount = changeCount
+                return ClipboardStoredRichTextAsset(
+                    rtfRelativePath: "assets/rich-text/code.rtf",
+                    byteCount: richText.rtfData.count
+                )
+            },
+            cacheFileSnapshot: { _, _ in nil }
+        )
+
+        let result = coordinator.captureText(
+            "let value = 1",
+            displayRichText: displayRichText,
+            changeCount: 12,
+            preferences: RustPreferencesDocument(),
+            source: nil
+        )
+
+        #expect(result == ClipboardCaptureHandlingResult(
+            statusText: nil,
+            shouldRefreshList: true,
+            storageError: nil
+        ))
+        #expect(cachedRichText == displayRichText)
+        #expect(cachedChangeCount == 12)
+        #expect(capturedRequest?.text == "let value = 1")
+        #expect(capturedRequest?.displayRTFRelativePath == "assets/rich-text/code.rtf")
+        #expect(capturedRequest?.displayRTFMimeType == "application/rtf")
+        #expect(capturedRequest?.displayRTFByteCount == Int64(rtfData.count))
+    }
+
+    @Test
+    @MainActor
     func capturesProtocolLessDomainAsTextWithoutLinkMetadata() {
         var capturedRequest: RustCaptureTextRequest?
         let coordinator = ClipboardCaptureCoordinator(
@@ -117,6 +185,124 @@ struct ClipboardCaptureCoordinatorTests {
         #expect(result.shouldRefreshList)
         #expect(capturedRequest?.text == "github.com")
         #expect(capturedRequest?.detectedLink == nil)
+    }
+
+    @Test
+    @MainActor
+    func capturesRichTextUsingStoredRTFAsset() {
+        var capturedRequest: RustCaptureRichTextRequest?
+        var didCaptureTextFallback = false
+        let coordinator = ClipboardCaptureCoordinator(
+            captureText: { _ in
+                didCaptureTextFallback = true
+                return .success(RustCaptureTextResult(
+                    itemId: "text-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureRichText: { request in
+                capturedRequest = request
+                return .success(RustCaptureRichTextResult(
+                    itemId: "rich-1",
+                    contentHash: "rich-hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureImage: { _ in
+                .success(RustCaptureImageResult(
+                    itemId: "image-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureFiles: { _ in
+                .success(RustCaptureFilesResult(
+                    itemId: "files-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            cacheIcon: { _ in "app-icons/textedit.tiff" },
+            cacheImageAsset: { _, _ in nil },
+            cacheRichTextAsset: { richText, changeCount in
+                #expect(richText.text == "Bold")
+                #expect(changeCount == 12)
+                return ClipboardStoredRichTextAsset(
+                    rtfRelativePath: "assets/rich-text/bold.rtf",
+                    byteCount: richText.rtfData.count
+                )
+            },
+            cacheFileSnapshot: { _, _ in nil }
+        )
+
+        let result = coordinator.captureRichText(
+            ClipboardCapturedRichText(text: "Bold", rtfData: Data("rtf".utf8)),
+            changeCount: 12,
+            preferences: RustPreferencesDocument(),
+            source: ClipboardCaptureSource(appName: "TextEdit")
+        )
+
+        #expect(result.shouldRefreshList)
+        #expect(!didCaptureTextFallback)
+        #expect(capturedRequest?.text == "Bold")
+        #expect(capturedRequest?.rtfRelativePath == "assets/rich-text/bold.rtf")
+        #expect(capturedRequest?.mimeType == "application/rtf")
+        #expect(capturedRequest?.byteCount == 3)
+        #expect(capturedRequest?.sourceAppName == "TextEdit")
+        #expect(capturedRequest?.sourceIconRelativePath == "app-icons/textedit.tiff")
+    }
+
+    @Test
+    @MainActor
+    func richTextAssetWriteFailureFallsBackToTextCapture() {
+        var capturedTextRequest: RustCaptureTextRequest?
+        let coordinator = ClipboardCaptureCoordinator(
+            captureText: { request in
+                capturedTextRequest = request
+                return .success(RustCaptureTextResult(
+                    itemId: "text-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureImage: { _ in
+                .success(RustCaptureImageResult(
+                    itemId: "image-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureFiles: { _ in
+                .success(RustCaptureFilesResult(
+                    itemId: "files-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            cacheIcon: { _ in nil },
+            cacheImageAsset: { _, _ in nil },
+            cacheRichTextAsset: { _, _ in nil },
+            cacheFileSnapshot: { _, _ in nil }
+        )
+
+        let result = coordinator.captureRichText(
+            ClipboardCapturedRichText(text: "Fallback", rtfData: Data("rtf".utf8)),
+            changeCount: 13,
+            preferences: RustPreferencesDocument(),
+            source: nil
+        )
+
+        #expect(result.shouldRefreshList)
+        #expect(capturedTextRequest?.text == "Fallback")
+        #expect(capturedTextRequest?.pasteboardChangeCount == 13)
     }
 
     @Test

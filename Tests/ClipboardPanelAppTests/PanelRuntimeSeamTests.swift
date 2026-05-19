@@ -1287,6 +1287,41 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func managementMenuCopiesTextAndRichTextAsPlainText() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let textItem = makeRuntimeTextItem(id: "plain-menu-text", summary: "Plain text")
+        let richTextItem = makeRuntimeRichTextItem(id: "plain-menu-rich", summary: "Rich text")
+        let linkItem = runtimeLinkItemByUpdatingMetadata(
+            makeRuntimeTextItem(id: "plain-menu-link", summary: "https://example.com"),
+            title: "Example"
+        )
+        var plainTextCopyItemID: String?
+
+        contentView.onRuntimeAction = { action in
+            if case .copyItemAsPlainText(let item) = action {
+                plainTextCopyItemID = item.id
+            }
+        }
+        contentView.updateListState(
+            .success(RustCoreListResult(items: [textItem, richTextItem, linkItem], totalCount: 3, hasMore: false)),
+            isFiltered: false
+        )
+
+        let textMenuItems = contentView.smokeManagementMenuItems(itemID: textItem.id)
+        let richTextMenuItems = contentView.smokeManagementMenuItems(itemID: richTextItem.id)
+        let linkMenuItems = contentView.smokeManagementMenuItems(itemID: linkItem.id)
+
+        #expect(textMenuItems.map(\.title) == ["复制", "复制为纯文本", "删除", "固定", "预览"])
+        #expect(richTextMenuItems.map(\.title) == ["复制", "复制为纯文本", "删除", "固定", "预览"])
+        #expect(linkMenuItems.map(\.title) == ["复制", "删除", "固定", "预览"])
+        #expect(textMenuItems.first(where: { $0.title == "复制为纯文本" })?.hasImage == true)
+        #expect(richTextMenuItems.first(where: { $0.title == "复制为纯文本" })?.hasImage == true)
+        #expect(contentView.smokePerformManagementAction(itemID: richTextItem.id, title: "复制为纯文本"))
+        #expect(plainTextCopyItemID == richTextItem.id)
+    }
+
+    @Test
+    @MainActor
     func showPreferencesHidesPanelAndClosesPreviewWhenNotBlocking() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -2010,6 +2045,103 @@ struct PanelRuntimeSeamTests {
         let resizedImageFrame = imageView.convert(imageView.bounds, to: renderedCard.cardView)
         #expect(abs(resizedImageFrame.width - resizedItemSide) <= 1.5)
         #expect(abs(resizedImageFrame.height - (resizedItemSide - headerHeight)) <= 1.5)
+    }
+
+    @Test
+    @MainActor
+    func textCardBodyUsesRTFPreviewAssetForStyledCode() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let richTextDirectory = tempDirectory
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: richTextDirectory, withIntermediateDirectories: true)
+        let code = """
+        UgAdaptiveDialog(
+            modifier =
+                ugAdaptiveDialogModifier,
+            visible =
+                isShowScanDeviceDialog
+        )
+        """
+        let attributed = NSMutableAttributedString(
+            string: code,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+                .foregroundColor: NSColor.textColor,
+                .backgroundColor: NSColor.textBackgroundColor
+            ]
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemGreen,
+            range: (code as NSString).range(of: "UgAdaptiveDialog")
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemBlue,
+            range: (code as NSString).range(of: "modifier")
+        )
+        let rtfData = try attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let rtfURL = richTextDirectory.appendingPathComponent("code.rtf")
+        try rtfData.write(to: rtfURL)
+
+        let app = NSApplication.shared
+        let theme = ClipDockTheme.current(for: app.effectiveAppearance)
+        let renderer = PanelItemCardRenderer(
+            cardAssetResolver: PanelCardAssetResolver(appSupportDirectory: tempDirectory),
+            metrics: PanelItemCardRendererMetrics(
+                defaultItemSide: 218,
+                cardCornerRadius: 10,
+                innerCornerRadius: 8,
+                cardHeaderHeight: 48,
+                cardInset: 12,
+                cardFooterHeight: 17,
+                sourceIconSize: 54,
+                linkPreviewHeight: 84,
+                theme: theme
+            ),
+            backingScaleFactor: NSScreen.main?.backingScaleFactor ?? 2
+        )
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "styled-code",
+            sourceAppName: "Android Studio",
+            relativeTimeText: "刚刚",
+            symbolName: "doc.text",
+            typeText: "文本",
+            summaryText: code,
+            footnoteText: "\(code.count) 个字符",
+            isSelected: false,
+            preview: .none,
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Android Studio",
+                previewAssetPath: "assets/rich-text/code.rtf",
+                primaryText: code
+            )
+        ))
+
+        let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        let renderedAttributedString = bodyLabel.attributedStringForTesting
+        let functionRange = (renderedAttributedString.string as NSString).range(of: "UgAdaptiveDialog")
+        let functionLocation = try #require(functionRange.location == NSNotFound ? nil : functionRange.location)
+        let rawFunctionColor = try #require(
+            renderedAttributedString.attribute(.foregroundColor, at: functionLocation, effectiveRange: nil) as? NSColor
+        )
+        let functionColor = try #require(rawFunctionColor.usingColorSpace(.sRGB))
+        let expectedFunctionColor = try #require(NSColor.systemGreen.usingColorSpace(.sRGB))
+        let backgroundColor = renderedAttributedString.attribute(
+            .backgroundColor,
+            at: functionLocation,
+            effectiveRange: nil
+        ) as? NSColor
+
+        #expect(renderedCard.state.typeText == "文本")
+        #expect(functionColor.greenComponent > functionColor.redComponent)
+        #expect(abs(functionColor.greenComponent - expectedFunctionColor.greenComponent) < 0.08)
+        #expect(backgroundColor != nil)
     }
 
     @Test
@@ -3843,6 +3975,29 @@ private func makeRuntimeTextItem(id: String, summary: String) -> RustClipboardIt
         isPinned: false,
         sizeBytes: Int64(summary.utf8.count),
         previewState: "ready"
+    )
+}
+
+private func makeRuntimeRichTextItem(id: String, summary: String) -> RustClipboardItemSummary {
+    RustClipboardItemSummary(
+        id: id,
+        itemType: "rich_text",
+        summary: summary,
+        primaryText: summary,
+        contentHash: id,
+        sourceAppId: "com.apple.TextEdit",
+        sourceAppName: "TextEdit",
+        sourceAppIconPath: nil,
+        previewAssetPath: "assets/rich-text/\(id).rtf",
+        payloadAssetPath: "assets/rich-text/\(id).rtf",
+        sourceConfidence: "high",
+        firstCopiedAtMs: 1,
+        lastCopiedAtMs: 1,
+        copyCount: 1,
+        isPinned: false,
+        sizeBytes: Int64(summary.utf8.count),
+        previewState: "ready",
+        payloadState: "ready"
     )
 }
 

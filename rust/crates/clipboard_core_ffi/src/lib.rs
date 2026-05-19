@@ -1,7 +1,7 @@
 use clipboard_core::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CapturePendingImageRequest,
-    CaptureTextRequest, CapturedFileMetadata, ClipboardCore, ClipboardItemType,
-    CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
+    CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata, ClipboardCore,
+    ClipboardItemType, CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
     FailPendingImagePayloadRequest, ItemManagementResult, ItemQuery, LinkMetadataFetchCandidate,
     LinkMetadataState, MaintenanceResult, PageRequest, PendingImageCaptureResult,
     PendingImageCompletionResult, PinboardPage, PreferencesDocument, RecoverPendingImagesRequest,
@@ -219,6 +219,9 @@ mod ffi {
             link_display_url: String,
             link_host: String,
             link_metadata_state: String,
+            display_rtf_relative_path: String,
+            display_rtf_mime_type: String,
+            display_rtf_byte_count: i64,
             source_bundle_id: String,
             source_app_name: String,
             source_bundle_path: String,
@@ -227,6 +230,7 @@ mod ffi {
             pasteboard_change_count: i64,
             self_write_token: String,
         ) -> CoreCaptureResult;
+        fn capture_rich_text(app_support_dir: String, request_json: String) -> CoreCaptureResult;
         fn capture_image(
             app_support_dir: String,
             payload_relative_path: String,
@@ -768,6 +772,9 @@ fn capture_text(
     link_display_url: String,
     link_host: String,
     link_metadata_state: String,
+    display_rtf_relative_path: String,
+    display_rtf_mime_type: String,
+    display_rtf_byte_count: i64,
     source_bundle_id: String,
     source_app_name: String,
     source_bundle_path: String,
@@ -786,6 +793,9 @@ fn capture_text(
                 link_host,
                 link_metadata_state,
             ),
+            display_rtf_relative_path: optional_string(display_rtf_relative_path),
+            display_rtf_mime_type: optional_string(display_rtf_mime_type),
+            display_rtf_byte_count,
             source_bundle_id: optional_string(source_bundle_id),
             source_app_name: optional_string(source_app_name),
             source_bundle_path: optional_string(source_bundle_path),
@@ -836,6 +846,45 @@ fn capture_detected_link(
         host,
         metadata_state: parse_link_metadata_state(&metadata_state),
     })
+}
+
+fn capture_rich_text(app_support_dir: String, request_json: String) -> ffi::CoreCaptureResult {
+    let request = match serde_json::from_str::<CaptureRichTextRequest>(&request_json) {
+        Ok(request) => request,
+        Err(_) => {
+            return ffi::CoreCaptureResult {
+                ok: false,
+                item_id: String::new(),
+                content_hash: String::new(),
+                copy_count: 0,
+                inserted: false,
+                error_code: "invalid_input".to_string(),
+                message_key: "clipboard.error.invalid_input".to_string(),
+            };
+        }
+    };
+
+    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.capture_rich_text(request))
+    {
+        Ok(result) => ffi::CoreCaptureResult {
+            ok: true,
+            item_id: result.item_id,
+            content_hash: result.content_hash,
+            copy_count: result.copy_count,
+            inserted: result.inserted,
+            error_code: String::new(),
+            message_key: String::new(),
+        },
+        Err(error) => ffi::CoreCaptureResult {
+            ok: false,
+            item_id: String::new(),
+            content_hash: String::new(),
+            copy_count: 0,
+            inserted: false,
+            error_code: error.code.as_str().to_string(),
+            message_key: error.message_key().to_string(),
+        },
+    }
 }
 
 fn capture_image(

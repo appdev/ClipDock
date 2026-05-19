@@ -338,6 +338,25 @@ pub struct ItemManagementResult {
 pub struct CaptureTextRequest {
     pub text: String,
     pub detected_link: Option<CaptureDetectedLink>,
+    pub display_rtf_relative_path: Option<String>,
+    pub display_rtf_mime_type: Option<String>,
+    pub display_rtf_byte_count: i64,
+    pub source_bundle_id: Option<String>,
+    pub source_app_name: Option<String>,
+    pub source_bundle_path: Option<String>,
+    pub source_icon_relative_path: Option<String>,
+    pub source_confidence: SourceConfidence,
+    pub pasteboard_change_count: i64,
+    pub self_write_token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaptureRichTextRequest {
+    pub text: String,
+    pub rtf_relative_path: String,
+    pub mime_type: Option<String>,
+    pub byte_count: i64,
+    pub content_hash: Option<String>,
     pub source_bundle_id: Option<String>,
     pub source_app_name: Option<String>,
     pub source_bundle_path: Option<String>,

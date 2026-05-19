@@ -3,6 +3,7 @@ import Foundation
 public enum PanelExternalAction: Equatable, Sendable {
     case queryChanged(searchText: String, itemType: String?, sourceAppID: String?, pinboardID: String?, debounce: Bool)
     case copyItem(itemID: String)
+    case copyItemAsPlainText(itemID: String)
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
     case deleteItem(itemID: String, pinboardID: String?)
     case hidePanel
@@ -17,6 +18,7 @@ public enum PanelPreviewRequest: Equatable, Sendable {
 
 public enum PanelManagementAction: Equatable, Sendable {
     case copy
+    case copyAsPlainText
     case delete
     case setPinboardMembership(pinboardID: String, isMember: Bool)
     case preview
@@ -332,6 +334,13 @@ public final class PanelInteractionController {
                 return makeResult(effects: [
                     .preview(.close),
                     .external(.copyItem(itemID: itemID))
+                ])
+
+            case .copyAsPlainText:
+                contentController.copyItem(itemID: itemID)
+                return makeResult(effects: [
+                    .preview(.close),
+                    .external(.copyItemAsPlainText(itemID: itemID))
                 ])
 
             case .delete:

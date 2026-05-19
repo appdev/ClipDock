@@ -654,6 +654,9 @@ public struct RustPinboardSummary: Equatable, Decodable, Sendable {
 public struct RustCaptureTextRequest: Equatable, Sendable {
     public let text: String
     public let detectedLink: RustDetectedLink?
+    public let displayRTFRelativePath: String?
+    public let displayRTFMimeType: String?
+    public let displayRTFByteCount: Int64
     public let sourceBundleId: String?
     public let sourceAppName: String?
     public let sourceBundlePath: String?
@@ -665,6 +668,9 @@ public struct RustCaptureTextRequest: Equatable, Sendable {
     public init(
         text: String,
         detectedLink: RustDetectedLink? = nil,
+        displayRTFRelativePath: String? = nil,
+        displayRTFMimeType: String? = nil,
+        displayRTFByteCount: Int64 = 0,
         sourceBundleId: String?,
         sourceAppName: String?,
         sourceBundlePath: String?,
@@ -675,6 +681,9 @@ public struct RustCaptureTextRequest: Equatable, Sendable {
     ) {
         self.text = text
         self.detectedLink = detectedLink
+        self.displayRTFRelativePath = displayRTFRelativePath
+        self.displayRTFMimeType = displayRTFMimeType
+        self.displayRTFByteCount = displayRTFByteCount
         self.sourceBundleId = sourceBundleId
         self.sourceAppName = sourceAppName
         self.sourceBundlePath = sourceBundlePath
@@ -761,6 +770,66 @@ public struct RustCaptureImageRequest: Equatable, Sendable {
 }
 
 public typealias RustCaptureImageResult = RustCaptureTextResult
+
+public struct RustCaptureRichTextRequest: Equatable, Encodable, Sendable {
+    public let text: String
+    public let rtfRelativePath: String
+    public let mimeType: String?
+    public let byteCount: Int64
+    public let contentHash: String?
+    public let sourceBundleId: String?
+    public let sourceAppName: String?
+    public let sourceBundlePath: String?
+    public let sourceIconRelativePath: String?
+    public let sourceConfidence: String
+    public let pasteboardChangeCount: Int64
+    public let selfWriteToken: String?
+
+    public init(
+        text: String,
+        rtfRelativePath: String,
+        mimeType: String? = "application/rtf",
+        byteCount: Int64,
+        contentHash: String? = nil,
+        sourceBundleId: String?,
+        sourceAppName: String?,
+        sourceBundlePath: String?,
+        sourceIconRelativePath: String?,
+        sourceConfidence: String,
+        pasteboardChangeCount: Int64,
+        selfWriteToken: String? = nil
+    ) {
+        self.text = text
+        self.rtfRelativePath = rtfRelativePath
+        self.mimeType = mimeType
+        self.byteCount = byteCount
+        self.contentHash = contentHash
+        self.sourceBundleId = sourceBundleId
+        self.sourceAppName = sourceAppName
+        self.sourceBundlePath = sourceBundlePath
+        self.sourceIconRelativePath = sourceIconRelativePath
+        self.sourceConfidence = sourceConfidence
+        self.pasteboardChangeCount = pasteboardChangeCount
+        self.selfWriteToken = selfWriteToken
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case rtfRelativePath = "rtf_relative_path"
+        case mimeType = "mime_type"
+        case byteCount = "byte_count"
+        case contentHash = "content_hash"
+        case sourceBundleId = "source_bundle_id"
+        case sourceAppName = "source_app_name"
+        case sourceBundlePath = "source_bundle_path"
+        case sourceIconRelativePath = "source_icon_relative_path"
+        case sourceConfidence = "source_confidence"
+        case pasteboardChangeCount = "pasteboard_change_count"
+        case selfWriteToken = "self_write_token"
+    }
+}
+
+public typealias RustCaptureRichTextResult = RustCaptureTextResult
 
 public struct RustCapturePendingImageRequest: Equatable, Encodable, Sendable {
     public let ownerSessionId: String
@@ -1617,6 +1686,9 @@ public struct RustCoreClient: Sendable {
                 request.detectedLink?.displayURL ?? "",
                 request.detectedLink?.host ?? "",
                 request.detectedLink?.metadataState ?? "",
+                request.displayRTFRelativePath ?? "",
+                request.displayRTFMimeType ?? "",
+                request.displayRTFByteCount,
                 request.sourceBundleId ?? "",
                 request.sourceAppName ?? "",
                 request.sourceBundlePath ?? "",
@@ -1681,6 +1753,36 @@ public struct RustCoreClient: Sendable {
                     inserted: result.inserted
                 )
             )
+        }
+    }
+
+    public func captureRichText(
+        appSupportDirectory: URL,
+        request: RustCaptureRichTextRequest
+    ) -> Result<RustCaptureRichTextResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                let result = capture_rich_text(appSupportPath, json)
+                guard result.ok else {
+                    return .failure(Self.makeError(
+                        code: result.error_code.toString(),
+                        messageKey: result.message_key.toString()
+                    ))
+                }
+
+                return .success(
+                    RustCaptureRichTextResult(
+                        itemId: result.item_id.toString(),
+                        contentHash: result.content_hash.toString(),
+                        copyCount: result.copy_count,
+                        inserted: result.inserted
+                    )
+                )
+
+            case .failure(let error):
+                return .failure(error)
+            }
         }
     }
 

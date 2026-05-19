@@ -203,9 +203,13 @@ enum PanelSnapshotCommand {
         }
         let previewURL = try PanelQASamples.makeRealSampleImageURL()
         let sourceIconPaths = try PanelQASamples.makeSourceAppIconPaths(outputDirectory: outputURL.deletingLastPathComponent())
+        let styledTextPreviewURL = try PanelQASamples.makeStyledCodeRTFPreviewURL(
+            outputDirectory: outputURL.deletingLastPathComponent()
+        )
         let sampleItems = PanelQASamples.makePanelSnapshotItems(
             imagePath: previewURL.path,
-            sourceIconPaths: sourceIconPaths
+            sourceIconPaths: sourceIconPaths,
+            styledTextPreviewPath: styledTextPreviewURL.path
         )
         view.updateListState(
             .success(RustCoreListResult(

@@ -124,6 +124,32 @@ public struct ClipboardCapturedImage: Equatable, Sendable {
     public var thumbnailPNGData: Data { thumbnailData }
 }
 
+public struct ClipboardCapturedRichText: Equatable, Sendable {
+    public let text: String
+    public let rtfData: Data
+
+    public init(text: String, rtfData: Data) {
+        self.text = text
+        self.rtfData = rtfData
+    }
+}
+
+public struct ClipboardStoredRichTextAsset: Equatable, Sendable {
+    public let rtfRelativePath: String
+    public let mimeType: String
+    public let byteCount: Int
+
+    public init(
+        rtfRelativePath: String,
+        mimeType: String = "application/rtf",
+        byteCount: Int
+    ) {
+        self.rtfRelativePath = rtfRelativePath
+        self.mimeType = mimeType
+        self.byteCount = byteCount
+    }
+}
+
 public struct ClipboardStoredFileSnapshot: Equatable, Sendable {
     public let relativePath: String
     public let byteCount: Int
@@ -258,6 +284,8 @@ public struct ClipboardCaptureHandlingResult: Equatable, Sendable {
 
 public typealias ClipboardTextCapturePerformer =
     (RustCaptureTextRequest) -> Result<RustCaptureTextResult, RustCoreError>
+public typealias ClipboardRichTextCapturePerformer =
+    (RustCaptureRichTextRequest) -> Result<RustCaptureRichTextResult, RustCoreError>
 public typealias ClipboardImageCapturePerformer =
     (RustCaptureImageRequest) -> Result<RustCaptureImageResult, RustCoreError>
 public typealias ClipboardPendingImageCapturePerformer =
@@ -271,12 +299,15 @@ public typealias ClipboardFilesCapturePerformer =
 public typealias ClipboardSourceIconCache = (ClipboardCaptureSource?) -> String?
 public typealias ClipboardImageAssetCache =
     (ClipboardCapturedImage, Int) -> ClipboardStoredImageAsset?
+public typealias ClipboardRichTextAssetCache =
+    (ClipboardCapturedRichText, Int) -> ClipboardStoredRichTextAsset?
 public typealias ClipboardFileSnapshotCache =
     (ClipboardCapturedFiles, Int) -> ClipboardStoredFileSnapshot?
 
 @MainActor
 public final class ClipboardCaptureCoordinator {
     private let captureText: ClipboardTextCapturePerformer
+    private let captureRichTextRequest: ClipboardRichTextCapturePerformer
     private let captureImage: ClipboardImageCapturePerformer
     private let capturePendingImageRequest: ClipboardPendingImageCapturePerformer
     private let completePendingImagePayloadRequest: ClipboardPendingImageCompletionPerformer
@@ -284,11 +315,15 @@ public final class ClipboardCaptureCoordinator {
     private let captureFiles: ClipboardFilesCapturePerformer
     private let cacheIcon: ClipboardSourceIconCache
     private let cacheImageAsset: ClipboardImageAssetCache
+    private let cacheRichTextAsset: ClipboardRichTextAssetCache
     private let cacheFileSnapshot: ClipboardFileSnapshotCache
     private let linkDetector: ClipboardLinkDetector
 
     public init(
         captureText: @escaping ClipboardTextCapturePerformer,
+        captureRichText: @escaping ClipboardRichTextCapturePerformer = { _ in
+            .failure(ClipboardCaptureCoordinator.unavailableRichTextError())
+        },
         captureImage: @escaping ClipboardImageCapturePerformer,
         capturePendingImage: @escaping ClipboardPendingImageCapturePerformer = { _ in
             .failure(ClipboardCaptureCoordinator.unavailablePendingImageError())
@@ -302,10 +337,12 @@ public final class ClipboardCaptureCoordinator {
         captureFiles: @escaping ClipboardFilesCapturePerformer,
         cacheIcon: @escaping ClipboardSourceIconCache,
         cacheImageAsset: @escaping ClipboardImageAssetCache,
+        cacheRichTextAsset: @escaping ClipboardRichTextAssetCache = { _, _ in nil },
         cacheFileSnapshot: @escaping ClipboardFileSnapshotCache,
         linkDetector: ClipboardLinkDetector = ClipboardLinkDetector()
     ) {
         self.captureText = captureText
+        self.captureRichTextRequest = captureRichText
         self.captureImage = captureImage
         self.capturePendingImageRequest = capturePendingImage
         self.completePendingImagePayloadRequest = completePendingImagePayload
@@ -313,12 +350,14 @@ public final class ClipboardCaptureCoordinator {
         self.captureFiles = captureFiles
         self.cacheIcon = cacheIcon
         self.cacheImageAsset = cacheImageAsset
+        self.cacheRichTextAsset = cacheRichTextAsset
         self.cacheFileSnapshot = cacheFileSnapshot
         self.linkDetector = linkDetector
     }
 
     public func captureText(
         _ text: String,
+        displayRichText: ClipboardCapturedRichText? = nil,
         changeCount: Int,
         preferences: RustPreferencesDocument,
         source: ClipboardCaptureSource?
@@ -336,9 +375,15 @@ public final class ClipboardCaptureCoordinator {
                 metadataState: "pending"
             )
         }
+        let storedDisplayRTF = displayRichText.flatMap { richText in
+            cacheRichTextAsset(richText, changeCount)
+        }
         let request = RustCaptureTextRequest(
             text: text,
             detectedLink: detectedLink,
+            displayRTFRelativePath: storedDisplayRTF?.rtfRelativePath,
+            displayRTFMimeType: storedDisplayRTF?.mimeType,
+            displayRTFByteCount: Int64(storedDisplayRTF?.byteCount ?? 0),
             sourceBundleId: source?.bundleId,
             sourceAppName: source?.appName,
             sourceBundlePath: source?.bundlePath,
@@ -348,6 +393,56 @@ public final class ClipboardCaptureCoordinator {
         )
 
         switch captureText(request) {
+        case .success:
+            return ClipboardCaptureHandlingResult(
+                statusText: nil,
+                shouldRefreshList: true,
+                storageError: nil
+            )
+
+        case .failure(let error):
+            return ClipboardCaptureHandlingResult(
+                statusText: "捕获：\(error.code)",
+                shouldRefreshList: false,
+                storageError: error
+            )
+        }
+    }
+
+    public func captureRichText(
+        _ richText: ClipboardCapturedRichText,
+        changeCount: Int,
+        preferences: RustPreferencesDocument,
+        source: ClipboardCaptureSource?
+    ) -> ClipboardCaptureHandlingResult {
+        if let skipResult = skipResult(for: source, preferences: preferences) {
+            return skipResult
+        }
+
+        guard let storedAsset = cacheRichTextAsset(richText, changeCount) else {
+            return captureText(
+                richText.text,
+                changeCount: changeCount,
+                preferences: preferences,
+                source: source
+            )
+        }
+
+        let request = RustCaptureRichTextRequest(
+            text: richText.text,
+            rtfRelativePath: storedAsset.rtfRelativePath,
+            mimeType: storedAsset.mimeType,
+            byteCount: Int64(storedAsset.byteCount),
+            contentHash: nil,
+            sourceBundleId: source?.bundleId,
+            sourceAppName: source?.appName,
+            sourceBundlePath: source?.bundlePath,
+            sourceIconRelativePath: cacheIcon(source),
+            sourceConfidence: source == nil ? "unknown" : "high",
+            pasteboardChangeCount: Int64(changeCount)
+        )
+
+        switch captureRichTextRequest(request) {
         case .success:
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
@@ -617,6 +712,15 @@ public final class ClipboardCaptureCoordinator {
     }
 
     public static func unavailablePendingImageError() -> RustCoreError {
+        RustCoreError(
+            code: "unavailable",
+            messageKey: "clipboard.error.unavailable",
+            recoverable: true,
+            message: "clipboard.error.unavailable"
+        )
+    }
+
+    public static func unavailableRichTextError() -> RustCoreError {
         RustCoreError(
             code: "unavailable",
             messageKey: "clipboard.error.unavailable",

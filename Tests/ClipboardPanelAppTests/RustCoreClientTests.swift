@@ -989,6 +989,85 @@ struct RustCoreClientTests {
         )
 
         #expect(payload == .text("ClipDock payload text\nsecond line"))
+        #expect(ClipboardPastePayloadPlanner.plainTextPayload(for: item) == .text("ClipDock payload text\nsecond line"))
+    }
+
+    @Test
+    func plansRichTextPastePayloadFromRTFAssetWithPlainFallback() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let richDirectory = tempDirectory
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: richDirectory, withIntermediateDirectories: true)
+        let rtfURL = richDirectory.appendingPathComponent("payload.rtf")
+        let rtfData = Data(#"{\rtf1\ansi\b Rich payload\b0}"#.utf8)
+        try rtfData.write(to: rtfURL)
+        let client = RustCoreClient()
+
+        _ = try client.captureRichText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureRichTextRequest(
+                text: "Rich payload",
+                rtfRelativePath: "assets/rich-text/payload.rtf",
+                byteCount: Int64(rtfData.count),
+                sourceBundleId: "com.apple.TextEdit",
+                sourceAppName: "TextEdit",
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 13
+            )
+        ).get()
+        let item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .richText(rtfURL: rtfURL, fallbackText: "Rich payload"))
+        #expect(ClipboardPastePayloadPlanner.plainTextPayload(for: item) == .text("Rich payload"))
+        #expect(item.previewAssetPath?.hasSuffix("assets/rich-text/payload.rtf") == true)
+        #expect(item.payloadAssetPath?.hasSuffix("assets/rich-text/payload.rtf") == true)
+    }
+
+    @Test
+    func plansRichTextPastePayloadAsStringFallbackWhenRTFAssetMissing() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let richDirectory = tempDirectory
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: richDirectory, withIntermediateDirectories: true)
+        let rtfURL = richDirectory.appendingPathComponent("missing.rtf")
+        let rtfData = Data(#"{\rtf1\ansi\b Missing later\b0}"#.utf8)
+        try rtfData.write(to: rtfURL)
+        let client = RustCoreClient()
+
+        _ = try client.captureRichText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureRichTextRequest(
+                text: "Missing later",
+                rtfRelativePath: "assets/rich-text/missing.rtf",
+                byteCount: Int64(rtfData.count),
+                sourceBundleId: nil,
+                sourceAppName: nil,
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "unknown",
+                pasteboardChangeCount: 14
+            )
+        ).get()
+        try FileManager.default.removeItem(at: rtfURL)
+        let item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .richText(rtfURL: nil, fallbackText: "Missing later"))
     }
 
     @Test
@@ -1104,6 +1183,47 @@ struct RustCoreClientTests {
         #expect(preview.itemType == "text")
         #expect(preview.sourceAppName == "TextEdit")
         #expect(preview.body.contains("Preview body second line"))
+        #expect(preview.imageURL == nil)
+    }
+
+    @Test
+    func plansRichTextPreviewContentWithLazyRTFURLAndPlainBody() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let richDirectory = tempDirectory
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: richDirectory, withIntermediateDirectories: true)
+        let rtfURL = richDirectory.appendingPathComponent("preview.rtf")
+        let rtfData = Data(#"{\rtf1\ansi\b Preview rich\b0}"#.utf8)
+        try rtfData.write(to: rtfURL)
+        let client = RustCoreClient()
+
+        _ = try client.captureRichText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureRichTextRequest(
+                text: "Preview rich",
+                rtfRelativePath: "assets/rich-text/preview.rtf",
+                byteCount: Int64(rtfData.count),
+                sourceBundleId: "com.apple.TextEdit",
+                sourceAppName: "TextEdit",
+                sourceBundlePath: nil,
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 15
+            )
+        ).get()
+        let item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+
+        let preview = ClipboardPreviewContentPlanner.preview(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(preview.itemType == "rich_text")
+        #expect(preview.subtitle == "富文本")
+        #expect(preview.body == "Preview rich")
+        #expect(preview.richTextURL == rtfURL)
         #expect(preview.imageURL == nil)
     }
 

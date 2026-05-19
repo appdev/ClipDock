@@ -100,6 +100,333 @@ struct ClipboardMonitoringTests {
 
     @Test
     @MainActor
+    func rtfOnlyRichContentRemainsRichText() throws {
+        let rtfData = Data(#"{\rtf1\ansi{\fonttbl\f0 Helvetica;}\f0\b Bold rich text\b0}"#.utf8)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setData(rtfData, forType: .rtf)
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .richText(let richText) = snapshot else {
+            Issue.record("RTF with non-default rich attributes should capture as rich text")
+            return
+        }
+
+        #expect(richText.text == "Bold rich text")
+        #expect(richText.rtfData == rtfData)
+    }
+
+    @Test
+    @MainActor
+    func plainBeforeRTFMatchingCapturesTextWithDisplayRichText() throws {
+        let text = "Plain-first styled text"
+        let rtfData = try makeRTFData(text, attributes: [
+            .font: NSFont.boldSystemFont(ofSize: 14),
+            .foregroundColor: NSColor.systemPurple
+        ])
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        _ = pasteboard.declareTypes([.string, .rtf], owner: nil)
+        #expect(pasteboard.setString(text, forType: .string))
+        #expect(pasteboard.setData(rtfData, forType: .rtf))
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let capturedText, let displayRichText) = snapshot else {
+            Issue.record("Plain text declared before matching RTF should stay text with a display RTF snapshot")
+            return
+        }
+
+        #expect(capturedText == text)
+        #expect(displayRichText?.text == text)
+        #expect(displayRichText?.rtfData == rtfData)
+    }
+
+    @Test
+    @MainActor
+    func rtfBeforePlainMatchingCapturesRichText() throws {
+        let text = "RTF-first styled text"
+        let rtfData = try makeRTFData(text, attributes: [
+            .font: NSFont.boldSystemFont(ofSize: 14),
+            .foregroundColor: NSColor.systemPurple
+        ])
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        _ = pasteboard.declareTypes([.rtf, .string], owner: nil)
+        #expect(pasteboard.setData(rtfData, forType: .rtf))
+        #expect(pasteboard.setString(text, forType: .string))
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .richText(let richText) = snapshot else {
+            Issue.record("RTF declared before matching plain text should remain rich text")
+            return
+        }
+
+        #expect(richText.text == text)
+        #expect(richText.rtfData == rtfData)
+    }
+
+    @Test
+    @MainActor
+    func htmlTextConvertsToFlatRTFWhenNoImageOrFileEvidenceExists() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setString(
+            #"<p>Hello <span style="font-weight: 700; color: #c00000">rich</span> text</p>"#,
+            forType: .html
+        )
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .richText(let richText) = snapshot else {
+            Issue.record("Semantic textual HTML should convert to flat RTF rich text")
+            return
+        }
+
+        #expect(richText.text == "Hello rich text")
+        #expect(richText.rtfData.count > 0)
+        #expect(NSAttributedString(
+            rtf: richText.rtfData,
+            documentAttributes: nil
+        )?.string.trimmingCharacters(in: .whitespacesAndNewlines) == "Hello rich text")
+    }
+
+    @Test
+    @MainActor
+    func codexCodePresentationHTMLFallsBackToPlainTextLikePaste() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setString(
+            """
+            <article class="markdown prose">
+                <p><code style="background: #fff8df; color: #5f6b73; font-family: ui-monospace;">text</code>
+                捕获新增可选
+                <code style="background: #fff8df; color: #5f6b73; font-family: ui-monospace;">displayRTF</code>，</p>
+                <p>分类、搜索、普通粘贴仍走纯文本。</p>
+                <p>Rust 存储把
+                <code style="background-color: #fff8df; color: #5f6b73;">text</code>
+                的 RTF 展示快照作为
+                <code style="background-color: #fff8df; color: #5f6b73;">preview_asset_path</code>
+                暴露，不作为
+                <code style="background-color: #fff8df; color: #5f6b73;">payload_asset_path</code>。</p>
+                <pre style="background: #f8f8f8;"><code>rich_text 仍保留原来的 RTF payload 逻辑。</code></pre>
+            </article>
+            """,
+            forType: .html
+        )
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let text, let displayRichText) = snapshot else {
+            Issue.record("Codex-style code presentation HTML should remain a plain text item")
+            return
+        }
+
+        #expect(text.contains("text"))
+        #expect(text.contains("displayRTF"))
+        #expect(text.contains("preview_asset_path"))
+        #expect(text.contains("payload_asset_path"))
+        #expect(displayRichText == nil)
+    }
+
+    @Test
+    @MainActor
+    func plainStringWinsOverRTFStylesLikePasteTextItems() throws {
+        let plainText = """
+        对，你这个截图把证据补齐了。我修正前面的判断：
+
+        Paste 的这个背景色很大概率来自复制源携带的 RTF/HTML 样式，
+        不是 Paste 自己的统一卡片背景。
+        """
+        let rtfData = try makeRTFData(plainText, attributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: NSColor.white,
+            .backgroundColor: NSColor.darkGray
+        ])
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setString(plainText, forType: .string)
+        pasteboard.setData(rtfData, forType: .rtf)
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let text, let displayRichText) = snapshot else {
+            Issue.record("Paste-like text items should keep text classification when .string is present")
+            return
+        }
+
+        #expect(text == plainText)
+        #expect(displayRichText?.text == plainText)
+        #expect(displayRichText?.rtfData == rtfData)
+    }
+
+    @Test
+    @MainActor
+    func styledCodeSnippetWithPlainStringStaysTextLikePaste() throws {
+        let code = """
+        UgAdaptiveDialog(
+            modifier =
+                ugAdaptiveDialogModifier,
+            visible =
+                isShowScanDeviceDialog,
+            phoneDecorFit = false,
+            dismissOnSwipeDown = false
+        )
+        """
+        let attributed = NSMutableAttributedString(
+            string: code,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+                .foregroundColor: NSColor.textColor,
+                .backgroundColor: NSColor.textBackgroundColor
+            ]
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemGreen,
+            range: (code as NSString).range(of: "UgAdaptiveDialog")
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemBlue,
+            range: (code as NSString).range(of: "modifier")
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemBlue,
+            range: (code as NSString).range(of: "visible")
+        )
+
+        let rtfData = try attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setString(code, forType: .string)
+        pasteboard.setData(rtfData, forType: .rtf)
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let text, let displayRichText) = snapshot else {
+            Issue.record("Styled source-code pasteboard data should remain a text item when .string is present")
+            return
+        }
+
+        #expect(text == code)
+        #expect(displayRichText?.text == code)
+        #expect(displayRichText?.rtfData == rtfData)
+    }
+
+    @Test
+    @MainActor
+    func structuralHTMLListFallsBackToPlainTextLikePaste() throws {
+        let plainText = """
+        富文本 rich_text
+
+        粗体、斜体、下划线、删除线
+        前景色、背景色、高亮色
+        多字号、多字体、标题样式
+        """
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setString(
+            """
+            <article>
+                <p><span>富文本 <code>rich_text</code></span></p>
+                <ul>
+                    <li>粗体、斜体、下划线、删除线</li>
+                    <li>前景色、背景色、高亮色</li>
+                    <li>多字号、多字体、标题样式</li>
+                </ul>
+            </article>
+            """,
+            forType: .html
+        )
+        pasteboard.setString(plainText, forType: .string)
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let text, let displayRichText) = snapshot else {
+            Issue.record("Structural HTML from rendered Markdown should remain plain text")
+            return
+        }
+
+        #expect(text == plainText)
+        #expect(displayRichText == nil)
+    }
+
+    @Test
+    @MainActor
+    func htmlBackedRTFWithOnlyLightMarkupFallsBackToPlainText() throws {
+        let plainText = """
+        富文本 rich_text
+
+        粗体、斜体、下划线、删除线
+        """
+        let rtfData = Data(#"{\rtf1\ansi\b 富文本 rich_text\b0\par \bullet\tab 粗体、斜体、下划线、删除线}"#.utf8)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setData(rtfData, forType: .rtf)
+        pasteboard.setString(
+            """
+            <p><strong>富文本 <code>rich_text</code></strong></p>
+            <ul><li>粗体、斜体、下划线、删除线</li></ul>
+            """,
+            forType: .html
+        )
+        pasteboard.setString(plainText, forType: .string)
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let text, let displayRichText) = snapshot else {
+            Issue.record("HTML-backed RTF with only a single light markup signal should remain text")
+            return
+        }
+
+        #expect(text == plainText)
+        #expect(displayRichText == nil)
+    }
+
+    @Test
+    @MainActor
+    func imageWithImageOnlyHTMLMetadataRemainsImage() throws {
+        let pngData = try makePNGData(width: 32, height: 20)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        pasteboard.setData(pngData, forType: .png)
+        pasteboard.setString(#"<html><body><img src="https://example.com/a.png" alt="logo"></body></html>"#, forType: .html)
+        pasteboard.setString("logo", forType: .string)
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .image = snapshot else {
+            Issue.record("Bitmap evidence plus image-only HTML metadata should remain image")
+            return
+        }
+    }
+
+    @Test
+    @MainActor
+    func fileEvidenceWinsOverRTF() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("notes.rtf")
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "file".write(to: fileURL, atomically: true, encoding: .utf8)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        #expect(pasteboard.writeObjects([fileURL as NSURL]))
+        pasteboard.setData(try makeRTFData("Inline rich", attributes: [
+            .font: NSFont.boldSystemFont(ofSize: 14)
+        ]), forType: .rtf)
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .files(let files) = snapshot else {
+            Issue.record("File URLs should win over inline RTF evidence")
+            return
+        }
+
+        #expect(files.paths == [fileURL.standardizedFileURL.path])
+    }
+
+    @Test
+    @MainActor
     func nsImageFallbackCreatesImmutableCGImageSnapshot() throws {
         let image = NSImage(size: NSSize(width: 18, height: 12))
         image.lockFocus()
@@ -326,4 +653,15 @@ private func makePNGData(width: Int, height: Int) throws -> Data {
     NSGraphicsContext.restoreGraphicsState()
 
     return try #require(bitmap.representation(using: .png, properties: [:]))
+}
+
+private func makeRTFData(
+    _ text: String,
+    attributes: [NSAttributedString.Key: Any]
+) throws -> Data {
+    let attributed = NSAttributedString(string: text, attributes: attributes)
+    return try attributed.data(
+        from: NSRange(location: 0, length: attributed.length),
+        documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+    )
 }
