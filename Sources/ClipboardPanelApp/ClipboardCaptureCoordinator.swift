@@ -410,7 +410,7 @@ public final class ClipboardCaptureCoordinator {
 
         case .failure(let error):
             return ClipboardCaptureHandlingResult(
-                statusText: "捕获：\(error.code)",
+                statusText: AppLocalization.format("capture.status.error", defaultValue: "捕获：%@", error.code),
                 shouldRefreshList: false,
                 storageError: error
             )
@@ -460,7 +460,7 @@ public final class ClipboardCaptureCoordinator {
 
         case .failure(let error):
             return ClipboardCaptureHandlingResult(
-                statusText: "捕获：\(error.code)",
+                statusText: AppLocalization.format("capture.status.error", defaultValue: "捕获：%@", error.code),
                 shouldRefreshList: false,
                 storageError: error
             )
@@ -479,7 +479,7 @@ public final class ClipboardCaptureCoordinator {
 
         guard let storedImage = cacheImageAsset(image, changeCount) else {
             return ClipboardCaptureHandlingResult(
-                statusText: "捕获：图片资产写入失败",
+                statusText: AppLocalization.text("capture.status.imageAssetWriteFailed", defaultValue: "捕获：图片资产写入失败"),
                 shouldRefreshList: false,
                 storageError: nil
             )
@@ -510,7 +510,7 @@ public final class ClipboardCaptureCoordinator {
 
         case .failure(let error):
             return ClipboardCaptureHandlingResult(
-                statusText: "捕获：\(error.code)",
+                statusText: AppLocalization.format("capture.status.error", defaultValue: "捕获：%@", error.code),
                 shouldRefreshList: false,
                 storageError: error
             )
@@ -552,7 +552,7 @@ public final class ClipboardCaptureCoordinator {
 
         case .failure(let error):
             return ClipboardCaptureHandlingResult(
-                statusText: "捕获：\(error.code)",
+                statusText: AppLocalization.format("capture.status.error", defaultValue: "捕获：%@", error.code),
                 shouldRefreshList: false,
                 storageError: error
             )
@@ -654,7 +654,7 @@ public final class ClipboardCaptureCoordinator {
 
         case .failure(let error):
             return ClipboardCaptureHandlingResult(
-                statusText: "捕获：\(error.code)",
+                statusText: AppLocalization.format("capture.status.error", defaultValue: "捕获：%@", error.code),
                 shouldRefreshList: false,
                 storageError: error
             )
@@ -700,22 +700,22 @@ public final class ClipboardCaptureCoordinator {
     ) -> String {
         switch decision.reason {
         case .unknownSource:
-            return "捕获：已跳过未知来源"
+            return AppLocalization.text("capture.status.skippedUnknownSource", defaultValue: "捕获：已跳过未知来源")
 
         case .sourceApplication:
             if let matchedRule = decision.matchedRule, !matchedRule.isEmpty {
-                return "捕获：已忽略 \(matchedRule)"
+                return AppLocalization.format("capture.status.ignoredRule", defaultValue: "捕获：已忽略 %@", matchedRule)
             }
-            return "捕获：已按应用规则跳过"
+            return AppLocalization.text("capture.status.skippedApplicationRule", defaultValue: "捕获：已按应用规则跳过")
 
         case .windowTitle:
             if let matchedRule = decision.matchedRule, !matchedRule.isEmpty {
-                return "捕获：标题命中 \(matchedRule)"
+                return AppLocalization.format("capture.status.matchedWindowTitle", defaultValue: "捕获：标题命中 %@", matchedRule)
             }
-            return "捕获：已按标题规则跳过"
+            return AppLocalization.text("capture.status.skippedWindowTitleRule", defaultValue: "捕获：已按标题规则跳过")
 
         case nil:
-            return "捕获：已按忽略规则跳过"
+            return AppLocalization.text("capture.status.skippedIgnoreRule", defaultValue: "捕获：已按忽略规则跳过")
         }
     }
 

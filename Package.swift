@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "ClipDock",
+    defaultLocalization: "zh-Hans",
     platforms: [
         .macOS(.v13)
     ],
@@ -26,7 +27,10 @@ let package = Package(
             dependencies: [
                 .product(name: "ClipboardCoreBridge", package: "ClipboardCoreBridge")
             ],
-            path: "Sources/ClipboardPanelApp"
+            path: "Sources/ClipboardPanelApp",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .executableTarget(
             name: "ClipDock",

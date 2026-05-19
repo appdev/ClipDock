@@ -402,7 +402,7 @@ public final class ClipboardListCoordinator {
                 self.refreshAfterMutationIfNeeded(mutation)
 
             case .failure(let error):
-                self.onStatusTextChanged?("条目：\(error.code)")
+                self.onStatusTextChanged?(AppLocalization.format("item.status.error", defaultValue: "条目：%@", error.code))
             }
         }
     }
@@ -429,7 +429,7 @@ public final class ClipboardListCoordinator {
             totalCount: totalCount,
             hasMore: true
         )
-        onStatusTextChanged?("存储：已连接（\(totalCount) 条）")
+        onStatusTextChanged?(AppLocalization.format("storage.status.connected", defaultValue: "存储：已连接（%lld 条）", totalCount))
         onListUpdate?(ClipboardListUpdate(
             scope: .clipboard,
             result: .success(firstResult),
@@ -612,7 +612,7 @@ public final class ClipboardListCoordinator {
         let updateScope = scope ?? makeQuery(limit: pageSize, offset: 0).scope
         switch result {
         case .success(let list):
-            onStatusTextChanged?("存储：已连接（\(list.totalCount) 条）")
+            onStatusTextChanged?(AppLocalization.format("storage.status.connected", defaultValue: "存储：已连接（%lld 条）", list.totalCount))
             loadedItemCountStorage = append
                 ? loadedItemCountStorage + Int64(list.items.count)
                 : Int64(list.items.count)
@@ -627,7 +627,7 @@ public final class ClipboardListCoordinator {
 
         case .failure(let error):
             setLoadingMore(false)
-            onStatusTextChanged?("查询：\(error.code)")
+            onStatusTextChanged?(AppLocalization.format("query.status.error", defaultValue: "查询：%@", error.code))
             onListUpdate?(ClipboardListUpdate(
                 scope: updateScope,
                 result: .failure(error),
@@ -649,22 +649,30 @@ public final class ClipboardListCoordinator {
         switch mutation {
         case .setPinboardMembership(_, _, let isMember):
             return result.affectedCount > 0
-                ? (isMember ? "Pinboard：已加入" : "Pinboard：已移除")
-                : "条目：未找到"
+                ? (isMember
+                   ? AppLocalization.text("pinboard.status.joined", defaultValue: "Pinboard：已加入")
+                   : AppLocalization.text("pinboard.status.removed", defaultValue: "Pinboard：已移除"))
+                : AppLocalization.text("item.status.notFound", defaultValue: "条目：未找到")
 
         case .delete(_, let pinboardID):
             if pinboardID != nil {
-                return result.affectedCount > 0 ? "Pinboard：已移除" : "条目：未找到"
+                return result.affectedCount > 0
+                    ? AppLocalization.text("pinboard.status.removed", defaultValue: "Pinboard：已移除")
+                    : AppLocalization.text("item.status.notFound", defaultValue: "条目：未找到")
             }
-            return result.affectedCount > 0 ? "条目：已删除" : "条目：未找到"
+            return result.affectedCount > 0
+                ? AppLocalization.text("item.status.deleted", defaultValue: "条目：已删除")
+                : AppLocalization.text("item.status.notFound", defaultValue: "条目：未找到")
 
         case .recordCopied:
-            return result.affectedCount > 0 ? "复制：已更新最近时间" : "条目：未找到"
+            return result.affectedCount > 0
+                ? AppLocalization.text("copy.status.recentTimeUpdated", defaultValue: "复制：已更新最近时间")
+                : AppLocalization.text("item.status.notFound", defaultValue: "条目：未找到")
 
         case .clear:
             return result.affectedCount > 0
-                ? "条目：已清理 \(result.affectedCount) 条"
-                : "条目：没有可清理条目"
+                ? AppLocalization.format("item.status.cleared", defaultValue: "条目：已清理 %lld 条", result.affectedCount)
+                : AppLocalization.text("item.status.noItemsToClear", defaultValue: "条目：没有可清理条目")
         }
     }
 }

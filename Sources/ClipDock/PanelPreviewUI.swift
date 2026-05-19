@@ -477,7 +477,7 @@ private final class ClipboardPreviewViewController: NSViewController {
         closeButton.onPress = { [weak self] in
             self?.onClose?()
         }
-        closeButton.toolTip = "关闭预览"
+        closeButton.toolTip = AppLocalization.text("preview.close", defaultValue: "关闭预览")
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
         let titleLabel = NSTextField(labelWithString: displayTypeTitle())
@@ -924,17 +924,17 @@ private final class ClipboardPreviewViewController: NSViewController {
     private func displayTypeTitle() -> String {
         switch content.itemType {
         case "link":
-            return "链接"
+            return AppLocalization.itemTypeTitle("link")
         case "image":
-            return "图片"
+            return AppLocalization.itemTypeTitle("image")
         case "file":
-            return "文件"
+            return AppLocalization.itemTypeTitle("file")
         case "color":
-            return "颜色"
+            return AppLocalization.itemTypeTitle("color")
         case "rich_text":
-            return "富文本"
+            return AppLocalization.itemTypeTitle("rich_text")
         default:
-            return "文本"
+            return AppLocalization.itemTypeTitle("text")
         }
     }
 
@@ -947,7 +947,10 @@ private final class ClipboardPreviewViewController: NSViewController {
 
         if content.itemType == "file", !content.fileURLs.isEmpty {
             if content.fileURLs.count > 1 {
-                return ["\(content.fileURLs.count) 个文件", content.fileURLs[0].path]
+                return [
+                    AppLocalization.format("preview.fileCount", defaultValue: "%lld 个文件", Int64(content.fileURLs.count)),
+                    content.fileURLs[0].path
+                ]
             }
             return [content.fileURLs[0].path]
         }
@@ -964,8 +967,8 @@ private final class ClipboardPreviewViewController: NSViewController {
             let characterCount = text.count
             let lineCount = text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count
             return [
-                "\(Self.decimalString(characterCount)) 个字符",
-                "\(Self.decimalString(lineCount)) 行"
+                AppLocalization.format("preview.characterCount", defaultValue: "%@ 个字符", Self.decimalString(characterCount)),
+                AppLocalization.format("preview.lineCount", defaultValue: "%@ 行", Self.decimalString(lineCount))
             ]
         }
 
@@ -1538,7 +1541,7 @@ private final class PreviewImageDocumentView: NSView {
             .font: NSFont.systemFont(ofSize: 14, weight: .medium),
             .foregroundColor: NSColor.secondaryLabelColor
         ]
-        let text = NSString(string: "预览不可用")
+        let text = NSString(string: AppLocalization.text("preview.unavailable", defaultValue: "预览不可用"))
         let size = text.size(withAttributes: attributes)
         text.draw(
             at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),

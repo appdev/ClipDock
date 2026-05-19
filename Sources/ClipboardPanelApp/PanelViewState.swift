@@ -51,8 +51,8 @@ public enum PanelViewStateAdapter {
     ) -> PanelViewState {
         let hasSearch = !scene.query.searchText.isEmpty
         let clearActionTitle = (scene.query.itemType != nil || scene.query.pinboardID != nil || hasSearch)
-            ? "清空当前结果"
-            : "清空历史"
+            ? AppLocalization.text("toolbar.clearCurrentResults", defaultValue: "清空当前结果")
+            : AppLocalization.text("toolbar.clearHistory", defaultValue: "清空历史")
 
         return PanelViewState(
             toolbar: PanelToolbarViewState(

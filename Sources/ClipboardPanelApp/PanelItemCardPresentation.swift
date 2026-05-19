@@ -73,7 +73,9 @@ public enum PanelItemCardPresenter {
     public static func contentFootnote(for summary: String) -> String {
         let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let count = trimmed.count
-        return count > 0 ? "\(count) 个字符" : ""
+        return count > 0
+            ? AppLocalization.format("item.footnote.characters", defaultValue: "%lld 个字符", Int64(count))
+            : ""
     }
 
     private static func symbolName(forItemType itemType: String) -> String {
@@ -94,23 +96,7 @@ public enum PanelItemCardPresenter {
     }
 
     private static func displayType(for item: RustClipboardItemSummary) -> String {
-        let baseType: String
-        switch item.itemType {
-        case "link":
-            baseType = "链接"
-        case "image":
-            baseType = "图片"
-        case "file":
-            baseType = "文件"
-        case "color":
-            baseType = "颜色"
-        case "rich_text":
-            baseType = "富文本"
-        default:
-            baseType = "文本"
-        }
-
-        return baseType
+        AppLocalization.itemTypeTitle(item.itemType)
     }
 
     private static func summaryText(
@@ -170,7 +156,9 @@ public enum PanelItemCardPresenter {
         case "file":
             return fileMetadata.detail
         case "color":
-            return colorValue == nil ? "颜色格式不可用" : ""
+            return colorValue == nil
+                ? AppLocalization.text("color.format.unavailable", defaultValue: "颜色格式不可用")
+                : ""
         default:
             return contentFootnote(for: item.primaryText ?? item.summary)
         }
@@ -195,7 +183,9 @@ public enum PanelItemCardPresenter {
 
     private static func linkPresentation(for item: RustClipboardItemSummary) -> (host: String, detail: String, title: String?) {
         if let metadata = item.linkMetadata {
-            let host = metadata.host.isEmpty ? "网页链接" : metadata.host
+            let host = metadata.host.isEmpty
+                ? AppLocalization.text("link.webpage", defaultValue: "网页链接")
+                : metadata.host
             let detail = metadata.displayURL.isEmpty ? metadata.canonicalURL : metadata.displayURL
             return (
                 host: host,
@@ -211,8 +201,8 @@ public enum PanelItemCardPresenter {
         let detail = url.flatMap(LinkDisplayURLFormatter.displayURL(from:))
 
         return (
-            host: host.isEmpty ? "网页链接" : host,
-            detail: detail ?? (rawText.isEmpty ? "网页链接" : rawText),
+            host: host.isEmpty ? AppLocalization.text("link.webpage", defaultValue: "网页链接") : host,
+            detail: detail ?? (rawText.isEmpty ? AppLocalization.text("link.webpage", defaultValue: "网页链接") : rawText),
             title: nil
         )
     }
@@ -231,7 +221,7 @@ public enum PanelItemCardPresenter {
         guard !trimmed.isEmpty,
               let displayURL = LinkDisplayURLFormatter.displayURL(from: trimmed)
         else {
-            return trimmed.isEmpty ? "网页链接" : trimmed
+            return trimmed.isEmpty ? AppLocalization.text("link.webpage", defaultValue: "网页链接") : trimmed
         }
         return displayURL
     }
@@ -240,8 +230,9 @@ public enum PanelItemCardPresenter {
         let summary = item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let primaryPathText = item.primaryText?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !summary.isEmpty else {
-            let detail = nonEmptyText(primaryPathText) ?? "本地文件路径"
-            return ("文件", detail)
+            let detail = nonEmptyText(primaryPathText)
+                ?? AppLocalization.text("file.localPath", defaultValue: "本地文件路径")
+            return (AppLocalization.itemTypeTitle("file"), detail)
         }
 
         if let separatorRange = summary.range(of: " · ") {
@@ -253,10 +244,11 @@ public enum PanelItemCardPresenter {
             if isPathLikeText(detail) {
                 return (title, detail)
             }
-            return (title, "本地文件路径")
+            return (title, AppLocalization.text("file.localPath", defaultValue: "本地文件路径"))
         }
 
-        let detail = nonEmptyText(primaryPathText) ?? (isPathLikeText(summary) ? summary : "本地文件路径")
+        let detail = nonEmptyText(primaryPathText)
+            ?? (isPathLikeText(summary) ? summary : AppLocalization.text("file.localPath", defaultValue: "本地文件路径"))
         return (summary, detail)
     }
 

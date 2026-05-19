@@ -133,7 +133,7 @@ public final class PreferencesCoordinator {
                 preferences: result.preferences,
                 launchAtLoginState: reconciliation.launchAtLoginState,
                 accessibilityPermissionState: currentAccessibilityPermissionState(),
-                statusText: reconciliation.statusText ?? "偏好：已保存",
+                statusText: reconciliation.statusText ?? AppLocalization.text("preferences.saved", defaultValue: "偏好：已保存"),
                 shouldRefreshList: true
             ))
 
@@ -159,10 +159,10 @@ public final class PreferencesCoordinator {
         let statusText: String
 
         if currentState.isTrusted {
-            statusText = "权限：辅助功能已允许"
+            statusText = AppLocalization.text("accessibility.status.trusted", defaultValue: "权限：辅助功能已允许")
         } else {
             openAccessibilitySettings()
-            statusText = "权限：请在辅助功能中允许 ClipDock"
+            statusText = AppLocalization.text("accessibility.status.requestPermission", defaultValue: "权限：请在辅助功能中允许 ClipDock")
         }
 
         return PreferencesAccessibilityActionResult(
@@ -185,25 +185,25 @@ public final class PreferencesCoordinator {
         guard applyRequestedChange else {
             resolvedPreferences.general.launchAtLogin = currentState.isOn
             if preferences.general.launchAtLogin != currentState.isOn {
-                return (resolvedPreferences, currentState, "登录项：\(currentState.detail)")
+                return (resolvedPreferences, currentState, AppLocalization.format("launchAtLogin.statusFormat", defaultValue: "登录项：%@", currentState.detail))
             }
             return (resolvedPreferences, currentState, nil)
         }
 
         guard currentState.canChange else {
             resolvedPreferences.general.launchAtLogin = currentState.isOn
-            return (resolvedPreferences, currentState, "登录项：\(currentState.detail)")
+            return (resolvedPreferences, currentState, AppLocalization.format("launchAtLogin.statusFormat", defaultValue: "登录项：%@", currentState.detail))
         }
 
         switch setLaunchAtLoginEnabled(preferences.general.launchAtLogin) {
         case .success(let state):
             resolvedPreferences.general.launchAtLogin = state.isOn
-            return (resolvedPreferences, state, "登录项：\(state.detail)")
+            return (resolvedPreferences, state, AppLocalization.format("launchAtLogin.statusFormat", defaultValue: "登录项：%@", state.detail))
 
         case .failure(let error):
             let fallbackState = currentLaunchAtLoginState()
             resolvedPreferences.general.launchAtLogin = fallbackState.isOn
-            return (resolvedPreferences, fallbackState, "登录项：\(error.localizedDescription)")
+            return (resolvedPreferences, fallbackState, AppLocalization.format("launchAtLogin.statusFormat", defaultValue: "登录项：%@", error.localizedDescription))
         }
     }
 }

@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
     private var registeredOpenPanelShortcut: RustKeyboardShortcut?
-    private var storageStatusText = "存储：未初始化"
+    private var storageStatusText = AppLocalization.text("storage.status.uninitialized", defaultValue: "存储：未初始化")
     private var appSupportURL: URL?
     private var iconProvider: SourceAppIconProvider?
     private var imageAssetProvider: ClipboardImageAssetProvider?
@@ -555,7 +555,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isMember: Bool
     ) {
         guard listCoordinator != nil else {
-            updateStorageStatus("条目：存储未初始化")
+            updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
             return
         }
 
@@ -568,7 +568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func deleteItem(_ item: RustClipboardItemSummary, pinboardID: String?) {
         guard listCoordinator != nil else {
-            updateStorageStatus("条目：存储未初始化")
+            updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
             return
         }
 
@@ -577,7 +577,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func performItemMutation(_ mutation: ClipboardItemMutationRequest) {
         guard let listCoordinator else {
-            updateStorageStatus("条目：存储未初始化")
+            updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
             return
         }
 
@@ -586,7 +586,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func performPinboardMutation(_ mutation: ClipboardPinboardMutationRequest) {
         guard let pinboardCoordinator else {
-            updateStorageStatus("Pinboard：存储未初始化")
+            updateStorageStatus(AppLocalization.text("pinboard.status.storageUninitialized", defaultValue: "Pinboard：存储未初始化"))
             return
         }
 
@@ -595,7 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func copySelectedItemToPasteboard(_ item: RustClipboardItemSummary) {
         guard let appSupportURL else {
-            storageStatusText = "复制：存储未初始化"
+            storageStatusText = AppLocalization.text("copy.status.storageUninitialized", defaultValue: "复制：存储未初始化")
             refreshStatusText()
             return
         }
@@ -619,9 +619,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
             let didScheduleDirectPaste = pasteDirectlyToTarget && scheduleCommandVToTargetIfPermitted()
             storageStatusText = if pasteDirectlyToTarget {
-                didScheduleDirectPaste ? "复制：已发送到目标" : "复制：请在辅助功能中允许 ClipDock"
+                didScheduleDirectPaste
+                    ? AppLocalization.text("copy.status.sentToTarget", defaultValue: "复制：已发送到目标")
+                    : AppLocalization.text("copy.status.requiresAccessibility", defaultValue: "复制：请在辅助功能中允许 ClipDock")
             } else {
-                "复制：已写入剪贴板"
+                AppLocalization.text("copy.status.writtenToClipboard", defaultValue: "复制：已写入剪贴板")
             }
             refreshStatusText()
             performItemMutation(.recordCopied(itemID: item.id))
@@ -631,7 +633,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
         case .failure(let message):
-            storageStatusText = "复制：\(message)"
+            storageStatusText = AppLocalization.format("copy.status.message", defaultValue: "复制：%@", message)
             refreshStatusText()
         }
     }
@@ -649,13 +651,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 through: changeCount
             )
             showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
-            storageStatusText = "复制为纯文本：已写入剪贴板"
+            storageStatusText = AppLocalization.text("copyPlainText.status.writtenToClipboard", defaultValue: "复制为纯文本：已写入剪贴板")
             refreshStatusText()
             performItemMutation(.recordCopied(itemID: item.id))
             panelController.hide()
 
         case .failure(let message):
-            storageStatusText = "复制为纯文本：\(message)"
+            storageStatusText = AppLocalization.format("copyPlainText.status.message", defaultValue: "复制为纯文本：%@", message)
             refreshStatusText()
         }
     }
@@ -663,7 +665,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func copyPathToPasteboard(_ pathText: String) {
         let normalizedPathText = pathText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedPathText.isEmpty else {
-            storageStatusText = "复制路径：路径为空"
+            storageStatusText = AppLocalization.text("copyPath.status.emptyPath", defaultValue: "复制路径：路径为空")
             refreshStatusText()
             return
         }
@@ -679,12 +681,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 through: changeCount
             )
             showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
-            storageStatusText = "复制路径：已写入剪贴板"
+            storageStatusText = AppLocalization.text("copyPath.status.writtenToClipboard", defaultValue: "复制路径：已写入剪贴板")
             refreshStatusText()
             panelController.hide()
 
         case .failure(let message):
-            storageStatusText = "复制路径：\(message)"
+            storageStatusText = AppLocalization.format("copyPath.status.message", defaultValue: "复制路径：%@", message)
             refreshStatusText()
         }
     }
@@ -740,7 +742,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let image = NSImage(contentsOf: url)
             let tiffData = image?.tiffRepresentation
             guard sourceData != nil || tiffData != nil else {
-                return .failure(message: "图片数据无法写入")
+                return .failure(message: AppLocalization.text("copy.error.imageDataCannotWrite", defaultValue: "图片数据无法写入"))
             }
 
             pasteboard.clearContents()
@@ -759,7 +761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .fileURLs(let urls):
             guard !urls.isEmpty else {
-                return .failure(message: "文件路径为空")
+                return .failure(message: AppLocalization.text("copy.error.emptyFilePath", defaultValue: "文件路径为空"))
             }
 
             pasteboard.clearContents()
@@ -776,7 +778,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard didWrite else {
-            return .failure(message: "系统剪贴板写入失败")
+            return .failure(message: AppLocalization.text("copy.error.pasteboardWriteFailed", defaultValue: "系统剪贴板写入失败"))
         }
 
         if pasteboard.string(forType: ClipboardMonitor.selfWriteTokenPasteboardType) == nil {
@@ -811,15 +813,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func pasteUnsupportedReasonText(_ reason: String) -> String {
         switch reason {
         case "empty_text":
-            return "文本内容为空"
+            return AppLocalization.text("copy.error.emptyText", defaultValue: "文本内容为空")
         case "missing_image_asset":
-            return "图片资产不存在"
+            return AppLocalization.text("copy.error.imageAssetMissing", defaultValue: "图片资产不存在")
         case "missing_file_url":
-            return "文件路径不存在"
+            return AppLocalization.text("copy.error.filePathMissing", defaultValue: "文件路径不存在")
         case "unsupported_type":
-            return "当前类型暂不支持"
+            return AppLocalization.text("copy.error.typeUnsupported", defaultValue: "当前类型暂不支持")
         default:
-            return "当前条目暂不支持"
+            return AppLocalization.text("copy.error.itemUnsupported", defaultValue: "当前条目暂不支持")
         }
     }
 
@@ -835,7 +837,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appSupportURL = appSupportURLOverride(arguments: CommandLine.arguments) ?? defaultAppSupportURL
 
         guard let appSupportURL else {
-            storageStatusText = "存储：无法定位 Application Support"
+            storageStatusText = AppLocalization.text("storage.status.applicationSupportUnavailable", defaultValue: "存储：无法定位 Application Support")
             ClipDockPerformanceLog.finish("storage.bootstrap.failed", start: bootstrapStart, detail: "reason=missingAppSupport")
             return
         }
@@ -857,7 +859,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch openResult {
         case .success(let result):
             ClipDockPerformanceLog.event("storage.openCore.success", detail: "items=\(result.itemCount)")
-            updateStorageStatus("存储：已连接（\(result.itemCount) 条）")
+            updateStorageStatus(AppLocalization.format("storage.status.connected", defaultValue: "存储：已连接（%lld 条）", result.itemCount))
             ClipDockPerformanceLog.measure("preferences.load") {
                 loadPreferences()
             }
@@ -882,7 +884,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ClipDockPerformanceLog.finish("storage.bootstrap.finished", start: bootstrapStart, detail: "status=success")
 
         case .failure(let error):
-            updateStorageStatus("存储：\(error.code)")
+            updateStorageStatus(AppLocalization.format("storage.status.error", defaultValue: "存储：%@", error.code))
             panelController.updateStorageState(.failure(error))
             ClipDockPerformanceLog.finish("storage.bootstrap.finished", start: bootstrapStart, detail: "status=failure error=\(error.code)")
         }
@@ -895,7 +897,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .success(let result):
             return result
         case .failure(let error):
-            updateStorageStatus("维护：\(error.code)")
+            updateStorageStatus(AppLocalization.format("maintenance.status.error", defaultValue: "维护：%@", error.code))
             return nil
         }
     }
@@ -919,7 +921,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
         case .failure(let error):
-            updateStorageStatus("偏好：\(error.code)")
+            updateStorageStatus(AppLocalization.format("preferences.status.error", defaultValue: "偏好：%@", error.code))
         }
     }
 
@@ -936,7 +938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func persistPreferences(_ preferences: RustPreferencesDocument) -> RustPreferencesDocument? {
         guard let preferencesCoordinator else {
-            updateStorageStatus("偏好：存储未初始化")
+            updateStorageStatus(AppLocalization.text("preferences.status.storageUninitialized", defaultValue: "偏好：存储未初始化"))
             return nil
         }
 
@@ -946,11 +948,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if result.shouldRefreshList {
                 refreshClipboardList()
             }
-            updateStorageStatus(result.statusText ?? "偏好：已保存")
+            updateStorageStatus(result.statusText ?? AppLocalization.text("preferences.saved", defaultValue: "偏好：已保存"))
             return result.preferences
 
         case .failure(let error):
-            updateStorageStatus("偏好：\(error.code)")
+            updateStorageStatus(AppLocalization.format("preferences.status.error", defaultValue: "偏好：%@", error.code))
             return nil
         }
     }
@@ -1016,7 +1018,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         refreshAccessibilityPermissionState()
-        updateStorageStatus("权限：辅助功能已允许")
+        updateStorageStatus(AppLocalization.text("accessibility.status.trusted", defaultValue: "权限：辅助功能已允许"))
     }
 
     private func updateQuery(
@@ -1221,7 +1223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .failure(let error):
                     imageAssetProvider.removePendingImage(pendingImage)
                     self.applyCaptureResult(ClipboardCaptureHandlingResult(
-                        statusText: "捕获：\(error.code)",
+                        statusText: AppLocalization.format("capture.status.error", defaultValue: "捕获：%@", error.code),
                         shouldRefreshList: false,
                         storageError: error
                     ))
@@ -1229,7 +1231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             case .failure:
                 self.applyCaptureResult(ClipboardCaptureHandlingResult(
-                    statusText: "捕获：图片资产写入失败",
+                    statusText: AppLocalization.text("capture.status.imageAssetWriteFailed", defaultValue: "捕获：图片资产写入失败"),
                     shouldRefreshList: false,
                     storageError: nil
                 ))
@@ -1299,7 +1301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .failure(let error):
             applyCaptureResult(ClipboardCaptureHandlingResult(
-                statusText: "捕获：\(error.code)",
+                statusText: AppLocalization.format("capture.status.error", defaultValue: "捕获：%@", error.code),
                 shouldRefreshList: true,
                 storageError: error
             ))
@@ -1310,7 +1312,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for result: RustPendingImageCompletionResult
     ) -> ClipboardCaptureHandlingResult {
         let shouldRefresh = result.status != "not_pending"
-        let statusText: String? = result.status == "failed" ? "捕获：图片处理失败" : nil
+        let statusText: String? = result.status == "failed"
+            ? AppLocalization.text("capture.status.imageProcessingFailed", defaultValue: "捕获：图片处理失败")
+            : nil
         return ClipboardCaptureHandlingResult(
             statusText: statusText,
             shouldRefreshList: shouldRefresh,
@@ -1367,10 +1371,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu(title: "ClipDock")
 
-        appMenu.addItem(makeMenuItem(title: "关于 ClipDock", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        appMenu.addItem(makeMenuItem(title: AppLocalization.text("menu.aboutClipDock", defaultValue: "关于 ClipDock"), imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
         appMenu.addItem(.separator())
         let togglePanelMenuItem = makeMenuItem(
-            title: "显示/隐藏面板",
+            title: AppLocalization.text("menu.togglePanel", defaultValue: "显示/隐藏面板"),
             imageName: "rectangle.on.rectangle",
             action: #selector(togglePanel(_:)),
             key: "v",
@@ -1378,9 +1382,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         self.togglePanelMenuItem = togglePanelMenuItem
         appMenu.addItem(togglePanelMenuItem)
-        appMenu.addItem(makeMenuItem(title: "偏好设置…", imageName: "gearshape", action: #selector(showPreferences(_:)), key: ",", modifiers: [.command]))
+        appMenu.addItem(makeMenuItem(title: AppLocalization.text("menu.preferencesEllipsis", defaultValue: "偏好设置…"), imageName: "gearshape", action: #selector(showPreferences(_:)), key: ",", modifiers: [.command]))
         appMenu.addItem(.separator())
-        appMenu.addItem(makeMenuItem(title: "退出", imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "q", modifiers: [.command]))
+        appMenu.addItem(makeMenuItem(title: AppLocalization.text("menu.quit", defaultValue: "退出"), imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "q", modifiers: [.command]))
 
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
@@ -1394,13 +1398,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.title = ""
 
         let menu = NSMenu()
-        menu.addItem(makeMenuItem(title: "关于 ClipDock", imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: AppLocalization.text("menu.aboutClipDock", defaultValue: "关于 ClipDock"), imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
-        menu.addItem(makeMenuItem(title: "显示面板", imageName: "eye", action: #selector(showPanel(_:)), key: "", modifiers: []))
-        menu.addItem(makeMenuItem(title: "隐藏面板", imageName: "eye.slash", action: #selector(hidePanel(_:)), key: "", modifiers: []))
-        menu.addItem(makeMenuItem(title: "偏好设置…", imageName: "gearshape", action: #selector(showPreferences(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: AppLocalization.text("menu.showPanel", defaultValue: "显示面板"), imageName: "eye", action: #selector(showPanel(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: AppLocalization.text("menu.hidePanel", defaultValue: "隐藏面板"), imageName: "eye.slash", action: #selector(hidePanel(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: AppLocalization.text("menu.preferencesEllipsis", defaultValue: "偏好设置…"), imageName: "gearshape", action: #selector(showPreferences(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
-        menu.addItem(makeMenuItem(title: "退出", imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: AppLocalization.text("menu.quit", defaultValue: "退出"), imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "", modifiers: []))
         statusItem?.menu = menu
     }
 
@@ -1474,7 +1478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
 
             guard handlerStatus == noErr else {
-                storageStatusText = "快捷键：监听失败 \(handlerStatus)"
+                storageStatusText = AppLocalization.format("shortcut.status.listenFailed", defaultValue: "快捷键：监听失败 %d", handlerStatus)
                 refreshStatusText()
                 ClipDockPerformanceLog.finish("hotkey.register.failed", start: registrationStart, detail: "phase=handler status=\(handlerStatus)")
                 return
@@ -1493,7 +1497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         guard registerStatus == noErr else {
             registeredOpenPanelShortcut = nil
-            storageStatusText = "快捷键：注册失败 \(registerStatus)"
+            storageStatusText = AppLocalization.format("shortcut.status.registerFailed", defaultValue: "快捷键：注册失败 %d", registerStatus)
             refreshStatusText()
             ClipDockPerformanceLog.finish("hotkey.register.failed", start: registrationStart, detail: "phase=register status=\(registerStatus)")
             return
@@ -1545,7 +1549,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshStatusText() {
         panelController.refreshPanelContentLayout()
-        statusItem?.button?.toolTip = "层级：\(panelController.levelMode.title)\n\(storageStatusText)"
+        statusItem?.button?.toolTip = AppLocalization.format(
+            "statusItem.tooltip",
+            defaultValue: "层级：%@\n%@",
+            panelController.levelMode.title,
+            storageStatusText
+        )
     }
 }
 

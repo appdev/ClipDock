@@ -85,7 +85,7 @@ public enum ClipboardPreviewContentPlanner {
             subtitle: previewSubtitle(for: item),
             body: body,
             metadata: previewMetadata(for: item),
-            sourceAppName: item.sourceAppName ?? "未知来源",
+            sourceAppName: item.sourceAppName ?? AppLocalization.text("source.unknown", defaultValue: "未知来源"),
             sourceAppIconPath: item.sourceAppIconPath,
             imageURL: imageURL,
             linkURL: previewLinkURL(for: item),
@@ -115,23 +115,11 @@ public enum ClipboardPreviewContentPlanner {
     }
 
     private static func previewSubtitle(for item: RustClipboardItemSummary) -> String {
-        let typeText: String
-        switch item.itemType {
-        case "link":
-            typeText = "链接"
-        case "image":
-            typeText = "图片"
-        case "file":
-            typeText = "文件"
-        case "color":
-            typeText = "颜色"
-        case "rich_text":
-            typeText = "富文本"
-        default:
-            typeText = "文本"
-        }
+        let typeText = AppLocalization.itemTypeTitle(item.itemType)
 
-        let copyText = item.copyCount > 1 ? " · \(item.copyCount) 次复制" : ""
+        let copyText = item.copyCount > 1
+            ? AppLocalization.format("preview.copyCountSuffix", defaultValue: " · %lld 次复制", item.copyCount)
+            : ""
         return "\(typeText)\(copyText)"
     }
 
@@ -161,7 +149,8 @@ public enum ClipboardPreviewContentPlanner {
         case "link":
             return item.linkMetadata?.displayURL ?? item.primaryText ?? item.summary
         case "color":
-            return previewColorValue(for: item)?.previewMetadataText ?? "颜色格式不可用"
+            return previewColorValue(for: item)?.previewMetadataText
+                ?? AppLocalization.text("color.format.unavailable", defaultValue: "颜色格式不可用")
         default:
             let sizeText = formatter.string(fromByteCount: item.sizeBytes)
             return item.sizeBytes > 0 ? sizeText : item.sourceConfidence

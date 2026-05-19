@@ -164,10 +164,15 @@ public enum MaintenanceStatusPresenter {
     ) -> String {
         let deletedFileCount = result.deletedAssetFileCount + result.deletedOrphanFileCount
         if result.reclaimedBytes > 0 {
-            return "维护：释放 \(byteCountFormatter(result.reclaimedBytes))，清理 \(deletedFileCount) 个文件"
+            return AppLocalization.format(
+                "maintenance.reclaimedAndCleaned",
+                defaultValue: "维护：释放 %@，清理 %lld 个文件",
+                byteCountFormatter(result.reclaimedBytes),
+                Int64(deletedFileCount)
+            )
         }
 
-        return "维护：清理 \(deletedFileCount) 个文件"
+        return AppLocalization.format("maintenance.cleanedFiles", defaultValue: "维护：清理 %lld 个文件", Int64(deletedFileCount))
     }
 }
 
@@ -200,21 +205,21 @@ public enum LaunchAtLoginPresenter {
             return LaunchAtLoginPresentation(
                 isOn: false,
                 canChange: false,
-                detail: "打包为 .app 后可用"
+                detail: AppLocalization.text("launchAtLogin.requiresAppBundle", defaultValue: "打包为 .app 后可用")
             )
         }
 
         switch status {
         case .enabled:
-            return LaunchAtLoginPresentation(isOn: true, canChange: true, detail: "已加入登录项")
+            return LaunchAtLoginPresentation(isOn: true, canChange: true, detail: AppLocalization.text("launchAtLogin.enabled", defaultValue: "已加入登录项"))
         case .notRegistered:
-            return LaunchAtLoginPresentation(isOn: false, canChange: true, detail: "登录后自动启动")
+            return LaunchAtLoginPresentation(isOn: false, canChange: true, detail: AppLocalization.text("launchAtLogin.notRegistered", defaultValue: "登录后自动启动"))
         case .requiresApproval:
-            return LaunchAtLoginPresentation(isOn: true, canChange: true, detail: "需要在系统设置中允许")
+            return LaunchAtLoginPresentation(isOn: true, canChange: true, detail: AppLocalization.text("launchAtLogin.requiresApproval", defaultValue: "需要在系统设置中允许"))
         case .notFound:
-            return LaunchAtLoginPresentation(isOn: false, canChange: true, detail: "可使用登录代理启动")
+            return LaunchAtLoginPresentation(isOn: false, canChange: true, detail: AppLocalization.text("launchAtLogin.notFound", defaultValue: "可使用登录代理启动"))
         case .unknown:
-            return LaunchAtLoginPresentation(isOn: false, canChange: false, detail: "当前系统状态未知")
+            return LaunchAtLoginPresentation(isOn: false, canChange: false, detail: AppLocalization.text("launchAtLogin.unknown", defaultValue: "当前系统状态未知"))
         }
     }
 }
@@ -252,22 +257,22 @@ public enum AccessibilityPermissionPresenter {
         case .trusted:
             return AccessibilityPermissionPresentation(
                 isTrusted: true,
-                detail: "已允许，可读取窗口标题并直接粘贴到目标",
-                actionTitle: "重新检查",
+                detail: AppLocalization.text("accessibility.trusted.detail", defaultValue: "已允许，可读取窗口标题并直接粘贴到目标"),
+                actionTitle: AppLocalization.text("action.recheck", defaultValue: "重新检查"),
                 canOpenSettings: true
             )
         case .notTrusted:
             return AccessibilityPermissionPresentation(
                 isTrusted: false,
-                detail: "未允许，直接粘贴需在系统辅助功能中允许 ClipDock",
-                actionTitle: "打开系统设置",
+                detail: AppLocalization.text("accessibility.notTrusted.detail", defaultValue: "未允许，直接粘贴需在系统辅助功能中允许 ClipDock"),
+                actionTitle: AppLocalization.text("action.openSystemSettings", defaultValue: "打开系统设置"),
                 canOpenSettings: true
             )
         case .unknown:
             return AccessibilityPermissionPresentation(
                 isTrusted: false,
-                detail: "当前权限状态未知",
-                actionTitle: "重新检查",
+                detail: AppLocalization.text("accessibility.unknown.detail", defaultValue: "当前权限状态未知"),
+                actionTitle: AppLocalization.text("action.recheck", defaultValue: "重新检查"),
                 canOpenSettings: true
             )
         }

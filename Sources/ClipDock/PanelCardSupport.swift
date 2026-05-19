@@ -137,7 +137,9 @@ final class PanelCardAssetResolver {
             paths: paths,
             image: Self.cachedPreviewImage(paths: paths),
             tooltip: [previewPath, payloadPath].compactMap { $0 }.joined(separator: "\n"),
-            fallbackText: paths.isEmpty ? "预览不可用" : "载入预览"
+            fallbackText: paths.isEmpty
+                ? AppLocalization.text("preview.unavailable", defaultValue: "预览不可用")
+                : AppLocalization.text("preview.loading", defaultValue: "载入预览")
         )
     }
 
@@ -238,7 +240,7 @@ final class PanelCardAssetResolver {
             return icon
         }
 
-        return NSImage(systemSymbolName: "folder", accessibilityDescription: "文件")
+        return NSImage(systemSymbolName: "folder", accessibilityDescription: AppLocalization.itemTypeTitle("file"))
     }
 
     func filePreviewURLs(for request: PanelCardAssetRequest) -> [URL] {
@@ -346,11 +348,11 @@ final class PanelCardAssetResolver {
         sourceIconColor: NSColor?,
         isSelected: Bool
     ) -> NSColor {
-        if typeText.contains("错误") {
+        if typeText.contains(AppLocalization.text("status.error", defaultValue: "错误")) {
             return NSColor.systemRed.withAlphaComponent(isSelected ? 0.96 : 0.88)
         }
 
-        if typeText.contains("空态") {
+        if typeText.contains(AppLocalization.text("status.empty", defaultValue: "空态")) {
             return NSColor.systemGray.withAlphaComponent(isSelected ? 0.90 : 0.82)
         }
 
@@ -363,15 +365,15 @@ final class PanelCardAssetResolver {
             return sourceHeaderColor(for: sourceColorKey, isSelected: isSelected)
         }
 
-        if typeText.contains("链接") {
+        if typeText.contains(AppLocalization.itemTypeTitle("link")) {
             return NSColor.systemPurple.withAlphaComponent(isSelected ? 1 : 0.92)
         }
 
-        if typeText.contains("图片") {
+        if typeText.contains(AppLocalization.itemTypeTitle("image")) {
             return NSColor.systemBlue.withAlphaComponent(isSelected ? 1 : 0.86)
         }
 
-        if typeText.contains("文件") {
+        if typeText.contains(AppLocalization.itemTypeTitle("file")) {
             return NSColor.systemBlue.withAlphaComponent(isSelected ? 0.94 : 0.78)
         }
 

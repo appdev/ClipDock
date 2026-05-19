@@ -32,12 +32,12 @@ public struct PreferencesSceneState: Equatable, Sendable {
         launchAtLoginState: LaunchAtLoginPresentation = LaunchAtLoginPresentation(
             isOn: false,
             canChange: false,
-            detail: "正在读取状态"
+            detail: AppLocalization.text("status.loading", defaultValue: "正在读取状态")
         ),
         accessibilityPermissionState: AccessibilityPermissionPresentation = AccessibilityPermissionPresentation(
             isTrusted: false,
-            detail: "正在读取状态",
-            actionTitle: "重新检查",
+            detail: AppLocalization.text("status.loading", defaultValue: "正在读取状态"),
+            actionTitle: AppLocalization.text("action.recheck", defaultValue: "重新检查"),
             canOpenSettings: true
         ),
         isPersistingPreferenceChange: Bool = false,

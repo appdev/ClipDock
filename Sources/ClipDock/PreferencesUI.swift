@@ -26,34 +26,34 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
     var title: String {
         switch self {
         case .general:
-            return "通用"
+            return AppLocalization.text("preferences.section.general", defaultValue: "通用")
         case .appearance:
-            return "外观"
+            return AppLocalization.text("preferences.section.appearance", defaultValue: "外观")
         case .history:
-            return "保留历史"
+            return AppLocalization.text("preferences.section.history", defaultValue: "保留历史")
         case .shortcuts:
-            return "键盘快捷键"
+            return AppLocalization.text("preferences.section.shortcuts", defaultValue: "键盘快捷键")
         case .rules:
-            return "隐私"
+            return AppLocalization.text("preferences.section.privacy", defaultValue: "隐私")
         case .about:
-            return "关于"
+            return AppLocalization.text("preferences.section.about", defaultValue: "关于")
         }
     }
 
     var subtitle: String {
         switch self {
         case .general:
-            return "启动、菜单栏、粘贴项目、复制提示、主题、预览与保留策略"
+            return AppLocalization.text("preferences.section.general.subtitle", defaultValue: "启动、菜单栏、粘贴项目、复制提示、主题、预览与保留策略")
         case .appearance:
-            return "主题与预览浮层"
+            return AppLocalization.text("preferences.section.appearance.subtitle", defaultValue: "主题与预览浮层")
         case .history:
-            return "记录类型、保留时长与数量"
+            return AppLocalization.text("preferences.section.history.subtitle", defaultValue: "记录类型、保留时长与数量")
         case .shortcuts:
-            return "打开、搜索与快速取用"
+            return AppLocalization.text("preferences.section.shortcuts.subtitle", defaultValue: "打开、搜索与快速取用")
         case .rules:
-            return "来源权限与忽略应用"
+            return AppLocalization.text("preferences.section.privacy.subtitle", defaultValue: "来源权限与忽略应用")
         case .about:
-            return "版本、构建与项目说明"
+            return AppLocalization.text("preferences.section.about.subtitle", defaultValue: "版本、构建与项目说明")
         }
     }
 
@@ -253,7 +253,7 @@ final class ShortcutRecorderButton: NSButton {
     private func beginRecording() {
         isRecordingShortcut = true
         window?.makeFirstResponder(self)
-        refreshTitle(overrideText: "按下快捷键", color: NSColor.systemBlue)
+        refreshTitle(overrideText: AppLocalization.text("shortcutRecorder.pressShortcut", defaultValue: "按下快捷键"), color: NSColor.systemBlue)
     }
 
     private func cancelRecording() {
@@ -268,7 +268,7 @@ final class ShortcutRecorderButton: NSButton {
         )
 
         guard KeyboardShortcutPresenter.isRecordable(shortcut) else {
-            refreshTitle(overrideText: "需要 ⌘ / ⌥ / ⌃", color: NSColor.systemRed)
+            refreshTitle(overrideText: AppLocalization.text("shortcutRecorder.requiresModifier", defaultValue: "需要 ⌘ / ⌥ / ⌃"), color: NSColor.systemRed)
             return
         }
 
@@ -456,7 +456,7 @@ final class LaunchAtLoginController {
 
     func setEnabled(_ enabled: Bool) -> Result<LaunchAtLoginState, LaunchAtLoginError> {
         guard isRunningAsApplicationBundle else {
-            return .failure(LaunchAtLoginError(message: "当前 swift run 形态不能注册登录项"))
+            return .failure(LaunchAtLoginError(message: AppLocalization.text("launchAtLogin.swiftRunUnavailable", defaultValue: "当前 swift run 形态不能注册登录项")))
         }
 
         let service = SMAppService.mainApp
@@ -597,7 +597,7 @@ final class PreferencesWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "偏好设置"
+        window.title = AppLocalization.text("menu.preferences", defaultValue: "偏好设置")
         window.minSize = Layout.minimumWindowSize
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
@@ -1353,8 +1353,8 @@ private struct PreferenceGeneralSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PreferenceSectionGroup(title: "基础") {
-                PreferenceRow(title: "登录时打开", detail: model.state.launchAtLoginState.detail) {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.basic", defaultValue: "基础")) {
+                PreferenceRow(title: AppLocalization.text("preferences.launchAtLogin.title", defaultValue: "登录时打开"), detail: model.state.launchAtLoginState.detail) {
                     Toggle(
                         "",
                         isOn: Binding(
@@ -1368,7 +1368,10 @@ private struct PreferenceGeneralSection: View {
                     .disabled(!model.state.launchAtLoginState.canChange)
                 }
                 PreferenceDivider()
-                PreferenceRow(title: "显示在菜单栏上", detail: "保留状态栏入口与快速菜单") {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.showMenuBar.title", defaultValue: "显示在菜单栏上"),
+                    detail: AppLocalization.text("preferences.showMenuBar.detail", defaultValue: "保留状态栏入口与快速菜单")
+                ) {
                     Toggle(
                         "",
                         isOn: Binding(
@@ -1381,7 +1384,10 @@ private struct PreferenceGeneralSection: View {
                     .controlSize(.small)
                 }
                 PreferenceDivider()
-                PreferenceRow(title: "复制完成提示", detail: "复制成功后显示短暂提示") {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.copyCompletionHUD.title", defaultValue: "复制完成提示"),
+                    detail: AppLocalization.text("preferences.copyCompletionHUD.detail", defaultValue: "复制成功后显示短暂提示")
+                ) {
                     Toggle(
                         "",
                         isOn: Binding(
@@ -1395,12 +1401,12 @@ private struct PreferenceGeneralSection: View {
                 }
             }
 
-            PreferenceSectionGroup(title: "粘贴项目") {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.pasteItems", defaultValue: "粘贴项目")) {
                 PreferenceRow(
-                    title: "直接粘贴到目标",
+                    title: AppLocalization.text("preferences.directPaste.title", defaultValue: "直接粘贴到目标"),
                     detail: model.state.accessibilityPermissionState.isTrusted
-                        ? "取用条目后自动粘贴到当前应用"
-                        : "需要在系统设置的辅助功能中允许 ClipDock"
+                        ? AppLocalization.text("preferences.directPaste.detail.enabled", defaultValue: "取用条目后自动粘贴到当前应用")
+                        : AppLocalization.text("preferences.directPaste.detail.requiresAccessibility", defaultValue: "需要在系统设置的辅助功能中允许 ClipDock")
                 ) {
                     Toggle(
                         "",
@@ -1414,7 +1420,10 @@ private struct PreferenceGeneralSection: View {
                     .controlSize(.small)
                 }
                 PreferenceDivider()
-                PreferenceRow(title: "始终以纯文本粘贴", detail: "文本、富文本、链接与颜色取用时写入纯文本") {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.alwaysPlainText.title", defaultValue: "始终以纯文本粘贴"),
+                    detail: AppLocalization.text("preferences.alwaysPlainText.detail", defaultValue: "文本、富文本、链接与颜色取用时写入纯文本")
+                ) {
                     Toggle(
                         "",
                         isOn: Binding(
@@ -1428,8 +1437,11 @@ private struct PreferenceGeneralSection: View {
                 }
             }
 
-            PreferenceSectionGroup(title: "外观") {
-                PreferenceRow(title: "显示模式", detail: "控制面板、设置与预览") {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.appearance", defaultValue: "外观")) {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.appearanceMode.title", defaultValue: "显示模式"),
+                    detail: AppLocalization.text("preferences.appearanceMode.detail", defaultValue: "控制面板、设置与预览")
+                ) {
                     Picker(
                         "",
                         selection: Binding(
@@ -1437,16 +1449,19 @@ private struct PreferenceGeneralSection: View {
                             set: { mode in model.persist { $0.appearance.mode = mode } }
                         )
                     ) {
-                        Text("系统").tag("system")
-                        Text("浅色").tag("light")
-                        Text("深色").tag("dark")
+                        Text(AppLocalization.text("appearance.system", defaultValue: "系统")).tag("system")
+                        Text(AppLocalization.text("appearance.light", defaultValue: "浅色")).tag("light")
+                        Text(AppLocalization.text("appearance.dark", defaultValue: "深色")).tag("dark")
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 220)
                 }
                 PreferenceDivider()
-                PreferenceRow(title: "预览浮层", detail: "按空格预览选中项目") {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.previewPopover.title", defaultValue: "预览浮层"),
+                    detail: AppLocalization.text("preferences.previewPopover.detail", defaultValue: "按空格预览选中项目")
+                ) {
                     Toggle(
                         "",
                         isOn: Binding(
@@ -1460,9 +1475,9 @@ private struct PreferenceGeneralSection: View {
                 }
             }
 
-            PreferenceSectionGroup(title: "保留策略") {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.retention", defaultValue: "保留策略")) {
                 PreferenceRow(
-                    title: "保留时长",
+                    title: AppLocalization.text("preferences.retention.title", defaultValue: "保留时长"),
                     detail: retentionLabel(days: model.state.preferences.history.retentionDays)
                 ) {
                     Picker(
@@ -1472,11 +1487,11 @@ private struct PreferenceGeneralSection: View {
                             set: { days in model.persist { $0.history.retentionDays = days } }
                         )
                     ) {
-                        Text("天").tag(Int64(1))
-                        Text("周").tag(Int64(7))
-                        Text("月").tag(Int64(30))
-                        Text("年").tag(Int64(365))
-                        Text("永久").tag(Int64.max)
+                        Text(AppLocalization.text("retention.days.unit", defaultValue: "天")).tag(Int64(1))
+                        Text(AppLocalization.text("retention.weeks.unit", defaultValue: "周")).tag(Int64(7))
+                        Text(AppLocalization.text("retention.months.unit", defaultValue: "月")).tag(Int64(30))
+                        Text(AppLocalization.text("retention.years.unit", defaultValue: "年")).tag(Int64(365))
+                        Text(AppLocalization.text("retention.forever", defaultValue: "永久")).tag(Int64.max)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
@@ -1492,8 +1507,11 @@ private struct PreferenceShortcutSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PreferenceSectionGroup(title: "全局操作") {
-                PreferenceRow(title: "打开剪贴板", detail: "从任意应用呼出底部面板") {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.globalActions", defaultValue: "全局操作")) {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.openClipboard.title", defaultValue: "打开剪贴板"),
+                    detail: AppLocalization.text("preferences.openClipboard.detail", defaultValue: "从任意应用呼出底部面板")
+                ) {
                     ShortcutRecorderRepresentable(
                         shortcut: model.state.preferences.shortcuts.openPanel
                     ) { shortcut in
@@ -1502,17 +1520,26 @@ private struct PreferenceShortcutSection: View {
                     .frame(width: 144, height: 32)
                 }
                 PreferenceDivider()
-                PreferenceRow(title: "快速取用条目", detail: "按住 Command 显示编号，按对应数字复制") {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.quickAccess.title", defaultValue: "快速取用条目"),
+                    detail: AppLocalization.text("preferences.quickAccess.detail", defaultValue: "按住 Command 显示编号，按对应数字复制")
+                ) {
                     PreferenceShortcutPill("⌘ 1...9")
                 }
             }
 
-            PreferenceSectionGroup(title: "面板内操作") {
-                PreferenceRow(title: "搜索当前内容", detail: "展开并聚焦搜索框") {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.panelActions", defaultValue: "面板内操作")) {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.searchCurrent.title", defaultValue: "搜索当前内容"),
+                    detail: AppLocalization.text("preferences.searchCurrent.detail", defaultValue: "展开并聚焦搜索框")
+                ) {
                     PreferenceShortcutPill("⌘ F")
                 }
                 PreferenceDivider()
-                PreferenceRow(title: "预览选中条目", detail: "展开或关闭临时预览浮层") {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.previewSelected.title", defaultValue: "预览选中条目"),
+                    detail: AppLocalization.text("preferences.previewSelected.detail", defaultValue: "展开或关闭临时预览浮层")
+                ) {
                     PreferenceShortcutPill("Space")
                 }
             }
@@ -1530,8 +1557,8 @@ private struct PreferencePrivacySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            PreferenceSectionGroup(title: "系统权限") {
-                PrivacySettingRow(title: "窗口标题采集", detail: model.state.accessibilityPermissionState.detail) {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.systemPermissions", defaultValue: "系统权限")) {
+                PrivacySettingRow(title: AppLocalization.text("preferences.windowTitleCapture.title", defaultValue: "窗口标题采集"), detail: model.state.accessibilityPermissionState.detail) {
                     Button(model.state.accessibilityPermissionState.actionTitle) {
                         model.requestAccessibilityPermission()
                     }
@@ -1541,8 +1568,11 @@ private struct PreferencePrivacySection: View {
                 }
             }
 
-            PreferenceSectionGroup(title: "链接预览") {
-                PrivacySettingRow(title: "网页完整预览", detail: "按空格时加载真实网页") {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.linkPreview", defaultValue: "链接预览")) {
+                PrivacySettingRow(
+                    title: AppLocalization.text("preferences.webPreview.title", defaultValue: "网页完整预览"),
+                    detail: AppLocalization.text("preferences.webPreview.detail", defaultValue: "按空格时加载真实网页")
+                ) {
                     Toggle(
                         "",
                         isOn: Binding(
@@ -1558,10 +1588,10 @@ private struct PreferencePrivacySection: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("忽略应用程序")
+                    Text(AppLocalization.text("preferences.ignoredApps.title", defaultValue: "忽略应用程序"))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(colors.primaryText)
-                    Text("不要保存从以下应用程序或窗口复制的内容。")
+                    Text(AppLocalization.text("preferences.ignoredApps.detail", defaultValue: "不要保存从以下应用程序或窗口复制的内容。"))
                         .font(.system(size: 12.5))
                         .foregroundStyle(colors.secondaryText)
                 }
@@ -1598,10 +1628,10 @@ private struct IgnoredApplicationsPicker: View {
                         .frame(width: 34, height: 34)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("未添加应用程序")
+                        Text(AppLocalization.text("preferences.ignoredApps.emptyTitle", defaultValue: "未添加应用程序"))
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(colors.primaryText)
-                        Text("点击 + 选择需要忽略的应用。")
+                        Text(AppLocalization.text("preferences.ignoredApps.emptyDetail", defaultValue: "点击 + 选择需要忽略的应用。"))
                             .font(.system(size: 13))
                             .foregroundStyle(colors.secondaryText)
                     }
@@ -1631,7 +1661,7 @@ private struct IgnoredApplicationsPicker: View {
             HStack(spacing: 0) {
                 IgnoredApplicationPickerToolbarButton(
                     symbolName: "plus",
-                    help: "添加应用程序"
+                    help: AppLocalization.text("preferences.ignoredApps.add", defaultValue: "添加应用程序")
                 ) {
                     addApplications()
                 }
@@ -1641,7 +1671,7 @@ private struct IgnoredApplicationsPicker: View {
 
                 IgnoredApplicationPickerToolbarButton(
                     symbolName: "minus",
-                    help: "移除选中的应用程序",
+                    help: AppLocalization.text("preferences.ignoredApps.remove", defaultValue: "移除选中的应用程序"),
                     isDisabled: selectedIdentifier == nil
                 ) {
                     removeSelectedApplication()
@@ -1664,9 +1694,9 @@ private struct IgnoredApplicationsPicker: View {
 
     private func addApplications() {
         let panel = NSOpenPanel()
-        panel.title = "选择要忽略的应用程序"
-        panel.message = "选择后会自动读取应用标识，用于忽略该应用复制的内容。"
-        panel.prompt = "添加"
+        panel.title = AppLocalization.text("preferences.ignoredApps.choosePanel.title", defaultValue: "选择要忽略的应用程序")
+        panel.message = AppLocalization.text("preferences.ignoredApps.choosePanel.message", defaultValue: "选择后会自动读取应用标识，用于忽略该应用复制的内容。")
+        panel.prompt = AppLocalization.text("preferences.ignoredApps.choosePanel.prompt", defaultValue: "添加")
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
@@ -1918,7 +1948,7 @@ private struct PreferenceAboutSection: View {
                         Text(aboutDisplayName())
                             .font(.system(size: 19, weight: .semibold))
                             .foregroundStyle(colors.primaryText)
-                        Text("本地剪贴坞")
+                        Text(AppLocalization.text("app.localizedName", defaultValue: "本地剪贴坞"))
                             .font(.system(size: 13))
                             .foregroundStyle(colors.secondaryText)
                     }
@@ -1929,8 +1959,8 @@ private struct PreferenceAboutSection: View {
                 .padding(.vertical, 18)
             }
 
-            PreferenceSectionGroup(title: "应用信息") {
-                PreferenceRow(title: "版本", detail: "当前应用版本") {
+            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.appInfo", defaultValue: "应用信息")) {
+                PreferenceRow(title: AppLocalization.text("preferences.version.title", defaultValue: "版本"), detail: AppLocalization.text("preferences.version.detail", defaultValue: "当前应用版本")) {
                     PreferenceValuePill(aboutVersionText())
                 }
             }
@@ -2216,16 +2246,26 @@ private struct ShortcutRecorderRepresentable: NSViewRepresentable {
 private func retentionLabel(days: Int64) -> String {
     switch days {
     case ..<7:
-        return "按天保留"
+        return AppLocalization.text("retention.label.days", defaultValue: "按天保留")
     case 7..<30:
-        return "按周保留"
+        return AppLocalization.text("retention.label.weeks", defaultValue: "按周保留")
     case 30..<365:
-        return "按月保留"
+        return AppLocalization.text("retention.label.months", defaultValue: "按月保留")
     case 365..<Int64.max:
-        return "按年保留"
+        return AppLocalization.text("retention.label.years", defaultValue: "按年保留")
     default:
-        return "永久保留"
+        return AppLocalization.text("retention.label.forever", defaultValue: "永久保留")
     }
+}
+
+private func retentionSegmentLabels() -> [String] {
+    [
+        AppLocalization.text("retention.days.unit", defaultValue: "天"),
+        AppLocalization.text("retention.weeks.unit", defaultValue: "周"),
+        AppLocalization.text("retention.months.unit", defaultValue: "月"),
+        AppLocalization.text("retention.years.unit", defaultValue: "年"),
+        AppLocalization.text("retention.forever", defaultValue: "永久")
+    ]
 }
 
 private func joinedRuleList(_ values: [String]) -> String {
@@ -2319,7 +2359,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "偏好设置"
+        window.title = AppLocalization.text("menu.preferences", defaultValue: "偏好设置")
         window.minSize = Layout.minimumWindowSize
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
@@ -2533,7 +2573,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                 sections: [
                     makeSection(title: nil, rows: [
                         makeSettingRow(
-                            title: "登录时打开",
+                            title: AppLocalization.text("preferences.launchAtLogin.title", defaultValue: "登录时打开"),
                             detail: launchAtLoginState.detail,
                             control: makeSwitch(
                                 isOn: launchAtLoginState.isOn,
@@ -2543,26 +2583,26 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             }
                         ),
                         makeSettingRow(
-                            title: "显示在菜单栏上",
-                            detail: "保留状态栏入口与快速菜单",
+                            title: AppLocalization.text("preferences.showMenuBar.title", defaultValue: "显示在菜单栏上"),
+                            detail: AppLocalization.text("preferences.showMenuBar.detail", defaultValue: "保留状态栏入口与快速菜单"),
                             control: makeSwitch(isOn: preferences.general.showMenuBarItem) { [weak self] isOn in
                                 self?.persist { $0.general.showMenuBarItem = isOn }
                             }
                         ),
                         makeSettingRow(
-                            title: "复制完成提示",
-                            detail: "复制成功后显示短暂提示",
+                            title: AppLocalization.text("preferences.copyCompletionHUD.title", defaultValue: "复制完成提示"),
+                            detail: AppLocalization.text("preferences.copyCompletionHUD.detail", defaultValue: "复制成功后显示短暂提示"),
                             control: makeSwitch(isOn: preferences.general.copyCompletionHUDEnabled) { [weak self] isOn in
                                 self?.persist { $0.general.copyCompletionHUDEnabled = isOn }
                             }
                         )
                     ]),
-                    makeSection(title: "粘贴项目", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.pasteItems", defaultValue: "粘贴项目"), rows: [
                         makeSettingRow(
-                            title: "直接粘贴到目标",
+                            title: AppLocalization.text("preferences.directPaste.title", defaultValue: "直接粘贴到目标"),
                             detail: accessibilityPermissionState.isTrusted
-                                ? "取用条目后自动粘贴到当前应用"
-                                : "需要在系统设置的辅助功能中允许 ClipDock",
+                                ? AppLocalization.text("preferences.directPaste.detail.enabled", defaultValue: "取用条目后自动粘贴到当前应用")
+                                : AppLocalization.text("preferences.directPaste.detail.requiresAccessibility", defaultValue: "需要在系统设置的辅助功能中允许 ClipDock"),
                             control: makeSwitch(
                                 isOn: preferences.shortcuts.pasteDirectlyToTarget
                             ) { [weak self] isOn in
@@ -2570,8 +2610,8 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             }
                         ),
                         makeSettingRow(
-                            title: "始终以纯文本粘贴",
-                            detail: "文本、富文本、链接与颜色取用时写入纯文本",
+                            title: AppLocalization.text("preferences.alwaysPlainText.title", defaultValue: "始终以纯文本粘贴"),
+                            detail: AppLocalization.text("preferences.alwaysPlainText.detail", defaultValue: "文本、富文本、链接与颜色取用时写入纯文本"),
                             control: makeSwitch(
                                 isOn: preferences.shortcuts.alwaysPasteAsPlainText
                             ) { [weak self] isOn in
@@ -2579,12 +2619,12 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             }
                         )
                     ]),
-                    makeSection(title: "保留策略", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.retention", defaultValue: "保留策略"), rows: [
                         makeSettingRow(
-                            title: "保留时长",
+                            title: AppLocalization.text("preferences.retention.title", defaultValue: "保留时长"),
                             detail: retentionLabel(days: preferences.history.retentionDays),
                             control: makeSegmentedControl(
-                                labels: ["天", "周", "月", "年", "永久"],
+                                labels: retentionSegmentLabels(),
                                 selected: retentionIndex(days: preferences.history.retentionDays)
                             ) { [weak self] selected in
                                 self?.persist { $0.history.retentionDays = self?.retentionDays(for: selected) ?? 30 }
@@ -2600,15 +2640,15 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                 sections: [
                     makeSection(title: nil, rows: [
                         makeSettingRow(
-                            title: "显示模式",
-                            detail: "控制面板、设置与预览",
+                            title: AppLocalization.text("preferences.appearanceMode.title", defaultValue: "显示模式"),
+                            detail: AppLocalization.text("preferences.appearanceMode.detail", defaultValue: "控制面板、设置与预览"),
                             control: makeAppearanceModeControl(selectedMode: preferences.appearance.mode) { [weak self] mode in
                                 self?.persist { $0.appearance.mode = mode }
                             }
                         ),
                         makeSettingRow(
-                            title: "预览浮层",
-                            detail: "按空格预览选中项目",
+                            title: AppLocalization.text("preferences.previewPopover.title", defaultValue: "预览浮层"),
+                            detail: AppLocalization.text("preferences.previewPopover.detail", defaultValue: "按空格预览选中项目"),
                             control: makeSwitch(isOn: preferences.appearance.previewPopoverEnabled) { [weak self] isOn in
                                 self?.persist { $0.appearance.previewPopoverEnabled = isOn }
                             }
@@ -2621,12 +2661,12 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                 title: PreferenceSection.general.title,
                 subtitle: PreferenceSection.general.subtitle,
                 sections: [
-                    makeSection(title: "保留策略", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.retention", defaultValue: "保留策略"), rows: [
                         makeSettingRow(
-                            title: "保留时长",
+                            title: AppLocalization.text("preferences.retention.title", defaultValue: "保留时长"),
                             detail: retentionLabel(days: preferences.history.retentionDays),
                             control: makeSegmentedControl(
-                                labels: ["天", "周", "月", "年", "永久"],
+                                labels: retentionSegmentLabels(),
                                 selected: retentionIndex(days: preferences.history.retentionDays)
                             ) { [weak self] selected in
                                 self?.persist { $0.history.retentionDays = self?.retentionDays(for: selected) ?? 30 }
@@ -2640,27 +2680,27 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                 title: section.title,
                 subtitle: section.subtitle,
                 sections: [
-                    makeSection(title: "全局操作", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.globalActions", defaultValue: "全局操作"), rows: [
                         makeShortcutRow(
-                            title: "打开剪贴板",
-                            detail: "从任意应用呼出底部面板",
+                            title: AppLocalization.text("preferences.openClipboard.title", defaultValue: "打开剪贴板"),
+                            detail: AppLocalization.text("preferences.openClipboard.detail", defaultValue: "从任意应用呼出底部面板"),
                             shortcut: preferences.shortcuts.openPanel
                         ),
                         makeShortcutRow(
-                            title: "快速取用条目",
-                            detail: "按住 Command 显示编号，按对应数字复制",
+                            title: AppLocalization.text("preferences.quickAccess.title", defaultValue: "快速取用条目"),
+                            detail: AppLocalization.text("preferences.quickAccess.detail", defaultValue: "按住 Command 显示编号，按对应数字复制"),
                             shortcut: "⌘ 1...9"
                         )
                     ]),
-                    makeSection(title: "面板内操作", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.panelActions", defaultValue: "面板内操作"), rows: [
                         makeShortcutRow(
-                            title: "搜索当前内容",
-                            detail: "展开并聚焦搜索框",
+                            title: AppLocalization.text("preferences.searchCurrent.title", defaultValue: "搜索当前内容"),
+                            detail: AppLocalization.text("preferences.searchCurrent.detail", defaultValue: "展开并聚焦搜索框"),
                             shortcut: "⌘ F"
                         ),
                         makeShortcutRow(
-                            title: "预览选中条目",
-                            detail: "展开或关闭临时预览浮层",
+                            title: AppLocalization.text("preferences.previewSelected.title", defaultValue: "预览选中条目"),
+                            detail: AppLocalization.text("preferences.previewSelected.detail", defaultValue: "展开或关闭临时预览浮层"),
                             shortcut: "Space"
                         )
                     ])
@@ -2671,9 +2711,9 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                 title: section.title,
                 subtitle: section.subtitle,
                 sections: [
-                    makeSection(title: "系统权限", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.systemPermissions", defaultValue: "系统权限"), rows: [
                         makeSettingRow(
-                            title: "窗口标题采集",
+                            title: AppLocalization.text("preferences.windowTitleCapture.title", defaultValue: "窗口标题采集"),
                             detail: accessibilityPermissionState.detail,
                             control: makeActionButton(
                                 title: accessibilityPermissionState.actionTitle,
@@ -2683,16 +2723,16 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             }
                         )
                     ]),
-                    makeSection(title: "链接预览", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.linkPreview", defaultValue: "链接预览"), rows: [
                         makeSettingRow(
-                            title: "网页完整预览",
-                            detail: "按空格时加载真实网页",
+                            title: AppLocalization.text("preferences.webPreview.title", defaultValue: "网页完整预览"),
+                            detail: AppLocalization.text("preferences.webPreview.detail", defaultValue: "按空格时加载真实网页"),
                             control: makeSwitch(isOn: preferences.linkPreview.webPreviewEnabled) { [weak self] isOn in
                                 self?.persist { $0.linkPreview.webPreviewEnabled = isOn }
                             }
                         )
                     ]),
-                    makeSection(title: "应用", rows: [
+                    makeSection(title: AppLocalization.text("preferences.group.apps", defaultValue: "应用"), rows: [
                         makeIgnoredApplicationsPickerRow(preferences: preferences)
                     ])
                 ]
@@ -2705,7 +2745,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                     makeSection(title: nil, rows: [
                         makeSettingRow(
                             title: aboutDisplayName(),
-                            detail: "版本 \(aboutVersionText())",
+                            detail: AppLocalization.format("preferences.version.inline", defaultValue: "版本 %@", aboutVersionText()),
                             control: makeShortcutPill("SwiftUI")
                         )
                     ])
@@ -2963,12 +3003,12 @@ private final class LegacyPreferencesWindowController: NSWindowController {
     private func makeIgnoredApplicationsPickerRow(preferences: RustPreferencesDocument) -> NSView {
         let count = preferences.ignoreList.ignoredAppIdentifiers.count
         let detail = count == 0
-            ? "未添加应用；选择后自动读取应用标识"
-            : "已忽略 \(count) 个应用；选择后自动读取应用标识"
+            ? AppLocalization.text("preferences.ignoredApps.inlineEmpty", defaultValue: "未添加应用；选择后自动读取应用标识")
+            : AppLocalization.format("preferences.ignoredApps.inlineCount", defaultValue: "已忽略 %lld 个应用；选择后自动读取应用标识", Int64(count))
         return makeSettingRow(
-            title: "忽略应用程序",
+            title: AppLocalization.text("preferences.ignoredApps.title", defaultValue: "忽略应用程序"),
             detail: detail,
-            control: makeActionButton(title: "选择应用...") { [weak self] in
+            control: makeActionButton(title: AppLocalization.text("preferences.ignoredApps.choose", defaultValue: "选择应用...")) { [weak self] in
                 self?.openIgnoredApplicationsPanel()
             }
         )
@@ -2976,9 +3016,9 @@ private final class LegacyPreferencesWindowController: NSWindowController {
 
     private func openIgnoredApplicationsPanel() {
         let panel = NSOpenPanel()
-        panel.title = "选择要忽略的应用程序"
-        panel.message = "选择后会自动读取应用标识，用于忽略该应用复制的内容。"
-        panel.prompt = "添加"
+        panel.title = AppLocalization.text("preferences.ignoredApps.choosePanel.title", defaultValue: "选择要忽略的应用程序")
+        panel.message = AppLocalization.text("preferences.ignoredApps.choosePanel.message", defaultValue: "选择后会自动读取应用标识，用于忽略该应用复制的内容。")
+        panel.prompt = AppLocalization.text("preferences.ignoredApps.choosePanel.prompt", defaultValue: "添加")
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
@@ -3200,7 +3240,11 @@ private final class LegacyPreferencesWindowController: NSWindowController {
         onChange: @escaping (String) -> Void
     ) -> NSSegmentedControl {
         makeSegmentedControl(
-            labels: ["跟随系统", "浅色", "深色"],
+            labels: [
+                AppLocalization.text("appearance.followSystem", defaultValue: "跟随系统"),
+                AppLocalization.text("appearance.light", defaultValue: "浅色"),
+                AppLocalization.text("appearance.dark", defaultValue: "深色")
+            ],
             selected: appearanceModeIndex(for: selectedMode)
         ) { selected in
             onChange(self.appearanceMode(for: selected))
@@ -3247,19 +3291,19 @@ private final class LegacyPreferencesWindowController: NSWindowController {
     }
 
     private func retentionLabel(days: Int64) -> String {
-        switch days {
-        case ..<7:
-            return "按天保留"
-        case 7..<30:
-            return "按周保留"
-        case 30..<365:
-            return "按月保留"
-        case 365..<Int64.max:
-            return "按年保留"
-        default:
-            return "永久保留"
-        }
+    switch days {
+    case ..<7:
+            return AppLocalization.text("retention.label.days", defaultValue: "按天保留")
+    case 7..<30:
+            return AppLocalization.text("retention.label.weeks", defaultValue: "按周保留")
+    case 30..<365:
+            return AppLocalization.text("retention.label.months", defaultValue: "按月保留")
+    case 365..<Int64.max:
+            return AppLocalization.text("retention.label.years", defaultValue: "按年保留")
+    default:
+            return AppLocalization.text("retention.label.forever", defaultValue: "永久保留")
     }
+}
 
     private func retentionIndex(days: Int64) -> Int {
         switch days {
@@ -3350,7 +3394,7 @@ final class AboutWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "关于"
+        window.title = AppLocalization.text("preferences.section.about", defaultValue: "关于")
         window.minSize = Layout.minimumWindowSize
         window.maxSize = Layout.minimumWindowSize
         window.isReleasedWhenClosed = false
@@ -3460,7 +3504,7 @@ final class AboutWindowController: NSWindowController {
     private var versionText: String {
         let shortVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.1.0"
         let buildVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? "1"
-        return "版本 \(shortVersion) (\(buildVersion))"
+        return AppLocalization.format("preferences.version.format", defaultValue: "版本 %@ (%@)", shortVersion, buildVersion)
     }
 
     private func makeAppIconView() -> NSView {

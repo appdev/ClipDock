@@ -90,7 +90,8 @@ public enum PanelItemCardViewStateAdapter {
         relativeTimeFormatter: (Int64) -> String = PanelItemCardViewStateAdapter.defaultRelativeTimeText(from:)
     ) -> PanelItemCardViewState {
         let presentation = PanelItemCardPresenter.presentation(for: item)
-        let sourceAppName = item.sourceAppName ?? "未知来源"
+        let sourceAppName = item.sourceAppName
+            ?? AppLocalization.text("source.unknown", defaultValue: "未知来源")
 
         return PanelItemCardViewState(
             itemID: item.id,
@@ -134,8 +135,8 @@ public enum PanelItemCardViewStateAdapter {
         case "link":
             return .link(
                 title: presentation.linkTitle ?? "",
-                host: presentation.linkHost ?? "网页链接",
-                detail: presentation.linkDetail ?? "网页链接",
+                host: presentation.linkHost ?? AppLocalization.text("link.webpage", defaultValue: "网页链接"),
+                detail: presentation.linkDetail ?? AppLocalization.text("link.webpage", defaultValue: "网页链接"),
                 iconPath: item.linkMetadata?.iconAssetPath,
                 imagePath: item.linkMetadata?.imageAssetPath,
                 accessibilityLabel: sourceAppName
@@ -157,39 +158,39 @@ public enum PanelItemCardViewStateAdapter {
         let elapsedSeconds = max(0, (nowMilliseconds - milliseconds) / 1000)
 
         if elapsedSeconds < 10 {
-            return "刚刚"
+            return AppLocalization.text("relativeTime.justNow", defaultValue: "刚刚")
         }
         if elapsedSeconds < 60 {
-            return "\(elapsedSeconds) 秒前"
+            return AppLocalization.format("relativeTime.secondsAgo", defaultValue: "%lld 秒前", elapsedSeconds)
         }
 
         let elapsedMinutes = elapsedSeconds / 60
         if elapsedMinutes < 60 {
-            return "\(elapsedMinutes) 分钟前"
+            return AppLocalization.format("relativeTime.minutesAgo", defaultValue: "%lld 分钟前", elapsedMinutes)
         }
 
         let elapsedHours = elapsedMinutes / 60
         if elapsedHours < 24 {
-            return "\(elapsedHours) 小时前"
+            return AppLocalization.format("relativeTime.hoursAgo", defaultValue: "%lld 小时前", elapsedHours)
         }
 
         let elapsedDays = elapsedHours / 24
         if elapsedDays < 7 {
-            return "\(elapsedDays) 天前"
+            return AppLocalization.format("relativeTime.daysAgo", defaultValue: "%lld 天前", elapsedDays)
         }
 
         let elapsedWeeks = elapsedDays / 7
         if elapsedWeeks < 5 {
-            return "\(elapsedWeeks) 周前"
+            return AppLocalization.format("relativeTime.weeksAgo", defaultValue: "%lld 周前", elapsedWeeks)
         }
 
         let elapsedMonths = elapsedDays / 30
         if elapsedMonths < 12 {
-            return "\(max(1, elapsedMonths)) 个月前"
+            return AppLocalization.format("relativeTime.monthsAgo", defaultValue: "%lld 个月前", max(1, elapsedMonths))
         }
 
         let elapsedYears = elapsedDays / 365
-        return "\(max(1, elapsedYears)) 年前"
+        return AppLocalization.format("relativeTime.yearsAgo", defaultValue: "%lld 年前", max(1, elapsedYears))
     }
 
     public static func stateBySettingCommandIndexText(

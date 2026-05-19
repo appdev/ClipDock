@@ -237,14 +237,17 @@ private final class PanelSearchBarView: NSView {
 
         clearButton.isBordered = false
         clearButton.imagePosition = .imageOnly
-        clearButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "清除搜索")?
+        clearButton.image = NSImage(
+            systemSymbolName: "xmark.circle.fill",
+            accessibilityDescription: AppLocalization.text("search.clear", defaultValue: "清除搜索")
+        )?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .regular))
         clearButton.imageScaling = .scaleProportionallyDown
         clearButton.target = nil
         clearButton.action = nil
         clearButton.focusRingType = .none
-        clearButton.toolTip = "清除搜索"
-        clearButton.setAccessibilityLabel("清除搜索")
+        clearButton.toolTip = AppLocalization.text("search.clear", defaultValue: "清除搜索")
+        clearButton.setAccessibilityLabel(AppLocalization.text("search.clear", defaultValue: "清除搜索"))
         clearButton.translatesAutoresizingMaskIntoConstraints = false
         clearButton.onPress = { [weak self] in
             self?.onClear?()
@@ -352,7 +355,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private enum DefaultPinboard {
         static let defaultID = "default"
-        static let defaultTitle = "固定"
+        static let defaultTitle = AppLocalization.text("pinboard.defaultTitle", defaultValue: "固定")
     }
 
     private struct PinboardColorOption: Equatable {
@@ -361,14 +364,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private static let pinboardColorOptions: [PinboardColorOption] = [
-        PinboardColorOption(title: "红色", colorCode: 4_293_940_557),
-        PinboardColorOption(title: "橙色", colorCode: 4_293_088_528),
-        PinboardColorOption(title: "黄色", colorCode: 4_294_620_928),
-        PinboardColorOption(title: "绿色", colorCode: 4_279_606_035),
-        PinboardColorOption(title: "蓝色", colorCode: 4_283_973_119),
-        PinboardColorOption(title: "紫色", colorCode: 4_290_925_536),
-        PinboardColorOption(title: "粉色", colorCode: 4_294_913_365),
-        PinboardColorOption(title: "灰色", colorCode: 9_408_403)
+        PinboardColorOption(title: AppLocalization.text("color.red", defaultValue: "红色"), colorCode: 4_293_940_557),
+        PinboardColorOption(title: AppLocalization.text("color.orange", defaultValue: "橙色"), colorCode: 4_293_088_528),
+        PinboardColorOption(title: AppLocalization.text("color.yellow", defaultValue: "黄色"), colorCode: 4_294_620_928),
+        PinboardColorOption(title: AppLocalization.text("color.green", defaultValue: "绿色"), colorCode: 4_279_606_035),
+        PinboardColorOption(title: AppLocalization.text("color.blue", defaultValue: "蓝色"), colorCode: 4_283_973_119),
+        PinboardColorOption(title: AppLocalization.text("color.purple", defaultValue: "紫色"), colorCode: 4_290_925_536),
+        PinboardColorOption(title: AppLocalization.text("color.pink", defaultValue: "粉色"), colorCode: 4_294_913_365),
+        PinboardColorOption(title: AppLocalization.text("color.gray", defaultValue: "灰色"), colorCode: 9_408_403)
     ]
 
     private struct PinboardFilterEntry: Equatable {
@@ -439,7 +442,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         ) {
             self.onSelect = onSelect
             super.init(frame: NSRect(x: 0, y: 0, width: 252, height: 38))
-            iconView.image = MenuIcon.image(named: "paintpalette", title: "颜色")
+            iconView.image = MenuIcon.image(named: "paintpalette", title: AppLocalization.itemTypeTitle("color"))
             iconView.imageScaling = .scaleProportionallyDown
             addSubview(iconView)
             titlesByColorCode = Dictionary(uniqueKeysWithValues: options.map { ($0.colorCode, $0.title) })
@@ -645,7 +648,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return PinboardFilterEntry(
                 id: pinboard.id,
                 title: pinboard.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? "未命名"
+                    ? AppLocalization.text("pinboard.untitled", defaultValue: "未命名")
                     : pinboard.title,
                 colorCode: pinboard.colorCode,
                 itemCount: pinboard.itemCount
@@ -1022,7 +1025,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         resizeHandle.onDragBegan = { [weak self] in self?.onHeightResizeBegan?() }
         resizeHandle.onDragChanged = { [weak self] deltaY in self?.onHeightResizeChanged?(deltaY) }
         resizeHandle.onDragEnded = { [weak self] in self?.onHeightResizeEnded?() }
-        resizeHandle.toolTip = "拖动调整高度"
+        resizeHandle.toolTip = AppLocalization.text("panel.resizeHandle.tooltip", defaultValue: "拖动调整高度")
         resizeHandle.translatesAutoresizingMaskIntoConstraints = false
 
         let controlBar = makeControlBar()
@@ -1067,7 +1070,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchField.font = searchTextFont
         searchField.textColor = .labelColor
         searchField.placeholderAttributedString = NSAttributedString(
-            string: "搜索",
+            string: AppLocalization.text("search.placeholder", defaultValue: "搜索"),
             attributes: [
                 .font: searchTextFont,
                 .foregroundColor: NSColor.placeholderTextColor
@@ -1078,8 +1081,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         searchField.isBordered = false
         searchField.drawsBackground = false
         searchField.backgroundColor = .clear
-        searchField.setAccessibilityLabel("搜索剪贴板内容或来源应用")
-        searchField.setAccessibilityHelp("搜索剪贴板内容或来源应用")
+        searchField.setAccessibilityLabel(AppLocalization.text("search.accessibility", defaultValue: "搜索剪贴板内容或来源应用"))
+        searchField.setAccessibilityHelp(AppLocalization.text("search.accessibility", defaultValue: "搜索剪贴板内容或来源应用"))
         searchField.delegate = self
         searchField.target = nil
         searchField.action = nil
@@ -1131,7 +1134,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
         let searchButton = makeToolbarIconButton(
             symbolName: "magnifyingglass",
-            accessibilityLabel: "搜索",
+            accessibilityLabel: AppLocalization.text("search.placeholder", defaultValue: "搜索"),
             button: SearchToolbarButton()
         ) { [weak self] in
             self?.toggleSearchField()
@@ -1148,14 +1151,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
         let addButton = makeToolbarIconButton(
             symbolName: "plus",
-            accessibilityLabel: "创建 Pinboard"
+            accessibilityLabel: AppLocalization.text("pinboard.create", defaultValue: "创建 Pinboard")
         ) { [weak self] in
             self?.showCreatePinboardDialog()
         }
         createPinboardButton = addButton
         let moreButton = makeToolbarIconButton(
             symbolName: "ellipsis.circle",
-            accessibilityLabel: "更多功能"
+            accessibilityLabel: AppLocalization.text("panel.more", defaultValue: "更多功能")
         ) {}
         moreButton.onPress = { [weak self, weak moreButton] in
             guard let moreButton else { return }
@@ -1205,7 +1208,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func makeFilterChips() -> [PinboardChipButton] {
         [
-            makePinboardChip(title: "剪贴板", pinboardID: nil, itemType: nil, symbolName: "clock.arrow.circlepath", dotColor: .clear)
+            makePinboardChip(title: AppLocalization.text("clipboard.title", defaultValue: "剪贴板"), pinboardID: nil, itemType: nil, symbolName: "clock.arrow.circlepath", dotColor: .clear)
         ]
             + pinboardFilters.map { pinboard in
                 makePinboardChip(
@@ -1264,10 +1267,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        menu.addItem(ActionMenuItem(title: "隐藏面板", imageName: "eye.slash") { [weak self] in
+        menu.addItem(ActionMenuItem(title: AppLocalization.text("menu.hidePanel", defaultValue: "隐藏面板"), imageName: "eye.slash") { [weak self] in
             self?.applyInteractionAction(.hidePanel)
         })
-        menu.addItem(ActionMenuItem(title: "偏好设置", imageName: "gearshape") { [weak self] in
+        menu.addItem(ActionMenuItem(title: AppLocalization.text("menu.preferences", defaultValue: "偏好设置"), imageName: "gearshape") { [weak self] in
             self?.onRuntimeAction?(.showPreferences)
         })
 
@@ -1280,8 +1283,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func makePinboardColorRowMenuItem(for pinboard: PinboardFilterEntry) -> NSMenuItem {
-        let item = NSMenuItem(title: "颜色", action: nil, keyEquivalent: "")
-        item.image = MenuIcon.image(named: "paintpalette", title: "颜色")
+        let item = NSMenuItem(title: AppLocalization.itemTypeTitle("color"), action: nil, keyEquivalent: "")
+        item.image = MenuIcon.image(named: "paintpalette", title: AppLocalization.itemTypeTitle("color"))
         item.view = PinboardColorSwatchRowView(
             options: Self.pinboardColorOptions,
             selectedColorCode: pinboard.colorCode,
@@ -1301,11 +1304,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makePinboardChipManagementMenu(for pinboard: PinboardFilterEntry) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(ActionMenuItem(title: "重命名", imageName: "pencil") { [weak self] in
+        menu.addItem(ActionMenuItem(title: AppLocalization.text("action.rename", defaultValue: "重命名"), imageName: "pencil") { [weak self] in
             self?.showRenamePinboardDialog(for: pinboard)
         })
 
-        menu.addItem(ActionMenuItem(title: "删除...", imageName: "trash") { [weak self] in
+        menu.addItem(ActionMenuItem(title: AppLocalization.text("action.deleteEllipsis", defaultValue: "删除..."), imageName: "trash") { [weak self] in
             self?.confirmDeletePinboard(pinboard)
         })
         menu.addItem(.separator())
@@ -1320,7 +1323,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func createPinboardDirectly() {
         let colorOption = Self.pinboardColorOptions.randomElement() ?? Self.pinboardColorOptions[0]
         pendingCreatedPinboardSourceIDs = Set(pinboardFilters.map(\.id))
-        onRuntimeAction?(.createPinboard(title: "未命名", colorCode: colorOption.colorCode))
+        onRuntimeAction?(.createPinboard(title: AppLocalization.text("pinboard.untitled", defaultValue: "未命名"), colorCode: colorOption.colorCode))
     }
 
     private func showRenamePinboardDialog(for explicitPinboard: PinboardFilterEntry? = nil) {
@@ -1370,7 +1373,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private var placeholder: String {
-        "未命名"
+        AppLocalization.text("pinboard.untitled", defaultValue: "未命名")
     }
 
     private func inlineRenameFieldFrame(in button: PinboardChipButton) -> NSRect {
@@ -1434,9 +1437,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     private func showShareUnavailableAlert() {
         let alert = NSAlert()
-        alert.messageText = "共享 Pinboard"
-        alert.informativeText = "共享 Pinboard 尚未接入。"
-        alert.addButton(withTitle: "确定")
+        alert.messageText = AppLocalization.text("pinboard.share.title", defaultValue: "共享 Pinboard")
+        alert.informativeText = AppLocalization.text("pinboard.share.unavailable", defaultValue: "共享 Pinboard 尚未接入。")
+        alert.addButton(withTitle: AppLocalization.text("action.ok", defaultValue: "确定"))
         _ = runBlockingPanelModal {
             alert.runModal()
         }
@@ -1450,10 +1453,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func confirmDeletePinboard(_ pinboard: PinboardFilterEntry) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "删除“\(pinboard.title)”？"
-        alert.informativeText = "删除 Pinboard 及其所有内容将无法恢复。"
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = AppLocalization.format("pinboard.delete.confirmTitle", defaultValue: "删除“%@”？", pinboard.title)
+        alert.informativeText = AppLocalization.text("pinboard.delete.warning", defaultValue: "删除 Pinboard 及其所有内容将无法恢复。")
+        alert.addButton(withTitle: AppLocalization.text("action.delete", defaultValue: "删除"))
+        alert.addButton(withTitle: AppLocalization.text("action.cancel", defaultValue: "取消"))
 
         let response = runBlockingPanelModal {
             alert.runModal()
@@ -2171,26 +2174,26 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makeManagementMenu(for item: RustClipboardItemSummary) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        menu.addItem(ActionMenuItem(title: "复制", imageName: "doc.on.doc", keyEquivalent: "c", modifierMask: [.command]) { [weak self] in
+        menu.addItem(ActionMenuItem(title: AppLocalization.text("action.copy", defaultValue: "复制"), imageName: "doc.on.doc", keyEquivalent: "c", modifierMask: [.command]) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .copy))
         })
         if item.supportsPlainTextCopyAction {
-            menu.addItem(ActionMenuItem(title: "复制为纯文本", imageName: "text.alignleft") { [weak self] in
+            menu.addItem(ActionMenuItem(title: AppLocalization.text("action.copyAsPlainText", defaultValue: "复制为纯文本"), imageName: "text.alignleft") { [weak self] in
                 self?.applyInteractionAction(.management(itemID: item.id, action: .copyAsPlainText))
             })
         }
         if let pathText = originalImagePathText(for: item) {
-            menu.addItem(ActionMenuItem(title: "复制路径", imageName: "folder") { [weak self] in
+            menu.addItem(ActionMenuItem(title: AppLocalization.text("action.copyPath", defaultValue: "复制路径"), imageName: "folder") { [weak self] in
                 self?.onRuntimeAction?(.copyPath(pathText))
             })
         }
-        menu.addItem(ActionMenuItem(title: "删除", imageName: "trash", keyEquivalent: "\u{8}", modifierMask: []) { [weak self] in
+        menu.addItem(ActionMenuItem(title: AppLocalization.text("action.delete", defaultValue: "删除"), imageName: "trash", keyEquivalent: "\u{8}", modifierMask: []) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .delete))
         })
         menu.addItem(.separator())
         menu.addItem(makePinboardMenuItem(for: item))
         menu.addItem(.separator())
-        menu.addItem(ActionMenuItem(title: "预览", imageName: "eye", keyEquivalent: " ", modifierMask: []) { [weak self] in
+        menu.addItem(ActionMenuItem(title: AppLocalization.text("action.preview", defaultValue: "预览"), imageName: "eye", keyEquivalent: " ", modifierMask: []) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .preview))
         })
         return menu
@@ -2206,8 +2209,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func makePinboardMenuItem(for item: RustClipboardItemSummary) -> NSMenuItem {
-        let menuItem = NSMenuItem(title: "固定", action: nil, keyEquivalent: "")
-        menuItem.image = MenuIcon.image(named: "pin", title: "固定")
+        let menuItem = NSMenuItem(title: AppLocalization.text("pinboard.pin", defaultValue: "固定"), action: nil, keyEquivalent: "")
+        menuItem.image = MenuIcon.image(named: "pin", title: AppLocalization.text("pinboard.pin", defaultValue: "固定"))
 
         let submenu = NSMenu()
         let selectedPinboardID = panelViewState().toolbar.selectedPinboardID
@@ -2232,7 +2235,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         if !pinboardFilters.isEmpty {
             submenu.addItem(.separator())
         }
-        submenu.addItem(ActionMenuItem(title: "创建 Pinboard...", imageName: "plus") { [weak self] in
+        submenu.addItem(ActionMenuItem(title: AppLocalization.text("pinboard.createEllipsis", defaultValue: "创建 Pinboard..."), imageName: "plus") { [weak self] in
             self?.showCreatePinboardDialog()
         })
 
@@ -2577,11 +2580,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             id: "__clipdock_database_error__",
             state: statusCardState(
                 itemID: "__clipdock_database_error__",
-                sourceAppName: "数据库不可用",
-                relativeTimeText: "可重试",
+                sourceAppName: AppLocalization.text("database.unavailable", defaultValue: "数据库不可用"),
+                relativeTimeText: AppLocalization.text("action.retryAvailable", defaultValue: "可重试"),
                 symbolName: "exclamationmark.triangle",
-                typeText: "错误",
-                summaryText: "本地历史暂时无法读取"
+                typeText: AppLocalization.text("status.error", defaultValue: "错误"),
+                summaryText: AppLocalization.text("database.historyReadFailed", defaultValue: "本地历史暂时无法读取")
             ),
             callbacks: PanelItemCollectionCallbacks(
                 toolTip: nil,
@@ -2758,8 +2761,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             }
         }
         button.toolTip = pinboardID != nil
-            ? "查看固定内容，右键管理"
-            : "剪贴板历史"
+            ? AppLocalization.text("pinboard.chip.tooltip", defaultValue: "查看固定内容，右键管理")
+            : AppLocalization.text("clipboard.history", defaultValue: "剪贴板历史")
         button.alignment = .center
         button.translatesAutoresizingMaskIntoConstraints = false
         button.wantsLayer = true
@@ -3108,7 +3111,7 @@ extension FloatingPanelContentView {
     func smokeMenuTrackingDefersEmptySearchClickAway(
         makeSearchNonEmptyBeforeExit: Bool
     ) -> (pendingDuringTracking: Bool, searchVisibleDuringTracking: Bool) {
-        guard let sourceView = toolbarIconButtons.first(where: { $0.toolTip == "更多功能" }),
+        guard let sourceView = toolbarIconButtons.first(where: { $0.toolTip == AppLocalization.text("panel.more", defaultValue: "更多功能") }),
               let event = smokeMouseDownEvent(centeredIn: sourceView)
         else {
             return (pendingDuringTracking: false, searchVisibleDuringTracking: smokeIsSearchVisible)

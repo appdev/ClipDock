@@ -44,7 +44,7 @@ struct CapturedSourceApplication {
             bundleId: application.bundleIdentifier,
             name: application.localizedName
                 ?? application.bundleURL?.deletingPathExtension().lastPathComponent
-                ?? "未知来源",
+                ?? AppLocalization.text("source.unknown", defaultValue: "未知来源"),
             bundlePath: application.bundleURL?.path,
             windowTitle: windowTitleProvider.title(for: application),
             icon: application.icon

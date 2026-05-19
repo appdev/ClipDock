@@ -134,12 +134,15 @@ final class CopyCompletionHUDController {
         shadowHost.addSubview(card)
 
         let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "已复制")
+        icon.image = NSImage(
+            systemSymbolName: "checkmark",
+            accessibilityDescription: AppLocalization.text("copy.completed", defaultValue: "已复制")
+        )
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 72, weight: .medium)
         icon.contentTintColor = CopyCompletionHUDPalette.foreground
         icon.translatesAutoresizingMaskIntoConstraints = false
 
-        let label = NSTextField(labelWithString: "已复制")
+        let label = NSTextField(labelWithString: AppLocalization.text("copy.completed", defaultValue: "已复制"))
         label.font = .systemFont(ofSize: 22, weight: .regular)
         label.textColor = CopyCompletionHUDPalette.foreground
         label.alignment = .center

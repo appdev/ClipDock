@@ -735,7 +735,7 @@ final class PanelItemCardRenderer {
             )
         case .file:
             return makeFilePreview(
-                accessibilityLabel: assetRequest.sourceAppName ?? "文件",
+                accessibilityLabel: assetRequest.sourceAppName ?? AppLocalization.itemTypeTitle("file"),
                 assetRequest: assetRequest
             )
         case .color(let colorValue):
@@ -819,7 +819,9 @@ final class PanelItemCardRenderer {
                 guard imageView?.identifier == loadIdentifier else { return }
                 imageView?.previewImageLoadToken = nil
                 imageView?.image = image
-                fallbackLabel?.stringValue = image == nil ? "预览不可用" : ""
+                fallbackLabel?.stringValue = image == nil
+                    ? AppLocalization.text("preview.unavailable", defaultValue: "预览不可用")
+                    : ""
                 fallbackLabel?.isHidden = image != nil
             }
         }
@@ -1040,8 +1042,8 @@ final class PanelItemCardRenderer {
     }
 
     private func defaultLinkBrowserIcon() -> NSImage? {
-        let image = NSImage(systemSymbolName: "safari", accessibilityDescription: "Safari 浏览器")
-            ?? NSImage(systemSymbolName: "globe", accessibilityDescription: "浏览器")
+        let image = NSImage(systemSymbolName: "safari", accessibilityDescription: AppLocalization.text("browser.safari", defaultValue: "Safari 浏览器"))
+            ?? NSImage(systemSymbolName: "globe", accessibilityDescription: AppLocalization.text("browser.generic", defaultValue: "浏览器"))
         image?.isTemplate = true
         return image
     }

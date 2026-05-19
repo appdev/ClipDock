@@ -10,22 +10,22 @@ enum PanelLevelMode: String, CaseIterable {
     var title: String {
         switch self {
         case .floating:
-            return "普通悬浮"
+            return AppLocalization.text("panel.level.floating", defaultValue: "普通悬浮")
         case .statusBar:
-            return "状态栏层级"
+            return AppLocalization.text("panel.level.statusBar", defaultValue: "状态栏层级")
         case .aboveDock:
-            return "高于 Dock"
+            return AppLocalization.text("panel.level.aboveDock", defaultValue: "高于 Dock")
         }
     }
 
     var detail: String {
         switch self {
         case .floating:
-            return "NSWindow.Level.floating，适合大多数工具面板"
+            return AppLocalization.text("panel.level.floating.detail", defaultValue: "NSWindow.Level.floating，适合大多数工具面板")
         case .statusBar:
-            return "NSWindow.Level.statusBar，层级更高"
+            return AppLocalization.text("panel.level.statusBar.detail", defaultValue: "NSWindow.Level.statusBar，层级更高")
         case .aboveDock:
-            return "CGWindowLevel(.dockWindow) + 1，可压到 Dock 层级之上"
+            return AppLocalization.text("panel.level.aboveDock.detail", defaultValue: "CGWindowLevel(.dockWindow) + 1，可压到 Dock 层级之上")
         }
     }
 }

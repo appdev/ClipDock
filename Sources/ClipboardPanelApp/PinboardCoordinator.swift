@@ -26,7 +26,7 @@ public final class PinboardCoordinator {
                 self.onMutationCompleted?(mutation, mutationResult)
 
             case .failure(let error):
-                self.onStatusTextChanged?("Pinboard：\(error.code)")
+                self.onStatusTextChanged?(AppLocalization.format("pinboard.status.error", defaultValue: "Pinboard：%@", error.code))
             }
         }
     }
@@ -34,13 +34,13 @@ public final class PinboardCoordinator {
     private func pendingStatusText(for mutation: ClipboardPinboardMutationRequest) -> String {
         switch mutation {
         case .create:
-            return "Pinboard：正在创建…"
+            return AppLocalization.text("pinboard.status.creating", defaultValue: "Pinboard：正在创建…")
         case .rename:
-            return "Pinboard：正在重命名…"
+            return AppLocalization.text("pinboard.status.renaming", defaultValue: "Pinboard：正在重命名…")
         case .updateColor:
-            return "Pinboard：正在更新颜色…"
+            return AppLocalization.text("pinboard.status.updatingColor", defaultValue: "Pinboard：正在更新颜色…")
         case .delete:
-            return "Pinboard：正在删除…"
+            return AppLocalization.text("pinboard.status.deleting", defaultValue: "Pinboard：正在删除…")
         }
     }
 
@@ -50,15 +50,21 @@ public final class PinboardCoordinator {
     ) -> String {
         switch mutation {
         case .create:
-            return result.affectedCount > 0 ? "Pinboard：已创建" : "Pinboard：创建失败"
+            return result.affectedCount > 0
+                ? AppLocalization.text("pinboard.status.created", defaultValue: "Pinboard：已创建")
+                : AppLocalization.text("pinboard.status.createFailed", defaultValue: "Pinboard：创建失败")
         case .rename:
-            return result.affectedCount > 0 ? "Pinboard：已重命名" : "Pinboard：未找到"
+            return result.affectedCount > 0
+                ? AppLocalization.text("pinboard.status.renamed", defaultValue: "Pinboard：已重命名")
+                : AppLocalization.text("pinboard.status.notFound", defaultValue: "Pinboard：未找到")
         case .updateColor:
-            return result.affectedCount > 0 ? "Pinboard：颜色已更新" : "Pinboard：未找到"
+            return result.affectedCount > 0
+                ? AppLocalization.text("pinboard.status.colorUpdated", defaultValue: "Pinboard：颜色已更新")
+                : AppLocalization.text("pinboard.status.notFound", defaultValue: "Pinboard：未找到")
         case .delete:
             return result.affectedCount > 0
-                ? "Pinboard：已删除，并删除 \(result.affectedCount) 条内容"
-                : "Pinboard：已删除"
+                ? AppLocalization.format("pinboard.status.deletedWithItems", defaultValue: "Pinboard：已删除，并删除 %lld 条内容", result.affectedCount)
+                : AppLocalization.text("pinboard.status.deleted", defaultValue: "Pinboard：已删除")
         }
     }
 }
