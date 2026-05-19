@@ -24,7 +24,25 @@ public enum ClipboardPastePayloadPlanner {
     public static func payload(
         for item: RustClipboardItemSummary,
         appSupportDirectory: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        alwaysPasteAsPlainText: Bool = false
+    ) -> ClipboardPastePayload {
+        if alwaysPasteAsPlainText,
+           let plainTextPayload = globalPlainTextPayload(for: item) {
+            return plainTextPayload
+        }
+
+        return originalPayload(
+            for: item,
+            appSupportDirectory: appSupportDirectory,
+            fileManager: fileManager
+        )
+    }
+
+    private static func originalPayload(
+        for item: RustClipboardItemSummary,
+        appSupportDirectory: URL,
+        fileManager: FileManager
     ) -> ClipboardPastePayload {
         switch item.itemType {
         case "text", "link":
@@ -79,6 +97,29 @@ public enum ClipboardPastePayloadPlanner {
 
         default:
             return .unsupported(reason: "unsupported_type")
+        }
+    }
+
+    private static func globalPlainTextPayload(for item: RustClipboardItemSummary) -> ClipboardPastePayload? {
+        switch item.itemType {
+        case "text", "rich_text", "link":
+            let text = item.primaryText ?? item.summary
+            let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmedText.isEmpty ? .unsupported(reason: "empty_text") : .text(text)
+
+        case "color":
+            let colorValue = [
+                item.primaryText,
+                item.summary
+            ]
+                .compactMap { $0 }
+                .lazy
+                .compactMap { ClipboardColorValue(normalizedHex: $0) }
+                .first
+            return colorValue.map { .text($0.normalizedHex) }
+
+        default:
+            return nil
         }
     }
 

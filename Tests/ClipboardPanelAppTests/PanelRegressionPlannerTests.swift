@@ -245,13 +245,13 @@ struct PanelRegressionPlannerTests {
     func accessibilityPermissionPresenterExplainsWindowTitleCaptureState() {
         #expect(AccessibilityPermissionPresenter.presentation(status: .trusted) == AccessibilityPermissionPresentation(
             isTrusted: true,
-            detail: "已允许，标题关键词可读取当前窗口",
+            detail: "已允许，可读取窗口标题并直接粘贴到目标",
             actionTitle: "重新检查",
             canOpenSettings: true
         ))
         #expect(AccessibilityPermissionPresenter.presentation(status: .notTrusted) == AccessibilityPermissionPresentation(
             isTrusted: false,
-            detail: "未允许，仅使用可见窗口名回退",
+            detail: "未允许，直接粘贴需在系统辅助功能中允许 ClipDock",
             actionTitle: "打开系统设置",
             canOpenSettings: true
         ))

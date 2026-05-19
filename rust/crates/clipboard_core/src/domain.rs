@@ -621,6 +621,8 @@ pub struct ShortcutsPreferences {
     pub open_panel: KeyboardShortcut,
     #[serde(default)]
     pub paste_directly_to_target: bool,
+    #[serde(default)]
+    pub always_paste_as_plain_text: bool,
 }
 
 impl Default for ShortcutsPreferences {
@@ -628,6 +630,7 @@ impl Default for ShortcutsPreferences {
         Self {
             open_panel: default_open_panel_shortcut(),
             paste_directly_to_target: false,
+            always_paste_as_plain_text: false,
         }
     }
 }

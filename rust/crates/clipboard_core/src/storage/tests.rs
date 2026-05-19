@@ -2729,6 +2729,7 @@ fn default_preferences_document_is_seeded() {
         vec!["command".to_string(), "shift".to_string()]
     );
     assert!(!preferences.shortcuts.paste_directly_to_target);
+    assert!(!preferences.shortcuts.always_paste_as_plain_text);
     assert_eq!(
         preferences.ignore_list.ignored_app_identifiers,
         vec![
@@ -2858,6 +2859,7 @@ fn preferences_update_persists_normalized_document() {
         "ignored".to_string(),
     ];
     preferences.shortcuts.paste_directly_to_target = true;
+    preferences.shortcuts.always_paste_as_plain_text = true;
     preferences.ignore_list.ignored_app_identifiers = vec![
         "  com.apple.Terminal  ".to_string(),
         "terminal".to_string(),
@@ -2892,6 +2894,7 @@ fn preferences_update_persists_normalized_document() {
         ]
     );
     assert!(saved.shortcuts.paste_directly_to_target);
+    assert!(saved.shortcuts.always_paste_as_plain_text);
     assert_eq!(
         saved.ignore_list.ignored_app_identifiers,
         vec!["com.apple.Terminal".to_string(), "terminal".to_string()]
@@ -2958,6 +2961,7 @@ fn preferences_parse_keeps_backward_compatible_missing_ignore_list() {
     assert!(preferences.history.record_files);
     assert!(preferences.link_preview.web_preview_enabled);
     assert!(!preferences.shortcuts.paste_directly_to_target);
+    assert!(!preferences.shortcuts.always_paste_as_plain_text);
     assert!(!preferences.ignore_list.skip_unknown_source);
 }
 

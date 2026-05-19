@@ -10,8 +10,14 @@ struct ClipboardColorPlannerTests {
             for: item,
             appSupportDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
         )
+        let globalPlainTextPayload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
+            alwaysPasteAsPlainText: true
+        )
 
         #expect(payload == .text("#FF00AA"))
+        #expect(globalPlainTextPayload == .text("#FF00AA"))
     }
 
     @Test
@@ -46,6 +52,11 @@ struct ClipboardColorPlannerTests {
         #expect(preview.body == "bad-color")
         #expect(preview.metadata == "颜色格式不可用")
         #expect(payload == .unsupported(reason: "invalid_color"))
+        #expect(ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
+            alwaysPasteAsPlainText: true
+        ) == .unsupported(reason: "invalid_color"))
     }
 }
 

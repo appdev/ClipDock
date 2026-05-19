@@ -43,7 +43,7 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
     var subtitle: String {
         switch self {
         case .general:
-            return "启动、菜单栏、主题、预览与保留策略"
+            return "启动、菜单栏、粘贴项目、主题、预览与保留策略"
         case .appearance:
             return "主题与预览浮层"
         case .history:
@@ -541,6 +541,8 @@ final class AccessibilityPermissionController {
     }
 
     func openAccessibilitySettings() {
+        requestAccessibilityPermissionPrompt()
+
         let settingsURLs = [
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
             "x-apple.systempreferences:com.apple.preference.security"
@@ -552,6 +554,13 @@ final class AccessibilityPermissionController {
                 return
             }
         }
+    }
+
+    private func requestAccessibilityPermissionPrompt() {
+        let options = [
+            "AXTrustedCheckOptionPrompt": true
+        ] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 }
 
@@ -650,6 +659,7 @@ final class PreferencesWindowController: NSWindowController {
         viewModel.persist { $0.appearance.previewPopoverEnabled.toggle() }
         viewModel.persist { $0.linkPreview.webPreviewEnabled.toggle() }
         viewModel.persist { $0.shortcuts.pasteDirectlyToTarget.toggle() }
+        viewModel.persist { $0.shortcuts.alwaysPasteAsPlainText.toggle() }
         viewModel.persist {
             $0.shortcuts.openPanel = RustKeyboardShortcut(
                 keyCode: Int64(kVK_ANSI_B),
@@ -680,6 +690,11 @@ final class PreferencesWindowController: NSWindowController {
             visibleSidebarSectionCount: PreferenceSection.allCases.count,
             window: window
         )
+    }
+
+    func smokeEnableDirectPasteToTargetForPermissionQA() -> Bool {
+        viewModel.persistDirectPasteToTarget(true)
+        return viewModel.state.preferences.shortcuts.pasteDirectlyToTarget
     }
 }
 
@@ -783,6 +798,14 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
 
     func requestAccessibilityPermission() {
         onAccessibilityPermissionRequested?()
+    }
+
+    func persistDirectPasteToTarget(_ isOn: Bool) {
+        if isOn, !state.accessibilityPermissionState.isTrusted {
+            requestAccessibilityPermission()
+        }
+
+        persist { $0.shortcuts.pasteDirectlyToTarget = isOn }
     }
 
     func addIgnoredApplications(at urls: [URL]) {
@@ -1358,6 +1381,39 @@ private struct PreferenceGeneralSection: View {
                 }
             }
 
+            PreferenceSectionGroup(title: "粘贴项目") {
+                PreferenceRow(
+                    title: "直接粘贴到目标",
+                    detail: model.state.accessibilityPermissionState.isTrusted
+                        ? "取用条目后自动粘贴到当前应用"
+                        : "需要在系统设置的辅助功能中允许 ClipDock"
+                ) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.shortcuts.pasteDirectlyToTarget },
+                            set: { isOn in model.persistDirectPasteToTarget(isOn) }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+                PreferenceDivider()
+                PreferenceRow(title: "始终以纯文本粘贴", detail: "文本、富文本、链接与颜色取用时写入纯文本") {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.shortcuts.alwaysPasteAsPlainText },
+                            set: { isOn in model.persist { $0.shortcuts.alwaysPasteAsPlainText = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+            }
+
             PreferenceSectionGroup(title: "外观") {
                 PreferenceRow(title: "显示模式", detail: "控制面板、设置与预览") {
                     Picker(
@@ -1434,19 +1490,6 @@ private struct PreferenceShortcutSection: View {
                 PreferenceDivider()
                 PreferenceRow(title: "快速取用条目", detail: "按住 Command 显示编号，按对应数字复制") {
                     PreferenceShortcutPill("⌘ 1...9")
-                }
-                PreferenceDivider()
-                PreferenceRow(title: "直接复制到目标", detail: "取用条目后自动粘贴到原应用") {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { model.state.preferences.shortcuts.pasteDirectlyToTarget },
-                            set: { isOn in model.persist { $0.shortcuts.pasteDirectlyToTarget = isOn } }
-                        )
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
                 }
             }
 
@@ -2493,6 +2536,28 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             }
                         )
                     ]),
+                    makeSection(title: "粘贴项目", rows: [
+                        makeSettingRow(
+                            title: "直接粘贴到目标",
+                            detail: accessibilityPermissionState.isTrusted
+                                ? "取用条目后自动粘贴到当前应用"
+                                : "需要在系统设置的辅助功能中允许 ClipDock",
+                            control: makeSwitch(
+                                isOn: preferences.shortcuts.pasteDirectlyToTarget
+                            ) { [weak self] isOn in
+                                self?.persistDirectPasteToTarget(isOn)
+                            }
+                        ),
+                        makeSettingRow(
+                            title: "始终以纯文本粘贴",
+                            detail: "文本、富文本、链接与颜色取用时写入纯文本",
+                            control: makeSwitch(
+                                isOn: preferences.shortcuts.alwaysPasteAsPlainText
+                            ) { [weak self] isOn in
+                                self?.persist { $0.shortcuts.alwaysPasteAsPlainText = isOn }
+                            }
+                        )
+                    ]),
                     makeSection(title: "保留策略", rows: [
                         makeSettingRow(
                             title: "保留时长",
@@ -2564,15 +2629,6 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             title: "快速取用条目",
                             detail: "按住 Command 显示编号，按对应数字复制",
                             shortcut: "⌘ 1...9"
-                        ),
-                        makeSettingRow(
-                            title: "直接复制到目标",
-                            detail: "取用条目后自动粘贴到原应用",
-                            control: makeSwitch(
-                                isOn: preferences.shortcuts.pasteDirectlyToTarget
-                            ) { [weak self] isOn in
-                                self?.persist { $0.shortcuts.pasteDirectlyToTarget = isOn }
-                            }
                         )
                     ]),
                     makeSection(title: "面板内操作", rows: [
@@ -2958,6 +3014,14 @@ private final class LegacyPreferencesWindowController: NSWindowController {
             renderSelectedSection()
             updateNavigationSelection()
         }
+    }
+
+    private func persistDirectPasteToTarget(_ isOn: Bool) {
+        if isOn, !sceneController.state.accessibilityPermissionState.isTrusted {
+            onAccessibilityPermissionRequested?()
+        }
+
+        persist { $0.shortcuts.pasteDirectlyToTarget = isOn }
     }
 
     private func renderSelectedSectionRespectingControlAction() {

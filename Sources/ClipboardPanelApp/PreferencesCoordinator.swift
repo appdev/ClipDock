@@ -162,7 +162,7 @@ public final class PreferencesCoordinator {
             statusText = "权限：辅助功能已允许"
         } else {
             openAccessibilitySettings()
-            statusText = "权限：已打开辅助功能设置"
+            statusText = "权限：请在辅助功能中允许 ClipDock"
         }
 
         return PreferencesAccessibilityActionResult(

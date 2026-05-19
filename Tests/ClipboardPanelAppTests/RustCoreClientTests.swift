@@ -825,6 +825,7 @@ struct RustCoreClientTests {
         #expect(result.preferences.shortcuts.openPanel.keyCode == 7)
         #expect(result.preferences.shortcuts.openPanel.modifiers == ["command", "shift"])
         #expect(!result.preferences.shortcuts.pasteDirectlyToTarget)
+        #expect(!result.preferences.shortcuts.alwaysPasteAsPlainText)
         #expect(result.preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)
         #expect(result.preferences.ignoreList.windowTitleKeywords.isEmpty)
         #expect(!result.preferences.ignoreList.skipUnknownSource)
@@ -850,6 +851,7 @@ struct RustCoreClientTests {
             modifiers: ["shift", "cmd", "alt", "command", "ignored"]
         )
         preferences.shortcuts.pasteDirectlyToTarget = true
+        preferences.shortcuts.alwaysPasteAsPlainText = true
         preferences.ignoreList.ignoredAppIdentifiers = [
             "  com.apple.Terminal  ",
             "terminal",
@@ -881,6 +883,7 @@ struct RustCoreClientTests {
         #expect(saved.preferences.shortcuts.openPanel.keyCode == 11)
         #expect(saved.preferences.shortcuts.openPanel.modifiers == ["command", "option", "shift"])
         #expect(saved.preferences.shortcuts.pasteDirectlyToTarget)
+        #expect(saved.preferences.shortcuts.alwaysPasteAsPlainText)
         #expect(saved.preferences.ignoreList.ignoredAppIdentifiers == ["com.apple.Terminal", "terminal"])
         #expect(saved.preferences.ignoreList.windowTitleKeywords == ["密码", "验证码"])
         #expect(saved.preferences.ignoreList.skipUnknownSource)
@@ -919,6 +922,7 @@ struct RustCoreClientTests {
         #expect(preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)
         #expect(preferences.shortcuts == RustShortcutsPreferences())
         #expect(!preferences.shortcuts.pasteDirectlyToTarget)
+        #expect(!preferences.shortcuts.alwaysPasteAsPlainText)
         #expect(preferences.history.maxItems == 5000)
         #expect(preferences.history.recordImages)
         #expect(preferences.history.recordFiles)
@@ -990,6 +994,11 @@ struct RustCoreClientTests {
 
         #expect(payload == .text("ClipDock payload text\nsecond line"))
         #expect(ClipboardPastePayloadPlanner.plainTextPayload(for: item) == .text("ClipDock payload text\nsecond line"))
+        #expect(ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        ) == .text("ClipDock payload text\nsecond line"))
     }
 
     @Test
@@ -1028,8 +1037,44 @@ struct RustCoreClientTests {
 
         #expect(payload == .richText(rtfURL: rtfURL, fallbackText: "Rich payload"))
         #expect(ClipboardPastePayloadPlanner.plainTextPayload(for: item) == .text("Rich payload"))
+        #expect(ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        ) == .text("Rich payload"))
         #expect(item.previewAssetPath?.hasSuffix("assets/rich-text/payload.rtf") == true)
         #expect(item.payloadAssetPath?.hasSuffix("assets/rich-text/payload.rtf") == true)
+    }
+
+    @Test
+    func globalPlainTextPreferencePlansLinkAsTextWithoutChangingExplicitPlainTextMenuScope() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+
+        _ = try client.captureText(
+            appSupportDirectory: tempDirectory,
+            request: RustCaptureTextRequest(
+                text: "https://example.com/plain",
+                sourceBundleId: "com.apple.Safari",
+                sourceAppName: "Safari",
+                sourceBundlePath: "/Applications/Safari.app",
+                sourceIconRelativePath: nil,
+                sourceConfidence: "high",
+                pasteboardChangeCount: 17
+            )
+        ).get()
+        let item = try #require(client.listItems(appSupportDirectory: tempDirectory).get().items.first)
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        )
+
+        #expect(item.itemType == "link")
+        #expect(payload == .text("https://example.com/plain"))
+        #expect(ClipboardPastePayloadPlanner.plainTextPayload(for: item) == .unsupported(reason: "unsupported_type"))
     }
 
     @Test
@@ -1109,6 +1154,11 @@ struct RustCoreClientTests {
         )
 
         #expect(payload == .imageFile(payloadURL))
+        #expect(ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        ) == .imageFile(payloadURL))
     }
 
     @Test
@@ -1152,6 +1202,11 @@ struct RustCoreClientTests {
         )
 
         #expect(payload == .fileURLs([firstFile, secondFile]))
+        #expect(ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        ) == .fileURLs([firstFile, secondFile]))
     }
 
     @Test

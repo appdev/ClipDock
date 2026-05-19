@@ -110,6 +110,46 @@ struct PreferencesShellTests {
     }
 
     @Test
+    @MainActor
+    func enablingDirectPasteRequestsAccessibilityPermissionWhenMissing() {
+        let controller = PreferencesWindowController()
+        defer { controller.close() }
+        var requestCount = 0
+        controller.onAccessibilityPermissionRequested = {
+            requestCount += 1
+        }
+        controller.updateAccessibilityPermissionState(AccessibilityPermissionPresentation(
+            isTrusted: false,
+            detail: "未允许",
+            actionTitle: "打开系统设置",
+            canOpenSettings: true
+        ))
+
+        #expect(controller.smokeEnableDirectPasteToTargetForPermissionQA())
+        #expect(requestCount == 1)
+    }
+
+    @Test
+    @MainActor
+    func enablingDirectPasteSkipsPermissionRequestWhenAlreadyTrusted() {
+        let controller = PreferencesWindowController()
+        defer { controller.close() }
+        var requestCount = 0
+        controller.onAccessibilityPermissionRequested = {
+            requestCount += 1
+        }
+        controller.updateAccessibilityPermissionState(AccessibilityPermissionPresentation(
+            isTrusted: true,
+            detail: "已允许",
+            actionTitle: "重新检查",
+            canOpenSettings: true
+        ))
+
+        #expect(controller.smokeEnableDirectPasteToTargetForPermissionQA())
+        #expect(requestCount == 0)
+    }
+
+    @Test
     func ignoredApplicationResolverUsesBundleIdentifierFromSelectedApp() throws {
         let appURL = try makeTemporaryApplicationBundle(
             bundleIdentifier: "com.example.SecretApp",

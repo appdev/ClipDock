@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private enum DirectInsertTiming {
-        static let focusRestoreDelayNanoseconds: UInt64 = 120_000_000
+        static let focusRestoreDelayNanoseconds: UInt64 = 260_000_000
     }
 
     private let panelController = FloatingPanelController()
@@ -589,7 +589,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let payload = ClipboardPastePayloadPlanner.payload(
             for: item,
-            appSupportDirectory: appSupportURL
+            appSupportDirectory: appSupportURL,
+            alwaysPasteAsPlainText: currentPreferences.shortcuts.alwaysPasteAsPlainText
         )
         let token = "self-\(UUID().uuidString)"
         let startChangeCount = NSPasteboard.general.changeCount + 1
@@ -602,11 +603,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 through: changeCount
             )
             let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
-            storageStatusText = pasteDirectlyToTarget ? "复制：已发送到目标" : "复制：已写入剪贴板"
+            let didScheduleDirectPaste = pasteDirectlyToTarget && scheduleCommandVToTargetIfPermitted()
+            storageStatusText = if pasteDirectlyToTarget {
+                didScheduleDirectPaste ? "复制：已发送到目标" : "复制：请在辅助功能中允许 ClipDock"
+            } else {
+                "复制：已写入剪贴板"
+            }
             refreshStatusText()
             performItemMutation(.recordCopied(itemID: item.id))
             panelController.hide()
-            if pasteDirectlyToTarget {
+            if didScheduleDirectPaste {
                 scheduleCommandVToTarget()
             }
 
@@ -674,6 +680,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard !Task.isCancelled else { return }
             self?.commandVKeystrokeSender.sendCommandVKeystroke()
         }
+    }
+
+    private func scheduleCommandVToTargetIfPermitted() -> Bool {
+        let permissionState = accessibilityPermissionController.currentState()
+        guard permissionState.isTrusted else {
+            openAccessibilitySettingsFromPreferences()
+            return false
+        }
+
+        return true
     }
 
     private func writeClipboardPayload(_ payload: ClipboardPastePayload, token: String) -> ClipboardWriteResult {

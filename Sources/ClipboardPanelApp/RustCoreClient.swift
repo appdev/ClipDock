@@ -199,18 +199,22 @@ public struct RustAppearancePreferences: Equatable, Codable, Sendable {
 public struct RustShortcutsPreferences: Equatable, Codable, Sendable {
     public var openPanel: RustKeyboardShortcut
     public var pasteDirectlyToTarget: Bool
+    public var alwaysPasteAsPlainText: Bool
 
     public init(
         openPanel: RustKeyboardShortcut = RustKeyboardShortcut(),
-        pasteDirectlyToTarget: Bool = false
+        pasteDirectlyToTarget: Bool = false,
+        alwaysPasteAsPlainText: Bool = false
     ) {
         self.openPanel = openPanel
         self.pasteDirectlyToTarget = pasteDirectlyToTarget
+        self.alwaysPasteAsPlainText = alwaysPasteAsPlainText
     }
 
     private enum CodingKeys: String, CodingKey {
         case openPanel = "open_panel"
         case pasteDirectlyToTarget = "paste_directly_to_target"
+        case alwaysPasteAsPlainText = "always_paste_as_plain_text"
     }
 
     public init(from decoder: Decoder) throws {
@@ -222,6 +226,10 @@ public struct RustShortcutsPreferences: Equatable, Codable, Sendable {
         self.pasteDirectlyToTarget = try container.decodeIfPresent(
             Bool.self,
             forKey: .pasteDirectlyToTarget
+        ) ?? false
+        self.alwaysPasteAsPlainText = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .alwaysPasteAsPlainText
         ) ?? false
     }
 }
