@@ -2076,12 +2076,12 @@ final class PanelInteractionSmokeProbe {
                 ))
             case .copyItem(let item):
                 self?.copiedItemID = item.id
-                controller?.hide()
+                controller?.hideAfterCopyingSelection()
             case .copyItemAsPlainText(let item):
                 self?.copiedItemID = item.id
-                controller?.hide()
+                controller?.hideAfterCopyingSelection()
             case .copyPath:
-                controller?.hide()
+                controller?.hideAfterCopyingSelection()
             case .setPinboardMembership(let item, let pinboardID, let isMember):
                 self?.pinboardRequest = (item.id, pinboardID, isMember)
             case .setPinboardMembershipBatch(let items, let pinboardID, let isMember):

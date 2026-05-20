@@ -332,7 +332,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     update.result,
                     isFiltered: update.isFiltered,
                     append: update.append,
-                    scope: update.scope
+                    scope: update.scope,
+                    preserveScrollPositionOnStructuralChange: update.preserveScrollPositionOnStructuralChange
                 )
             }
         }
@@ -692,7 +693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             refreshStatusText()
             performItemMutation(.recordCopied(itemID: item.id))
-            panelController.hide()
+            panelController.hideAfterCopyingSelection()
             if didScheduleDirectPaste {
                 scheduleCommandVToTarget()
             }
@@ -719,7 +720,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             storageStatusText = AppLocalization.text("copyPlainText.status.writtenToClipboard", defaultValue: "复制为纯文本：已写入剪贴板")
             refreshStatusText()
             performItemMutation(.recordCopied(itemID: item.id))
-            panelController.hide()
+            panelController.hideAfterCopyingSelection()
 
         case .failure(let message):
             storageStatusText = AppLocalization.format("copyPlainText.status.message", defaultValue: "复制为纯文本：%@", message)
@@ -748,7 +749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
             storageStatusText = AppLocalization.text("copyPath.status.writtenToClipboard", defaultValue: "复制路径：已写入剪贴板")
             refreshStatusText()
-            panelController.hide()
+            panelController.hideAfterCopyingSelection()
 
         case .failure(let message):
             storageStatusText = AppLocalization.format("copyPath.status.message", defaultValue: "复制路径：%@", message)

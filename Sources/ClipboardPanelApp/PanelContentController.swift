@@ -97,7 +97,8 @@ public final class PanelContentController {
     public func updateListState(
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
-        append: Bool = false
+        append: Bool = false,
+        preserveScrollPositionOnStructuralChange: Bool = false
     ) -> PanelContentRenderPlan {
         switch result {
         case .success(let listResult):
@@ -106,7 +107,8 @@ public final class PanelContentController {
                 isFiltered: isFiltered,
                 totalCount: listResult.totalCount,
                 hasMore: listResult.hasMore,
-                append: append
+                append: append,
+                preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
             )
         case .failure(let error):
             let update = PanelListViewStateAdapter.listUpdate(
@@ -174,6 +176,10 @@ public final class PanelContentController {
         sceneStore.copyItem(itemID: itemID)
     }
 
+    public func collapseSelectionToPrimary() -> PanelSelectionUpdate {
+        sceneStore.collapseSelectionToPrimary()
+    }
+
     public func setSearchText(_ searchText: String) {
         sceneStore.setSearchText(searchText)
     }
@@ -231,7 +237,8 @@ public final class PanelContentController {
         isFiltered: Bool,
         totalCount: Int64,
         hasMore: Bool,
-        append: Bool
+        append: Bool,
+        preserveScrollPositionOnStructuralChange: Bool
     ) -> PanelContentRenderPlan {
         let previousOrderedItemIDs = currentItemIDs
         let update = PanelListViewStateAdapter.listUpdate(
@@ -246,7 +253,8 @@ public final class PanelContentController {
         let scrollAction = PanelListScrollPolicy.action(
             previousOrderedItemIDs: previousOrderedItemIDs,
             nextOrderedItemIDs: currentItemIDs,
-            isAppendUpdate: update.didAppendToExistingItems
+            isAppendUpdate: update.didAppendToExistingItems,
+            preserveOnStructuralChange: preserveScrollPositionOnStructuralChange
         )
         let instruction: PanelContentRenderInstruction
         if update.didAppendToExistingItems {

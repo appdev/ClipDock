@@ -135,6 +135,43 @@ struct PanelContentControllerTests {
     }
 
     @Test
+    func selfOriginatedStructuralReplacementPreservesScroll() {
+        let first = makePanelContentItem(id: "a")
+        let second = makePanelContentItem(id: "b")
+        let controller = PanelContentController(
+            sceneStore: PanelSceneRuntimeController(
+                state: PanelSceneState(selection: PanelSelectionState(selectedItemID: "b"))
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items([first, second]),
+                totalCount: 2,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let reorderedItems = [second, first]
+        let plan = controller.updateListState(
+            .success(RustCoreListResult(
+                items: reorderedItems,
+                totalCount: Int64(reorderedItems.count),
+                hasMore: false
+            )),
+            isFiltered: false,
+            append: false,
+            preserveScrollPositionOnStructuralChange: true
+        )
+
+        #expect(plan.instruction == .reconcileItems(
+            reorderedItems,
+            scrollSelectedItem: true,
+            preserveScrollPosition: true
+        ))
+        #expect(plan.viewState.selectedItemID == "b")
+        #expect(controller.currentItemIDs == ["b", "a"])
+    }
+
+    @Test
     func nonAppendMetadataOnlyRefreshPreservesScroll() {
         let first = makePanelContentItem(id: "a")
         let second = makePanelContentItem(id: "b")

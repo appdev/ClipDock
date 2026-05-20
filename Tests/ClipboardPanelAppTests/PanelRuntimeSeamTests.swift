@@ -146,6 +146,92 @@ struct PanelRuntimeSeamTests {
     }
 
     @Test
+    @MainActor
+    func copyHideKeepsMultiSelectionUntilPanelIsHidden() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 4)
+        var copiedItemID: String?
+        controller.onRuntimeAction = { [weak controller] action in
+            guard case .copyItem(let item) = action else { return }
+            copiedItemID = item.id
+            controller?.hideAfterCopyingSelection()
+        }
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: 4, hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor(attempts: 240) {
+            controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+
+        let ids = contentView.smokeOrderedCardItemIDs()
+        try #require(ids.count >= 2)
+        contentView.smokeClickCard(itemID: ids[1], modifiers: [.command])
+        #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
+        #expect(contentView.smokeSelectedCardIDs() == [ids[0], ids[1]])
+
+        PanelQAHarness.sendCommandC(to: contentView)
+
+        #expect(copiedItemID == ids[1])
+        #expect(!controller.isVisible)
+        #expect(controller.smokePanelIsActuallyVisible)
+        #expect(controller.smokeHasActivePanelAnimation)
+        #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
+        #expect(contentView.smokeSelectedCardIDs() == [ids[0], ids[1]])
+
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+        #expect(contentView.smokeSelectedItemIDs == [ids[1]])
+        #expect(contentView.smokeSelectedCardIDs() == [ids[1]])
+    }
+
+    @Test
+    @MainActor
+    func copyHideSelectionCollapseIsCanceledWhenPanelReopens() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 4)
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: 4, hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor(attempts: 240) {
+            controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+
+        let ids = contentView.smokeOrderedCardItemIDs()
+        try #require(ids.count >= 2)
+        contentView.smokeClickCard(itemID: ids[1], modifiers: [.command])
+        #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
+
+        controller.hideAfterCopyingSelection()
+        #expect(controller.smokePanelIsActuallyVisible)
+        #expect(controller.smokeHasActivePanelAnimation)
+
+        controller.show()
+        #expect(await waitForMainActor(attempts: 240) {
+            controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+        #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
+
+        controller.hide()
+    }
+
+    @Test
     func typeToSearchKeyPlannerAllowsShiftAndRejectsShortcutOrNonPrintableKeys() {
         #expect(PanelTypeToSearchKeyPlanner.initialSearchText(
             characters: "A",
@@ -847,6 +933,41 @@ struct PanelRuntimeSeamTests {
         #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == nextItems.map(\.id) })
         #expect(contentView.smokeSelectedItemID == retainedSelection.id)
         #expect(abs(contentView.smokeScrollOriginX) < 1)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func selfOriginatedStructuralReplacementPreservesScroll() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 28)
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == items.map(\.id) })
+
+        contentView.smokeScrollToX(720)
+        let scrolledX = contentView.smokeScrollOriginX
+        #expect(scrolledX > 0)
+
+        let nextItems = [items[8]] + items.prefix(8) + items.suffix(from: 9)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: nextItems, totalCount: Int64(nextItems.count), hasMore: false)),
+            isFiltered: false,
+            preserveScrollPositionOnStructuralChange: true
+        )
+
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == nextItems.map(\.id) })
+        #expect(abs(contentView.smokeScrollOriginX - scrolledX) < 1)
 
         controller.hide()
     }

@@ -1508,7 +1508,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
         append: Bool = false,
-        scope: ClipboardListScope? = nil
+        scope: ClipboardListScope? = nil,
+        preserveScrollPositionOnStructuralChange: Bool = false
     ) {
         let updateScope = scope ?? currentListScope
         let loadedCountBeforeUpdate = currentItems().count
@@ -1545,7 +1546,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return
         }
 
-        let plan = interactionController.updateListState(result, isFiltered: isFiltered, append: append)
+        let plan = interactionController.updateListState(
+            result,
+            isFiltered: isFiltered,
+            append: append,
+            preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
+        )
         cacheListState(result, isFiltered: isFiltered, append: append, scope: updateScope)
         updateLoadMoreSuppressionAfterListUpdate(
             result: result,
@@ -2329,6 +2335,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
 
         refreshVisibleCommandHints()
+    }
+
+    func collapseCopySelectionAfterPanelHidden() {
+        applyInteractionResult(interactionController.collapseSelectionToPrimary())
     }
 
     private func scrollSelectedItemIntoView() {

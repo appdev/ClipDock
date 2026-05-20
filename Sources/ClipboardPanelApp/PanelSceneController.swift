@@ -201,6 +201,12 @@ public final class PanelSceneRuntimeController {
         state = PanelSceneController.stateByCopyingItem(state, itemID: itemID)
     }
 
+    public func collapseSelectionToPrimary() -> PanelSelectionUpdate {
+        let update = PanelSceneController.stateByCollapsingSelectionToPrimary(state)
+        state = update.state
+        return update
+    }
+
     public func clearSelection() {
         state = PanelSceneController.stateByClearingSelection(state)
     }
@@ -512,6 +518,23 @@ public enum PanelSceneController {
         nextState.selection.selectedItemIDs.insert(itemID)
         nextState.selection.rangeAnchorItemID = nextState.selection.rangeAnchorItemID ?? itemID
         return nextState
+    }
+
+    public static func stateByCollapsingSelectionToPrimary(_ state: PanelSceneState) -> PanelSelectionUpdate {
+        var nextState = state
+        let selectedItemID = state.selection.selectedItemID
+        nextState.selection = PanelSelectionState(
+            selectedItemID: selectedItemID,
+            selectedItemIDs: selectedItemID.map { Set([$0]) } ?? [],
+            rangeAnchorItemID: selectedItemID,
+            isCommandHintModeEnabled: state.selection.isCommandHintModeEnabled
+        )
+        let didChangeSelection = nextState.selection != state.selection
+        return PanelSelectionUpdate(
+            state: nextState,
+            shouldClosePreview: false,
+            didChangeSelection: didChangeSelection
+        )
     }
 
     public static func stateByClearingSelection(_ state: PanelSceneState) -> PanelSceneState {

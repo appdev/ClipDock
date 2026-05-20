@@ -128,6 +128,7 @@ final class FloatingPanelController {
     private var previousFocusApplication: PanelFocusApplication?
     private var isPanelPresented = false
     private var animationGeneration = 0
+    private var pendingCopySelectionCollapseAfterHide = false
     private var panelAnimationTask: Task<Void, Never>?
     private var resizePerformanceStart: TimeInterval?
     private var resizePerformanceEventCount = 0
@@ -165,6 +166,7 @@ final class FloatingPanelController {
 
     func show() {
         let showStart = ClipDockPerformanceLog.mark()
+        pendingCopySelectionCollapseAfterHide = false
         rememberPreviousFocusApplicationIfNeeded()
         guard let screen = targetScreenForPresentation() else { return }
 
@@ -222,13 +224,17 @@ final class FloatingPanelController {
         }
     }
 
-    func hide(restoresPreviousApplicationFocus: Bool = true) {
+    func hide(
+        restoresPreviousApplicationFocus: Bool = true,
+        afterHidden: (() -> Void)? = nil
+    ) {
         let hideStart = ClipDockPerformanceLog.mark()
         let wasPresented = isPanelPresented
         guard wasPresented || panel.isVisible else {
             previousFocusApplication = nil
             stopOutsideClickMonitoring()
             ClipDockPerformanceLog.finish("panel.hide.skipped", start: hideStart)
+            finishHiddenTransition(afterHidden: afterHidden)
             return
         }
 
@@ -246,6 +252,7 @@ final class FloatingPanelController {
 
         guard panel.isVisible else {
             ClipDockPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "alreadyHidden=true")
+            finishHiddenTransition(afterHidden: afterHidden)
             return
         }
 
@@ -268,7 +275,21 @@ final class FloatingPanelController {
             self.panel.setFrame(shownFrame, display: false)
             self.panel.alphaValue = 1
             ClipDockPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "animated=true")
+            self.finishHiddenTransition(afterHidden: afterHidden)
         }
+    }
+
+    func hideAfterCopyingSelection(restoresPreviousApplicationFocus: Bool = true) {
+        pendingCopySelectionCollapseAfterHide = true
+        hide(restoresPreviousApplicationFocus: restoresPreviousApplicationFocus)
+    }
+
+    private func finishHiddenTransition(afterHidden: (() -> Void)?) {
+        if pendingCopySelectionCollapseAfterHide {
+            pendingCopySelectionCollapseAfterHide = false
+            contentView.collapseCopySelectionAfterPanelHidden()
+        }
+        afterHidden?()
     }
 
     var hasBlockingPanelOperation: Bool {
@@ -308,9 +329,16 @@ final class FloatingPanelController {
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
         append: Bool = false,
-        scope: ClipboardListScope? = nil
+        scope: ClipboardListScope? = nil,
+        preserveScrollPositionOnStructuralChange: Bool = false
     ) {
-        contentView.updateListState(result, isFiltered: isFiltered, append: append, scope: scope)
+        contentView.updateListState(
+            result,
+            isFiltered: isFiltered,
+            append: append,
+            scope: scope,
+            preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
+        )
     }
 
     func updateLoadingMoreState(_ isLoading: Bool) {

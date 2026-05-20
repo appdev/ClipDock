@@ -44,4 +44,18 @@ struct PanelListScrollPolicyTests {
         #expect(!action.preserveScrollPosition)
         #expect(!action.shouldScrollSelectedItem)
     }
+
+    @Test
+    func selfOriginatedStructuralReplacementPreservesCurrentPosition() {
+        let action = PanelListScrollPolicy.action(
+            previousOrderedItemIDs: ["a", "b"],
+            nextOrderedItemIDs: ["b", "a"],
+            isAppendUpdate: false,
+            preserveOnStructuralChange: true
+        )
+
+        #expect(action == .preserveCurrentPosition)
+        #expect(action.preserveScrollPosition)
+        #expect(action.shouldScrollSelectedItem)
+    }
 }

@@ -17,13 +17,18 @@ public enum PanelListScrollPolicy {
     public static func action(
         previousOrderedItemIDs: [String],
         nextOrderedItemIDs: [String],
-        isAppendUpdate: Bool
+        isAppendUpdate: Bool,
+        preserveOnStructuralChange: Bool = false
     ) -> PanelListScrollAction {
         if isAppendUpdate {
             return .preserveCurrentPosition
         }
 
         if previousOrderedItemIDs == nextOrderedItemIDs {
+            return .preserveCurrentPosition
+        }
+
+        if preserveOnStructuralChange {
             return .preserveCurrentPosition
         }
 

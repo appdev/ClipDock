@@ -120,6 +120,11 @@ public final class PanelInteractionController {
         return makeResult(effects: effects)
     }
 
+    public func collapseSelectionToPrimary() -> PanelInteractionResult {
+        let update = contentController.collapseSelectionToPrimary()
+        return makeResult(effects: selectionEffects(update, scrollIntoView: false))
+    }
+
     public func updateStorageState(
         _ result: Result<RustCoreOpenResult, RustCoreError>
     ) -> PanelContentRenderPlan {
@@ -129,9 +134,15 @@ public final class PanelInteractionController {
     public func updateListState(
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
-        append: Bool = false
+        append: Bool = false,
+        preserveScrollPositionOnStructuralChange: Bool = false
     ) -> PanelContentRenderPlan {
-        contentController.updateListState(result, isFiltered: isFiltered, append: append)
+        contentController.updateListState(
+            result,
+            isFiltered: isFiltered,
+            append: append,
+            preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
+        )
     }
 
     public func updateLoadingMoreState(_ isLoading: Bool) {

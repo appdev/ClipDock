@@ -395,6 +395,25 @@ struct PanelInteractionControllerTests {
     }
 
     @Test
+    func collapseSelectionToPrimaryClearsTransientMultiSelection() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(
+                    selectedItemID: "b",
+                    selectedItemIDs: ["a", "b"],
+                    rangeAnchorItemID: "a"
+                )
+            )
+        )
+
+        let result = controller.collapseSelectionToPrimary()
+
+        #expect(result.viewState.selectedItemID == "b")
+        #expect(result.viewState.selectedItemIDs == ["b"])
+        #expect(result.effects == [.selectionChanged(scrollIntoView: false)])
+    }
+
+    @Test
     func deleteSelectedItemEmitsDeleteActionAndClearsCommandHints() {
         let items = [makePanelInteractionItem(id: "b")]
         let controller = makePanelInteractionController(

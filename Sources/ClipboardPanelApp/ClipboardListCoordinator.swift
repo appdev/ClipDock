@@ -77,17 +77,20 @@ public struct ClipboardListUpdate: Sendable {
     public let result: Result<RustCoreListResult, RustCoreError>
     public let isFiltered: Bool
     public let append: Bool
+    public let preserveScrollPositionOnStructuralChange: Bool
 
     public init(
         scope: ClipboardListScope = .clipboard,
         result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
-        append: Bool
+        append: Bool,
+        preserveScrollPositionOnStructuralChange: Bool = false
     ) {
         self.scope = scope
         self.result = result
         self.isFiltered = isFiltered
         self.append = append
+        self.preserveScrollPositionOnStructuralChange = preserveScrollPositionOnStructuralChange
     }
 }
 
@@ -569,7 +572,9 @@ public final class ClipboardListCoordinator {
                 guard currentPinboardID == pinboardID else { return }
             }
             refreshLoadedWindow()
-        case .recordCopied, .clear:
+        case .recordCopied:
+            refreshLoadedWindow(preserveScrollPositionOnStructuralChange: true)
+        case .clear:
             refreshLoadedWindow()
         }
     }
@@ -596,7 +601,7 @@ public final class ClipboardListCoordinator {
         setLoadingMore(false)
     }
 
-    private func refreshLoadedWindow() {
+    private func refreshLoadedWindow(preserveScrollPositionOnStructuralChange: Bool = false) {
         guard pageSize > 0 else {
             setLoadingMore(false)
             return
@@ -628,7 +633,8 @@ public final class ClipboardListCoordinator {
                 result,
                 isFiltered: query.isFiltered,
                 append: false,
-                scope: query.scope
+                scope: query.scope,
+                preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
             )
         }
     }
@@ -725,7 +731,8 @@ public final class ClipboardListCoordinator {
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
         append: Bool,
-        scope: ClipboardListScope? = nil
+        scope: ClipboardListScope? = nil,
+        preserveScrollPositionOnStructuralChange: Bool = false
     ) {
         let updateScope = scope ?? makeQuery(limit: pageSize, offset: 0).scope
         switch result {
@@ -739,7 +746,8 @@ public final class ClipboardListCoordinator {
                 scope: updateScope,
                 result: .success(list),
                 isFiltered: isFiltered,
-                append: append
+                append: append,
+                preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
             ))
             prefetchNextPageIfNeeded()
 
@@ -750,7 +758,8 @@ public final class ClipboardListCoordinator {
                 scope: updateScope,
                 result: .failure(error),
                 isFiltered: false,
-                append: append
+                append: append,
+                preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
             ))
         }
     }

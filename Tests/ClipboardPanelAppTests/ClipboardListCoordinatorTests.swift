@@ -644,6 +644,7 @@ struct ClipboardListCoordinatorTests {
     @MainActor
     func recordCopiedMutationReportsStatusAndRefreshesList() async {
         var statusTexts: [String] = []
+        var listUpdates: [ClipboardListUpdate] = []
         let requests = QueryRecorder()
         let coordinator = ClipboardListCoordinator(
             pageSize: 2,
@@ -662,6 +663,7 @@ struct ClipboardListCoordinatorTests {
             }
         )
         coordinator.onStatusTextChanged = { statusTexts.append($0) }
+        coordinator.onListUpdate = { listUpdates.append($0) }
 
         coordinator.performMutation(.recordCopied(itemID: "item-1"))
 
@@ -671,6 +673,7 @@ struct ClipboardListCoordinatorTests {
         })
         #expect(await requests.values().count == 1)
         #expect(await requests.values()[0].offset == 0)
+        #expect(listUpdates.first?.preserveScrollPositionOnStructuralChange == true)
     }
 }
 
