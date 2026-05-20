@@ -96,6 +96,7 @@ if [[ "${SKIP_RUST_CORE_BUILD:-0}" != "1" ]]; then
 fi
 
 built_executables=()
+release_bin_dirs=()
 for swift_triple in "${swift_triples[@]}"; do
     swift build -c release --product ClipDock --triple "$swift_triple"
     release_bin_dir="$(swift build -c release --triple "$swift_triple" --show-bin-path)"
@@ -107,6 +108,7 @@ for swift_triple in "${swift_triples[@]}"; do
     fi
 
     built_executables+=("$arch_executable_path")
+    release_bin_dirs+=("$release_bin_dir")
 done
 
 if [[ "${#built_executables[@]}" -eq 1 ]]; then
@@ -130,6 +132,15 @@ fi
 if [[ -f "$status_icon_file" ]]; then
     cp "$status_icon_file" "$resources_dir/StatusBarClipboardTemplate.png"
 fi
+
+for release_bin_dir in "${release_bin_dirs[@]}"; do
+    while IFS= read -r -d '' resource_bundle; do
+        bundle_name="$(basename "$resource_bundle")"
+        if [[ ! -d "$resources_dir/$bundle_name" ]]; then
+            cp -R "$resource_bundle" "$resources_dir/$bundle_name"
+        fi
+    done < <(find "$release_bin_dir" -maxdepth 1 -type d -name 'ClipDock_*.bundle' -print0)
+done
 
 cat > "$contents_dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
