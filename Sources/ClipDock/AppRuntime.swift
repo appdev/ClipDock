@@ -627,7 +627,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                     hasMore: Int64(openResult.items.count) < openResult.itemCount
                 ),
                 isFiltered: false,
-                selectedItemID: panelViewState().selectedItemID
+                selectionSnapshot: interactionController.selectionSnapshot()
             )
         }
     }
@@ -1632,13 +1632,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             isFiltered: isFiltered,
             append: append,
             selectedItemID: panelViewState().selectedItemID,
+            selectionSnapshot: interactionController.selectionSnapshot(),
             scope: scope
         )
     }
 
     private func saveCurrentListPageState() {
         activeListPage.savedScrollOrigin = activeListPage.saveScrollOrigin()
-        listScopeCache.updateSelectedItemID(panelViewState().selectedItemID, for: currentListScope)
+        listScopeCache.updateSelectionSnapshot(interactionController.selectionSnapshot(), for: currentListScope)
     }
 
     private func restoreCachedListState(for scope: ClipboardListScope) {
@@ -1651,15 +1652,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         if !activeListPage.hasRenderedContent {
             applyRenderPlan(plan)
         }
-        if let selectedItemID = cachedState.selectedItemID,
-           cachedState.result.items.contains(where: { $0.id == selectedItemID }) {
-            applyInteractionResult(interactionController.dispatch(.selectItem(
-                id: selectedItemID,
-                scrollIntoView: false
-            )))
-        } else {
-            updateVisibleSelection(scrollIntoView: false)
-        }
+        applyInteractionResult(interactionController.restoreSelectionSnapshot(cachedState.selectionSnapshot))
+        updateVisibleSelection(scrollIntoView: false)
     }
 
     private func restoreScrollOriginIfNeeded(_ origin: NSPoint) {
@@ -1815,7 +1809,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func handleKeyboardCommand(_ event: NSEvent) -> Bool {
-        let commandPressed = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let commandPressed = modifiers.contains(.command)
+        let shiftPressed = modifiers.contains(.shift)
 
         if commandPressed,
            let character = event.charactersIgnoringModifiers?.lowercased() {
@@ -1845,11 +1841,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return true
         case kVK_RightArrow:
             clearCommandHintModeIfCommandIsNotPressed(in: event)
-            applyInteractionAction(.selectOffset(1))
+            applyInteractionAction(shiftPressed ? .selection(.extendByOffset(1)) : .selectOffset(1))
             return true
         case kVK_LeftArrow:
             clearCommandHintModeIfCommandIsNotPressed(in: event)
-            applyInteractionAction(.selectOffset(-1))
+            applyInteractionAction(shiftPressed ? .selection(.extendByOffset(-1)) : .selectOffset(-1))
             return true
         case kVK_Delete, kVK_ForwardDelete:
             clearCommandHintMode()
@@ -2026,14 +2022,31 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 pinboardID: pinboardID,
                 isMember: isMember
             ))
+        case .setPinboardMembershipBatch(let itemIDs, let pinboardID, let isMember):
+            let items = resolvedItems(for: itemIDs)
+            guard !items.isEmpty else { return }
+            onRuntimeAction?(.setPinboardMembershipBatch(
+                items,
+                pinboardID: pinboardID,
+                isMember: isMember
+            ))
         case .deleteItem(let itemID, let pinboardID):
             guard let item = interactionController.item(withID: itemID) else { return }
             onRuntimeAction?(.deleteItem(item, pinboardID: pinboardID))
+        case .deleteItems(let itemIDs, let pinboardID):
+            let items = resolvedItems(for: itemIDs)
+            guard !items.isEmpty else { return }
+            onRuntimeAction?(.deleteItems(items, pinboardID: pinboardID))
         case .hidePanel:
             onRuntimeAction?(.hidePanel)
         case .loadMore:
             onRuntimeAction?(.loadMore)
         }
+    }
+
+    private func resolvedItems(for orderedItemIDs: [String]) -> [RustClipboardItemSummary] {
+        let itemByID = Dictionary(uniqueKeysWithValues: interactionController.currentItems.map { ($0.id, $0) })
+        return orderedItemIDs.compactMap { itemByID[$0] }
     }
 
     private func focus(_ target: PanelFocusTarget) {
@@ -2214,21 +2227,23 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
         let submenu = NSMenu()
         let selectedPinboardID = panelViewState().toolbar.selectedPinboardID
+        let targetItems = selectedItemsForManagementAction(containing: item)
         for pinboard in pinboardFilters {
-            let membershipIsKnown = item.isPinned && (
-                selectedPinboardID == pinboard.id
-                    || (pinboardFilters.count == 1 && pinboard.id == DefaultPinboard.defaultID)
+            let membershipState = pinboardMembershipMenuState(
+                items: targetItems,
+                pinboardID: pinboard.id,
+                selectedPinboardID: selectedPinboardID
             )
             let pinboardItem = ActionMenuItem(title: pinboard.title) { [weak self] in
                 self?.applyInteractionAction(.management(
                     itemID: item.id,
                     action: .setPinboardMembership(
                         pinboardID: pinboard.id,
-                        isMember: !membershipIsKnown
+                        isMember: membershipState.actionAddsMembership
                     )
                 ))
             }
-            pinboardItem.state = membershipIsKnown ? .on : .off
+            pinboardItem.state = membershipState.controlState
             pinboardItem.image = pinboardMenuDotImage(colorCode: pinboard.colorCode)
             submenu.addItem(pinboardItem)
         }
@@ -2242,6 +2257,53 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         menuItem.submenu = submenu
         menuItem.isEnabled = true
         return menuItem
+    }
+
+    private func selectedItemsForManagementAction(
+        containing item: RustClipboardItemSummary
+    ) -> [RustClipboardItemSummary] {
+        guard panelViewState().selectedItemIDs.contains(item.id) else {
+            return [item]
+        }
+        let itemByID = Dictionary(uniqueKeysWithValues: currentItems().map { ($0.id, $0) })
+        return activeListPage.activeOrderedIDs().compactMap { itemByID[$0] }.filter {
+            panelViewState().selectedItemIDs.contains($0.id)
+        }
+    }
+
+    private func pinboardMembershipMenuState(
+        items: [RustClipboardItemSummary],
+        pinboardID: String,
+        selectedPinboardID: String?
+    ) -> (controlState: NSControl.StateValue, actionAddsMembership: Bool) {
+        let knownMemberships = items.map {
+            knownPinboardMembership(item: $0, pinboardID: pinboardID, selectedPinboardID: selectedPinboardID)
+        }
+
+        if knownMemberships.allSatisfy({ $0 == true }) {
+            return (.on, false)
+        }
+        if knownMemberships.allSatisfy({ $0 == false }) {
+            return (.off, true)
+        }
+        return (.mixed, true)
+    }
+
+    private func knownPinboardMembership(
+        item: RustClipboardItemSummary,
+        pinboardID: String,
+        selectedPinboardID: String?
+    ) -> Bool? {
+        if !item.isPinned {
+            return false
+        }
+        if selectedPinboardID == pinboardID {
+            return true
+        }
+        if pinboardFilters.count == 1, pinboardID == DefaultPinboard.defaultID {
+            return true
+        }
+        return nil
     }
 
     private func pinboardMenuDotImage(colorCode: Int64) -> NSImage {
@@ -2259,8 +2321,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func updateVisibleSelection(scrollIntoView: Bool = true) {
-        listScopeCache.updateSelectedItemID(panelViewState().selectedItemID, for: currentListScope)
-        activeListPage.updateSelection(selectedItemID: panelViewState().selectedItemID)
+        listScopeCache.updateSelectionSnapshot(interactionController.selectionSnapshot(), for: currentListScope)
+        activeListPage.updateSelection(selectedItemIDs: panelViewState().selectedItemIDs)
 
         if scrollIntoView {
             scrollSelectedItemIntoView()
@@ -2613,7 +2675,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makeItemCardState(_ item: RustClipboardItemSummary) -> PanelItemCardViewState {
         PanelItemCardViewStateAdapter.makeViewState(
             for: item,
-            selectedItemID: panelViewState().selectedItemID
+            selectedItemID: panelViewState().selectedItemID,
+            selectedItemIDs: panelViewState().selectedItemIDs
         )
     }
 
@@ -2621,14 +2684,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         for item: RustClipboardItemSummary
     ) -> (
         toolTip: String?,
-        onSelect: () -> Void,
+        onSelect: (NSEvent) -> Void,
         onDoubleClick: () -> Void,
         onContextMenu: (NSEvent) -> Void
     ) {
         (
             toolTip: nil,
-            onSelect: { [weak self] in
-                self?.applyInteractionAction(.selectItem(id: item.id, scrollIntoView: true))
+            onSelect: { [weak self] event in
+                self?.applySelectionFromCardMouseDown(itemID: item.id, event: event)
             },
             onDoubleClick: { [weak self] in
                 self?.applyInteractionAction(.copyItem(itemID: item.id))
@@ -2637,6 +2700,17 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 self?.showManagementMenu(for: item, event: event)
             }
         )
+    }
+
+    private func applySelectionFromCardMouseDown(itemID: String, event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.shift) {
+            applyInteractionAction(.selection(.range(toItemID: itemID)))
+        } else if modifiers.contains(.command) {
+            applyInteractionAction(.selection(.toggle(itemID: itemID)))
+        } else {
+            applyInteractionAction(.selection(.replace(itemID: itemID, scrollIntoView: true)))
+        }
     }
 
     private func itemBandCardViews() -> [ClipboardItemCardBox] {
@@ -3130,13 +3204,17 @@ extension FloatingPanelContentView {
         return result
     }
 
-    private func smokeMouseDownEvent(centeredIn view: NSView) -> NSEvent? {
+    private func smokeMouseDownEvent(
+        centeredIn view: NSView,
+        type: NSEvent.EventType = .leftMouseDown,
+        modifierFlags: NSEvent.ModifierFlags = []
+    ) -> NSEvent? {
         let localPoint = NSPoint(x: view.bounds.midX, y: view.bounds.midY)
         let windowPoint = view.convert(localPoint, to: nil)
         return NSEvent.mouseEvent(
-            with: .leftMouseDown,
+            with: type,
             location: windowPoint,
-            modifierFlags: [],
+            modifierFlags: modifierFlags,
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: view.window?.windowNumber ?? 0,
             context: nil,
@@ -3152,6 +3230,65 @@ extension FloatingPanelContentView {
 
     func smokeOrderedCardBoxes() -> [ClipboardItemCardBox] {
         activeListPage.visibleCards()
+    }
+
+    var smokeSelectedItemIDs: Set<String> {
+        panelViewState().selectedItemIDs
+    }
+
+    func smokeSelectedCardIDs() -> [String] {
+        smokeOrderedCardBoxes().compactMap { card in
+            guard let itemID = card.itemID,
+                  panelViewState().selectedItemIDs.contains(itemID)
+            else { return nil }
+            return itemID
+        }
+    }
+
+    func smokeClickCard(itemID: String, modifiers: NSEvent.ModifierFlags = []) {
+        guard let card = smokeOrderedCardBoxes().first(where: { $0.itemID == itemID }),
+              let event = smokeMouseDownEvent(centeredIn: card, modifierFlags: modifiers)
+        else { return }
+        card.mouseDown(with: event)
+    }
+
+    func smokeRightClickCard(itemID: String) {
+        guard let card = smokeOrderedCardBoxes().first(where: { $0.itemID == itemID }),
+              let event = smokeMouseDownEvent(centeredIn: card, type: .rightMouseDown)
+        else { return }
+        card.rightMouseDown(with: event)
+    }
+
+    func smokePrepareManagementMenu(itemID: String) {
+        applyInteractionAction(.prepareManagementMenu(itemID: itemID))
+    }
+
+    func smokeSendArrow(_ direction: PanelQAHarness.ArrowDirection, modifiers: NSEvent.ModifierFlags = []) {
+        let character: String
+        let keyCode: Int
+        switch direction {
+        case .left:
+            character = String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+            keyCode = kVK_LeftArrow
+        case .right:
+            character = String(UnicodeScalar(NSRightArrowFunctionKey)!)
+            keyCode = kVK_RightArrow
+        }
+
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window?.windowNumber ?? 0,
+            context: nil,
+            characters: character,
+            charactersIgnoringModifiers: character,
+            isARepeat: false,
+            keyCode: UInt16(keyCode)
+        ) else { return }
+
+        keyDown(with: event)
     }
 
     func smokeOrderedCardItemIDs() -> [String] {

@@ -87,11 +87,15 @@ public enum PanelItemCardViewStateAdapter {
     public static func makeViewState(
         for item: RustClipboardItemSummary,
         selectedItemID: String?,
+        selectedItemIDs: Set<String> = [],
         relativeTimeFormatter: (Int64) -> String = PanelItemCardViewStateAdapter.defaultRelativeTimeText(from:)
     ) -> PanelItemCardViewState {
         let presentation = PanelItemCardPresenter.presentation(for: item)
         let sourceAppName = item.sourceAppName
             ?? AppLocalization.text("source.unknown", defaultValue: "未知来源")
+        let isSelected = selectedItemIDs.isEmpty
+            ? item.id == selectedItemID
+            : selectedItemIDs.contains(item.id)
 
         return PanelItemCardViewState(
             itemID: item.id,
@@ -102,7 +106,7 @@ public enum PanelItemCardViewStateAdapter {
             summaryText: presentation.summaryText,
             footnoteText: presentation.footnoteText,
             commandIndexText: nil,
-            isSelected: item.id == selectedItemID,
+            isSelected: isSelected,
             preview: previewState(
                 item: item,
                 presentation: presentation,

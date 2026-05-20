@@ -105,6 +105,53 @@ public enum ClipboardPinboardMutationRequest: Sendable, Equatable {
     case delete(pinboardID: String)
 }
 
+public enum BatchMutationKind: Sendable, Equatable {
+    case delete(pinboardID: String?)
+    case setPinboardMembership(pinboardID: String, isMember: Bool)
+}
+
+public enum BatchMutationOutcome: Sendable, Equatable {
+    case success
+    case partialFailure
+    case failure
+}
+
+public struct ClipboardItemBatchMutationResult: Sendable, Equatable {
+    public let summaryKind: BatchMutationKind
+    public let requests: [ClipboardItemMutationRequest]
+    public let successfulRequests: [ClipboardItemMutationRequest]
+    public let failedRequests: [ClipboardItemMutationRequest]
+    public let zeroAffectedRequests: [ClipboardItemMutationRequest]
+    public let erroredRequests: [ClipboardItemMutationRequest]
+    public let affectedCount: Int64
+    public let outcome: BatchMutationOutcome
+
+    public init(
+        summaryKind: BatchMutationKind,
+        requests: [ClipboardItemMutationRequest],
+        successfulRequests: [ClipboardItemMutationRequest],
+        failedRequests: [ClipboardItemMutationRequest],
+        zeroAffectedRequests: [ClipboardItemMutationRequest] = [],
+        erroredRequests: [ClipboardItemMutationRequest] = [],
+        affectedCount: Int64? = nil
+    ) {
+        self.summaryKind = summaryKind
+        self.requests = requests
+        self.successfulRequests = successfulRequests
+        self.failedRequests = failedRequests
+        self.zeroAffectedRequests = zeroAffectedRequests
+        self.erroredRequests = erroredRequests
+        self.affectedCount = affectedCount ?? Int64(successfulRequests.count)
+        if successfulRequests.isEmpty {
+            self.outcome = .failure
+        } else if failedRequests.isEmpty {
+            self.outcome = .success
+        } else {
+            self.outcome = .partialFailure
+        }
+    }
+}
+
 public typealias ClipboardListPageLoader =
     @Sendable (ClipboardListQuery) async -> Result<RustCoreListResult, RustCoreError>
 public typealias ClipboardItemMutationPerformer =
@@ -235,6 +282,7 @@ public final class ClipboardListCoordinator {
     public var onLoadingMoreChanged: ((Bool) -> Void)?
     public var onStatusTextChanged: ((String) -> Void)?
     public var onMutationCompleted: ((ClipboardItemMutationRequest, RustItemManagementResult) -> Void)?
+    public var onBatchMutationCompleted: ((ClipboardItemBatchMutationResult) -> Void)?
 
     private let pageSize: Int64
     private let debounceNanoseconds: UInt64
@@ -385,11 +433,7 @@ public final class ClipboardListCoordinator {
     public func performMutation(_ mutation: ClipboardItemMutationRequest) {
         let mutationPerformer = self.mutationPerformer
 
-        listRefreshGeneration += 1
-        pendingListRefreshTask?.cancel()
-        pendingListRefreshTask = nil
-        cancelPrefetch()
-        setLoadingMore(false)
+        prepareForMutation()
 
         Task { [weak self, mutation, mutationPerformer] in
             let result = await mutationPerformer(mutation)
@@ -403,6 +447,58 @@ public final class ClipboardListCoordinator {
 
             case .failure(let error):
                 self.onStatusTextChanged?(AppLocalization.format("item.status.error", defaultValue: "条目：%@", error.code))
+            }
+        }
+    }
+
+    public func performBatchMutation(
+        _ requests: [ClipboardItemMutationRequest],
+        summaryKind: BatchMutationKind
+    ) {
+        guard !requests.isEmpty else { return }
+        let mutationPerformer = self.mutationPerformer
+
+        prepareForMutation()
+
+        Task { [weak self, requests, summaryKind, mutationPerformer] in
+            var successfulRequests: [ClipboardItemMutationRequest] = []
+            var failedRequests: [ClipboardItemMutationRequest] = []
+            var zeroAffectedRequests: [ClipboardItemMutationRequest] = []
+            var erroredRequests: [ClipboardItemMutationRequest] = []
+            var affectedCount: Int64 = 0
+
+            for request in requests {
+                let result = await mutationPerformer(request)
+                switch result {
+                case .success(let mutationResult):
+                    if mutationResult.affectedCount > 0 {
+                        successfulRequests.append(request)
+                        affectedCount += mutationResult.affectedCount
+                    } else {
+                        failedRequests.append(request)
+                        zeroAffectedRequests.append(request)
+                    }
+                case .failure:
+                    failedRequests.append(request)
+                    erroredRequests.append(request)
+                }
+            }
+
+            guard let self else { return }
+            let batchResult = ClipboardItemBatchMutationResult(
+                summaryKind: summaryKind,
+                requests: requests,
+                successfulRequests: successfulRequests,
+                failedRequests: failedRequests,
+                zeroAffectedRequests: zeroAffectedRequests,
+                erroredRequests: erroredRequests,
+                affectedCount: affectedCount
+            )
+            self.onStatusTextChanged?(self.statusText(for: batchResult))
+            self.onBatchMutationCompleted?(batchResult)
+
+            if successfulRequests.contains(where: { self.refreshAfterBatchMutationIsNeeded($0) }) {
+                self.refreshLoadedWindow()
             }
         }
     }
@@ -476,6 +572,28 @@ public final class ClipboardListCoordinator {
         case .recordCopied, .clear:
             refreshLoadedWindow()
         }
+    }
+
+    private func refreshAfterBatchMutationIsNeeded(_ mutation: ClipboardItemMutationRequest) -> Bool {
+        switch mutation {
+        case .setPinboardMembership:
+            return currentPinboardID != nil
+        case .delete(_, let pinboardID):
+            if let pinboardID {
+                return currentPinboardID == pinboardID
+            }
+            return true
+        case .recordCopied, .clear:
+            return true
+        }
+    }
+
+    private func prepareForMutation() {
+        listRefreshGeneration += 1
+        pendingListRefreshTask?.cancel()
+        pendingListRefreshTask = nil
+        cancelPrefetch()
+        setLoadingMore(false)
     }
 
     private func refreshLoadedWindow() {
@@ -673,6 +791,32 @@ public final class ClipboardListCoordinator {
             return result.affectedCount > 0
                 ? AppLocalization.format("item.status.cleared", defaultValue: "条目：已清理 %lld 条", result.affectedCount)
                 : AppLocalization.text("item.status.noItemsToClear", defaultValue: "条目：没有可清理条目")
+        }
+    }
+
+    private func statusText(for result: ClipboardItemBatchMutationResult) -> String {
+        let succeeded = result.affectedCount
+        let total = result.requests.count
+        switch result.outcome {
+        case .success:
+            switch result.summaryKind {
+            case .delete(let pinboardID):
+                return pinboardID == nil
+                    ? AppLocalization.format("item.status.batchDeleted", defaultValue: "条目：已删除 %lld 项", succeeded)
+                    : AppLocalization.format("pinboard.status.batchRemoved", defaultValue: "Pinboard：已移除 %lld 项", succeeded)
+            case .setPinboardMembership(_, let isMember):
+                return isMember
+                    ? AppLocalization.format("pinboard.status.batchJoined", defaultValue: "Pinboard：已加入 %lld 项", succeeded)
+                    : AppLocalization.format("pinboard.status.batchRemoved", defaultValue: "Pinboard：已移除 %lld 项", succeeded)
+            }
+        case .partialFailure:
+            return AppLocalization.format("item.status.batchPartial", defaultValue: "条目：已处理 %lld/%lld 项", succeeded, Int64(total))
+        case .failure:
+            if result.erroredRequests.isEmpty,
+               !result.zeroAffectedRequests.isEmpty {
+                return AppLocalization.text("item.status.notFound", defaultValue: "条目：未找到")
+            }
+            return AppLocalization.text("item.status.batchFailed", defaultValue: "条目：批量操作失败")
         }
     }
 }

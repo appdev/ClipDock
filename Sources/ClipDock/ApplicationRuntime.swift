@@ -362,6 +362,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.refreshPinboards()
             }
         }
+        listCoordinator.onBatchMutationCompleted = { [weak self] result in
+            guard result.affectedCount > 0 else { return }
+            switch result.summaryKind {
+            case .setPinboardMembership(let pinboardID, _):
+                self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
+                self?.refreshPinboards()
+            case .delete(let pinboardID):
+                if let pinboardID {
+                    self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
+                } else {
+                    self?.panelController.invalidateCachedListPages()
+                }
+                self?.refreshPinboards()
+            }
+        }
         self.listCoordinator = listCoordinator
 
         let pinboardCoordinator = PinboardCoordinator(
@@ -527,6 +542,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.copyPathToPasteboard(pathText)
             case .setPinboardMembership(let item, let pinboardID, let isMember):
                 self?.setPinboardMembership(item, pinboardID: pinboardID, isMember: isMember)
+            case .setPinboardMembershipBatch(let items, let pinboardID, let isMember):
+                self?.setPinboardMembership(items, pinboardID: pinboardID, isMember: isMember)
             case .createPinboard(let title, let colorCode):
                 self?.performPinboardMutation(.create(title: title, colorCode: colorCode))
             case .renamePinboard(let pinboardID, let title):
@@ -537,6 +554,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.performPinboardMutation(.delete(pinboardID: pinboardID))
             case .deleteItem(let item, let pinboardID):
                 self?.deleteItem(item, pinboardID: pinboardID)
+            case .deleteItems(let items, let pinboardID):
+                self?.deleteItems(items, pinboardID: pinboardID)
             case .loadMore:
                 self?.loadMoreClipboardItems()
             }
@@ -566,6 +585,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
     }
 
+    private func setPinboardMembership(
+        _ items: [RustClipboardItemSummary],
+        pinboardID: String,
+        isMember: Bool
+    ) {
+        guard listCoordinator != nil else {
+            updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
+            return
+        }
+
+        performItemBatchMutation(
+            items.map {
+                .setPinboardMembership(
+                    itemID: $0.id,
+                    pinboardID: pinboardID,
+                    isMember: isMember
+                )
+            },
+            summaryKind: .setPinboardMembership(pinboardID: pinboardID, isMember: isMember)
+        )
+    }
+
     private func deleteItem(_ item: RustClipboardItemSummary, pinboardID: String?) {
         guard listCoordinator != nil else {
             updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
@@ -575,6 +616,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         performItemMutation(.delete(itemID: item.id, pinboardID: pinboardID))
     }
 
+    private func deleteItems(_ items: [RustClipboardItemSummary], pinboardID: String?) {
+        guard listCoordinator != nil else {
+            updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
+            return
+        }
+
+        performItemBatchMutation(
+            items.map { .delete(itemID: $0.id, pinboardID: pinboardID) },
+            summaryKind: .delete(pinboardID: pinboardID)
+        )
+    }
+
     private func performItemMutation(_ mutation: ClipboardItemMutationRequest) {
         guard let listCoordinator else {
             updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
@@ -582,6 +635,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         listCoordinator.performMutation(mutation)
+    }
+
+    private func performItemBatchMutation(
+        _ mutations: [ClipboardItemMutationRequest],
+        summaryKind: BatchMutationKind
+    ) {
+        guard let listCoordinator else {
+            updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
+            return
+        }
+
+        listCoordinator.performBatchMutation(mutations, summaryKind: summaryKind)
     }
 
     private func performPinboardMutation(_ mutation: ClipboardPinboardMutationRequest) {
@@ -1651,6 +1716,13 @@ extension AppDelegate {
 
     var smokeStorageStatusTextForRealFunctionQA: String {
         storageStatusText
+    }
+
+    func smokePerformBatchMutationForRealFunctionQA(
+        _ mutations: [ClipboardItemMutationRequest],
+        summaryKind: BatchMutationKind
+    ) {
+        listCoordinator?.performBatchMutation(mutations, summaryKind: summaryKind)
     }
 
     func smokePreparePrefetchedLoadMore(

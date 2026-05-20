@@ -150,8 +150,24 @@ public final class PanelContentController {
         sceneStore.selectOffset(itemIDs: currentItemIDs, offset: offset)
     }
 
+    public func applySelectionIntent(_ intent: PanelSelectionIntent) -> PanelSelectionUpdate {
+        sceneStore.applySelectionIntent(itemIDs: currentItemIDs, intent: intent)
+    }
+
     public func selectItem(id: String) -> PanelSelectionUpdate {
         sceneStore.selectItem(itemIDs: currentItemIDs, selectedItemID: id)
+    }
+
+    public func restoreSelectionSnapshot(_ snapshot: PanelSelectionSnapshot) {
+        sceneStore.restoreSelectionSnapshot(snapshot, itemIDs: currentItemIDs)
+    }
+
+    public func selectionSnapshot() -> PanelSelectionSnapshot {
+        PanelSceneController.selectionSnapshot(sceneStore.state)
+    }
+
+    public func orderedSelectedItemIDs() -> [String] {
+        PanelSceneController.orderedSelectedItemIDs(sceneStore.state, itemIDs: currentItemIDs)
     }
 
     public func copyItem(itemID: String) {
@@ -217,6 +233,7 @@ public final class PanelContentController {
         hasMore: Bool,
         append: Bool
     ) -> PanelContentRenderPlan {
+        let previousOrderedItemIDs = currentItemIDs
         let update = PanelListViewStateAdapter.listUpdate(
             current: listViewState,
             result: .success(RustCoreListResult(items: items, totalCount: totalCount, hasMore: hasMore)),
@@ -226,14 +243,22 @@ public final class PanelContentController {
         listViewState = update.state
         sceneStore.applyListUpdate(itemIDs: currentItemIDs)
 
+        let scrollAction = PanelListScrollPolicy.action(
+            previousOrderedItemIDs: previousOrderedItemIDs,
+            nextOrderedItemIDs: currentItemIDs,
+            isAppendUpdate: update.didAppendToExistingItems
+        )
         let instruction: PanelContentRenderInstruction
         if update.didAppendToExistingItems {
-            instruction = .appendItems(update.appendedItems, preserveScrollPosition: true)
+            instruction = .appendItems(
+                update.appendedItems,
+                preserveScrollPosition: scrollAction.preserveScrollPosition
+            )
         } else {
             instruction = .reconcileItems(
                 update.state.items,
-                scrollSelectedItem: true,
-                preserveScrollPosition: true
+                scrollSelectedItem: scrollAction.shouldScrollSelectedItem,
+                preserveScrollPosition: scrollAction.preserveScrollPosition
             )
         }
 

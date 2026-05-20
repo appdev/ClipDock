@@ -47,6 +47,8 @@ struct PanelSceneControllerTests {
         )
 
         #expect(update.state.selection.selectedItemID == "b")
+        #expect(update.state.selection.selectedItemIDs == ["b"])
+        #expect(update.state.selection.rangeAnchorItemID == "b")
         #expect(update.didChangeSelection)
         #expect(update.shouldClosePreview)
     }
@@ -177,12 +179,18 @@ struct PanelSceneControllerTests {
     @Test
     func clearingSelectionRemovesSelectedItem() {
         let state = PanelSceneState(
-            selection: PanelSelectionState(selectedItemID: "selected")
+            selection: PanelSelectionState(
+                selectedItemID: "selected",
+                selectedItemIDs: ["selected", "other"],
+                rangeAnchorItemID: "other"
+            )
         )
 
         let nextState = PanelSceneController.stateByClearingSelection(state)
 
         #expect(nextState.selection.selectedItemID == nil)
+        #expect(nextState.selection.selectedItemIDs.isEmpty)
+        #expect(nextState.selection.rangeAnchorItemID == nil)
     }
 
     @Test
@@ -262,5 +270,113 @@ struct PanelSceneControllerTests {
 
         #expect(enabled.selection.isCommandHintModeEnabled)
         #expect(!disabled.selection.isCommandHintModeEnabled)
+    }
+
+    @Test
+    func selectionIntentToggleAddsAndRemovesItemsRepairingPrimary() {
+        let state = PanelSceneState(selection: PanelSelectionState(selectedItemID: "b"))
+
+        let added = PanelSceneController.stateByApplyingSelectionIntent(
+            state,
+            itemIDs: ["a", "b", "c"],
+            intent: .toggle(itemID: "c")
+        )
+        #expect(added.state.selection.selectedItemID == "c")
+        #expect(added.state.selection.selectedItemIDs == ["b", "c"])
+        #expect(added.state.selection.rangeAnchorItemID == "c")
+
+        let removedPrimary = PanelSceneController.stateByApplyingSelectionIntent(
+            added.state,
+            itemIDs: ["a", "b", "c"],
+            intent: .toggle(itemID: "c")
+        )
+        #expect(removedPrimary.state.selection.selectedItemID == "b")
+        #expect(removedPrimary.state.selection.selectedItemIDs == ["b"])
+        #expect(removedPrimary.state.selection.rangeAnchorItemID == "b")
+    }
+
+    @Test
+    func selectionIntentRangeAndExtendUseVisualOrderAndAnchor() {
+        let state = PanelSceneState(selection: PanelSelectionState(selectedItemID: "b"))
+
+        let ranged = PanelSceneController.stateByApplyingSelectionIntent(
+            state,
+            itemIDs: ["a", "b", "c", "d"],
+            intent: .range(toItemID: "d")
+        )
+        #expect(ranged.state.selection.selectedItemID == "d")
+        #expect(ranged.state.selection.selectedItemIDs == ["b", "c", "d"])
+        #expect(ranged.state.selection.rangeAnchorItemID == "b")
+
+        let extendedBack = PanelSceneController.stateByApplyingSelectionIntent(
+            ranged.state,
+            itemIDs: ["a", "b", "c", "d"],
+            intent: .extendByOffset(-1)
+        )
+        #expect(extendedBack.state.selection.selectedItemID == "c")
+        #expect(extendedBack.state.selection.selectedItemIDs == ["b", "c"])
+        #expect(extendedBack.state.selection.rangeAnchorItemID == "b")
+    }
+
+    @Test
+    func contextMenuIntentPreservesSelectedSetOrReplacesUnselectedItem() {
+        let state = PanelSceneState(selection: PanelSelectionState(
+            selectedItemID: "a",
+            selectedItemIDs: ["a", "c"],
+            rangeAnchorItemID: "a"
+        ))
+
+        let selectedContext = PanelSceneController.stateByApplyingSelectionIntent(
+            state,
+            itemIDs: ["a", "b", "c"],
+            intent: .prepareContextMenu(itemID: "c")
+        )
+        #expect(selectedContext.state.selection.selectedItemID == "c")
+        #expect(selectedContext.state.selection.selectedItemIDs == ["a", "c"])
+
+        let unselectedContext = PanelSceneController.stateByApplyingSelectionIntent(
+            selectedContext.state,
+            itemIDs: ["a", "b", "c"],
+            intent: .prepareContextMenu(itemID: "b")
+        )
+        #expect(unselectedContext.state.selection.selectedItemID == "b")
+        #expect(unselectedContext.state.selection.selectedItemIDs == ["b"])
+        #expect(unselectedContext.state.selection.rangeAnchorItemID == "b")
+    }
+
+    @Test
+    func listUpdatePrunesStaleSelectionAndClearsEmptyList() {
+        let state = PanelSceneState(selection: PanelSelectionState(
+            selectedItemID: "d",
+            selectedItemIDs: ["b", "d", "missing"],
+            rangeAnchorItemID: "missing"
+        ))
+
+        let pruned = PanelSceneController.stateAfterListUpdate(
+            state,
+            itemIDs: ["a", "b", "c"]
+        )
+        #expect(pruned.selection.selectedItemID == "b")
+        #expect(pruned.selection.selectedItemIDs == ["b"])
+        #expect(pruned.selection.rangeAnchorItemID == "b")
+
+        let cleared = PanelSceneController.stateAfterListUpdate(pruned, itemIDs: [])
+        #expect(cleared.selection.selectedItemID == nil)
+        #expect(cleared.selection.selectedItemIDs.isEmpty)
+        #expect(cleared.selection.rangeAnchorItemID == nil)
+    }
+
+    @Test
+    func orderedSelectedItemIDsNeverUsesSetOrder() {
+        let state = PanelSceneState(selection: PanelSelectionState(
+            selectedItemID: "c",
+            selectedItemIDs: ["c", "a"],
+            rangeAnchorItemID: "c"
+        ))
+
+        #expect(PanelSceneController.orderedSelectedItemIDs(
+            state,
+            itemIDs: ["a", "b", "c"]
+        ) == ["a", "c"])
     }
 }

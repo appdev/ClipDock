@@ -37,6 +37,62 @@ struct PanelListScopeCacheTests {
     }
 
     @Test
+    func selectionSnapshotStoresUpdatesPrunesAndRestoresAcrossScopes() throws {
+        var cache = PanelListScopeCache()
+        let clipboard = ClipboardListScope.clipboard
+        let search = ClipboardListScope(normalizedSearch: "report")
+
+        cache.store(
+            .success(RustCoreListResult(
+                items: [makeItem(id: "a"), makeItem(id: "b"), makeItem(id: "c")],
+                totalCount: 3,
+                hasMore: false
+            )),
+            isFiltered: false,
+            append: false,
+            selectedItemID: "b",
+            selectionSnapshot: PanelSelectionSnapshot(
+                selectedItemID: "c",
+                selectedItemIDs: ["a", "c", "missing"],
+                rangeAnchorItemID: "missing"
+            ),
+            scope: clipboard
+        )
+        cache.store(
+            .success(RustCoreListResult(
+                items: [makeItem(id: "search")],
+                totalCount: 1,
+                hasMore: false
+            )),
+            isFiltered: true,
+            append: false,
+            selectedItemID: "search",
+            scope: search
+        )
+
+        #expect(cache[clipboard]?.selectionSnapshot == PanelSelectionSnapshot(
+            selectedItemID: "c",
+            selectedItemIDs: ["a", "c"],
+            rangeAnchorItemID: "c"
+        ))
+        #expect(cache[search]?.selectionSnapshot.selectedItemID == "search")
+
+        cache.updateSelectionSnapshot(
+            PanelSelectionSnapshot(
+                selectedItemID: "b",
+                selectedItemIDs: ["b", "c"],
+                rangeAnchorItemID: "c"
+            ),
+            for: clipboard
+        )
+
+        let snapshot = try #require(cache[clipboard]?.selectionSnapshot)
+        #expect(snapshot.selectedItemID == "b")
+        #expect(snapshot.selectedItemIDs == ["b", "c"])
+        #expect(snapshot.rangeAnchorItemID == "c")
+    }
+
+    @Test
     func failureRemovesCachedScope() {
         var cache = PanelListScopeCache()
         let scope = ClipboardListScope(normalizedSearch: "report")

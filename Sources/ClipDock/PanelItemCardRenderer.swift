@@ -183,7 +183,7 @@ final class PanelItemCardRenderer {
     func render(
         _ state: PanelItemCardViewState,
         toolTip: String? = nil,
-        onSelect: (() -> Void)? = nil,
+        onSelect: ((NSEvent) -> Void)? = nil,
         onDoubleClick: (() -> Void)? = nil,
         onContextMenu: ((NSEvent) -> Void)? = nil
     ) -> PanelRenderedItemCard {

@@ -84,14 +84,18 @@ struct PanelContentControllerTests {
             append: false
         )
 
-        #expect(plan.instruction == .reconcileItems([makePanelContentItem(id: "next")], scrollSelectedItem: true, preserveScrollPosition: true))
+        #expect(plan.instruction == .reconcileItems(
+            [makePanelContentItem(id: "next")],
+            scrollSelectedItem: false,
+            preserveScrollPosition: false
+        ))
         #expect(plan.previewClosePolicy == .closeIfPreviewedItemRemoved)
         #expect(!plan.shouldClosePreview)
         #expect(plan.viewState.selectedItemID == "next")
     }
 
     @Test
-    func nonAppendReconcileCoversReorderDeletionInsertionAndMetadataUpdate() {
+    func nonAppendStructuralReplacementResetsScrollWithoutChangingSelectionRepair() {
         let first = makePanelContentItem(id: "a")
         let second = makePanelContentItem(id: "b")
         let third = makePanelContentItem(id: "c")
@@ -122,12 +126,51 @@ struct PanelContentControllerTests {
 
         #expect(plan.instruction == .reconcileItems(
             nextItems,
-            scrollSelectedItem: true,
-            preserveScrollPosition: true
+            scrollSelectedItem: false,
+            preserveScrollPosition: false
         ))
         #expect(plan.previewClosePolicy == .closeIfPreviewedItemRemoved)
         #expect(plan.viewState.selectedItemID == "b")
         #expect(controller.currentItemIDs == ["c", "inserted", "b"])
+    }
+
+    @Test
+    func nonAppendMetadataOnlyRefreshPreservesScroll() {
+        let first = makePanelContentItem(id: "a")
+        let second = makePanelContentItem(id: "b")
+        let controller = PanelContentController(
+            sceneStore: PanelSceneRuntimeController(
+                state: PanelSceneState(selection: PanelSelectionState(selectedItemID: "b"))
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items([first, second]),
+                totalCount: 2,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let updatedItems = [
+            makePanelContentItem(id: "a", linkTitle: "A title"),
+            makePanelContentItem(id: "b", linkTitle: "B title")
+        ]
+        let plan = controller.updateListState(
+            .success(RustCoreListResult(
+                items: updatedItems,
+                totalCount: Int64(updatedItems.count),
+                hasMore: false
+            )),
+            isFiltered: false,
+            append: false
+        )
+
+        #expect(plan.instruction == .reconcileItems(
+            updatedItems,
+            scrollSelectedItem: true,
+            preserveScrollPosition: true
+        ))
+        #expect(plan.viewState.selectedItemID == "b")
+        #expect(controller.currentItemIDs == ["a", "b"])
     }
 
     @Test

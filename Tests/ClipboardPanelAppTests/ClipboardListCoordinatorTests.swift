@@ -391,6 +391,212 @@ struct ClipboardListCoordinatorTests {
 
     @Test
     @MainActor
+    func batchMutationSerializesRequestsReportsSuccessAndRefreshesOnce() async {
+        var statusTexts: [String] = []
+        var batchResults: [ClipboardItemBatchMutationResult] = []
+        let requests = QueryRecorder()
+        let mutations = MutationRecorder()
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 3,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                return .success(RustCoreListResult(
+                    items: [makeItem(id: "remaining")],
+                    totalCount: 1,
+                    hasMore: false
+                ))
+            },
+            mutationPerformer: { mutation in
+                await mutations.record(mutation)
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        coordinator.onStatusTextChanged = { statusTexts.append($0) }
+        coordinator.onBatchMutationCompleted = { batchResults.append($0) }
+
+        coordinator.performBatchMutation(
+            [
+                .delete(itemID: "a", pinboardID: nil),
+                .delete(itemID: "b", pinboardID: nil)
+            ],
+            summaryKind: .delete(pinboardID: nil)
+        )
+
+        #expect(await waitUntil {
+            let requestCount = await requests.values().count
+            return batchResults.count == 1
+                && statusTexts.contains("条目：已删除 2 项")
+                && requestCount == 1
+        })
+        #expect(await mutations.values() == [
+            .delete(itemID: "a", pinboardID: nil),
+            .delete(itemID: "b", pinboardID: nil)
+        ])
+        #expect(batchResults[0].outcome == .success)
+        #expect(batchResults[0].successfulRequests.count == 2)
+        #expect(batchResults[0].failedRequests.isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func batchMutationReportsPartialAndAllFailureWithoutSuccessfulRefresh() async {
+        var partialResults: [ClipboardItemBatchMutationResult] = []
+        var failureResults: [ClipboardItemBatchMutationResult] = []
+        let partialRequests = QueryRecorder()
+        let failureRequests = QueryRecorder()
+        let partialCoordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await partialRequests.record(query)
+                return .success(RustCoreListResult(items: [], totalCount: 0, hasMore: false))
+            },
+            mutationPerformer: { mutation in
+                if mutation == .delete(itemID: "b", pinboardID: nil) {
+                    return .failure(RustCoreError(code: "missing", messageKey: "missing", recoverable: false, message: "missing"))
+                }
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        partialCoordinator.onBatchMutationCompleted = { partialResults.append($0) }
+
+        partialCoordinator.performBatchMutation(
+            [
+                .delete(itemID: "a", pinboardID: nil),
+                .delete(itemID: "b", pinboardID: nil)
+            ],
+            summaryKind: .delete(pinboardID: nil)
+        )
+
+        #expect(await waitUntil {
+            let requestCount = await partialRequests.values().count
+            return partialResults.count == 1 && requestCount == 1
+        })
+        #expect(partialResults[0].outcome == .partialFailure)
+        #expect(partialResults[0].successfulRequests == [.delete(itemID: "a", pinboardID: nil)])
+        #expect(partialResults[0].failedRequests == [.delete(itemID: "b", pinboardID: nil)])
+
+        let failureCoordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await failureRequests.record(query)
+                return .success(RustCoreListResult(items: [], totalCount: 0, hasMore: false))
+            },
+            mutationPerformer: { _ in
+                .failure(RustCoreError(code: "db", messageKey: "db", recoverable: true, message: "db"))
+            }
+        )
+        failureCoordinator.onBatchMutationCompleted = { failureResults.append($0) }
+
+        failureCoordinator.performBatchMutation(
+            [.delete(itemID: "a", pinboardID: nil)],
+            summaryKind: .delete(pinboardID: nil)
+        )
+
+        #expect(await waitUntil { failureResults.count == 1 })
+        #expect(failureResults[0].outcome == .failure)
+        #expect(await failureRequests.values().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func batchMutationTreatsZeroAffectedSuccessAsPartialFailure() async {
+        var statusTexts: [String] = []
+        var batchResults: [ClipboardItemBatchMutationResult] = []
+        let requests = QueryRecorder()
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                return .success(RustCoreListResult(
+                    items: [makeItem(id: "remaining")],
+                    totalCount: 1,
+                    hasMore: false
+                ))
+            },
+            mutationPerformer: { mutation in
+                if mutation == .delete(itemID: "missing", pinboardID: nil) {
+                    return .success(RustItemManagementResult(affectedCount: 0))
+                }
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        coordinator.onStatusTextChanged = { statusTexts.append($0) }
+        coordinator.onBatchMutationCompleted = { batchResults.append($0) }
+
+        coordinator.performBatchMutation(
+            [
+                .delete(itemID: "affected", pinboardID: nil),
+                .delete(itemID: "missing", pinboardID: nil)
+            ],
+            summaryKind: .delete(pinboardID: nil)
+        )
+
+        #expect(await waitUntil {
+            let requestCount = await requests.values().count
+            return batchResults.count == 1
+                && statusTexts.contains("条目：已处理 1/2 项")
+                && requestCount == 1
+        })
+        #expect(batchResults[0].outcome == .partialFailure)
+        #expect(batchResults[0].affectedCount == 1)
+        #expect(batchResults[0].successfulRequests == [.delete(itemID: "affected", pinboardID: nil)])
+        #expect(batchResults[0].failedRequests == [.delete(itemID: "missing", pinboardID: nil)])
+        #expect(batchResults[0].zeroAffectedRequests == [.delete(itemID: "missing", pinboardID: nil)])
+        #expect(batchResults[0].erroredRequests.isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func batchMutationTreatsAllZeroAffectedSuccessesAsNotFoundWithoutRefresh() async {
+        var statusTexts: [String] = []
+        var batchResults: [ClipboardItemBatchMutationResult] = []
+        let requests = QueryRecorder()
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 2,
+            debounceNanoseconds: 0,
+            pageLoader: { query in
+                await requests.record(query)
+                return .success(RustCoreListResult(items: [], totalCount: 0, hasMore: false))
+            },
+            mutationPerformer: { _ in
+                .success(RustItemManagementResult(affectedCount: 0))
+            }
+        )
+        coordinator.onStatusTextChanged = { statusTexts.append($0) }
+        coordinator.onBatchMutationCompleted = { batchResults.append($0) }
+
+        coordinator.performBatchMutation(
+            [
+                .delete(itemID: "missing-a", pinboardID: nil),
+                .delete(itemID: "missing-b", pinboardID: nil)
+            ],
+            summaryKind: .delete(pinboardID: nil)
+        )
+
+        #expect(await waitUntil {
+            batchResults.count == 1
+                && statusTexts.contains("条目：未找到")
+        })
+        #expect(batchResults[0].outcome == .failure)
+        #expect(batchResults[0].affectedCount == 0)
+        #expect(batchResults[0].successfulRequests.isEmpty)
+        #expect(batchResults[0].failedRequests == [
+            .delete(itemID: "missing-a", pinboardID: nil),
+            .delete(itemID: "missing-b", pinboardID: nil)
+        ])
+        #expect(batchResults[0].zeroAffectedRequests == [
+            .delete(itemID: "missing-a", pinboardID: nil),
+            .delete(itemID: "missing-b", pinboardID: nil)
+        ])
+        #expect(await requests.values().isEmpty)
+    }
+
+    @Test
+    @MainActor
     func scopedDeleteReportsPinboardRemovalAndRefreshesCurrentPinboardScope() async {
         var statusTexts: [String] = []
         let requests = QueryRecorder()
@@ -496,6 +702,18 @@ private actor QueryRecorder {
 
     func values() -> [ClipboardListQuery] {
         queries
+    }
+}
+
+private actor MutationRecorder {
+    private var mutations: [ClipboardItemMutationRequest] = []
+
+    func record(_ mutation: ClipboardItemMutationRequest) {
+        mutations.append(mutation)
+    }
+
+    func values() -> [ClipboardItemMutationRequest] {
+        mutations
     }
 }
 

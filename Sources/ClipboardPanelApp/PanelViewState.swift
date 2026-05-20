@@ -26,6 +26,7 @@ public struct PanelViewState: Equatable, Sendable {
     public let toolbar: PanelToolbarViewState
     public let list: PanelListViewState
     public let selectedItemID: String?
+    public let selectedItemIDs: Set<String>
     public let isPreviewPopoverEnabled: Bool
     public let isCommandHintModeEnabled: Bool
 
@@ -33,12 +34,14 @@ public struct PanelViewState: Equatable, Sendable {
         toolbar: PanelToolbarViewState,
         list: PanelListViewState,
         selectedItemID: String?,
+        selectedItemIDs: Set<String> = [],
         isPreviewPopoverEnabled: Bool,
         isCommandHintModeEnabled: Bool
     ) {
         self.toolbar = toolbar
         self.list = list
         self.selectedItemID = selectedItemID
+        self.selectedItemIDs = selectedItemIDs
         self.isPreviewPopoverEnabled = isPreviewPopoverEnabled
         self.isCommandHintModeEnabled = isCommandHintModeEnabled
     }
@@ -64,6 +67,7 @@ public enum PanelViewStateAdapter {
             ),
             list: list,
             selectedItemID: scene.selection.selectedItemID,
+            selectedItemIDs: scene.selection.selectedItemIDs,
             isPreviewPopoverEnabled: scene.preview.isPopoverEnabled,
             isCommandHintModeEnabled: scene.selection.isCommandHintModeEnabled
         )

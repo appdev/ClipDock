@@ -335,7 +335,7 @@ private enum ScrollWheelAxisRewriter {
 
 final class ClipboardItemCardBox: NSBox {
     var itemID: String?
-    var onSelect: (() -> Void)?
+    var onSelect: ((NSEvent) -> Void)?
     var onDoubleClick: (() -> Void)?
     var onContextMenu: ((NSEvent) -> Void)?
     private weak var selectionHeaderView: NSView?
@@ -366,7 +366,7 @@ final class ClipboardItemCardBox: NSBox {
             return
         }
 
-        onSelect?()
+        onSelect?(event)
     }
 
     override func rightMouseDown(with event: NSEvent) {

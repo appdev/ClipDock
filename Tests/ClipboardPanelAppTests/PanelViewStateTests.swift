@@ -6,7 +6,12 @@ struct PanelViewStateTests {
     func viewStateMapsToolbarSelectionAndSearchVisibility() {
         let scene = PanelSceneState(
             query: PanelQueryState(searchText: "report", itemType: "color", pinboardID: "default", isSearchVisible: true),
-            selection: PanelSelectionState(selectedItemID: "item-1", isCommandHintModeEnabled: true),
+            selection: PanelSelectionState(
+                selectedItemID: "item-1",
+                selectedItemIDs: ["item-1", "item-2"],
+                rangeAnchorItemID: "item-1",
+                isCommandHintModeEnabled: true
+            ),
             preview: PanelPreviewState(isPopoverEnabled: false)
         )
         let list = PanelListViewState(
@@ -24,6 +29,7 @@ struct PanelViewStateTests {
         #expect(viewState.toolbar.selectedPinboardID == "default")
         #expect(viewState.toolbar.clearActionTitle == "清空当前结果")
         #expect(viewState.selectedItemID == "item-1")
+        #expect(viewState.selectedItemIDs == ["item-1", "item-2"])
         #expect(!viewState.isPreviewPopoverEnabled)
         #expect(viewState.isCommandHintModeEnabled)
     }

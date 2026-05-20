@@ -2084,10 +2084,14 @@ final class PanelInteractionSmokeProbe {
                 controller?.hide()
             case .setPinboardMembership(let item, let pinboardID, let isMember):
                 self?.pinboardRequest = (item.id, pinboardID, isMember)
+            case .setPinboardMembershipBatch(let items, let pinboardID, let isMember):
+                self?.pinboardRequest = (items.first?.id ?? "", pinboardID, isMember)
             case .createPinboard, .renamePinboard, .updatePinboardColor, .deletePinboard:
                 break
             case .deleteItem(let item, _):
                 self?.deletedItemID = item.id
+            case .deleteItems(let items, _):
+                self?.deletedItemID = items.first?.id
             case .loadMore:
                 self?.loadMoreRequestCount += 1
             }

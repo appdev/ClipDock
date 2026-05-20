@@ -96,6 +96,56 @@ struct PanelRuntimeSeamTests {
     }
 
     @Test
+    @MainActor
+    func multiSelectMouseKeyboardAndContextMenuSeams() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 4)
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: 4, hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        let ids = contentView.smokeOrderedCardItemIDs()
+        try #require(ids.count >= 4)
+        #expect(contentView.smokeSelectedItemIDs == [ids[0]])
+
+        contentView.smokeClickCard(itemID: ids[1], modifiers: [.command])
+        #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
+        #expect(contentView.smokeSelectedCardIDs() == [ids[0], ids[1]])
+
+        contentView.smokeClickCard(itemID: ids[3], modifiers: [.shift])
+        #expect(contentView.smokeSelectedItemIDs == [ids[1], ids[2], ids[3]])
+        #expect(contentView.smokeSelectedCardIDs() == [ids[1], ids[2], ids[3]])
+
+        contentView.smokeClickCard(itemID: ids[0], modifiers: [.command, .shift])
+        #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
+        #expect(contentView.smokeSelectedCardIDs() == [ids[0], ids[1]])
+
+        contentView.smokeSendArrow(.right, modifiers: [.shift])
+        #expect(contentView.smokeSelectedItemIDs == [ids[1]])
+
+        contentView.smokeClickCard(itemID: ids[2], modifiers: [.command])
+        contentView.smokePrepareManagementMenu(itemID: ids[2])
+        #expect(contentView.smokeSelectedItemIDs == [ids[1], ids[2]])
+
+        contentView.smokePrepareManagementMenu(itemID: ids[3])
+        #expect(contentView.smokeSelectedItemIDs == [ids[3]])
+
+        contentView.smokeClickCard(itemID: ids[0], modifiers: [.command])
+        #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[3]])
+
+        controller.hide()
+    }
+
+    @Test
     func typeToSearchKeyPlannerAllowsShiftAndRejectsShortcutOrNonPrintableKeys() {
         #expect(PanelTypeToSearchKeyPlanner.initialSearchText(
             characters: "A",
@@ -711,7 +761,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func reconcilePreservesAndClampsScrollAndKeepsPreviewOnlyForRemainingItem() async throws {
+    func reconcileStructuralReplacementResetsScrollAndKeepsPreviewOnlyForRemainingItem() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         app.activate(ignoringOtherApps: true)
@@ -745,7 +795,7 @@ struct PanelRuntimeSeamTests {
             isFiltered: false
         )
         #expect(!contentView.smokeIsPreviewShown)
-        #expect(contentView.smokeScrollOriginX <= scrolledX)
+        #expect(abs(contentView.smokeScrollOriginX) < 1)
         #expect(contentView.smokeRenderedCardTrackingIsConsistent)
 
         let withoutPreviewedItem = Array(items[10...12])
@@ -759,6 +809,44 @@ struct PanelRuntimeSeamTests {
         )
         #expect(!contentView.smokeIsPreviewShown)
         #expect(contentView.smokeSelectedItemID == withoutPreviewedItem.first?.id)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func structuralReplacementResetsScrollWithoutRevealingRetainedSelection() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = PanelQASamples.makePagedPanelItems(count: 28)
+
+        controller.show()
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == items.map(\.id) })
+
+        let retainedSelection = items[24]
+        contentView.smokeSelectItem(id: retainedSelection.id, scrollIntoView: true)
+        #expect(await waitForMainActor { contentView.smokeSelectedItemID == retainedSelection.id })
+        let selectedScrollX = contentView.smokeScrollOriginX
+        #expect(selectedScrollX > 0)
+
+        let inserted = makeRuntimeTextItem(id: "runtime-scroll-reset-inserted", summary: "Inserted")
+        let nextItems = [items[0], inserted] + Array(items[10...27])
+        contentView.updateListState(
+            .success(RustCoreListResult(items: nextItems, totalCount: Int64(nextItems.count), hasMore: false)),
+            isFiltered: false
+        )
+
+        #expect(await waitForMainActor { contentView.smokeOrderedCardItemIDs() == nextItems.map(\.id) })
+        #expect(contentView.smokeSelectedItemID == retainedSelection.id)
+        #expect(abs(contentView.smokeScrollOriginX) < 1)
 
         controller.hide()
     }
@@ -3864,6 +3952,68 @@ struct PanelRuntimeSeamTests {
         contentView.smokePinboardFilterButton(pinboardID: "board-b")?.onPress?()
 
         #expect(contentView.smokeOrderedCardItemIDs() == boardBItems.map(\.id))
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func allZeroBatchCompletionDoesNotInvalidateCachedPagesOrRefreshPinboards() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let client = RustCoreClient()
+        _ = try client.createPinboard(
+            appSupportDirectory: tempDirectory,
+            title: "Board A",
+            colorCode: 4_293_940_557
+        ).get()
+        _ = try client.createPinboard(
+            appSupportDirectory: tempDirectory,
+            title: "Hidden Refresh Sentinel",
+            colorCode: 4_294_620_928
+        ).get()
+        let pinboards = try client.listPinboards(appSupportDirectory: tempDirectory).get().pinboards
+        let boardA = try #require(pinboards.first { $0.title == "Board A" })
+        let hiddenPinboard = try #require(pinboards.first { $0.title == "Hidden Refresh Sentinel" })
+
+        let delegate = AppDelegate()
+        delegate.smokePrepareRealFunctionQA(appSupportURL: tempDirectory)
+        let controller = delegate.smokePanelControllerForRealFunctionQA
+        let contentView = controller.smokeContentView
+        let boardAItems = [PanelQASamples.makePagedPanelItems(count: 2)[0]]
+
+        controller.show()
+        controller.updatePinboards([boardA])
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: boardAItems,
+                totalCount: Int64(boardAItems.count),
+                hasMore: false
+            )),
+            isFiltered: true,
+            scope: ClipboardListScope(pinboardID: boardA.id)
+        )
+        #expect(contentView.smokePinboardFilterButton(pinboardID: boardA.id) != nil)
+        #expect(contentView.smokePinboardFilterButton(pinboardID: hiddenPinboard.id) == nil)
+
+        delegate.smokePerformBatchMutationForRealFunctionQA(
+            [.delete(itemID: "already-missing", pinboardID: nil)],
+            summaryKind: .delete(pinboardID: nil)
+        )
+
+        #expect(await waitForMainActor {
+            delegate.smokeStorageStatusTextForRealFunctionQA == "条目：未找到"
+        })
+        #expect(contentView.smokePinboardFilterButton(pinboardID: boardA.id) != nil)
+        #expect(contentView.smokePinboardFilterButton(pinboardID: hiddenPinboard.id) == nil)
+
+        contentView.smokePinboardFilterButton(pinboardID: boardA.id)?.onPress?()
+        #expect(contentView.smokeOrderedCardItemIDs() == boardAItems.map(\.id))
 
         controller.hide()
     }

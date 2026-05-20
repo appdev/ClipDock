@@ -5,7 +5,9 @@ public enum PanelExternalAction: Equatable, Sendable {
     case copyItem(itemID: String)
     case copyItemAsPlainText(itemID: String)
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
+    case setPinboardMembershipBatch(itemIDs: [String], pinboardID: String, isMember: Bool)
     case deleteItem(itemID: String, pinboardID: String?)
+    case deleteItems(itemIDs: [String], pinboardID: String?)
     case hidePanel
     case loadMore
 }
@@ -38,6 +40,7 @@ public enum PanelInteractionAction: Equatable, Sendable {
     case copyItem(itemID: String)
     case copySelectedItem
     case deleteSelectedItem
+    case selection(PanelSelectionIntent)
     case selectItem(id: String, scrollIntoView: Bool)
     case selectOffset(Int)
     case activateSelectedPreview
@@ -98,8 +101,23 @@ public final class PanelInteractionController {
         contentController.isLoadingMoreItems
     }
 
+    public func selectionSnapshot() -> PanelSelectionSnapshot {
+        contentController.selectionSnapshot()
+    }
+
     public func item(withID itemID: String) -> RustClipboardItemSummary? {
         currentItems.first { $0.id == itemID }
+    }
+
+    public func restoreSelectionSnapshot(_ snapshot: PanelSelectionSnapshot) -> PanelInteractionResult {
+        let previousViewState = viewState
+        contentController.restoreSelectionSnapshot(snapshot)
+        let didChangeSelection = previousViewState.selectedItemID != viewState.selectedItemID
+            || previousViewState.selectedItemIDs != viewState.selectedItemIDs
+        let effects: [PanelInteractionEffect] = didChangeSelection
+            ? [.selectionChanged(scrollIntoView: false)]
+            : []
+        return makeResult(effects: effects)
     }
 
     public func updateStorageState(
@@ -231,7 +249,8 @@ public final class PanelInteractionController {
             ])
 
         case .deleteSelectedItem:
-            guard let selectedItemID = viewState.selectedItemID else {
+            let selectedItemIDs = orderedSelectedItemIDs()
+            guard !selectedItemIDs.isEmpty else {
                 return makeResult()
             }
 
@@ -239,14 +258,20 @@ public final class PanelInteractionController {
             return makeResult(effects: [
                 .commandHints([:]),
                 .preview(.close),
-                .external(.deleteItem(
-                    itemID: selectedItemID,
-                    pinboardID: viewState.toolbar.selectedPinboardID
-                ))
+                deleteEffect(itemIDs: selectedItemIDs)
             ])
 
+        case .selection(let intent):
+            let update = contentController.applySelectionIntent(intent)
+            return makeResult(
+                effects: selectionEffects(update, scrollIntoView: intent.scrollsSelectionIntoView)
+            )
+
         case .selectItem(let id, let scrollIntoView):
-            let update = contentController.selectItem(id: id)
+            let update = contentController.applySelectionIntent(.replace(
+                itemID: id,
+                scrollIntoView: scrollIntoView
+            ))
             return makeResult(
                 effects: selectionEffects(update, scrollIntoView: scrollIntoView)
             )
@@ -320,7 +345,7 @@ public final class PanelInteractionController {
             return makeResult(effects: effects)
 
         case .prepareManagementMenu(let itemID):
-            let update = contentController.selectItem(id: itemID)
+            let update = contentController.applySelectionIntent(.prepareContextMenu(itemID: itemID))
             var effects: [PanelInteractionEffect] = [.preview(.close)]
             if update.didChangeSelection {
                 effects.append(.selectionChanged(scrollIntoView: false))
@@ -344,21 +369,16 @@ public final class PanelInteractionController {
                 ])
 
             case .delete:
+                let itemIDs = orderedSelectedItemIDs(containing: itemID)
                 return makeResult(effects: [
                     .preview(.close),
-                    .external(.deleteItem(
-                        itemID: itemID,
-                        pinboardID: viewState.toolbar.selectedPinboardID
-                    ))
+                    deleteEffect(itemIDs: itemIDs)
                 ])
 
             case .setPinboardMembership(let pinboardID, let isMember):
+                let itemIDs = orderedSelectedItemIDs(containing: itemID)
                 return makeResult(effects: [
-                    .external(.setPinboardMembership(
-                        itemID: itemID,
-                        pinboardID: pinboardID,
-                        isMember: isMember
-                    ))
+                    pinboardMembershipEffect(itemIDs: itemIDs, pinboardID: pinboardID, isMember: isMember)
                 ])
 
             case .preview:
@@ -422,5 +442,51 @@ public final class PanelInteractionController {
                 enabled: viewState.isCommandHintModeEnabled
             )
         )
+    }
+
+    private func orderedSelectedItemIDs(containing itemID: String? = nil) -> [String] {
+        let selectedItemIDs = contentController.orderedSelectedItemIDs()
+        guard let itemID else { return selectedItemIDs }
+        return selectedItemIDs.contains(itemID) ? selectedItemIDs : [itemID]
+    }
+
+    private func deleteEffect(itemIDs: [String]) -> PanelInteractionEffect {
+        let pinboardID = viewState.toolbar.selectedPinboardID
+        if itemIDs.count == 1, let itemID = itemIDs.first {
+            return .external(.deleteItem(itemID: itemID, pinboardID: pinboardID))
+        }
+        return .external(.deleteItems(itemIDs: itemIDs, pinboardID: pinboardID))
+    }
+
+    private func pinboardMembershipEffect(
+        itemIDs: [String],
+        pinboardID: String,
+        isMember: Bool
+    ) -> PanelInteractionEffect {
+        if itemIDs.count == 1, let itemID = itemIDs.first {
+            return .external(.setPinboardMembership(
+                itemID: itemID,
+                pinboardID: pinboardID,
+                isMember: isMember
+            ))
+        }
+        return .external(.setPinboardMembershipBatch(
+            itemIDs: itemIDs,
+            pinboardID: pinboardID,
+            isMember: isMember
+        ))
+    }
+}
+
+private extension PanelSelectionIntent {
+    var scrollsSelectionIntoView: Bool {
+        switch self {
+        case .replace(_, let scrollIntoView):
+            return scrollIntoView
+        case .toggle, .range, .extendByOffset:
+            return true
+        case .prepareContextMenu:
+            return false
+        }
     }
 }

@@ -26,15 +26,50 @@ public struct PanelQueryState: Equatable, Sendable {
 
 public struct PanelSelectionState: Equatable, Sendable {
     public var selectedItemID: String?
+    public var selectedItemIDs: Set<String>
+    public var rangeAnchorItemID: String?
     public var isCommandHintModeEnabled: Bool
 
     public init(
         selectedItemID: String? = nil,
+        selectedItemIDs: Set<String> = [],
+        rangeAnchorItemID: String? = nil,
         isCommandHintModeEnabled: Bool = false
     ) {
+        var normalizedSelectedIDs = selectedItemIDs
+        if let selectedItemID {
+            normalizedSelectedIDs.insert(selectedItemID)
+        }
+
         self.selectedItemID = selectedItemID
+        self.selectedItemIDs = selectedItemID == nil ? [] : normalizedSelectedIDs
+        self.rangeAnchorItemID = selectedItemID == nil ? nil : (rangeAnchorItemID ?? selectedItemID)
         self.isCommandHintModeEnabled = isCommandHintModeEnabled
     }
+}
+
+public struct PanelSelectionSnapshot: Equatable, Sendable {
+    public var selectedItemID: String?
+    public var selectedItemIDs: Set<String>
+    public var rangeAnchorItemID: String?
+
+    public init(
+        selectedItemID: String? = nil,
+        selectedItemIDs: Set<String> = [],
+        rangeAnchorItemID: String? = nil
+    ) {
+        self.selectedItemID = selectedItemID
+        self.selectedItemIDs = selectedItemIDs
+        self.rangeAnchorItemID = rangeAnchorItemID
+    }
+}
+
+public enum PanelSelectionIntent: Equatable, Sendable {
+    case replace(itemID: String, scrollIntoView: Bool)
+    case toggle(itemID: String)
+    case range(toItemID: String)
+    case extendByOffset(Int)
+    case prepareContextMenu(itemID: String)
 }
 
 public struct PanelPreviewState: Equatable, Sendable {
@@ -128,6 +163,30 @@ public final class PanelSceneRuntimeController {
         return update
     }
 
+    public func applySelectionIntent(
+        itemIDs: [String],
+        intent: PanelSelectionIntent
+    ) -> PanelSelectionUpdate {
+        let update = PanelSceneController.stateByApplyingSelectionIntent(
+            state,
+            itemIDs: itemIDs,
+            intent: intent
+        )
+        state = update.state
+        return update
+    }
+
+    public func restoreSelectionSnapshot(
+        _ snapshot: PanelSelectionSnapshot,
+        itemIDs: [String]
+    ) {
+        state = PanelSceneController.stateByRestoringSelectionSnapshot(
+            state,
+            snapshot: snapshot,
+            itemIDs: itemIDs
+        )
+    }
+
     public func selectItem(itemIDs: [String], selectedItemID: String) -> PanelSelectionUpdate {
         let update = PanelSceneController.stateBySelectingItem(
             state,
@@ -215,8 +274,8 @@ public enum PanelSceneController {
         itemIDs: [String]
     ) -> PanelSceneState {
         var nextState = state
-        nextState.selection.selectedItemID = PanelInteractionPlanner.selectedIDAfterListUpdate(
-            previousSelectedID: state.selection.selectedItemID,
+        nextState.selection = repairedSelectionAfterListUpdate(
+            state.selection,
             itemIDs: itemIDs
         )
         return nextState
@@ -239,10 +298,77 @@ public enum PanelSceneController {
             )
         }
 
-        return stateBySelectingItem(state, itemIDs: itemIDs, selectedItemID: nextID)
+        return stateByApplyingSelectionIntent(
+            state,
+            itemIDs: itemIDs,
+            intent: .replace(itemID: nextID, scrollIntoView: true)
+        )
     }
 
     public static func stateBySelectingItem(
+        _ state: PanelSceneState,
+        itemIDs: [String],
+        selectedItemID: String
+    ) -> PanelSelectionUpdate {
+        stateByApplyingSelectionIntent(
+            state,
+            itemIDs: itemIDs,
+            intent: .replace(itemID: selectedItemID, scrollIntoView: true)
+        )
+    }
+
+    public static func stateByApplyingSelectionIntent(
+        _ state: PanelSceneState,
+        itemIDs: [String],
+        intent: PanelSelectionIntent
+    ) -> PanelSelectionUpdate {
+        switch intent {
+        case .replace(let selectedItemID, _):
+            return stateByReplacingSelection(state, itemIDs: itemIDs, selectedItemID: selectedItemID)
+        case .toggle(let itemID):
+            return stateByTogglingSelection(state, itemIDs: itemIDs, itemID: itemID)
+        case .range(let toItemID):
+            return stateBySelectingRange(state, itemIDs: itemIDs, toItemID: toItemID)
+        case .extendByOffset(let offset):
+            return stateByExtendingSelection(state, itemIDs: itemIDs, offset: offset)
+        case .prepareContextMenu(let itemID):
+            return stateByPreparingContextMenu(state, itemIDs: itemIDs, itemID: itemID)
+        }
+    }
+
+    public static func orderedSelectedItemIDs(
+        _ state: PanelSceneState,
+        itemIDs: [String]
+    ) -> [String] {
+        itemIDs.filter { state.selection.selectedItemIDs.contains($0) }
+    }
+
+    public static func stateByRestoringSelectionSnapshot(
+        _ state: PanelSceneState,
+        snapshot: PanelSelectionSnapshot,
+        itemIDs: [String]
+    ) -> PanelSceneState {
+        var nextState = state
+        nextState.selection = repairedSelection(
+            selectedItemID: snapshot.selectedItemID,
+            selectedItemIDs: snapshot.selectedItemIDs,
+            rangeAnchorItemID: snapshot.rangeAnchorItemID,
+            itemIDs: itemIDs,
+            selectsFirstWhenEmpty: false,
+            isCommandHintModeEnabled: state.selection.isCommandHintModeEnabled
+        )
+        return nextState
+    }
+
+    public static func selectionSnapshot(_ state: PanelSceneState) -> PanelSelectionSnapshot {
+        PanelSelectionSnapshot(
+            selectedItemID: state.selection.selectedItemID,
+            selectedItemIDs: state.selection.selectedItemIDs,
+            rangeAnchorItemID: state.selection.rangeAnchorItemID
+        )
+    }
+
+    private static func stateByReplacingSelection(
         _ state: PanelSceneState,
         itemIDs: [String],
         selectedItemID: String
@@ -256,12 +382,124 @@ public enum PanelSceneController {
         }
 
         let didChangeSelection = state.selection.selectedItemID != selectedItemID
+            || state.selection.selectedItemIDs != Set([selectedItemID])
+            || state.selection.rangeAnchorItemID != selectedItemID
         var nextState = state
         nextState.selection.selectedItemID = selectedItemID
+        nextState.selection.selectedItemIDs = [selectedItemID]
+        nextState.selection.rangeAnchorItemID = selectedItemID
         return PanelSelectionUpdate(
             state: nextState,
             shouldClosePreview: didChangeSelection,
             didChangeSelection: didChangeSelection
+        )
+    }
+
+    private static func stateByTogglingSelection(
+        _ state: PanelSceneState,
+        itemIDs: [String],
+        itemID: String
+    ) -> PanelSelectionUpdate {
+        guard itemIDs.contains(itemID) else {
+            return unchangedSelectionUpdate(state)
+        }
+
+        var selectedIDs = state.selection.selectedItemIDs
+        var nextPrimaryID: String?
+        var nextAnchorID: String?
+        if selectedIDs.contains(itemID) {
+            selectedIDs.remove(itemID)
+            nextPrimaryID = state.selection.selectedItemID == itemID
+                ? itemIDs.first { selectedIDs.contains($0) }
+                : state.selection.selectedItemID
+            nextAnchorID = state.selection.rangeAnchorItemID == itemID
+                ? nextPrimaryID
+                : state.selection.rangeAnchorItemID
+        } else {
+            selectedIDs.insert(itemID)
+            nextPrimaryID = itemID
+            nextAnchorID = itemID
+        }
+
+        return selectionUpdate(
+            from: state,
+            selectedItemID: nextPrimaryID,
+            selectedItemIDs: selectedIDs,
+            rangeAnchorItemID: nextAnchorID,
+            itemIDs: itemIDs
+        )
+    }
+
+    private static func stateBySelectingRange(
+        _ state: PanelSceneState,
+        itemIDs: [String],
+        toItemID: String
+    ) -> PanelSelectionUpdate {
+        guard let targetIndex = itemIDs.firstIndex(of: toItemID) else {
+            return unchangedSelectionUpdate(state)
+        }
+
+        let anchorID = [state.selection.rangeAnchorItemID, state.selection.selectedItemID]
+            .compactMap { $0 }
+            .first { itemIDs.contains($0) } ?? toItemID
+        guard let anchorIndex = itemIDs.firstIndex(of: anchorID) else {
+            return unchangedSelectionUpdate(state)
+        }
+
+        let bounds = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
+        let selectedIDs = Set(itemIDs[bounds])
+        return selectionUpdate(
+            from: state,
+            selectedItemID: toItemID,
+            selectedItemIDs: selectedIDs,
+            rangeAnchorItemID: anchorID,
+            itemIDs: itemIDs
+        )
+    }
+
+    private static func stateByExtendingSelection(
+        _ state: PanelSceneState,
+        itemIDs: [String],
+        offset: Int
+    ) -> PanelSelectionUpdate {
+        guard !itemIDs.isEmpty else {
+            return unchangedSelectionUpdate(state)
+        }
+
+        guard let selectedItemID = state.selection.selectedItemID else {
+            return stateByReplacingSelection(state, itemIDs: itemIDs, selectedItemID: itemIDs[0])
+        }
+
+        guard let nextID = PanelInteractionPlanner.selectedIDAfterOffset(
+            currentSelectedID: selectedItemID,
+            itemIDs: itemIDs,
+            offset: offset
+        ) else {
+            return unchangedSelectionUpdate(state)
+        }
+
+        return stateBySelectingRange(state, itemIDs: itemIDs, toItemID: nextID)
+    }
+
+    private static func stateByPreparingContextMenu(
+        _ state: PanelSceneState,
+        itemIDs: [String],
+        itemID: String
+    ) -> PanelSelectionUpdate {
+        guard itemIDs.contains(itemID) else {
+            return unchangedSelectionUpdate(state)
+        }
+
+        guard state.selection.selectedItemIDs.contains(itemID) else {
+            return stateByReplacingSelection(state, itemIDs: itemIDs, selectedItemID: itemID)
+        }
+
+        return selectionUpdate(
+            from: state,
+            selectedItemID: itemID,
+            selectedItemIDs: state.selection.selectedItemIDs,
+            rangeAnchorItemID: state.selection.rangeAnchorItemID ?? itemID,
+            itemIDs: itemIDs
         )
     }
 
@@ -271,12 +509,16 @@ public enum PanelSceneController {
     ) -> PanelSceneState {
         var nextState = state
         nextState.selection.selectedItemID = itemID
+        nextState.selection.selectedItemIDs.insert(itemID)
+        nextState.selection.rangeAnchorItemID = nextState.selection.rangeAnchorItemID ?? itemID
         return nextState
     }
 
     public static func stateByClearingSelection(_ state: PanelSceneState) -> PanelSceneState {
         var nextState = state
         nextState.selection.selectedItemID = nil
+        nextState.selection.selectedItemIDs = []
+        nextState.selection.rangeAnchorItemID = nil
         return nextState
     }
 
@@ -402,6 +644,98 @@ public enum PanelSceneController {
         visibleItemIDs: [String]
     ) -> String? {
         PanelInteractionPlanner.selectedIDForCommandNumber(number, itemIDs: visibleItemIDs)
+    }
+}
+
+private extension PanelSceneController {
+    static func repairedSelectionAfterListUpdate(
+        _ selection: PanelSelectionState,
+        itemIDs: [String]
+    ) -> PanelSelectionState {
+        repairedSelection(
+            selectedItemID: selection.selectedItemID,
+            selectedItemIDs: selection.selectedItemIDs,
+            rangeAnchorItemID: selection.rangeAnchorItemID,
+            itemIDs: itemIDs,
+            selectsFirstWhenEmpty: true,
+            isCommandHintModeEnabled: selection.isCommandHintModeEnabled
+        )
+    }
+
+    static func repairedSelection(
+        selectedItemID: String?,
+        selectedItemIDs: Set<String>,
+        rangeAnchorItemID: String?,
+        itemIDs: [String],
+        selectsFirstWhenEmpty: Bool,
+        isCommandHintModeEnabled: Bool
+    ) -> PanelSelectionState {
+        guard !itemIDs.isEmpty else {
+            return PanelSelectionState(isCommandHintModeEnabled: isCommandHintModeEnabled)
+        }
+
+        var prunedSelectedIDs = selectedItemIDs.intersection(Set(itemIDs))
+        if let selectedItemID, itemIDs.contains(selectedItemID) {
+            prunedSelectedIDs.insert(selectedItemID)
+        }
+
+        if prunedSelectedIDs.isEmpty {
+            guard selectsFirstWhenEmpty, let firstID = itemIDs.first else {
+                return PanelSelectionState(isCommandHintModeEnabled: isCommandHintModeEnabled)
+            }
+            return PanelSelectionState(
+                selectedItemID: firstID,
+                selectedItemIDs: [firstID],
+                rangeAnchorItemID: firstID,
+                isCommandHintModeEnabled: isCommandHintModeEnabled
+            )
+        }
+
+        let repairedPrimaryID = selectedItemID.flatMap {
+            prunedSelectedIDs.contains($0) ? $0 : nil
+        } ?? itemIDs.first { prunedSelectedIDs.contains($0) }
+        let repairedAnchorID = rangeAnchorItemID.flatMap {
+            prunedSelectedIDs.contains($0) ? $0 : nil
+        } ?? repairedPrimaryID
+
+        return PanelSelectionState(
+            selectedItemID: repairedPrimaryID,
+            selectedItemIDs: prunedSelectedIDs,
+            rangeAnchorItemID: repairedAnchorID,
+            isCommandHintModeEnabled: isCommandHintModeEnabled
+        )
+    }
+
+    static func selectionUpdate(
+        from state: PanelSceneState,
+        selectedItemID: String?,
+        selectedItemIDs: Set<String>,
+        rangeAnchorItemID: String?,
+        itemIDs: [String]
+    ) -> PanelSelectionUpdate {
+        var nextState = state
+        nextState.selection = repairedSelection(
+            selectedItemID: selectedItemID,
+            selectedItemIDs: selectedItemIDs,
+            rangeAnchorItemID: rangeAnchorItemID,
+            itemIDs: itemIDs,
+            selectsFirstWhenEmpty: false,
+            isCommandHintModeEnabled: state.selection.isCommandHintModeEnabled
+        )
+        let didChangeSelection = nextState.selection != state.selection
+        return PanelSelectionUpdate(
+            state: nextState,
+            shouldClosePreview: didChangeSelection,
+            didChangeSelection: didChangeSelection
+        )
+    }
+
+    static func unchangedSelectionUpdate(_ state: PanelSceneState) -> PanelSelectionUpdate {
+        PanelSelectionUpdate(
+            state: state,
+            shouldClosePreview: false,
+            didChangeSelection: false
+        )
     }
 }
 

@@ -45,7 +45,7 @@ enum PanelItemCollectionGeometry {
 
 struct PanelItemCollectionCallbacks {
     let toolTip: String?
-    let onSelect: (() -> Void)?
+    let onSelect: ((NSEvent) -> Void)?
     let onDoubleClick: (() -> Void)?
     let onContextMenu: ((NSEvent) -> Void)?
 }
@@ -422,11 +422,11 @@ final class PanelItemCollectionSurface: NSObject,
         return visibleRect.maxX >= collectionView.frame.width - threshold
     }
 
-    func updateSelection(selectedItemID: String?) {
+    func updateSelection(selectedItemIDs: Set<String>) {
         for index in entries.indices {
             entries[index].state = PanelItemCardViewStateAdapter.stateBySettingTransientDecorations(
                 entries[index].state,
-                isSelected: entries[index].id == selectedItemID,
+                isSelected: selectedItemIDs.contains(entries[index].id),
                 commandIndexText: entries[index].state.commandIndexText
             )
         }

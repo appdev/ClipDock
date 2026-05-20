@@ -138,6 +138,25 @@ struct PanelItemCardViewStateTests {
     }
 
     @Test
+    func selectedIDSetMarksAnyMemberSelected() {
+        let item = makePanelItemCardStateItem(
+            id: "text-2",
+            itemType: "text",
+            summary: "hello",
+            primaryText: "hello"
+        )
+
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: "text-1",
+            selectedItemIDs: ["text-1", "text-2"],
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        #expect(state.isSelected)
+    }
+
+    @Test
     func colorItemMapsColorPreviewWithoutAssetPreview() throws {
         let item = makePanelItemCardStateItem(
             id: "color-1",

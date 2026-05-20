@@ -231,6 +231,75 @@ struct PanelInteractionControllerTests {
     }
 
     @Test
+    func explicitSelectionIntentsToggleRangeAndExtend() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c"),
+            makePanelInteractionItem(id: "d")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(selection: PanelSelectionState(selectedItemID: "b")),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 4,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let toggled = controller.dispatch(.selection(.toggle(itemID: "d")))
+        #expect(toggled.viewState.selectedItemID == "d")
+        #expect(toggled.viewState.selectedItemIDs == ["b", "d"])
+        #expect(toggled.effects == [
+            .preview(.close),
+            .selectionChanged(scrollIntoView: true)
+        ])
+
+        let ranged = controller.dispatch(.selection(.range(toItemID: "a")))
+        #expect(ranged.viewState.selectedItemID == "a")
+        #expect(ranged.viewState.selectedItemIDs == ["a", "b", "c", "d"])
+
+        let extended = controller.dispatch(.selection(.extendByOffset(1)))
+        #expect(extended.viewState.selectedItemID == "b")
+        #expect(extended.viewState.selectedItemIDs == ["b", "c", "d"])
+    }
+
+    @Test
+    func prepareManagementMenuPreservesSelectedItemSelectionAndReplacesUnselectedItem() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(selection: PanelSelectionState(
+                selectedItemID: "a",
+                selectedItemIDs: ["a", "c"],
+                rangeAnchorItemID: "a"
+            )),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 3,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let selectedResult = controller.dispatch(.prepareManagementMenu(itemID: "c"))
+        #expect(selectedResult.viewState.selectedItemID == "c")
+        #expect(selectedResult.viewState.selectedItemIDs == ["a", "c"])
+        #expect(selectedResult.effects == [
+            .preview(.close),
+            .selectionChanged(scrollIntoView: false)
+        ])
+
+        let unselectedResult = controller.dispatch(.prepareManagementMenu(itemID: "b"))
+        #expect(unselectedResult.viewState.selectedItemID == "b")
+        #expect(unselectedResult.viewState.selectedItemIDs == ["b"])
+    }
+
+    @Test
     func scrollActionUpdatesCommandHintsAndRequestsLoadMore() {
         let items = [
             makePanelInteractionItem(id: "a"),
@@ -306,6 +375,8 @@ struct PanelInteractionControllerTests {
             sceneState: PanelSceneState(
                 selection: PanelSelectionState(
                     selectedItemID: "b",
+                    selectedItemIDs: ["a", "b"],
+                    rangeAnchorItemID: "a",
                     isCommandHintModeEnabled: true
                 )
             )
@@ -314,6 +385,7 @@ struct PanelInteractionControllerTests {
         let result = controller.dispatch(.copySelectedItem)
 
         #expect(result.viewState.selectedItemID == "b")
+        #expect(result.viewState.selectedItemIDs == ["a", "b"])
         #expect(!result.viewState.isCommandHintModeEnabled)
         #expect(result.effects == [
             .commandHints([:]),
@@ -324,12 +396,19 @@ struct PanelInteractionControllerTests {
 
     @Test
     func deleteSelectedItemEmitsDeleteActionAndClearsCommandHints() {
+        let items = [makePanelInteractionItem(id: "b")]
         let controller = makePanelInteractionController(
             sceneState: PanelSceneState(
                 selection: PanelSelectionState(
                     selectedItemID: "b",
                     isCommandHintModeEnabled: true
                 )
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 1,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
             )
         )
 
@@ -345,10 +424,17 @@ struct PanelInteractionControllerTests {
 
     @Test
     func deleteSelectedItemInPinboardCarriesCurrentPinboardScope() {
+        let items = [makePanelInteractionItem(id: "b")]
         let controller = makePanelInteractionController(
             sceneState: PanelSceneState(
                 query: PanelQueryState(pinboardID: "board-a"),
                 selection: PanelSelectionState(selectedItemID: "b")
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 1,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
             )
         )
 
@@ -359,6 +445,87 @@ struct PanelInteractionControllerTests {
             .preview(.close),
             .external(.deleteItem(itemID: "b", pinboardID: "board-a"))
         ])
+    }
+
+    @Test
+    func deleteSelectedItemUsesOrderedBatchTargetsInVisualOrder() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(selection: PanelSelectionState(
+                selectedItemID: "c",
+                selectedItemIDs: ["c", "a"],
+                rangeAnchorItemID: "c"
+            )),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 3,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.deleteSelectedItem)
+
+        #expect(result.effects == [
+            .commandHints([:]),
+            .preview(.close),
+            .external(.deleteItems(itemIDs: ["a", "c"], pinboardID: nil))
+        ])
+    }
+
+    @Test
+    func managementPinboardActionUsesOrderedBatchTargetsWhenItemIsSelected() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(selection: PanelSelectionState(
+                selectedItemID: "c",
+                selectedItemIDs: ["c", "a"],
+                rangeAnchorItemID: "c"
+            )),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 3,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.management(
+            itemID: "c",
+            action: .setPinboardMembership(pinboardID: "board-a", isMember: true)
+        ))
+
+        #expect(result.effects == [
+            .external(.setPinboardMembershipBatch(
+                itemIDs: ["a", "c"],
+                pinboardID: "board-a",
+                isMember: true
+            ))
+        ])
+    }
+
+    @Test
+    func previewRemainsPrimaryOnlyWithMultiSelection() {
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(selection: PanelSelectionState(
+                selectedItemID: "b",
+                selectedItemIDs: ["a", "b"],
+                rangeAnchorItemID: "a"
+            ))
+        )
+
+        let result = controller.dispatch(.activateSelectedPreview)
+
+        #expect(result.viewState.selectedItemIDs == ["a", "b"])
+        #expect(result.effects == [.preview(.toggle(itemID: "b"))])
     }
 
     @Test
