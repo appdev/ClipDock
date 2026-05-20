@@ -3589,9 +3589,9 @@ private enum AppIconDisplayImageProvider {
     private static func sourceImage() -> NSImage? {
         let packagedIconURL = Bundle.main.resourceURL?
             .appendingPathComponent("AppIcon.icns")
-        let moduleIconURL = Bundle.module
+        let moduleIconURL = ClipDockResources.bundle
             .url(forResource: "AppIcon", withExtension: "icns")
-        let moduleSourceURL = Bundle.module
+        let moduleSourceURL = ClipDockResources.bundle
             .url(forResource: "AppIcon", withExtension: "png")
 
         return [packagedIconURL, moduleIconURL, moduleSourceURL]

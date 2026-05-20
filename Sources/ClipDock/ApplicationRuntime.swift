@@ -1413,7 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .appendingPathComponent("StatusBarClipboardTemplate.png")
         if let image = packagedResourceURL
             .flatMap(NSImage.init(contentsOf:))
-            ?? Bundle.module
+            ?? ClipDockResources.bundle
                 .url(forResource: "StatusBarClipboardTemplate", withExtension: "png")
                 .flatMap(NSImage.init(contentsOf:)) {
             image.isTemplate = true

@@ -128,7 +128,7 @@ enum PanelQASamples {
     }
 
     static func makeRealSampleImageURL() throws -> URL {
-        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "png") {
+        if let url = ClipDockResources.bundle.url(forResource: "AppIcon", withExtension: "png") {
             return url
         }
 
