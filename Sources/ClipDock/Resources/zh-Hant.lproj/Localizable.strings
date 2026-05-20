@@ -190,10 +190,14 @@
 "preferences.showMenuBar.title" = "Show in Menu Bar";
 "preferences.status.error" = "偏好設定：%@";
 "preferences.status.storageUninitialized" = "偏好設定：儲存未初始化";
+"preferences.version.checking" = "正在檢查更新";
 "preferences.version.detail" = "Current app version";
 "preferences.version.format" = "Version %@ (%@)";
 "preferences.version.inline" = "Version %@";
+"preferences.version.openRelease.help" = "開啟 GitHub Releases";
 "preferences.version.title" = "Version";
+"preferences.version.updateAvailable.detail" = "發現新版本 %@，點按以開啟 GitHub Releases。";
+"preferences.version.updateAvailable.value" = "有更新 %@";
 "preferences.webPreview.detail" = "Load the real webpage when pressing Space";
 "preferences.webPreview.title" = "Full Web Preview";
 "preferences.windowTitleCapture.title" = "Window Title Capture";
@@ -228,6 +232,11 @@
 "search.placeholder" = "搜尋";
 "shortcut.status.listenFailed" = "Shortcut: Listener failed %d";
 "shortcut.status.registerFailed" = "Shortcut: Registration failed %d";
+"update.alert.download" = "下載更新";
+"update.alert.message" = "目前版本 %@，最新版本 %@。可以現在下載、稍後再提醒，或跳過這個版本。";
+"update.alert.skip" = "跳過更新";
+"update.alert.skipVersion" = "跳過這個版本";
+"update.alert.title" = "ClipDock %@ 已可用";
 "shortcutRecorder.pressShortcut" = "Press shortcut";
 "shortcutRecorder.requiresModifier" = "Requires ⌘ / ⌥ / ⌃";
 "source.unknown" = "未知來源";

@@ -166,6 +166,35 @@ struct PreferencesShellTests {
     }
 
     @Test
+    @MainActor
+    func copyCompletionHUDControllerRefreshesContentColorsForDarkAppearance() throws {
+        let app = NSApplication.shared
+        let originalAppearance = app.appearance
+        defer { app.appearance = originalAppearance }
+
+        let controller = CopyCompletionHUDController()
+        defer { controller.hideImmediatelyForTesting() }
+
+        app.appearance = NSAppearance(named: .aqua)
+        controller.show(eventID: "self-copy-light")
+        let lightColors = try #require(controller.debugContentColors)
+        let lightLabelColor = try #require(lightColors.labelTextColor?.usingColorSpace(.sRGB))
+
+        app.appearance = NSAppearance(named: .darkAqua)
+        controller.show(eventID: "self-copy-dark")
+        let darkColors = try #require(controller.debugContentColors)
+        let darkIconColor = try #require(darkColors.iconTintColor?.usingColorSpace(.sRGB))
+        let darkLabelColor = try #require(darkColors.labelTextColor?.usingColorSpace(.sRGB))
+
+        #expect(lightLabelColor.redComponent < 0.4)
+        #expect(darkIconColor.redComponent > 0.8)
+        #expect(darkLabelColor.redComponent > 0.8)
+        #expect(darkLabelColor.redComponent - lightLabelColor.redComponent > 0.5)
+        #expect(abs(darkIconColor.alphaComponent - lightLabelColor.alphaComponent) < 0.001)
+        #expect(abs(darkLabelColor.alphaComponent - lightLabelColor.alphaComponent) < 0.001)
+    }
+
+    @Test
     func ignoredApplicationResolverUsesBundleIdentifierFromSelectedApp() throws {
         let appURL = try makeTemporaryApplicationBundle(
             bundleIdentifier: "com.example.SecretApp",

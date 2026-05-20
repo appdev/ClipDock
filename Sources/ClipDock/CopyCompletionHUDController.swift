@@ -4,7 +4,7 @@ import AppKit
 final class CopyCompletionHUDController {
     private enum Layout {
         static let contentSize = NSSize(width: 198, height: 198)
-        static let bottomOffset: CGFloat = 70
+        static let bottomOffset: CGFloat = 75
         static let shadowOutset: CGFloat = 28
         static let windowSize = NSSize(
             width: contentSize.width + shadowOutset * 2,
@@ -28,6 +28,10 @@ final class CopyCompletionHUDController {
         panel?.isVisible == true
     }
 
+    var debugContentColors: CopyCompletionHUDDebugContentColors? {
+        (panel?.contentView as? CopyCompletionHUDContentView)?.debugContentColors
+    }
+
     func show(eventID: String) {
         lastEventID = eventID
         animationGeneration += 1
@@ -39,6 +43,7 @@ final class CopyCompletionHUDController {
 
         let finalFrame = targetFrame(for: panel)
         panel.setFrame(finalFrame, display: true)
+        (panel.contentView as? CopyCompletionHUDContentView)?.updateContentColors()
         panel.alphaValue = 1
         panel.orderFrontRegardless()
 
@@ -102,7 +107,7 @@ final class CopyCompletionHUDController {
     }
 
     private func makeContentView() -> NSView {
-        let root = NSView(frame: NSRect(origin: .zero, size: Layout.windowSize))
+        let root = CopyCompletionHUDContentView(frame: NSRect(origin: .zero, size: Layout.windowSize))
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor.clear.cgColor
 
@@ -139,12 +144,10 @@ final class CopyCompletionHUDController {
             accessibilityDescription: AppLocalization.text("copy.completed", defaultValue: "已复制")
         )
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 72, weight: .medium)
-        icon.contentTintColor = CopyCompletionHUDPalette.foreground
         icon.translatesAutoresizingMaskIntoConstraints = false
 
         let label = NSTextField(labelWithString: AppLocalization.text("copy.completed", defaultValue: "已复制"))
         label.font = .systemFont(ofSize: 22, weight: .regular)
-        label.textColor = CopyCompletionHUDPalette.foreground
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -162,6 +165,7 @@ final class CopyCompletionHUDController {
             stack.centerYAnchor.constraint(equalTo: card.centerYAnchor)
         ])
 
+        root.bindContent(icon: icon, label: label)
         return root
     }
 
@@ -176,9 +180,43 @@ final class CopyCompletionHUDController {
     }
 }
 
+struct CopyCompletionHUDDebugContentColors {
+    let iconTintColor: NSColor?
+    let labelTextColor: NSColor?
+}
+
 private final class CopyCompletionHUDPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+private final class CopyCompletionHUDContentView: NSView {
+    private weak var icon: NSImageView?
+    private weak var label: NSTextField?
+
+    var debugContentColors: CopyCompletionHUDDebugContentColors {
+        CopyCompletionHUDDebugContentColors(
+            iconTintColor: icon?.contentTintColor,
+            labelTextColor: label?.textColor
+        )
+    }
+
+    func bindContent(icon: NSImageView, label: NSTextField) {
+        self.icon = icon
+        self.label = label
+        updateContentColors()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateContentColors()
+    }
+
+    func updateContentColors() {
+        let foreground = CopyCompletionHUDPalette.resolve(for: effectiveAppearance).foreground
+        icon?.contentTintColor = foreground
+        label?.textColor = foreground
+    }
 }
 
 private final class CopyCompletionHUDCardView: NSVisualEffectView {
@@ -213,7 +251,7 @@ private final class CopyCompletionHUDCardView: NSVisualEffectView {
     }
 }
 
-private enum CopyCompletionHUDPalette {
+enum CopyCompletionHUDPalette {
     static let foreground = NSColor(name: nil) { appearance in
         resolve(for: appearance).foreground
     }
@@ -226,7 +264,7 @@ private enum CopyCompletionHUDPalette {
         let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         if isDark {
             return Resolved(
-                foreground: NSColor(calibratedWhite: 0.16, alpha: 0.72)
+                foreground: NSColor(calibratedWhite: 0.98, alpha: 0.68)
             )
         }
         return Resolved(

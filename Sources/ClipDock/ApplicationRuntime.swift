@@ -51,6 +51,22 @@ final class ClipboardCaptureRegistrationPipeline {
     }
 }
 
+enum StatusItemClickAction: Equatable {
+    case togglePanel
+    case showMenu
+}
+
+enum StatusItemClickActionPlanner {
+    static func action(for eventType: NSEvent.EventType?) -> StatusItemClickAction {
+        switch eventType {
+        case .rightMouseDown, .rightMouseUp:
+            return .showMenu
+        default:
+            return .togglePanel
+        }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum ClipboardWriteResult {
@@ -75,11 +91,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let copyCompletionHUDController = CopyCompletionHUDController()
     private let sourceApplicationTracker = SourceApplicationTracker()
     private let clipboardMonitor = ClipboardMonitor()
+    private let updateCoordinator = AppUpdateCoordinator()
     private let commandVKeystrokeSender: CommandVKeystrokeSending = SystemCommandVKeystrokeSender()
     private let databaseWorker = ClipboardCoreDatabaseWorker()
     private let captureRegistrationPipeline = ClipboardCaptureRegistrationPipeline()
     private let imageCaptureSessionID = UUID().uuidString
     private var statusItem: NSStatusItem?
+    private var statusItemMenu: NSMenu?
     private var togglePanelMenuItem: NSMenuItem?
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
@@ -153,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { [linkMetadataCoordinator] in
             await linkMetadataCoordinator?.stop()
         }
+        updateCoordinator.stop()
         clipboardMonitor.stop()
         sourceApplicationTracker.stop()
         unregisterGlobalHotKey()
@@ -189,6 +208,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let start = ClipDockPerformanceLog.mark()
         panelController.hide()
         ClipDockPerformanceLog.finish("panel.hide.commandDispatched", start: start)
+    }
+
+    @objc private func handleStatusItemClick(_ sender: Any?) {
+        switch StatusItemClickActionPlanner.action(for: NSApp.currentEvent?.type) {
+        case .togglePanel:
+            togglePanel(sender)
+        case .showMenu:
+            showStatusItemMenu()
+        }
     }
 
     @objc private func repositionPanel(_ sender: Any?) {
@@ -260,6 +288,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ClipDockPerformanceLog.measure("startup.refreshStatusText") {
             refreshStatusText()
+        }
+        ClipDockPerformanceLog.measure("startup.updateCoordinator.start") {
+            updateCoordinator.start()
         }
         ClipDockPerformanceLog.finish("startup.finished", start: startupStart)
     }
@@ -566,6 +597,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         preferencesController.onAccessibilityPermissionRequested = { [weak self] in
             self?.openAccessibilitySettingsFromPreferences()
+        }
+        preferencesController.onPreferencesShown = { [weak self] in
+            self?.updateCoordinator.checkForSettingsUpdate()
+        }
+        preferencesController.onUpdateReleaseRequested = { [weak self] release in
+            self?.updateCoordinator.openReleasePage(release)
+        }
+        updateCoordinator.onSettingsUpdateStatusChanged = { [weak self] status in
+            self?.preferencesController.updateAppUpdateStatus(status)
         }
     }
 
@@ -1462,6 +1502,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.image = makeStatusBarIcon()
         statusItem?.button?.imagePosition = .imageOnly
         statusItem?.button?.title = ""
+        statusItem?.button?.target = self
+        statusItem?.button?.action = #selector(handleStatusItemClick(_:))
+        statusItem?.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         let menu = NSMenu()
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.aboutClipDock", defaultValue: "关于 ClipDock"), imageName: "info.circle", action: #selector(showAbout(_:)), key: "", modifiers: []))
@@ -1471,7 +1514,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.preferencesEllipsis", defaultValue: "偏好设置…"), imageName: "gearshape", action: #selector(showPreferences(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.quit", defaultValue: "退出"), imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "", modifiers: []))
-        statusItem?.menu = menu
+        statusItemMenu = menu
+        statusItem?.menu = nil
+    }
+
+    private func showStatusItemMenu() {
+        guard let button = statusItem?.button,
+              let menu = statusItemMenu
+        else { return }
+
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: 0, y: button.bounds.height),
+            in: button
+        )
     }
 
     private func makeStatusBarIcon() -> NSImage? {
@@ -1631,6 +1687,26 @@ extension AppDelegate {
         panelController.setAppSupportDirectory(appSupportURL)
         configurePanelCallbacks()
         configureCoordinators(for: appSupportURL)
+    }
+
+    func smokeConfigureStatusItemForRealFunctionQA() {
+        configureStatusItem()
+    }
+
+    func smokeRemoveStatusItemForRealFunctionQA() {
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+        statusItem = nil
+        statusItemMenu = nil
+    }
+
+    var smokeStatusItemUsesManualMenuForRealFunctionQA: Bool {
+        guard let button = statusItem?.button else { return false }
+        return statusItem?.menu == nil
+            && statusItemMenu != nil
+            && button.target === self
+            && button.action == #selector(handleStatusItemClick(_:))
     }
 
     func smokeCaptureClipboardText(_ text: String, changeCount: Int64) {

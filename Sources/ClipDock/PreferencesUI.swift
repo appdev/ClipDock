@@ -590,6 +590,14 @@ final class PreferencesWindowController: NSWindowController {
         }
     }
 
+    var onPreferencesShown: (() -> Void)?
+
+    var onUpdateReleaseRequested: ((AppUpdateRelease) -> Void)? {
+        didSet {
+            viewModel.onUpdateReleaseRequested = onUpdateReleaseRequested
+        }
+    }
+
     init() {
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Layout.defaultWindowSize),
@@ -632,6 +640,7 @@ final class PreferencesWindowController: NSWindowController {
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        onPreferencesShown?()
     }
 
     func updatePreferences(_ preferences: RustPreferencesDocument) {
@@ -649,6 +658,10 @@ final class PreferencesWindowController: NSWindowController {
 
     func updateAccessibilityPermissionState(_ state: AccessibilityPermissionState) {
         viewModel.updateAccessibilityPermissionState(state)
+    }
+
+    func updateAppUpdateStatus(_ status: AppUpdateSettingsStatus) {
+        viewModel.updateAppUpdateStatus(status)
     }
 
     func exerciseForSmoke() {
@@ -691,6 +704,17 @@ final class PreferencesWindowController: NSWindowController {
             visibleSidebarSectionCount: PreferenceSection.allCases.count,
             window: window
         )
+    }
+
+    func preferencesVersionUpdateSmokeSnapshot() -> PreferencesVersionUpdateSmokeSnapshot {
+        PreferencesVersionUpdateSmokeSnapshot(
+            presentation: viewModel.versionUpdatePresentation,
+            updateStatus: viewModel.updateStatus
+        )
+    }
+
+    func smokeOpenVersionUpdateForQA() {
+        viewModel.openVersionUpdate()
     }
 
     func smokeEnableDirectPasteToTargetForPermissionQA() -> Bool {
@@ -742,12 +766,14 @@ private final class PreferencesToolbarCoordinator: NSObject, NSToolbarDelegate {
 @MainActor
 private final class PreferencesSwiftUIViewModel: ObservableObject {
     @Published private(set) var state = PreferencesSceneState()
+    @Published private(set) var updateStatus: AppUpdateSettingsStatus = .idle
 
     private let sceneController = PreferencesSceneController()
     private var pendingDeferredRender = false
 
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
     var onAccessibilityPermissionRequested: (() -> Void)?
+    var onUpdateReleaseRequested: ((AppUpdateRelease) -> Void)?
     var onAppearanceModeChanged: (() -> Void)?
 
     var selectedSection: PreferenceSection {
@@ -779,6 +805,22 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
 
     func updateAccessibilityPermissionState(_ state: AccessibilityPermissionState) {
         apply(sceneController.updateAccessibilityPermissionState(state))
+    }
+
+    func updateAppUpdateStatus(_ status: AppUpdateSettingsStatus) {
+        updateStatus = status
+    }
+
+    var versionUpdatePresentation: PreferencesVersionUpdatePresentation {
+        PreferencesVersionUpdatePresentation.make(
+            status: updateStatus,
+            currentVersionText: aboutVersionText()
+        )
+    }
+
+    func openVersionUpdate() {
+        guard case .available(let release) = updateStatus else { return }
+        onUpdateReleaseRequested?(release)
     }
 
     func persist(_ update: (inout RustPreferencesDocument) -> Void) {
@@ -923,6 +965,57 @@ struct PreferencesShellSmokeSnapshot: Equatable {
     let sidebarBackgroundWhiteComponent: CGFloat
     let sidebarHostingAppearanceIsDark: Bool
     let contentHostingAppearanceIsDark: Bool
+}
+
+struct PreferencesVersionUpdateSmokeSnapshot: Equatable {
+    let presentation: PreferencesVersionUpdatePresentation
+    let updateStatus: AppUpdateSettingsStatus
+}
+
+struct PreferencesVersionUpdatePresentation: Equatable {
+    let detail: String
+    let value: String
+    let isActionable: Bool
+
+    static func make(
+        status: AppUpdateSettingsStatus,
+        currentVersionText: String
+    ) -> PreferencesVersionUpdatePresentation {
+        switch status {
+        case .available(let release):
+            return PreferencesVersionUpdatePresentation(
+                detail: AppLocalization.format(
+                    "preferences.version.updateAvailable.detail",
+                    defaultValue: "发现新版本 %@，点击打开 GitHub Releases",
+                    release.displayVersion
+                ),
+                value: AppLocalization.format(
+                    "preferences.version.updateAvailable.value",
+                    defaultValue: "有更新 %@",
+                    release.displayVersion
+                ),
+                isActionable: true
+            )
+        case .checking:
+            return PreferencesVersionUpdatePresentation(
+                detail: AppLocalization.text(
+                    "preferences.version.checking",
+                    defaultValue: "正在检查更新"
+                ),
+                value: currentVersionText,
+                isActionable: false
+            )
+        case .idle, .upToDate:
+            return PreferencesVersionUpdatePresentation(
+                detail: AppLocalization.text(
+                    "preferences.version.detail",
+                    defaultValue: "当前应用版本"
+                ),
+                value: currentVersionText,
+                isActionable: false
+            )
+        }
+    }
 }
 
 @MainActor
@@ -1299,7 +1392,7 @@ private struct PreferencesContent: View {
         case .rules:
             PreferencePrivacySection(model: model)
         case .about:
-            PreferenceAboutSection()
+            PreferenceAboutSection(model: model)
         }
     }
 }
@@ -1932,6 +2025,7 @@ struct IgnoredApplicationDescriptor: Identifiable {
 }
 
 private struct PreferenceAboutSection: View {
+    @ObservedObject var model: PreferencesSwiftUIViewModel
     @Environment(\.colorScheme) private var colorScheme
 
     private var colors: PreferencesThemeValues {
@@ -1960,8 +2054,13 @@ private struct PreferenceAboutSection: View {
             }
 
             PreferenceSectionGroup(title: AppLocalization.text("preferences.group.appInfo", defaultValue: "应用信息")) {
-                PreferenceRow(title: AppLocalization.text("preferences.version.title", defaultValue: "版本"), detail: AppLocalization.text("preferences.version.detail", defaultValue: "当前应用版本")) {
-                    PreferenceValuePill(aboutVersionText())
+                let presentation = model.versionUpdatePresentation
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.version.title", defaultValue: "版本"),
+                    detail: presentation.detail,
+                    action: presentation.isActionable ? { model.openVersionUpdate() } : nil
+                ) {
+                    PreferenceValuePill(presentation.value, isProminent: presentation.isActionable)
                 }
             }
         }
@@ -2035,6 +2134,7 @@ private struct PreferenceSectionGroup<Content: View>: View {
 private struct PreferenceRow<Accessory: View>: View {
     let title: String
     let detail: String
+    let action: (() -> Void)?
     let accessory: Accessory
     @Environment(\.colorScheme) private var colorScheme
 
@@ -2042,13 +2142,37 @@ private struct PreferenceRow<Accessory: View>: View {
         PreferencesThemeValues(colorScheme: colorScheme)
     }
 
-    init(title: String, detail: String, @ViewBuilder accessory: () -> Accessory) {
+    init(
+        title: String,
+        detail: String,
+        action: (() -> Void)? = nil,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
         self.title = title
         self.detail = detail
+        self.action = action
         self.accessory = accessory()
     }
 
     var body: some View {
+        Group {
+            if let action {
+                Button(action: action) {
+                    rowContent
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .help(AppLocalization.text(
+                    "preferences.version.openRelease.help",
+                    defaultValue: "打开 GitHub Releases"
+                ))
+            } else {
+                rowContent
+            }
+        }
+    }
+
+    private var rowContent: some View {
         HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -2142,20 +2266,22 @@ private struct PreferenceShortcutPill: View {
 
 private struct PreferenceValuePill: View {
     let value: String
+    let isProminent: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     private var colors: PreferencesThemeValues {
         PreferencesThemeValues(colorScheme: colorScheme)
     }
 
-    init(_ value: String) {
+    init(_ value: String, isProminent: Bool = false) {
         self.value = value
+        self.isProminent = isProminent
     }
 
     var body: some View {
         Text(value)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(colors.primaryText)
+            .foregroundStyle(isProminent ? Color.accentColor : colors.primaryText)
             .padding(.horizontal, 12)
             .frame(height: 30)
             .background(colors.controlBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -2294,8 +2420,9 @@ private func aboutDisplayName() -> String {
 }
 
 private func aboutVersionText() -> String {
-    let shortVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0.1.0"
-    let buildVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? "1"
+    let versionProvider = BundleAppVersionProvider()
+    let shortVersion = versionProvider.currentShortVersion()
+    let buildVersion = versionProvider.currentBuildVersion()
     return "\(shortVersion) (\(buildVersion))"
 }
 

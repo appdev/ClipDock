@@ -190,10 +190,14 @@
 "preferences.showMenuBar.title" = "Show in Menu Bar";
 "preferences.status.error" = "設定：%@";
 "preferences.status.storageUninitialized" = "設定：ストレージが初期化されていません";
+"preferences.version.checking" = "Checking for updates";
 "preferences.version.detail" = "Current app version";
 "preferences.version.format" = "Version %@ (%@)";
 "preferences.version.inline" = "Version %@";
+"preferences.version.openRelease.help" = "Open GitHub Releases";
 "preferences.version.title" = "Version";
+"preferences.version.updateAvailable.detail" = "New version %@ is available. Click to open GitHub Releases.";
+"preferences.version.updateAvailable.value" = "Update %@";
 "preferences.webPreview.detail" = "Load the real webpage when pressing Space";
 "preferences.webPreview.title" = "Full Web Preview";
 "preferences.windowTitleCapture.title" = "Window Title Capture";
@@ -228,6 +232,11 @@
 "search.placeholder" = "検索";
 "shortcut.status.listenFailed" = "Shortcut: Listener failed %d";
 "shortcut.status.registerFailed" = "Shortcut: Registration failed %d";
+"update.alert.download" = "Download Update";
+"update.alert.message" = "Current version %@, latest version %@. You can download now, be reminded later, or skip this version.";
+"update.alert.skip" = "Skip Update";
+"update.alert.skipVersion" = "Skip This Version";
+"update.alert.title" = "ClipDock %@ is available";
 "shortcutRecorder.pressShortcut" = "Press shortcut";
 "shortcutRecorder.requiresModifier" = "Requires ⌘ / ⌥ / ⌃";
 "source.unknown" = "不明なソース";

@@ -262,6 +262,22 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func statusItemUsesLeftClickForPanelToggleAndRightClickForMenu() {
+        #expect(StatusItemClickActionPlanner.action(for: .leftMouseUp) == .togglePanel)
+        #expect(StatusItemClickActionPlanner.action(for: .leftMouseDown) == .togglePanel)
+        #expect(StatusItemClickActionPlanner.action(for: .rightMouseUp) == .showMenu)
+        #expect(StatusItemClickActionPlanner.action(for: .rightMouseDown) == .showMenu)
+        #expect(StatusItemClickActionPlanner.action(for: nil) == .togglePanel)
+
+        let delegate = AppDelegate()
+        delegate.smokeConfigureStatusItemForRealFunctionQA()
+        defer { delegate.smokeRemoveStatusItemForRealFunctionQA() }
+
+        #expect(delegate.smokeStatusItemUsesManualMenuForRealFunctionQA)
+    }
+
+    @Test
+    @MainActor
     func printableKeyStartsSearchFocusesFieldAndEmitsDebouncedQuery() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
