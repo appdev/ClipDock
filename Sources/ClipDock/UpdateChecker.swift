@@ -542,13 +542,6 @@ final class AppUpdateCoordinator {
                 skippedVersion: nil
             ) {
                 onSettingsUpdateStatusChanged?(.available(candidate))
-                handlePromptAction(
-                    promptPresenter.presentUpdatePrompt(
-                        release: candidate,
-                        currentVersion: currentVersion
-                    ),
-                    for: candidate
-                )
             } else {
                 onSettingsUpdateStatusChanged?(.upToDate)
             }

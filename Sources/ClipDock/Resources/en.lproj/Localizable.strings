@@ -194,9 +194,9 @@
 "preferences.version.detail" = "Current app version";
 "preferences.version.format" = "Version %@ (%@)";
 "preferences.version.inline" = "Version %@";
-"preferences.version.openRelease.help" = "Show update prompt";
+"preferences.version.openRelease.help" = "Open release page";
 "preferences.version.title" = "Version";
-"preferences.version.updateAvailable.detail" = "New version %@ is available. Click to show the update prompt.";
+"preferences.version.updateAvailable.detail" = "New version %@ is available. Click to open the release page.";
 "preferences.version.updateAvailable.value" = "Update %@";
 "preferences.updateChecks.detail" = "Automatically check for new versions and notify when one is available";
 "preferences.updateChecks.title" = "Check for Updates";

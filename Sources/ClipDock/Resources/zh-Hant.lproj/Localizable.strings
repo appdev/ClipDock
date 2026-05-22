@@ -194,9 +194,9 @@
 "preferences.version.detail" = "Current app version";
 "preferences.version.format" = "Version %@ (%@)";
 "preferences.version.inline" = "Version %@";
-"preferences.version.openRelease.help" = "顯示更新提示";
+"preferences.version.openRelease.help" = "開啟發行頁面";
 "preferences.version.title" = "Version";
-"preferences.version.updateAvailable.detail" = "發現新版本 %@，點按以顯示更新提示。";
+"preferences.version.updateAvailable.detail" = "發現新版本 %@，點按以開啟發行頁面。";
 "preferences.version.updateAvailable.value" = "有更新 %@";
 "preferences.updateChecks.detail" = "自動檢查新版本，並在可用時提醒";
 "preferences.updateChecks.title" = "檢查更新";

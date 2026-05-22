@@ -128,14 +128,14 @@ struct AppUpdateCheckerTests {
             currentVersionText: "0.1.3 (3)"
         )
         #expect(available.detail.contains("0.2.0"))
-        #expect(available.detail.contains("更新提示"))
+        #expect(available.detail.contains("发布页面"))
         #expect(available.value == "有更新 0.2.0")
         #expect(available.isActionable)
     }
 
     @Test
     @MainActor
-    func settingsCheckReportsAvailabilityAndPromptsWithoutConsumingDailyCheck() async throws {
+    func settingsCheckReportsAvailabilityWithoutPromptingOrConsumingDailyCheck() async throws {
         let release = try makeRelease(version: "v0.2.0")
         let provider = FakeAppUpdateProvider(release: release)
         let promptPresenter = FakeAppUpdatePromptPresenter()
@@ -162,9 +162,9 @@ struct AppUpdateCheckerTests {
         #expect(statuses.first == .checking)
         #expect(statuses.last == .available(release))
         #expect(provider.requestCount == 1)
-        #expect(promptPresenter.requestCount == 1)
-        #expect(promptPresenter.requestedRelease == release)
-        #expect(promptPresenter.requestedCurrentVersion == "0.1.3")
+        #expect(promptPresenter.requestCount == 0)
+        #expect(promptPresenter.requestedRelease == nil)
+        #expect(promptPresenter.requestedCurrentVersion == nil)
         #expect(stateStore.lastCheckAttemptDate == nil)
     }
 
@@ -212,7 +212,7 @@ struct AppUpdateCheckerTests {
 
     @Test
     @MainActor
-    func settingsUpdatePromptDownloadActionOpensDownloadURL() async throws {
+    func settingsCheckReportsAvailabilityWithoutOpeningDownloadURL() async throws {
         let release = try makeRelease(version: "v0.2.0")
         let provider = FakeAppUpdateProvider(release: release)
         let promptPresenter = FakeAppUpdatePromptPresenter(action: .download)
@@ -233,12 +233,12 @@ struct AppUpdateCheckerTests {
 
         coordinator.checkForSettingsUpdate()
         await waitFor {
-            urlOpener.openedURLs == [release.downloadURL]
+            statuses.last == .available(release)
         }
 
         #expect(statuses.last == .available(release))
-        #expect(promptPresenter.requestCount == 1)
-        #expect(urlOpener.openedURLs == [release.downloadURL])
+        #expect(promptPresenter.requestCount == 0)
+        #expect(urlOpener.openedURLs.isEmpty)
     }
 
     @Test

@@ -1031,7 +1031,7 @@ struct PreferencesVersionUpdatePresentation: Equatable {
             return PreferencesVersionUpdatePresentation(
                 detail: AppLocalization.format(
                     "preferences.version.updateAvailable.detail",
-                    defaultValue: "发现新版本 %@，点击查看更新提示",
+                    defaultValue: "发现新版本 %@，点击打开发布页面",
                     release.displayVersion
                 ),
                 value: AppLocalization.format(
@@ -2278,7 +2278,7 @@ private struct PreferenceRow<Accessory: View>: View {
                 .contentShape(Rectangle())
                 .help(AppLocalization.text(
                     "preferences.version.openRelease.help",
-                    defaultValue: "显示更新提示"
+                    defaultValue: "打开发布页面"
                 ))
             } else {
                 rowContent

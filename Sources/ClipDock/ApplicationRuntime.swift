@@ -602,7 +602,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateCoordinator.checkForSettingsUpdate()
         }
         preferencesController.onUpdateReleaseRequested = { [weak self] release in
-            self?.updateCoordinator.presentUpdatePrompt(for: release)
+            self?.updateCoordinator.openReleasePage(release)
         }
         preferencesController.onAutomaticUpdateChecksChanged = { [weak self] isEnabled in
             self?.updateCoordinator.setAutomaticChecksEnabled(isEnabled)
