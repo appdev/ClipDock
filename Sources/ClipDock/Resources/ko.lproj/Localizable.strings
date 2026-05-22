@@ -194,10 +194,12 @@
 "preferences.version.detail" = "Current app version";
 "preferences.version.format" = "Version %@ (%@)";
 "preferences.version.inline" = "Version %@";
-"preferences.version.openRelease.help" = "Open GitHub Releases";
+"preferences.version.openRelease.help" = "Show update prompt";
 "preferences.version.title" = "Version";
-"preferences.version.updateAvailable.detail" = "New version %@ is available. Click to open GitHub Releases.";
+"preferences.version.updateAvailable.detail" = "New version %@ is available. Click to show the update prompt.";
 "preferences.version.updateAvailable.value" = "Update %@";
+"preferences.updateChecks.detail" = "Automatically check for new versions and notify when one is available";
+"preferences.updateChecks.title" = "Check for Updates";
 "preferences.webPreview.detail" = "Load the real webpage when pressing Space";
 "preferences.webPreview.title" = "Full Web Preview";
 "preferences.windowTitleCapture.title" = "Window Title Capture";
@@ -237,6 +239,12 @@
 "update.alert.skip" = "Skip Update";
 "update.alert.skipVersion" = "Skip This Version";
 "update.alert.title" = "ClipDock %@ is available";
+"update.prompt.install" = "Install Update";
+"update.prompt.message" = "ClipDock %@ is available to download. You have %@. Download now?";
+"update.prompt.releaseNotesFallback" = "This version includes improvements and bug fixes.";
+"update.prompt.remindLater" = "Remind Me Later";
+"update.prompt.skipVersion" = "Skip This Version";
+"update.prompt.title" = "A new version of ClipDock is available";
 "shortcutRecorder.pressShortcut" = "Press shortcut";
 "shortcutRecorder.requiresModifier" = "Requires ⌘ / ⌥ / ⌃";
 "source.unknown" = "알 수 없는 소스";

@@ -543,7 +543,28 @@ impl PreferencesDocument {
             &["compact", "standard"],
             "standard",
         );
-        self.shortcuts.open_panel = normalize_keyboard_shortcut(self.shortcuts.open_panel);
+        self.shortcuts.open_panel = normalize_optional_keyboard_shortcut(
+            self.shortcuts.open_panel,
+            default_open_panel_shortcut(),
+        );
+        self.shortcuts.previous_pinboard = normalize_optional_keyboard_shortcut(
+            self.shortcuts.previous_pinboard,
+            default_previous_pinboard_shortcut(),
+        );
+        self.shortcuts.next_pinboard = normalize_optional_keyboard_shortcut(
+            self.shortcuts.next_pinboard,
+            default_next_pinboard_shortcut(),
+        );
+        self.shortcuts.quick_paste_modifier = normalize_shortcut_modifier_choice(
+            &self.shortcuts.quick_paste_modifier,
+            &["command", "control", "option"],
+            "command",
+        );
+        self.shortcuts.plain_text_modifier = normalize_shortcut_modifier_choice(
+            &self.shortcuts.plain_text_modifier,
+            &["command", "control", "option", "shift"],
+            "shift",
+        );
         self.ignore_list.ignored_app_identifiers =
             normalize_string_list(self.ignore_list.ignored_app_identifiers, 64, 120);
         self.ignore_list.window_title_keywords =
@@ -620,8 +641,16 @@ impl Default for AppearancePreferences {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShortcutsPreferences {
-    #[serde(default = "default_open_panel_shortcut")]
-    pub open_panel: KeyboardShortcut,
+    #[serde(default = "default_open_panel_shortcut_option")]
+    pub open_panel: Option<KeyboardShortcut>,
+    #[serde(default = "default_previous_pinboard_shortcut_option")]
+    pub previous_pinboard: Option<KeyboardShortcut>,
+    #[serde(default = "default_next_pinboard_shortcut_option")]
+    pub next_pinboard: Option<KeyboardShortcut>,
+    #[serde(default = "default_quick_paste_modifier")]
+    pub quick_paste_modifier: String,
+    #[serde(default = "default_plain_text_modifier")]
+    pub plain_text_modifier: String,
     #[serde(default)]
     pub paste_directly_to_target: bool,
     #[serde(default)]
@@ -631,7 +660,11 @@ pub struct ShortcutsPreferences {
 impl Default for ShortcutsPreferences {
     fn default() -> Self {
         Self {
-            open_panel: default_open_panel_shortcut(),
+            open_panel: default_open_panel_shortcut_option(),
+            previous_pinboard: default_previous_pinboard_shortcut_option(),
+            next_pinboard: default_next_pinboard_shortcut_option(),
+            quick_paste_modifier: default_quick_paste_modifier(),
+            plain_text_modifier: default_plain_text_modifier(),
             paste_directly_to_target: false,
             always_paste_as_plain_text: false,
         }
@@ -724,6 +757,10 @@ fn default_open_panel_shortcut() -> KeyboardShortcut {
     }
 }
 
+fn default_open_panel_shortcut_option() -> Option<KeyboardShortcut> {
+    Some(default_open_panel_shortcut())
+}
+
 fn default_open_panel_key_code() -> i64 {
     7
 }
@@ -732,9 +769,42 @@ fn default_open_panel_modifiers() -> Vec<String> {
     vec!["command".to_string(), "shift".to_string()]
 }
 
-fn normalize_keyboard_shortcut(shortcut: KeyboardShortcut) -> KeyboardShortcut {
+fn default_previous_pinboard_shortcut() -> KeyboardShortcut {
+    KeyboardShortcut {
+        key_code: 123,
+        modifiers: vec!["command".to_string()],
+    }
+}
+
+fn default_previous_pinboard_shortcut_option() -> Option<KeyboardShortcut> {
+    Some(default_previous_pinboard_shortcut())
+}
+
+fn default_next_pinboard_shortcut() -> KeyboardShortcut {
+    KeyboardShortcut {
+        key_code: 124,
+        modifiers: vec!["command".to_string()],
+    }
+}
+
+fn default_next_pinboard_shortcut_option() -> Option<KeyboardShortcut> {
+    Some(default_next_pinboard_shortcut())
+}
+
+fn default_quick_paste_modifier() -> String {
+    "command".to_string()
+}
+
+fn default_plain_text_modifier() -> String {
+    "shift".to_string()
+}
+
+fn normalize_keyboard_shortcut_with_fallback(
+    shortcut: KeyboardShortcut,
+    fallback: KeyboardShortcut,
+) -> KeyboardShortcut {
     if !(0..=127).contains(&shortcut.key_code) {
-        return default_open_panel_shortcut();
+        return fallback;
     }
 
     let modifiers = normalize_shortcut_modifiers(shortcut.modifiers);
@@ -742,13 +812,20 @@ fn normalize_keyboard_shortcut(shortcut: KeyboardShortcut) -> KeyboardShortcut {
         .iter()
         .any(|modifier| matches!(modifier.as_str(), "command" | "option" | "control"));
     if !has_required_modifier {
-        return default_open_panel_shortcut();
+        return fallback;
     }
 
     KeyboardShortcut {
         key_code: shortcut.key_code,
         modifiers,
     }
+}
+
+fn normalize_optional_keyboard_shortcut(
+    shortcut: Option<KeyboardShortcut>,
+    fallback: KeyboardShortcut,
+) -> Option<KeyboardShortcut> {
+    shortcut.map(|shortcut| normalize_keyboard_shortcut_with_fallback(shortcut, fallback))
 }
 
 fn normalize_shortcut_modifiers(modifiers: Vec<String>) -> Vec<String> {
@@ -763,6 +840,17 @@ fn normalize_shortcut_modifiers(modifiers: Vec<String>) -> Vec<String> {
         }
     }
     normalized
+}
+
+fn normalize_shortcut_modifier_choice(value: &str, allowed: &[&str], fallback: &str) -> String {
+    let Some(canonical) = canonical_shortcut_modifier(value) else {
+        return fallback.to_string();
+    };
+    if allowed.contains(&canonical) {
+        canonical.to_string()
+    } else {
+        fallback.to_string()
+    }
 }
 
 fn canonical_shortcut_modifier(modifier: &str) -> Option<&'static str> {

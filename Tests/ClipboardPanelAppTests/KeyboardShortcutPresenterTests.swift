@@ -9,6 +9,13 @@ struct KeyboardShortcutPresenterTests {
     }
 
     @Test
+    func optionalShortcutCanRepresentNone() {
+        #expect(KeyboardShortcutPresenter.displayText(for: nil, noneText: "无") == "无")
+        #expect(KeyboardShortcutPresenter.keyEquivalent(for: nil) == nil)
+        #expect(KeyboardShortcutPresenter.normalizedOptional(nil) == nil)
+    }
+
+    @Test
     func normalizesRecordedShortcutModifierAliases() {
         let shortcut = RustKeyboardShortcut(
             keyCode: 11,

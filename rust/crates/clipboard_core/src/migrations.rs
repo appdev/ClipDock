@@ -65,6 +65,16 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "default_open_panel_shortcut_preference_version",
         sql: DEFAULT_OPEN_PANEL_SHORTCUT_PREFERENCE_VERSION,
     },
+    Migration {
+        version: 12,
+        name: "shortcut_options_preference_version",
+        sql: SHORTCUT_OPTIONS_PREFERENCE_VERSION,
+    },
+    Migration {
+        version: 13,
+        name: "simple_tokenizer_fts",
+        sql: SIMPLE_TOKENIZER_FTS_SCHEMA,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -582,4 +592,23 @@ SELECT 1;
 
 const DEFAULT_OPEN_PANEL_SHORTCUT_PREFERENCE_VERSION: &str = r#"
 SELECT 1;
+"#;
+
+const SHORTCUT_OPTIONS_PREFERENCE_VERSION: &str = r#"
+SELECT 1;
+"#;
+
+const SIMPLE_TOKENIZER_FTS_SCHEMA: &str = r#"
+DROP TABLE IF EXISTS clipboard_items_fts;
+
+CREATE VIRTUAL TABLE clipboard_items_fts USING fts5(
+    summary,
+    primary_text,
+    source_app_name,
+    content = 'clipboard_items',
+    content_rowid = 'rowid',
+    tokenize = 'simple disable_stopword'
+);
+
+INSERT INTO clipboard_items_fts(clipboard_items_fts) VALUES('rebuild');
 "#;

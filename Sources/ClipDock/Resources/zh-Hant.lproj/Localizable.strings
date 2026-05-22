@@ -194,10 +194,12 @@
 "preferences.version.detail" = "Current app version";
 "preferences.version.format" = "Version %@ (%@)";
 "preferences.version.inline" = "Version %@";
-"preferences.version.openRelease.help" = "開啟 GitHub Releases";
+"preferences.version.openRelease.help" = "顯示更新提示";
 "preferences.version.title" = "Version";
-"preferences.version.updateAvailable.detail" = "發現新版本 %@，點按以開啟 GitHub Releases。";
+"preferences.version.updateAvailable.detail" = "發現新版本 %@，點按以顯示更新提示。";
 "preferences.version.updateAvailable.value" = "有更新 %@";
+"preferences.updateChecks.detail" = "自動檢查新版本，並在可用時提醒";
+"preferences.updateChecks.title" = "檢查更新";
 "preferences.webPreview.detail" = "Load the real webpage when pressing Space";
 "preferences.webPreview.title" = "Full Web Preview";
 "preferences.windowTitleCapture.title" = "Window Title Capture";
@@ -237,6 +239,12 @@
 "update.alert.skip" = "跳過更新";
 "update.alert.skipVersion" = "跳過這個版本";
 "update.alert.title" = "ClipDock %@ 已可用";
+"update.prompt.install" = "安裝更新";
+"update.prompt.message" = "ClipDock %@ 可供下載，您現在的版本是 %@。要現在下載嗎？";
+"update.prompt.releaseNotesFallback" = "此版本包含改進與問題修正。";
+"update.prompt.remindLater" = "稍後提醒我";
+"update.prompt.skipVersion" = "跳過這個版本";
+"update.prompt.title" = "新版本的 ClipDock 已經發布";
 "shortcutRecorder.pressShortcut" = "Press shortcut";
 "shortcutRecorder.requiresModifier" = "Requires ⌘ / ⌥ / ⌃";
 "source.unknown" = "未知來源";

@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+sqlite-simple-tokenizer = { path = "../../vendor/sqlite-simple-tokenizer" }
 
 [dev-dependencies]
 tempfile = "3.21"

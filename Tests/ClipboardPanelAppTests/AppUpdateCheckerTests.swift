@@ -128,14 +128,14 @@ struct AppUpdateCheckerTests {
             currentVersionText: "0.1.3 (3)"
         )
         #expect(available.detail.contains("0.2.0"))
-        #expect(available.detail.contains("GitHub Releases"))
+        #expect(available.detail.contains("更新提示"))
         #expect(available.value == "有更新 0.2.0")
         #expect(available.isActionable)
     }
 
     @Test
     @MainActor
-    func settingsSilentCheckReportsAvailabilityWithoutPromptingOrConsumingDailyCheck() async throws {
+    func settingsCheckReportsAvailabilityAndPromptsWithoutConsumingDailyCheck() async throws {
         let release = try makeRelease(version: "v0.2.0")
         let provider = FakeAppUpdateProvider(release: release)
         let promptPresenter = FakeAppUpdatePromptPresenter()
@@ -162,8 +162,83 @@ struct AppUpdateCheckerTests {
         #expect(statuses.first == .checking)
         #expect(statuses.last == .available(release))
         #expect(provider.requestCount == 1)
-        #expect(promptPresenter.requestCount == 0)
+        #expect(promptPresenter.requestCount == 1)
+        #expect(promptPresenter.requestedRelease == release)
+        #expect(promptPresenter.requestedCurrentVersion == "0.1.3")
         #expect(stateStore.lastCheckAttemptDate == nil)
+    }
+
+    @Test
+    @MainActor
+    func settingsCheckRespectsDisabledAutomaticUpdateChecks() async throws {
+        let release = try makeRelease(version: "v0.2.0")
+        let provider = FakeAppUpdateProvider(release: release)
+        let promptPresenter = FakeAppUpdatePromptPresenter()
+        let stateStore = InMemoryAppUpdateStateStore()
+        stateStore.automaticChecksEnabled = false
+        let coordinator = AppUpdateCoordinator(
+            provider: provider,
+            promptPresenter: promptPresenter,
+            urlOpener: FakeAppUpdateURLOpener(),
+            stateStore: stateStore,
+            versionProvider: FakeAppVersionProvider(version: "0.1.3"),
+            calendar: fixedCalendar(),
+            now: { Date(timeIntervalSince1970: 1_779_276_000) }
+        )
+        var statuses: [AppUpdateSettingsStatus] = []
+        coordinator.onSettingsUpdateStatusChanged = { status in
+            statuses.append(status)
+        }
+
+        coordinator.checkForSettingsUpdate()
+
+        #expect(statuses == [.idle])
+        #expect(provider.requestCount == 0)
+        #expect(promptPresenter.requestCount == 0)
+    }
+
+    @Test
+    func userDefaultsUpdateStateStoreDefaultsAutomaticChecksOn() throws {
+        let suiteName = "ClipDockTests.AppUpdate.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let stateStore = UserDefaultsAppUpdateStateStore(defaults: defaults)
+
+        #expect(stateStore.automaticChecksEnabled)
+        stateStore.automaticChecksEnabled = false
+        #expect(!stateStore.automaticChecksEnabled)
+    }
+
+    @Test
+    @MainActor
+    func settingsUpdatePromptDownloadActionOpensDownloadURL() async throws {
+        let release = try makeRelease(version: "v0.2.0")
+        let provider = FakeAppUpdateProvider(release: release)
+        let promptPresenter = FakeAppUpdatePromptPresenter(action: .download)
+        let urlOpener = FakeAppUpdateURLOpener()
+        let coordinator = AppUpdateCoordinator(
+            provider: provider,
+            promptPresenter: promptPresenter,
+            urlOpener: urlOpener,
+            stateStore: InMemoryAppUpdateStateStore(),
+            versionProvider: FakeAppVersionProvider(version: "0.1.3"),
+            calendar: fixedCalendar(),
+            now: { Date(timeIntervalSince1970: 1_779_276_000) }
+        )
+        var statuses: [AppUpdateSettingsStatus] = []
+        coordinator.onSettingsUpdateStatusChanged = { status in
+            statuses.append(status)
+        }
+
+        coordinator.checkForSettingsUpdate()
+        await waitFor {
+            urlOpener.openedURLs == [release.downloadURL]
+        }
+
+        #expect(statuses.last == .available(release))
+        #expect(promptPresenter.requestCount == 1)
+        #expect(urlOpener.openedURLs == [release.downloadURL])
     }
 
     @Test
@@ -181,6 +256,7 @@ struct AppUpdateCheckerTests {
         let snapshot = controller.preferencesVersionUpdateSmokeSnapshot()
         #expect(snapshot.presentation.isActionable)
         #expect(snapshot.presentation.value == "有更新 0.2.0")
+        #expect(snapshot.automaticUpdateChecksEnabled)
 
         controller.smokeOpenVersionUpdateForQA()
 
@@ -235,14 +311,23 @@ private final class FakeAppUpdateProvider: AppUpdateProviding {
 
 @MainActor
 private final class FakeAppUpdatePromptPresenter: AppUpdatePromptPresenting {
+    let action: AppUpdatePromptAction
     private(set) var requestCount = 0
+    private(set) var requestedRelease: AppUpdateRelease?
+    private(set) var requestedCurrentVersion: String?
+
+    init(action: AppUpdatePromptAction = .skipForNow) {
+        self.action = action
+    }
 
     func presentUpdatePrompt(
         release: AppUpdateRelease,
         currentVersion: String
     ) -> AppUpdatePromptAction {
         requestCount += 1
-        return .skipForNow
+        requestedRelease = release
+        requestedCurrentVersion = currentVersion
+        return action
     }
 }
 
@@ -258,6 +343,7 @@ private final class FakeAppUpdateURLOpener: AppUpdateURLOpening {
 private final class InMemoryAppUpdateStateStore: AppUpdateStateStoring {
     var lastCheckAttemptDate: Date?
     var skippedVersion: String?
+    var automaticChecksEnabled = true
 }
 
 private struct FakeAppVersionProvider: AppVersionProviding {

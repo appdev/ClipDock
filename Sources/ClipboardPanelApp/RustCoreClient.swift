@@ -215,32 +215,67 @@ public struct RustAppearancePreferences: Equatable, Codable, Sendable {
 }
 
 public struct RustShortcutsPreferences: Equatable, Codable, Sendable {
-    public var openPanel: RustKeyboardShortcut
+    public var openPanel: RustKeyboardShortcut?
+    public var previousPinboard: RustKeyboardShortcut?
+    public var nextPinboard: RustKeyboardShortcut?
+    public var quickPasteModifier: String
+    public var plainTextModifier: String
     public var pasteDirectlyToTarget: Bool
     public var alwaysPasteAsPlainText: Bool
 
     public init(
-        openPanel: RustKeyboardShortcut = RustKeyboardShortcut(),
+        openPanel: RustKeyboardShortcut? = RustKeyboardShortcut(),
+        previousPinboard: RustKeyboardShortcut? = RustKeyboardShortcut(keyCode: 123, modifiers: ["command"]),
+        nextPinboard: RustKeyboardShortcut? = RustKeyboardShortcut(keyCode: 124, modifiers: ["command"]),
+        quickPasteModifier: String = "command",
+        plainTextModifier: String = "shift",
         pasteDirectlyToTarget: Bool = false,
         alwaysPasteAsPlainText: Bool = false
     ) {
         self.openPanel = openPanel
+        self.previousPinboard = previousPinboard
+        self.nextPinboard = nextPinboard
+        self.quickPasteModifier = quickPasteModifier
+        self.plainTextModifier = plainTextModifier
         self.pasteDirectlyToTarget = pasteDirectlyToTarget
         self.alwaysPasteAsPlainText = alwaysPasteAsPlainText
     }
 
     private enum CodingKeys: String, CodingKey {
         case openPanel = "open_panel"
+        case previousPinboard = "previous_pinboard"
+        case nextPinboard = "next_pinboard"
+        case quickPasteModifier = "quick_paste_modifier"
+        case plainTextModifier = "plain_text_modifier"
         case pasteDirectlyToTarget = "paste_directly_to_target"
         case alwaysPasteAsPlainText = "always_paste_as_plain_text"
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.openPanel = try container.decodeIfPresent(
-            RustKeyboardShortcut.self,
-            forKey: .openPanel
-        ) ?? RustKeyboardShortcut()
+        self.openPanel = if container.contains(.openPanel) {
+            try container.decodeIfPresent(RustKeyboardShortcut.self, forKey: .openPanel)
+        } else {
+            RustKeyboardShortcut()
+        }
+        self.previousPinboard = if container.contains(.previousPinboard) {
+            try container.decodeIfPresent(RustKeyboardShortcut.self, forKey: .previousPinboard)
+        } else {
+            RustKeyboardShortcut(keyCode: 123, modifiers: ["command"])
+        }
+        self.nextPinboard = if container.contains(.nextPinboard) {
+            try container.decodeIfPresent(RustKeyboardShortcut.self, forKey: .nextPinboard)
+        } else {
+            RustKeyboardShortcut(keyCode: 124, modifiers: ["command"])
+        }
+        self.quickPasteModifier = try container.decodeIfPresent(
+            String.self,
+            forKey: .quickPasteModifier
+        ) ?? "command"
+        self.plainTextModifier = try container.decodeIfPresent(
+            String.self,
+            forKey: .plainTextModifier
+        ) ?? "shift"
         self.pasteDirectlyToTarget = try container.decodeIfPresent(
             Bool.self,
             forKey: .pasteDirectlyToTarget
@@ -249,6 +284,29 @@ public struct RustShortcutsPreferences: Equatable, Codable, Sendable {
             Bool.self,
             forKey: .alwaysPasteAsPlainText
         ) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let openPanel {
+            try container.encode(openPanel, forKey: .openPanel)
+        } else {
+            try container.encodeNil(forKey: .openPanel)
+        }
+        if let previousPinboard {
+            try container.encode(previousPinboard, forKey: .previousPinboard)
+        } else {
+            try container.encodeNil(forKey: .previousPinboard)
+        }
+        if let nextPinboard {
+            try container.encode(nextPinboard, forKey: .nextPinboard)
+        } else {
+            try container.encodeNil(forKey: .nextPinboard)
+        }
+        try container.encode(quickPasteModifier, forKey: .quickPasteModifier)
+        try container.encode(plainTextModifier, forKey: .plainTextModifier)
+        try container.encode(pasteDirectlyToTarget, forKey: .pasteDirectlyToTarget)
+        try container.encode(alwaysPasteAsPlainText, forKey: .alwaysPasteAsPlainText)
     }
 }
 

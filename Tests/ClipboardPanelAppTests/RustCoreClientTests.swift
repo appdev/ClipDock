@@ -53,7 +53,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 11)
+        #expect(value.schemaVersion == 13)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -811,7 +811,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 11)
+        #expect(result.schemaVersion == 13)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.general.copyCompletionHUDEnabled)
@@ -823,8 +823,14 @@ struct RustCoreClientTests {
         #expect(result.preferences.appearance.itemDensity == "standard")
         #expect(result.preferences.appearance.previewPopoverEnabled)
         #expect(result.preferences.linkPreview.webPreviewEnabled)
-        #expect(result.preferences.shortcuts.openPanel.keyCode == 7)
-        #expect(result.preferences.shortcuts.openPanel.modifiers == ["command", "shift"])
+        #expect(result.preferences.shortcuts.openPanel?.keyCode == 7)
+        #expect(result.preferences.shortcuts.openPanel?.modifiers == ["command", "shift"])
+        #expect(result.preferences.shortcuts.previousPinboard?.keyCode == 123)
+        #expect(result.preferences.shortcuts.previousPinboard?.modifiers == ["command"])
+        #expect(result.preferences.shortcuts.nextPinboard?.keyCode == 124)
+        #expect(result.preferences.shortcuts.nextPinboard?.modifiers == ["command"])
+        #expect(result.preferences.shortcuts.quickPasteModifier == "command")
+        #expect(result.preferences.shortcuts.plainTextModifier == "shift")
         #expect(!result.preferences.shortcuts.pasteDirectlyToTarget)
         #expect(!result.preferences.shortcuts.alwaysPasteAsPlainText)
         #expect(result.preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)
@@ -852,6 +858,8 @@ struct RustCoreClientTests {
             keyCode: 11,
             modifiers: ["shift", "cmd", "alt", "command", "ignored"]
         )
+        preferences.shortcuts.quickPasteModifier = "ctrl"
+        preferences.shortcuts.plainTextModifier = "alt"
         preferences.shortcuts.pasteDirectlyToTarget = true
         preferences.shortcuts.alwaysPasteAsPlainText = true
         preferences.ignoreList.ignoredAppIdentifiers = [
@@ -883,14 +891,40 @@ struct RustCoreClientTests {
         #expect(saved.preferences.appearance.itemDensity == "compact")
         #expect(!saved.preferences.appearance.previewPopoverEnabled)
         #expect(!saved.preferences.linkPreview.webPreviewEnabled)
-        #expect(saved.preferences.shortcuts.openPanel.keyCode == 11)
-        #expect(saved.preferences.shortcuts.openPanel.modifiers == ["command", "option", "shift"])
+        #expect(saved.preferences.shortcuts.openPanel?.keyCode == 11)
+        #expect(saved.preferences.shortcuts.openPanel?.modifiers == ["command", "option", "shift"])
+        #expect(saved.preferences.shortcuts.quickPasteModifier == "control")
+        #expect(saved.preferences.shortcuts.plainTextModifier == "option")
         #expect(saved.preferences.shortcuts.pasteDirectlyToTarget)
         #expect(saved.preferences.shortcuts.alwaysPasteAsPlainText)
         #expect(saved.preferences.ignoreList.ignoredAppIdentifiers == ["com.apple.Terminal", "terminal"])
         #expect(saved.preferences.ignoreList.windowTitleKeywords == ["密码", "验证码"])
         #expect(saved.preferences.ignoreList.skipUnknownSource)
         #expect(reloaded.preferences == saved.preferences)
+    }
+
+    @Test
+    func clearsOptionalShortcutsThroughSwiftBridgeBinding() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+        var preferences = try client.getPreferences(appSupportDirectory: tempDirectory).get().preferences
+        preferences.shortcuts.openPanel = nil
+        preferences.shortcuts.nextPinboard = nil
+        preferences.shortcuts.previousPinboard = nil
+
+        let saved = try client.updatePreferences(
+            appSupportDirectory: tempDirectory,
+            preferences: preferences
+        ).get()
+        let reloaded = try client.getPreferences(appSupportDirectory: tempDirectory).get()
+
+        #expect(saved.preferences.shortcuts.openPanel == nil)
+        #expect(saved.preferences.shortcuts.nextPinboard == nil)
+        #expect(saved.preferences.shortcuts.previousPinboard == nil)
+        #expect(reloaded.preferences.shortcuts.openPanel == nil)
+        #expect(reloaded.preferences.shortcuts.nextPinboard == nil)
+        #expect(reloaded.preferences.shortcuts.previousPinboard == nil)
     }
 
     @Test

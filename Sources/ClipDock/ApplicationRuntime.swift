@@ -602,11 +602,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateCoordinator.checkForSettingsUpdate()
         }
         preferencesController.onUpdateReleaseRequested = { [weak self] release in
-            self?.updateCoordinator.openReleasePage(release)
+            self?.updateCoordinator.presentUpdatePrompt(for: release)
+        }
+        preferencesController.onAutomaticUpdateChecksChanged = { [weak self] isEnabled in
+            self?.updateCoordinator.setAutomaticChecksEnabled(isEnabled)
         }
         updateCoordinator.onSettingsUpdateStatusChanged = { [weak self] status in
             self?.preferencesController.updateAppUpdateStatus(status)
         }
+        preferencesController.updateAutomaticUpdateChecksEnabled(updateCoordinator.automaticChecksEnabled)
     }
 
     private func setPinboardMembership(
@@ -1072,6 +1076,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController.setConfiguredDefaultHeight(CGFloat(result.preferences.general.defaultPanelHeight))
         panelController.setPreviewPopoverEnabled(result.preferences.appearance.previewPopoverEnabled)
         panelController.setLinkWebPreviewEnabled(result.preferences.linkPreview.webPreviewEnabled)
+        panelController.updateShortcutPreferences(result.preferences.shortcuts)
         statusItem?.isVisible = result.preferences.general.showMenuBarItem
         updateTogglePanelMenuShortcut(result.preferences.shortcuts.openPanel)
         registerGlobalHotKey()
@@ -1086,11 +1091,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshStatusText()
     }
 
-    private func updateTogglePanelMenuShortcut(_ shortcut: RustKeyboardShortcut) {
+    private func updateTogglePanelMenuShortcut(_ shortcut: RustKeyboardShortcut?) {
         guard let togglePanelMenuItem else { return }
-        let shortcut = KeyboardShortcutPresenter.normalized(shortcut)
+        let shortcut = KeyboardShortcutPresenter.normalizedOptional(shortcut)
         togglePanelMenuItem.keyEquivalent = KeyboardShortcutPresenter.keyEquivalent(for: shortcut) ?? ""
-        togglePanelMenuItem.keyEquivalentModifierMask = eventModifierFlags(for: shortcut.modifiers)
+        togglePanelMenuItem.keyEquivalentModifierMask = eventModifierFlags(for: shortcut?.modifiers ?? [])
     }
 
     private func eventModifierFlags(for modifiers: [String]) -> NSEvent.ModifierFlags {
@@ -1567,7 +1572,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerGlobalHotKey() {
         let registrationStart = ClipDockPerformanceLog.mark()
-        let shortcut = KeyboardShortcutPresenter.normalized(currentPreferences.shortcuts.openPanel)
+        guard let shortcut = KeyboardShortcutPresenter.normalizedOptional(currentPreferences.shortcuts.openPanel) else {
+            unregisterGlobalHotKeyRegistration()
+            ClipDockPerformanceLog.finish("hotkey.register.disabled", start: registrationStart)
+            return
+        }
         guard registeredOpenPanelShortcut != shortcut || hotKeyRef == nil else {
             ClipDockPerformanceLog.finish("hotkey.register.skipped", start: registrationStart)
             return

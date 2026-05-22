@@ -749,6 +749,100 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func configuredQuickPasteAndPlainTextModifiersDriveNumberCopy() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let items = Array(PanelQASamples.makePagedPanelItems(count: 3))
+        var copiedItemID: String?
+        var copiedPlainTextItemID: String?
+        controller.onRuntimeAction = { action in
+            switch action {
+            case .copyItem(let item):
+                copiedItemID = item.id
+            case .copyItemAsPlainText(let item):
+                copiedPlainTextItemID = item.id
+            default:
+                break
+            }
+        }
+
+        controller.show()
+        contentView.updateShortcutPreferences(RustShortcutsPreferences(
+            quickPasteModifier: "control",
+            plainTextModifier: "option"
+        ))
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(items.count), hasMore: false)),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+
+        PanelQAHarness.sendNumber(2, modifiers: [.control], to: contentView)
+        #expect(copiedItemID == items[1].id)
+        #expect(copiedPlainTextItemID == nil)
+
+        PanelQAHarness.sendNumber(3, modifiers: [.control, .option], to: contentView)
+        #expect(copiedPlainTextItemID == items[2].id)
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func configuredPinboardNavigationShortcutsCycleVisiblePinboards() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        var pinboardQueries: [String?] = []
+        controller.onRuntimeAction = { action in
+            if case .queryChanged(_, _, _, let pinboardID, _) = action {
+                pinboardQueries.append(pinboardID)
+            }
+        }
+
+        controller.show()
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "board-a",
+                title: "Board A",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            ),
+            RustPinboardSummary(
+                id: "board-b",
+                title: "Board B",
+                colorCode: 4_283_973_119,
+                sortOrder: 1,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+
+        PanelQAHarness.sendArrow(.right, modifiers: [.command], to: contentView)
+        #expect(pinboardQueries.last == "board-a")
+
+        PanelQAHarness.sendArrow(.right, modifiers: [.command], to: contentView)
+        #expect(pinboardQueries.last == "board-b")
+
+        PanelQAHarness.sendArrow(.left, modifiers: [.command], to: contentView)
+        #expect(pinboardQueries.last == "board-a")
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
     func emptyListStatesRenderNoStatusCards() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -1237,14 +1331,15 @@ struct PanelRuntimeSeamTests {
         try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
 
         let itemSide: CGFloat = 218
+        let lightTheme = ClipDockTheme.current(for: NSAppearance(named: .aqua))
         let renderedCard = renderLinkCard(
             itemSide: itemSide,
             appSupportDirectory: tempDirectory,
-            sourceAppIconPath: nil
+            sourceAppIconPath: nil,
+            theme: lightTheme
         )
         let host = try #require(renderedCard.view as? PanelItemCardShadowHostView)
         let card = renderedCard.cardView
-        let lightTheme = ClipDockTheme.current(for: NSAppearance(named: .aqua))
         let shadowOutset = lightTheme.card.cardShadowOutset
 
         #expect(host.cardView === card)

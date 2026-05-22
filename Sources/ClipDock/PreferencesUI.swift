@@ -172,17 +172,17 @@ final class PreferenceActionButton: NSButton {
 }
 
 final class ShortcutRecorderButton: NSButton {
-    var onShortcutRecorded: ((RustKeyboardShortcut) -> Void)?
+    var onShortcutRecorded: ((RustKeyboardShortcut?) -> Void)?
     var normalTextColor = NSColor.labelColor {
         didSet {
             refreshTitle()
         }
     }
-    private var shortcut: RustKeyboardShortcut
+    private var shortcut: RustKeyboardShortcut?
     private var isRecordingShortcut = false
 
-    init(shortcut: RustKeyboardShortcut) {
-        self.shortcut = KeyboardShortcutPresenter.normalized(shortcut)
+    init(shortcut: RustKeyboardShortcut?) {
+        self.shortcut = KeyboardShortcutPresenter.normalizedOptional(shortcut)
         super.init(frame: .zero)
 
         setButtonType(.momentaryPushIn)
@@ -245,9 +245,16 @@ final class ShortcutRecorderButton: NSButton {
         keyDown(with: event)
     }
 
-    func updateShortcut(_ shortcut: RustKeyboardShortcut) {
-        self.shortcut = KeyboardShortcutPresenter.normalized(shortcut)
+    func updateShortcut(_ shortcut: RustKeyboardShortcut?) {
+        self.shortcut = KeyboardShortcutPresenter.normalizedOptional(shortcut)
         refreshTitle()
+    }
+
+    func clearShortcut() {
+        shortcut = nil
+        isRecordingShortcut = false
+        refreshTitle()
+        onShortcutRecorded?(nil)
     }
 
     private func beginRecording() {
@@ -297,7 +304,10 @@ final class ShortcutRecorderButton: NSButton {
     }
 
     private func refreshTitle(overrideText: String? = nil, color: NSColor? = nil) {
-        let text = overrideText ?? KeyboardShortcutPresenter.displayText(for: shortcut)
+        let text = overrideText ?? KeyboardShortcutPresenter.displayText(
+            for: shortcut,
+            noneText: AppLocalization.text("shortcutRecorder.none", defaultValue: "无")
+        )
         attributedTitle = NSAttributedString(
             string: text,
             attributes: [
@@ -598,6 +608,12 @@ final class PreferencesWindowController: NSWindowController {
         }
     }
 
+    var onAutomaticUpdateChecksChanged: ((Bool) -> Void)? {
+        didSet {
+            viewModel.onAutomaticUpdateChecksChanged = onAutomaticUpdateChecksChanged
+        }
+    }
+
     init() {
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Layout.defaultWindowSize),
@@ -664,6 +680,10 @@ final class PreferencesWindowController: NSWindowController {
         viewModel.updateAppUpdateStatus(status)
     }
 
+    func updateAutomaticUpdateChecksEnabled(_ isEnabled: Bool) {
+        viewModel.updateAutomaticUpdateChecksEnabled(isEnabled)
+    }
+
     func exerciseForSmoke() {
         PreferenceSection.allCases.forEach { section in
             viewModel.selectSection(section)
@@ -709,7 +729,8 @@ final class PreferencesWindowController: NSWindowController {
     func preferencesVersionUpdateSmokeSnapshot() -> PreferencesVersionUpdateSmokeSnapshot {
         PreferencesVersionUpdateSmokeSnapshot(
             presentation: viewModel.versionUpdatePresentation,
-            updateStatus: viewModel.updateStatus
+            updateStatus: viewModel.updateStatus,
+            automaticUpdateChecksEnabled: viewModel.automaticUpdateChecksEnabled
         )
     }
 
@@ -767,6 +788,7 @@ private final class PreferencesToolbarCoordinator: NSObject, NSToolbarDelegate {
 private final class PreferencesSwiftUIViewModel: ObservableObject {
     @Published private(set) var state = PreferencesSceneState()
     @Published private(set) var updateStatus: AppUpdateSettingsStatus = .idle
+    @Published private(set) var automaticUpdateChecksEnabled = true
 
     private let sceneController = PreferencesSceneController()
     private var pendingDeferredRender = false
@@ -774,6 +796,7 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
     var onAccessibilityPermissionRequested: (() -> Void)?
     var onUpdateReleaseRequested: ((AppUpdateRelease) -> Void)?
+    var onAutomaticUpdateChecksChanged: ((Bool) -> Void)?
     var onAppearanceModeChanged: (() -> Void)?
 
     var selectedSection: PreferenceSection {
@@ -811,6 +834,10 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         updateStatus = status
     }
 
+    func updateAutomaticUpdateChecksEnabled(_ isEnabled: Bool) {
+        automaticUpdateChecksEnabled = isEnabled
+    }
+
     var versionUpdatePresentation: PreferencesVersionUpdatePresentation {
         PreferencesVersionUpdatePresentation.make(
             status: updateStatus,
@@ -821,6 +848,12 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     func openVersionUpdate() {
         guard case .available(let release) = updateStatus else { return }
         onUpdateReleaseRequested?(release)
+    }
+
+    func setAutomaticUpdateChecksEnabled(_ isEnabled: Bool) {
+        guard automaticUpdateChecksEnabled != isEnabled else { return }
+        automaticUpdateChecksEnabled = isEnabled
+        onAutomaticUpdateChecksChanged?(isEnabled)
     }
 
     func persist(_ update: (inout RustPreferencesDocument) -> Void) {
@@ -849,6 +882,17 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         }
 
         persist { $0.shortcuts.pasteDirectlyToTarget = isOn }
+    }
+
+    func resetKeyboardShortcutsToDefaults() {
+        let defaults = RustShortcutsPreferences()
+        persist {
+            $0.shortcuts.openPanel = defaults.openPanel
+            $0.shortcuts.previousPinboard = defaults.previousPinboard
+            $0.shortcuts.nextPinboard = defaults.nextPinboard
+            $0.shortcuts.quickPasteModifier = defaults.quickPasteModifier
+            $0.shortcuts.plainTextModifier = defaults.plainTextModifier
+        }
     }
 
     func addIgnoredApplications(at urls: [URL]) {
@@ -970,6 +1014,7 @@ struct PreferencesShellSmokeSnapshot: Equatable {
 struct PreferencesVersionUpdateSmokeSnapshot: Equatable {
     let presentation: PreferencesVersionUpdatePresentation
     let updateStatus: AppUpdateSettingsStatus
+    let automaticUpdateChecksEnabled: Bool
 }
 
 struct PreferencesVersionUpdatePresentation: Equatable {
@@ -986,7 +1031,7 @@ struct PreferencesVersionUpdatePresentation: Equatable {
             return PreferencesVersionUpdatePresentation(
                 detail: AppLocalization.format(
                     "preferences.version.updateAvailable.detail",
-                    defaultValue: "发现新版本 %@，点击打开 GitHub Releases",
+                    defaultValue: "发现新版本 %@，点击查看更新提示",
                     release.displayVersion
                 ),
                 value: AppLocalization.format(
@@ -1605,23 +1650,67 @@ private struct PreferenceShortcutSection: View {
                     title: AppLocalization.text("preferences.openClipboard.title", defaultValue: "打开剪贴板"),
                     detail: AppLocalization.text("preferences.openClipboard.detail", defaultValue: "从任意应用呼出底部面板")
                 ) {
-                    ShortcutRecorderRepresentable(
+                    PreferenceEditableShortcutControl(
                         shortcut: model.state.preferences.shortcuts.openPanel
                     ) { shortcut in
                         model.persist { $0.shortcuts.openPanel = shortcut }
                     }
-                    .frame(width: 144, height: 32)
-                }
-                PreferenceDivider()
-                PreferenceRow(
-                    title: AppLocalization.text("preferences.quickAccess.title", defaultValue: "快速取用条目"),
-                    detail: AppLocalization.text("preferences.quickAccess.detail", defaultValue: "按住 Command 显示编号，按对应数字复制")
-                ) {
-                    PreferenceShortcutPill("⌘ 1...9")
                 }
             }
 
             PreferenceSectionGroup(title: AppLocalization.text("preferences.group.panelActions", defaultValue: "面板内操作")) {
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.nextPinboard.title", defaultValue: "显示下一个 Pinboard"),
+                    detail: AppLocalization.text("preferences.nextPinboard.detail", defaultValue: "在面板内切换到下一个 Pinboard")
+                ) {
+                    PreferenceEditableShortcutControl(
+                        shortcut: model.state.preferences.shortcuts.nextPinboard
+                    ) { shortcut in
+                        model.persist { $0.shortcuts.nextPinboard = shortcut }
+                    }
+                }
+                PreferenceDivider()
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.previousPinboard.title", defaultValue: "显示上一个 Pinboard"),
+                    detail: AppLocalization.text("preferences.previousPinboard.detail", defaultValue: "在面板内切换到上一个 Pinboard")
+                ) {
+                    PreferenceEditableShortcutControl(
+                        shortcut: model.state.preferences.shortcuts.previousPinboard
+                    ) { shortcut in
+                        model.persist { $0.shortcuts.previousPinboard = shortcut }
+                    }
+                }
+                PreferenceDivider()
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.quickAccess.title", defaultValue: "快速取用条目"),
+                    detail: AppLocalization.text("preferences.quickAccess.detail", defaultValue: "按住修饰键显示编号，按对应数字复制")
+                ) {
+                    HStack(spacing: 8) {
+                        PreferenceModifierPicker(
+                            selection: Binding(
+                                get: { model.state.preferences.shortcuts.quickPasteModifier },
+                                set: { modifier in model.persist { $0.shortcuts.quickPasteModifier = modifier } }
+                            ),
+                            options: ["command", "control", "option"]
+                        )
+                        Text("+ 1...9")
+                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    }
+                }
+                PreferenceDivider()
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.plainTextMode.title", defaultValue: "纯文本模式"),
+                    detail: AppLocalization.text("preferences.plainTextMode.detail", defaultValue: "快速取用时按住该修饰键复制纯文本")
+                ) {
+                    PreferenceModifierPicker(
+                        selection: Binding(
+                            get: { model.state.preferences.shortcuts.plainTextModifier },
+                            set: { modifier in model.persist { $0.shortcuts.plainTextModifier = modifier } }
+                        ),
+                        options: ["shift", "command", "control", "option"]
+                    )
+                }
+                PreferenceDivider()
                 PreferenceRow(
                     title: AppLocalization.text("preferences.searchCurrent.title", defaultValue: "搜索当前内容"),
                     detail: AppLocalization.text("preferences.searchCurrent.detail", defaultValue: "展开并聚焦搜索框")
@@ -1635,6 +1724,15 @@ private struct PreferenceShortcutSection: View {
                 ) {
                     PreferenceShortcutPill("Space")
                 }
+            }
+
+            HStack {
+                Spacer()
+                Button(AppLocalization.text("preferences.resetShortcuts", defaultValue: "将快捷方式重置为默认...")) {
+                    model.resetKeyboardShortcutsToDefaults()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
         }
     }
@@ -2062,6 +2160,22 @@ private struct PreferenceAboutSection: View {
                 ) {
                     PreferenceValuePill(presentation.value, isProminent: presentation.isActionable)
                 }
+                PreferenceDivider()
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.updateChecks.title", defaultValue: "检查更新"),
+                    detail: AppLocalization.text("preferences.updateChecks.detail", defaultValue: "自动检查新版本并在可用时提醒")
+                ) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.automaticUpdateChecksEnabled },
+                            set: { isOn in model.setAutomaticUpdateChecksEnabled(isOn) }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
             }
         }
     }
@@ -2164,7 +2278,7 @@ private struct PreferenceRow<Accessory: View>: View {
                 .contentShape(Rectangle())
                 .help(AppLocalization.text(
                     "preferences.version.openRelease.help",
-                    defaultValue: "打开 GitHub Releases"
+                    defaultValue: "显示更新提示"
                 ))
             } else {
                 rowContent
@@ -2334,15 +2448,15 @@ private struct RuleListField: View {
 }
 
 private struct ShortcutRecorderRepresentable: NSViewRepresentable {
-    let shortcut: RustKeyboardShortcut
-    let onRecord: (RustKeyboardShortcut) -> Void
+    let shortcut: RustKeyboardShortcut?
+    let onRecord: (RustKeyboardShortcut?) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     private var colors: PreferencesThemeValues {
         PreferencesThemeValues(colorScheme: colorScheme)
     }
 
-    init(shortcut: RustKeyboardShortcut, onRecord: @escaping (RustKeyboardShortcut) -> Void) {
+    init(shortcut: RustKeyboardShortcut?, onRecord: @escaping (RustKeyboardShortcut?) -> Void) {
         self.shortcut = shortcut
         self.onRecord = onRecord
     }
@@ -2366,6 +2480,69 @@ private struct ShortcutRecorderRepresentable: NSViewRepresentable {
         nsView.layer?.borderColor = colors.palette.separatorColor.cgColor
         nsView.onShortcutRecorded = onRecord
         nsView.updateShortcut(shortcut)
+    }
+}
+
+private struct PreferenceEditableShortcutControl: View {
+    let shortcut: RustKeyboardShortcut?
+    let onChange: (RustKeyboardShortcut?) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ShortcutRecorderRepresentable(shortcut: shortcut, onRecord: onChange)
+                .frame(width: 142, height: 32)
+            if shortcut != nil {
+                Divider()
+                    .frame(height: 20)
+                    .padding(.leading, 4)
+                Button {
+                    onChange(nil)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(colors.secondaryText)
+                .help(AppLocalization.text("shortcutRecorder.remove", defaultValue: "移除快捷键"))
+            }
+        }
+        .padding(.trailing, shortcut == nil ? 0 : 2)
+        .background(colors.controlBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(colors.separator, lineWidth: 0.6)
+        )
+    }
+}
+
+private struct PreferenceModifierPicker: View {
+    @Binding var selection: String
+    let options: [String]
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var colors: PreferencesThemeValues {
+        PreferencesThemeValues(colorScheme: colorScheme)
+    }
+
+    var body: some View {
+        Picker("", selection: $selection) {
+            ForEach(options, id: \.self) { option in
+                Text(KeyboardShortcutPresenter.modifierDisplayText(option))
+                    .tag(option)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .controlSize(.regular)
+        .fixedSize()
+        .foregroundStyle(colors.primaryText)
     }
 }
 
@@ -3046,7 +3223,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
     private func makeShortcutRow(
         title: String,
         detail: String,
-        shortcut: RustKeyboardShortcut
+        shortcut: RustKeyboardShortcut?
     ) -> NSView {
         let recorder = makeShortcutRecorder(shortcut) { [weak self] shortcut in
             self?.persist { $0.shortcuts.openPanel = shortcut }
@@ -3080,8 +3257,8 @@ private final class LegacyPreferencesWindowController: NSWindowController {
     }
 
     private func makeShortcutRecorder(
-        _ shortcut: RustKeyboardShortcut,
-        onRecord: @escaping (RustKeyboardShortcut) -> Void
+        _ shortcut: RustKeyboardShortcut?,
+        onRecord: @escaping (RustKeyboardShortcut?) -> Void
     ) -> NSView {
         let recorder = ShortcutRecorderButton(shortcut: shortcut)
         recorder.normalTextColor = theme.preferences.primaryTextColor
@@ -3700,7 +3877,7 @@ private struct AboutWindowTheme {
     }
 }
 
-private enum AppIconDisplayImageProvider {
+enum AppIconDisplayImageProvider {
     static func image(accessibilityDescription: String) -> NSImage? {
         if let sourceImage = sourceImage() {
             let image = cleanedRoundedIcon(from: sourceImage)

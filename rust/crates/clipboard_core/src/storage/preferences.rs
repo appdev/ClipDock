@@ -9,6 +9,7 @@ use super::ClipboardCore;
 const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1000;
 const DEFAULT_PRIVACY_IGNORE_APPS_SCHEMA_VERSION: i64 = 10;
 const DEFAULT_OPEN_PANEL_SHORTCUT_SCHEMA_VERSION: i64 = 11;
+const SHORTCUT_OPTIONS_SCHEMA_VERSION: i64 = 12;
 const LEGACY_DEFAULT_OPEN_PANEL_KEY_CODE: i64 = 9;
 
 impl ClipboardCore {
@@ -128,6 +129,7 @@ pub(super) fn seed_default_preferences(connection: &Connection) -> Result<()> {
     )?;
     migrate_default_privacy_ignore_apps(connection)?;
     migrate_default_open_panel_shortcut(connection)?;
+    migrate_shortcut_options(connection)?;
     Ok(())
 }
 
@@ -206,9 +208,10 @@ fn migrate_default_open_panel_shortcut(connection: &Connection) -> Result<()> {
 
     let mut preferences = parse_preferences_document(&value_json)?;
     let shortcut = &preferences.shortcuts.open_panel;
-    if shortcut.key_code == LEGACY_DEFAULT_OPEN_PANEL_KEY_CODE
-        && shortcut.modifiers == vec!["command".to_string(), "shift".to_string()]
-    {
+    if shortcut.as_ref().is_some_and(|shortcut| {
+        shortcut.key_code == LEGACY_DEFAULT_OPEN_PANEL_KEY_CODE
+            && shortcut.modifiers == vec!["command".to_string(), "shift".to_string()]
+    }) {
         preferences.shortcuts.open_panel = PreferencesDocument::default().shortcuts.open_panel;
     }
     let preferences = preferences.normalized();
@@ -216,6 +219,36 @@ fn migrate_default_open_panel_shortcut(connection: &Connection) -> Result<()> {
         CoreError::new(
             CoreErrorCode::InvalidInput,
             format!("default shortcut migration serialization failed: {error}"),
+        )
+    })?;
+
+    connection.execute(
+        r#"
+        UPDATE preference_documents
+        SET schema_version = ?1, value_json = ?2, updated_at_ms = ?3
+        WHERE id = 'current'
+        "#,
+        params![CURRENT_SCHEMA_VERSION, value_json, now_ms()],
+    )?;
+    Ok(())
+}
+
+fn migrate_shortcut_options(connection: &Connection) -> Result<()> {
+    let (schema_version, value_json): (i64, String) = connection.query_row(
+        "SELECT schema_version, value_json FROM preference_documents WHERE id = 'current'",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    if schema_version >= SHORTCUT_OPTIONS_SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    let preferences = parse_preferences_document(&value_json)?.normalized();
+    let value_json = serde_json::to_string(&preferences).map_err(|error| {
+        CoreError::new(
+            CoreErrorCode::InvalidInput,
+            format!("shortcut options migration serialization failed: {error}"),
         )
     })?;
 

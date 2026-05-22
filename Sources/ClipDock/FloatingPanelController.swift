@@ -369,6 +369,10 @@ final class FloatingPanelController {
         contentView.setLinkWebPreviewEnabled(enabled)
     }
 
+    func updateShortcutPreferences(_ shortcuts: RustShortcutsPreferences) {
+        contentView.updateShortcutPreferences(shortcuts)
+    }
+
     func resetFiltersForCapturedItem() {
         contentView.resetFiltersForCapturedItem()
     }

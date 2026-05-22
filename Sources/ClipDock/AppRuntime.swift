@@ -552,6 +552,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var appSupportDirectory: URL?
     private var sourceIconHeaderColorWriter: SourceAppIconHeaderColorWriter?
     private var linkWebPreviewEnabled = true
+    private var shortcutPreferences = RustShortcutsPreferences()
     private let interactionController = PanelInteractionController()
     private var commandHintMonitor: Any?
     private var backgroundHostState: BackgroundHostState = .none
@@ -688,6 +689,15 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
     }
 
+    func updateShortcutPreferences(_ shortcuts: RustShortcutsPreferences) {
+        let previousQuickPasteModifier = shortcutPreferences.quickPasteModifier
+        shortcutPreferences = shortcuts
+        if previousQuickPasteModifier != shortcuts.quickPasteModifier {
+            clearCommandHintMode()
+        }
+        refreshVisibleCommandHints()
+    }
+
     func closePreviewPopover() {
         previewPopoverController.close()
     }
@@ -812,7 +822,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     override func flagsChanged(with event: NSEvent) {
         updateCommandHintMode(
-            event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+            shortcutModifierIsPressed(
+                shortcutPreferences.quickPasteModifier,
+                in: event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            )
         )
         super.flagsChanged(with: event)
     }
@@ -1818,6 +1831,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let commandPressed = modifiers.contains(.command)
         let shiftPressed = modifiers.contains(.shift)
+        let quickPasteModifierPressed = shortcutModifierIsPressed(
+            shortcutPreferences.quickPasteModifier,
+            in: modifiers
+        )
+        let plainTextModifierPressed = shortcutModifierIsPressed(
+            shortcutPreferences.plainTextModifier,
+            in: modifiers
+        )
 
         if commandPressed,
            let character = event.charactersIgnoringModifiers?.lowercased() {
@@ -1831,26 +1852,48 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 return true
             }
 
-            if let segment = Int(character), (1...9).contains(segment) {
+        }
+
+        if quickPasteModifierPressed,
+           let character = event.charactersIgnoringModifiers?.lowercased(),
+           let segment = Int(character),
+           (1...9).contains(segment) {
+            let visibleItemIDs = fullyVisibleCommandItemIDs()
+            if plainTextModifierPressed {
+                applyInteractionAction(.copyCommandItemAsPlainText(
+                    number: segment,
+                    visibleItemIDs: visibleItemIDs
+                ))
+            } else {
                 applyInteractionAction(.copyCommandItem(
                     number: segment,
-                    visibleItemIDs: fullyVisibleCommandItemIDs()
+                    visibleItemIDs: visibleItemIDs
                 ))
-                return true
             }
+            return true
+        }
+
+        if shortcutMatches(shortcutPreferences.nextPinboard, event: event) {
+            showAdjacentPinboard(offset: 1)
+            return true
+        }
+
+        if shortcutMatches(shortcutPreferences.previousPinboard, event: event) {
+            showAdjacentPinboard(offset: -1)
+            return true
         }
 
         switch Int(event.keyCode) {
         case kVK_Space:
-            clearCommandHintModeIfCommandIsNotPressed(in: event)
+            clearCommandHintModeIfQuickPasteModifierIsNotPressed(in: event)
             applyInteractionAction(.activateSelectedPreview)
             return true
         case kVK_RightArrow:
-            clearCommandHintModeIfCommandIsNotPressed(in: event)
+            clearCommandHintModeIfQuickPasteModifierIsNotPressed(in: event)
             applyInteractionAction(shiftPressed ? .selection(.extendByOffset(1)) : .selectOffset(1))
             return true
         case kVK_LeftArrow:
-            clearCommandHintModeIfCommandIsNotPressed(in: event)
+            clearCommandHintModeIfQuickPasteModifierIsNotPressed(in: event)
             applyInteractionAction(shiftPressed ? .selection(.extendByOffset(-1)) : .selectOffset(-1))
             return true
         case kVK_Delete, kVK_ForwardDelete:
@@ -1863,6 +1906,66 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return true
         default:
             return false
+        }
+    }
+
+    private func showAdjacentPinboard(offset: Int) {
+        let pinboardIDs: [String?] = [nil] + pinboardFilters.map { Optional($0.id) }
+        guard pinboardIDs.count > 1 else { return }
+
+        let selectedPinboardID = panelViewState().toolbar.selectedPinboardID
+        let selectedIndex = pinboardIDs.firstIndex { $0 == selectedPinboardID } ?? 0
+        let nextIndex = (selectedIndex + offset + pinboardIDs.count) % pinboardIDs.count
+        if let nextPinboardID = pinboardIDs[nextIndex] {
+            applyInteractionAction(.setPinboardFilter(nextPinboardID))
+        } else {
+            applyInteractionAction(.setScopeFilters(itemType: nil, pinboardID: nil))
+        }
+    }
+
+    private func shortcutMatches(_ shortcut: RustKeyboardShortcut?, event: NSEvent) -> Bool {
+        guard let shortcut = KeyboardShortcutPresenter.normalizedOptional(shortcut),
+              Int64(event.keyCode) == shortcut.keyCode
+        else {
+            return false
+        }
+        return shortcutModifierNames(in: event.modifierFlags) == Set(shortcut.modifiers)
+    }
+
+    private func shortcutModifierNames(in flags: NSEvent.ModifierFlags) -> Set<String> {
+        let modifiers = flags.intersection(.deviceIndependentFlagsMask)
+        var names = Set<String>()
+        if modifiers.contains(.command) {
+            names.insert("command")
+        }
+        if modifiers.contains(.option) {
+            names.insert("option")
+        }
+        if modifiers.contains(.control) {
+            names.insert("control")
+        }
+        if modifiers.contains(.shift) {
+            names.insert("shift")
+        }
+        return names
+    }
+
+    private func shortcutModifierIsPressed(
+        _ modifier: String,
+        in flags: NSEvent.ModifierFlags
+    ) -> Bool {
+        let modifiers = flags.intersection(.deviceIndependentFlagsMask)
+        switch modifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "command", "cmd", "meta":
+            return modifiers.contains(.command)
+        case "option", "alt":
+            return modifiers.contains(.option)
+        case "control", "ctrl":
+            return modifiers.contains(.control)
+        case "shift":
+            return modifiers.contains(.shift)
+        default:
+            return modifiers.contains(.command)
         }
     }
 
@@ -2362,13 +2465,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 }
                 self.commitInlinePinboardRenameBeforePanelMouseDown(event)
             }
-            let commandPressed = event.modifierFlags
-                .intersection(.deviceIndependentFlagsMask)
-                .contains(.command)
+            let quickPasteModifierPressed = self.shortcutModifierIsPressed(
+                self.shortcutPreferences.quickPasteModifier,
+                in: event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            )
 
             if event.type == .flagsChanged {
-                self.updateCommandHintMode(commandPressed)
-            } else if !commandPressed {
+                self.updateCommandHintMode(quickPasteModifierPressed)
+            } else if !quickPasteModifierPressed {
                 self.clearCommandHintMode()
             }
 
@@ -2507,11 +2611,8 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         updateCommandHintMode(false)
     }
 
-    private func clearCommandHintModeIfCommandIsNotPressed(in event: NSEvent) {
-        let commandPressed = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .contains(.command)
-        if !commandPressed {
+    private func clearCommandHintModeIfQuickPasteModifierIsNotPressed(in event: NSEvent) {
+        if !shortcutModifierIsPressed(shortcutPreferences.quickPasteModifier, in: event.modifierFlags) {
             clearCommandHintMode()
         }
     }

@@ -12,7 +12,7 @@ mod tests;
 use crate::domain::{ClipboardItemSummary, CoreInfo, ItemQuery, SourceAppSummary};
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::migrations::run_migrations;
-use crate::{CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME};
+use crate::{register_simple_tokenizer, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME};
 use rusqlite::Connection;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -51,6 +51,7 @@ impl ClipboardCore {
                     .with_detail("path", database_path.display().to_string())
             })?;
 
+        register_simple_tokenizer(&connection)?;
         run_migrations(&mut connection)?;
         seed_default_preferences(&connection)?;
 

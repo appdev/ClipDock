@@ -1239,7 +1239,8 @@ fn capture_text_plain_only_recapture_clears_stale_display_rtf_association() {
     write_test_rtf(temp_dir.path(), "assets/rich-text/stale-display.rtf", rtf);
 
     let mut styled_request = text_capture_request("Code", 6);
-    styled_request.display_rtf_relative_path = Some("assets/rich-text/stale-display.rtf".to_string());
+    styled_request.display_rtf_relative_path =
+        Some("assets/rich-text/stale-display.rtf".to_string());
     styled_request.display_rtf_mime_type = Some("application/rtf".to_string());
     styled_request.display_rtf_byte_count = rtf.len() as i64;
     let first = core.capture_text(styled_request).unwrap();
@@ -1270,7 +1271,10 @@ fn capture_text_plain_only_recapture_clears_stale_display_rtf_association() {
         )
         .unwrap();
     assert_eq!(rtf_asset_count, 0);
-    assert!(temp_dir.path().join("assets/rich-text/stale-display.rtf").exists());
+    assert!(temp_dir
+        .path()
+        .join("assets/rich-text/stale-display.rtf")
+        .exists());
 }
 
 #[test]
@@ -2105,6 +2109,108 @@ fn list_items_searches_full_primary_text_beyond_ui_preview_prefix() {
 }
 
 #[test]
+fn list_items_search_handles_simple_tokenizer_edge_cases() {
+    let (_, mut core) = open_temp_core();
+    core.capture_text(text_capture_request("Punctuation !!! target", 1))
+        .unwrap();
+    core.capture_text(text_capture_request("Emoji 😀 target", 2))
+        .unwrap();
+    core.capture_text(text_capture_request("Apostrophe can't target", 3))
+        .unwrap();
+    core.capture_text(text_capture_request("Wildcard %_ target", 4))
+        .unwrap();
+
+    let punctuation_query = ItemQuery {
+        search_text: Some("!!!".to_string()),
+        ..ItemQuery::default()
+    };
+    let punctuation_page = core
+        .list_items(punctuation_query.clone(), PageRequest::default())
+        .unwrap();
+    assert_eq!(punctuation_page.total_count, 1);
+    assert_eq!(punctuation_page.items[0].summary, "Punctuation !!! target");
+    assert_eq!(core.active_item_count(&punctuation_query).unwrap(), 1);
+
+    let emoji_query = ItemQuery {
+        search_text: Some("😀".to_string()),
+        ..ItemQuery::default()
+    };
+    let emoji_page = core
+        .list_items(emoji_query.clone(), PageRequest::default())
+        .unwrap();
+    assert_eq!(emoji_page.total_count, 1);
+    assert_eq!(emoji_page.items[0].summary, "Emoji 😀 target");
+    assert_eq!(core.active_item_count(&emoji_query).unwrap(), 1);
+
+    let apostrophe_query = ItemQuery {
+        search_text: Some("can't".to_string()),
+        ..ItemQuery::default()
+    };
+    let apostrophe_page = core
+        .list_items(apostrophe_query.clone(), PageRequest::default())
+        .unwrap();
+    assert_eq!(apostrophe_page.total_count, 1);
+    assert_eq!(apostrophe_page.items[0].summary, "Apostrophe can't target");
+    assert_eq!(core.active_item_count(&apostrophe_query).unwrap(), 1);
+
+    let wildcard_query = ItemQuery {
+        search_text: Some("%_".to_string()),
+        ..ItemQuery::default()
+    };
+    let wildcard_page = core
+        .list_items(wildcard_query.clone(), PageRequest::default())
+        .unwrap();
+    assert_eq!(wildcard_page.total_count, 1);
+    assert_eq!(wildcard_page.items[0].summary, "Wildcard %_ target");
+    assert_eq!(core.active_item_count(&wildcard_query).unwrap(), 1);
+
+    let clear_result = core.clear_items(emoji_query).unwrap();
+    assert_eq!(clear_result.affected_count, 1);
+    let remaining_page = core
+        .list_items(
+            ItemQuery {
+                search_text: Some("😀".to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(remaining_page.total_count, 0);
+}
+
+#[test]
+fn list_items_searches_chinese_exact_and_pinyin() {
+    let (_, mut core) = open_temp_core();
+    let captured = core
+        .capture_text(text_capture_request("我将点燃星海计划", 1))
+        .unwrap();
+
+    let chinese_page = core
+        .list_items(
+            ItemQuery {
+                search_text: Some("星海".to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(chinese_page.total_count, 1);
+    assert_eq!(chinese_page.items[0].id, captured.item_id);
+
+    let pinyin_page = core
+        .list_items(
+            ItemQuery {
+                search_text: Some("xing hai".to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(pinyin_page.total_count, 1);
+    assert_eq!(pinyin_page.items[0].id, captured.item_id);
+}
+
+#[test]
 fn list_source_apps_and_filter_items_by_source_app_id() {
     let (temp_dir, mut core) = open_temp_core();
     core.capture_text(CaptureTextRequest {
@@ -2725,11 +2831,30 @@ fn default_preferences_document_is_seeded() {
     assert_eq!(preferences.history.max_items, 5000);
     assert_eq!(preferences.appearance.mode, "system");
     assert!(preferences.link_preview.web_preview_enabled);
-    assert_eq!(preferences.shortcuts.open_panel.key_code, 7);
+    let open_panel = preferences.shortcuts.open_panel.as_ref().unwrap();
+    assert_eq!(open_panel.key_code, 7);
     assert_eq!(
-        preferences.shortcuts.open_panel.modifiers,
+        open_panel.modifiers,
         vec!["command".to_string(), "shift".to_string()]
     );
+    assert_eq!(
+        preferences
+            .shortcuts
+            .previous_pinboard
+            .as_ref()
+            .map(|shortcut| (shortcut.key_code, shortcut.modifiers.clone())),
+        Some((123, vec!["command".to_string()]))
+    );
+    assert_eq!(
+        preferences
+            .shortcuts
+            .next_pinboard
+            .as_ref()
+            .map(|shortcut| (shortcut.key_code, shortcut.modifiers.clone())),
+        Some((124, vec!["command".to_string()]))
+    );
+    assert_eq!(preferences.shortcuts.quick_paste_modifier, "command");
+    assert_eq!(preferences.shortcuts.plain_text_modifier, "shift");
     assert!(!preferences.shortcuts.paste_directly_to_target);
     assert!(!preferences.shortcuts.always_paste_as_plain_text);
     assert_eq!(
@@ -2805,9 +2930,9 @@ fn old_default_open_panel_shortcut_is_migrated_to_current_default() {
     let temp_dir = TempDir::new().expect("temp dir");
     let core = ClipboardCore::open(temp_dir.path()).expect("open core");
     let mut old_preferences = PreferencesDocument::default();
-    old_preferences.shortcuts.open_panel.key_code = 9;
-    old_preferences.shortcuts.open_panel.modifiers =
-        vec!["command".to_string(), "shift".to_string()];
+    let shortcut = old_preferences.shortcuts.open_panel.as_mut().unwrap();
+    shortcut.key_code = 9;
+    shortcut.modifiers = vec!["command".to_string(), "shift".to_string()];
     let old_json = serde_json::to_string(&old_preferences).unwrap();
     core.connection
         .execute(
@@ -2833,11 +2958,17 @@ fn old_default_open_panel_shortcut_is_migrated_to_current_default() {
         .unwrap();
 
     assert_eq!(row_schema_version, CURRENT_SCHEMA_VERSION);
-    assert_eq!(migrated_preferences.shortcuts.open_panel.key_code, 7);
+    let open_panel = migrated_preferences.shortcuts.open_panel.as_ref().unwrap();
+    assert_eq!(open_panel.key_code, 7);
     assert_eq!(
-        migrated_preferences.shortcuts.open_panel.modifiers,
+        open_panel.modifiers,
         vec!["command".to_string(), "shift".to_string()]
     );
+    assert_eq!(
+        migrated_preferences.shortcuts.quick_paste_modifier,
+        "command"
+    );
+    assert_eq!(migrated_preferences.shortcuts.plain_text_modifier, "shift");
 }
 
 #[test]
@@ -2853,14 +2984,17 @@ fn preferences_update_persists_normalized_document() {
     preferences.appearance.mode = "neon".to_string();
     preferences.appearance.item_density = "compact".to_string();
     preferences.link_preview.web_preview_enabled = false;
-    preferences.shortcuts.open_panel.key_code = 11;
-    preferences.shortcuts.open_panel.modifiers = vec![
+    let shortcut = preferences.shortcuts.open_panel.as_mut().unwrap();
+    shortcut.key_code = 11;
+    shortcut.modifiers = vec![
         "shift".to_string(),
         "cmd".to_string(),
         "alt".to_string(),
         "command".to_string(),
         "ignored".to_string(),
     ];
+    preferences.shortcuts.quick_paste_modifier = "ctrl".to_string();
+    preferences.shortcuts.plain_text_modifier = "alt".to_string();
     preferences.shortcuts.paste_directly_to_target = true;
     preferences.shortcuts.always_paste_as_plain_text = true;
     preferences.ignore_list.ignored_app_identifiers = vec![
@@ -2888,15 +3022,18 @@ fn preferences_update_persists_normalized_document() {
     assert_eq!(saved.appearance.mode, "system");
     assert_eq!(saved.appearance.item_density, "compact");
     assert!(!saved.link_preview.web_preview_enabled);
-    assert_eq!(saved.shortcuts.open_panel.key_code, 11);
+    let open_panel = saved.shortcuts.open_panel.as_ref().unwrap();
+    assert_eq!(open_panel.key_code, 11);
     assert_eq!(
-        saved.shortcuts.open_panel.modifiers,
+        open_panel.modifiers,
         vec![
             "command".to_string(),
             "option".to_string(),
             "shift".to_string()
         ]
     );
+    assert_eq!(saved.shortcuts.quick_paste_modifier, "control");
+    assert_eq!(saved.shortcuts.plain_text_modifier, "option");
     assert!(saved.shortcuts.paste_directly_to_target);
     assert!(saved.shortcuts.always_paste_as_plain_text);
     assert_eq!(
@@ -2915,16 +3052,35 @@ fn preferences_update_persists_normalized_document() {
 fn preferences_update_falls_back_when_shortcut_is_not_recordable() {
     let (_, mut core) = open_temp_core();
     let mut preferences = core.get_preferences().unwrap();
-    preferences.shortcuts.open_panel.key_code = 999;
-    preferences.shortcuts.open_panel.modifiers = vec!["shift".to_string()];
+    let shortcut = preferences.shortcuts.open_panel.as_mut().unwrap();
+    shortcut.key_code = 999;
+    shortcut.modifiers = vec!["shift".to_string()];
 
     let saved = core.update_preferences(preferences).unwrap();
 
-    assert_eq!(saved.shortcuts.open_panel.key_code, 7);
+    let open_panel = saved.shortcuts.open_panel.as_ref().unwrap();
+    assert_eq!(open_panel.key_code, 7);
     assert_eq!(
-        saved.shortcuts.open_panel.modifiers,
+        open_panel.modifiers,
         vec!["command".to_string(), "shift".to_string()]
     );
+}
+
+#[test]
+fn preferences_update_keeps_unassigned_shortcuts() {
+    let (_, mut core) = open_temp_core();
+    let mut preferences = core.get_preferences().unwrap();
+    preferences.shortcuts.open_panel = None;
+    preferences.shortcuts.next_pinboard = None;
+    preferences.shortcuts.previous_pinboard = None;
+
+    let saved = core.update_preferences(preferences).unwrap();
+    let reloaded = core.get_preferences().unwrap();
+
+    assert!(saved.shortcuts.open_panel.is_none());
+    assert!(saved.shortcuts.next_pinboard.is_none());
+    assert!(saved.shortcuts.previous_pinboard.is_none());
+    assert_eq!(reloaded, saved);
 }
 
 #[test]
@@ -3406,6 +3562,121 @@ fn fts_external_content_table_exists() {
 }
 
 #[test]
+fn fresh_database_creates_simple_tokenizer_fts() {
+    let (_, core) = open_temp_core();
+
+    let table_sql: String = core
+        .connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'clipboard_items_fts'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let simple_query: String = core
+        .connection
+        .query_row("SELECT simple_query('国')", [], |row| row.get(0))
+        .unwrap();
+
+    assert!(table_sql.contains("tokenize = 'simple disable_stopword'"));
+    assert_eq!(simple_query, "(g+u+o* OR gu+o* OR guo*)");
+}
+
+#[test]
+fn raw_migration_helper_registers_simple_tokenizer() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join(DATABASE_FILE_NAME);
+    let mut connection = Connection::open(&db_path).expect("open db");
+
+    apply_migrations_through(&mut connection, CURRENT_SCHEMA_VERSION);
+
+    let simple_query: String = connection
+        .query_row("SELECT simple_query('星')", [], |row| row.get(0))
+        .unwrap();
+    let table_sql: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'clipboard_items_fts'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert!(simple_query.contains("xing"));
+    assert!(table_sql.contains("tokenize = 'simple disable_stopword'"));
+}
+
+#[test]
+fn v13_migration_rebuilds_fts_with_existing_rows_searchable() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join(DATABASE_FILE_NAME);
+    let mut connection = Connection::open(&db_path).expect("open v12 db");
+    apply_migrations_through(&mut connection, 12);
+    let now = now_ms();
+    connection
+        .execute(
+            r#"
+            INSERT INTO clipboard_items (
+                id,
+                type,
+                summary,
+                primary_text,
+                content_hash,
+                source_confidence,
+                first_copied_at_ms,
+                last_copied_at_ms,
+                created_at_ms,
+                updated_at_ms
+            )
+            VALUES (
+                'legacy-simple-tokenizer-item',
+                'text',
+                '旧数据 星海计划',
+                '旧数据 星海计划',
+                'legacy-simple-tokenizer-hash',
+                'high',
+                ?1,
+                ?1,
+                ?1,
+                ?1
+            )
+            "#,
+            params![now],
+        )
+        .unwrap();
+    drop(connection);
+
+    let core = ClipboardCore::open(temp_dir.path()).expect("migrate v13 db");
+    let row_schema_version: i64 = core
+        .connection
+        .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let table_sql: String = core
+        .connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'clipboard_items_fts'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let pinyin_page = core
+        .list_items(
+            ItemQuery {
+                search_text: Some("xing hai".to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+
+    assert_eq!(row_schema_version, CURRENT_SCHEMA_VERSION);
+    assert!(table_sql.contains("tokenize = 'simple disable_stopword'"));
+    assert_eq!(pinyin_page.total_count, 1);
+    assert_eq!(pinyin_page.items[0].id, "legacy-simple-tokenizer-item");
+}
+
+#[test]
 fn migration_checksum_mismatch_is_reported() {
     let (temp_dir, core) = open_temp_core();
     core.connection
@@ -3740,6 +4011,7 @@ fn seed_v6_database_with_disabled_link_metadata() -> TempDir {
 }
 
 fn apply_migrations_through(connection: &mut Connection, max_version: i64) {
+    crate::register_simple_tokenizer(connection).unwrap();
     connection
         .execute_batch(
             r#"

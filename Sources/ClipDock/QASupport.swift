@@ -972,7 +972,11 @@ enum PanelQAHarness {
     }
 
     @MainActor
-    static func sendArrow(_ direction: ArrowDirection, to view: NSView) {
+    static func sendArrow(
+        _ direction: ArrowDirection,
+        modifiers: NSEvent.ModifierFlags = [],
+        to view: NSView
+    ) {
         let character: String
         let keyCode: Int
         switch direction {
@@ -987,7 +991,7 @@ enum PanelQAHarness {
         guard let event = NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
-            modifierFlags: [],
+            modifierFlags: modifiers,
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: view.window?.windowNumber ?? 0,
             context: nil,
@@ -1025,6 +1029,15 @@ enum PanelQAHarness {
 
     @MainActor
     static func sendCommandNumber(_ number: Int, to view: NSView) {
+        sendNumber(number, modifiers: [.command], to: view)
+    }
+
+    @MainActor
+    static func sendNumber(
+        _ number: Int,
+        modifiers: NSEvent.ModifierFlags,
+        to view: NSView
+    ) {
         let keyCode: Int
         switch number {
         case 1:
@@ -1052,7 +1065,7 @@ enum PanelQAHarness {
         guard let event = NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
-            modifierFlags: [.command],
+            modifierFlags: modifiers,
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: view.window?.windowNumber ?? 0,
             context: nil,

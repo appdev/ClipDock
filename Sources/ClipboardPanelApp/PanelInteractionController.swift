@@ -48,6 +48,7 @@ public enum PanelInteractionAction: Equatable, Sendable {
     case setCommandHintMode(enabled: Bool, visibleItemIDs: [String])
     case visibleCommandItemsChanged([String])
     case copyCommandItem(number: Int, visibleItemIDs: [String])
+    case copyCommandItemAsPlainText(number: Int, visibleItemIDs: [String])
     case didScroll(visibleCommandItemIDs: [String], reachedLoadMoreThreshold: Bool)
     case prepareManagementMenu(itemID: String)
     case management(itemID: String, action: PanelManagementAction)
@@ -343,6 +344,22 @@ public final class PanelInteractionController {
                 .commandHints([:]),
                 .preview(.close),
                 .external(.copyItem(itemID: itemID))
+            ])
+
+        case .copyCommandItemAsPlainText(let number, let visibleItemIDs):
+            guard let itemID = contentController.commandCopyTarget(
+                number: number,
+                visibleItemIDs: visibleItemIDs
+            ) else {
+                return makeResult()
+            }
+
+            contentController.setCommandHintMode(enabled: false)
+            contentController.copyItem(itemID: itemID)
+            return makeResult(effects: [
+                .commandHints([:]),
+                .preview(.close),
+                .external(.copyItemAsPlainText(itemID: itemID))
             ])
 
         case .didScroll(let visibleCommandItemIDs, let reachedLoadMoreThreshold):

@@ -1,0 +1,31 @@
+[package]
+name = "sqlite-simple-tokenizer"
+description = "This's a run-time loadable extension of SQLite fts5, supports Chinese and pinyin word segmentation and search."
+keywords = ["SQLite", "Extension", "Chinese", "Pinyin", "Tokenizer"]
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme = "README.md"
+repository = "https://github.com/lukingcathy/sqlite-simple-tokenizer"
+
+[lib]
+name = "sqlite_simple_tokenizer"
+crate-type = ["lib", "cdylib"]
+
+[features]
+defualt = []
+build_extension = ["rusqlite/loadable_extension"]
+
+[dependencies]
+env_logger = { workspace = true }
+log = { workspace = true }
+phf = { workspace = true }
+rusqlite = { workspace = true }
+rusqlite-ext = { workspace = true }
+sqlite-chinese-stopword = { workspace = true }
+sqlite-english-stemmer = { workspace = true }
+unicode-segmentation = "1.13.2"
+
+[build-dependencies]
+phf_codegen = { workspace = true }

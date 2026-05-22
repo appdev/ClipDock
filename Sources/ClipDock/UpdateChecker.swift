@@ -7,6 +7,7 @@ struct AppUpdateRelease: Equatable, Sendable {
     let releaseName: String?
     let releaseURL: URL
     let downloadURL: URL
+    let releaseNotes: String?
     let publishedAt: Date?
 
     init(
@@ -14,6 +15,7 @@ struct AppUpdateRelease: Equatable, Sendable {
         releaseName: String?,
         releaseURL: URL,
         downloadURL: URL,
+        releaseNotes: String? = nil,
         publishedAt: Date? = nil
     ) {
         self.version = version
@@ -21,6 +23,7 @@ struct AppUpdateRelease: Equatable, Sendable {
         self.releaseName = releaseName
         self.releaseURL = releaseURL
         self.downloadURL = downloadURL
+        self.releaseNotes = releaseNotes
         self.publishedAt = publishedAt
     }
 }
@@ -172,6 +175,7 @@ struct GitHubAppUpdateProvider: AppUpdateProviding {
         let name: String?
         let htmlURL: URL
         let publishedAt: Date?
+        let body: String?
         let assets: [ReleaseAsset]
 
         enum CodingKeys: String, CodingKey {
@@ -179,6 +183,7 @@ struct GitHubAppUpdateProvider: AppUpdateProviding {
             case name
             case htmlURL = "html_url"
             case publishedAt = "published_at"
+            case body
             case assets
         }
     }
@@ -209,9 +214,9 @@ struct GitHubAppUpdateProvider: AppUpdateProviding {
 
     func latestRelease() async throws -> AppUpdateRelease {
         do {
-            return try await latestReleaseFromLatestPage()
-        } catch {
             return try await latestReleaseFromAPI()
+        } catch {
+            return try await latestReleaseFromLatestPage()
         }
     }
 
@@ -258,6 +263,7 @@ struct GitHubAppUpdateProvider: AppUpdateProviding {
             releaseName: release.name,
             releaseURL: release.htmlURL,
             downloadURL: Self.preferredDownloadURL(from: release.assets, fallback: release.htmlURL),
+            releaseNotes: release.body,
             publishedAt: release.publishedAt
         )
     }
@@ -281,6 +287,7 @@ struct GitHubAppUpdateProvider: AppUpdateProviding {
             releaseName: nil,
             releaseURL: releaseURL,
             downloadURL: releaseURL,
+            releaseNotes: nil,
             publishedAt: nil
         )
     }
@@ -299,12 +306,14 @@ struct GitHubAppUpdateProvider: AppUpdateProviding {
 protocol AppUpdateStateStoring: AnyObject {
     var lastCheckAttemptDate: Date? { get set }
     var skippedVersion: String? { get set }
+    var automaticChecksEnabled: Bool { get set }
 }
 
 final class UserDefaultsAppUpdateStateStore: AppUpdateStateStoring {
     private enum Key {
         static let lastCheckAttemptDate = "ClipDock.AppUpdate.lastCheckAttemptDate"
         static let skippedVersion = "ClipDock.AppUpdate.skippedVersion"
+        static let automaticChecksEnabled = "ClipDock.AppUpdate.automaticChecksEnabled"
     }
 
     private let defaults: UserDefaults
@@ -332,6 +341,18 @@ final class UserDefaultsAppUpdateStateStore: AppUpdateStateStoring {
             } else {
                 defaults.removeObject(forKey: Key.skippedVersion)
             }
+        }
+    }
+
+    var automaticChecksEnabled: Bool {
+        get {
+            guard defaults.object(forKey: Key.automaticChecksEnabled) != nil else {
+                return true
+            }
+            return defaults.bool(forKey: Key.automaticChecksEnabled)
+        }
+        set {
+            defaults.set(newValue, forKey: Key.automaticChecksEnabled)
         }
     }
 }
@@ -413,50 +434,6 @@ protocol AppUpdatePromptPresenting: AnyObject {
 }
 
 @MainActor
-final class NSAlertAppUpdatePromptPresenter: AppUpdatePromptPresenting {
-    func presentUpdatePrompt(
-        release: AppUpdateRelease,
-        currentVersion: String
-    ) -> AppUpdatePromptAction {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = AppLocalization.format(
-            "update.alert.title",
-            defaultValue: "ClipDock %@ 已可用",
-            release.displayVersion
-        )
-        alert.informativeText = AppLocalization.format(
-            "update.alert.message",
-            defaultValue: "当前版本 %@，最新版本 %@。可以现在下载，也可以稍后再提醒，或跳过这个版本。",
-            currentVersion,
-            release.displayVersion
-        )
-        alert.addButton(withTitle: AppLocalization.text(
-            "update.alert.download",
-            defaultValue: "下载更新"
-        ))
-        alert.addButton(withTitle: AppLocalization.text(
-            "update.alert.skip",
-            defaultValue: "跳过更新"
-        ))
-        alert.addButton(withTitle: AppLocalization.text(
-            "update.alert.skipVersion",
-            defaultValue: "跳过这个版本"
-        ))
-
-        NSApp.activate(ignoringOtherApps: true)
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return .download
-        case .alertThirdButtonReturn:
-            return .skipVersion
-        default:
-            return .skipForNow
-        }
-    }
-}
-
-@MainActor
 protocol AppUpdateURLOpening: AnyObject {
     func open(_ url: URL)
 }
@@ -485,9 +462,13 @@ final class AppUpdateCoordinator {
 
     var onSettingsUpdateStatusChanged: ((AppUpdateSettingsStatus) -> Void)?
 
+    var automaticChecksEnabled: Bool {
+        stateStore.automaticChecksEnabled
+    }
+
     init(
         provider: any AppUpdateProviding = GitHubAppUpdateProvider(),
-        promptPresenter: any AppUpdatePromptPresenting = NSAlertAppUpdatePromptPresenter(),
+        promptPresenter: any AppUpdatePromptPresenting = AppUpdatePromptWindowPresenter(),
         urlOpener: any AppUpdateURLOpening = WorkspaceAppUpdateURLOpener(),
         stateStore: any AppUpdateStateStoring = UserDefaultsAppUpdateStateStore(),
         versionProvider: any AppVersionProviding = BundleAppVersionProvider(),
@@ -520,10 +501,32 @@ final class AppUpdateCoordinator {
     }
 
     func checkForSettingsUpdate() {
+        guard stateStore.automaticChecksEnabled else {
+            onSettingsUpdateStatusChanged?(.idle)
+            return
+        }
         settingsCheckTask?.cancel()
         onSettingsUpdateStatusChanged?(.checking)
         settingsCheckTask = Task { @MainActor [weak self] in
             await self?.checkForSettingsUpdateNow()
+        }
+    }
+
+    func setAutomaticChecksEnabled(_ isEnabled: Bool) {
+        guard stateStore.automaticChecksEnabled != isEnabled else { return }
+        stateStore.automaticChecksEnabled = isEnabled
+        if isEnabled {
+            if isStarted {
+                scheduleNextCheck(from: now())
+            }
+        } else {
+            timer?.invalidate()
+            timer = nil
+            checkTask?.cancel()
+            checkTask = nil
+            settingsCheckTask?.cancel()
+            settingsCheckTask = nil
+            onSettingsUpdateStatusChanged?(.idle)
         }
     }
 
@@ -539,6 +542,13 @@ final class AppUpdateCoordinator {
                 skippedVersion: nil
             ) {
                 onSettingsUpdateStatusChanged?(.available(candidate))
+                handlePromptAction(
+                    promptPresenter.presentUpdatePrompt(
+                        release: candidate,
+                        currentVersion: currentVersion
+                    ),
+                    for: candidate
+                )
             } else {
                 onSettingsUpdateStatusChanged?(.upToDate)
             }
@@ -552,8 +562,18 @@ final class AppUpdateCoordinator {
         urlOpener.open(release.releaseURL)
     }
 
+    func presentUpdatePrompt(for release: AppUpdateRelease) {
+        handlePromptAction(
+            promptPresenter.presentUpdatePrompt(
+                release: release,
+                currentVersion: versionProvider.currentShortVersion()
+            ),
+            for: release
+        )
+    }
+
     private func scheduleNextCheck(from date: Date) {
-        guard isStarted else { return }
+        guard isStarted, stateStore.automaticChecksEnabled else { return }
         timer?.invalidate()
         timer = nil
 
@@ -608,19 +628,26 @@ final class AppUpdateCoordinator {
             }
 
             let currentVersion = versionProvider.currentShortVersion()
-            switch promptPresenter.presentUpdatePrompt(
-                release: candidate,
-                currentVersion: currentVersion
-            ) {
-            case .download:
-                urlOpener.open(candidate.downloadURL)
-            case .skipForNow:
-                break
-            case .skipVersion:
-                stateStore.skippedVersion = candidate.version
-            }
+            handlePromptAction(
+                promptPresenter.presentUpdatePrompt(
+                    release: candidate,
+                    currentVersion: currentVersion
+                ),
+                for: candidate
+            )
         } catch {
             return
+        }
+    }
+
+    private func handlePromptAction(_ action: AppUpdatePromptAction, for release: AppUpdateRelease) {
+        switch action {
+        case .download:
+            urlOpener.open(release.downloadURL)
+        case .skipForNow:
+            break
+        case .skipVersion:
+            stateStore.skippedVersion = release.version
         }
     }
 }

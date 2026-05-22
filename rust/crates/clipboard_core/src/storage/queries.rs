@@ -7,7 +7,7 @@ use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
 use crate::ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION;
 use rusqlite::types::Value;
-use rusqlite::{params, params_from_iter, Transaction};
+use rusqlite::{params, params_from_iter, Connection, Transaction};
 use std::collections::HashMap;
 
 use super::support::normalize_item_id;
@@ -138,7 +138,7 @@ impl ClipboardCore {
                 "#,
             );
         }
-        filter_params.extend(append_query_filters(&mut sql, &query));
+        filter_params.extend(append_query_filters(&self.connection, &mut sql, &query)?);
         if pinboard_id.is_some() {
             sql.push_str(
                 " ORDER BY pi_filter.display_order ASC, pi_filter.pinned_at_ms DESC, i.last_copied_at_ms DESC",
@@ -593,7 +593,7 @@ impl ClipboardCore {
                     )
             "#,
         );
-        let mut query_params = append_query_filters(&mut sql, &query);
+        let mut query_params = append_query_filters(&self.connection, &mut sql, &query)?;
         sql.push(')');
 
         let mut params = Vec::with_capacity(query_params.len() + 2);
@@ -642,7 +642,7 @@ impl ClipboardCore {
                 "#,
             );
         }
-        filter_params.extend(append_query_filters(&mut sql, query));
+        filter_params.extend(append_query_filters(&self.connection, &mut sql, query)?);
         let count =
             self.connection
                 .query_row(&sql, params_from_iter(filter_params.iter()), |row| {
@@ -667,7 +667,11 @@ impl ClipboardCore {
     }
 }
 
-fn append_query_filters(sql: &mut String, query: &ItemQuery) -> Vec<Value> {
+fn append_query_filters(
+    connection: &Connection,
+    sql: &mut String,
+    query: &ItemQuery,
+) -> Result<Vec<Value>> {
     let mut params = Vec::new();
 
     if let Some(item_type) = query.item_type {
@@ -686,28 +690,72 @@ fn append_query_filters(sql: &mut String, query: &ItemQuery) -> Vec<Value> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        sql.push_str(
-            r#"
-            AND (
+        let fts_query = validated_simple_fts_query(connection, search_text);
+        sql.push_str(" AND (");
+        if fts_query.is_some() {
+            sql.push_str(
+                r#"
                 i.rowid IN (
                     SELECT rowid
                     FROM clipboard_items_fts
                     WHERE clipboard_items_fts MATCH ?
                 )
-                OR i.summary LIKE ? ESCAPE '\'
-                OR COALESCE(i.primary_text, '') LIKE ? ESCAPE '\'
-                OR COALESCE(s.name, i.source_app_name, '') LIKE ? ESCAPE '\'
+                OR
+                "#,
+            );
+        }
+        sql.push_str(
+            r#"
+            i.summary LIKE ? ESCAPE '\'
+            OR COALESCE(i.primary_text, '') LIKE ? ESCAPE '\'
+            OR COALESCE(s.name, i.source_app_name, '') LIKE ? ESCAPE '\'
             )
             "#,
         );
-        params.push(Value::Text(make_fts_query(search_text)));
+        if let Some(fts_query) = fts_query {
+            params.push(Value::Text(fts_query));
+        }
         let like_query = make_like_query(search_text);
         params.push(Value::Text(like_query.clone()));
         params.push(Value::Text(like_query.clone()));
         params.push(Value::Text(like_query));
     }
 
-    params
+    Ok(params)
+}
+
+fn validated_simple_fts_query(connection: &Connection, search_text: &str) -> Option<String> {
+    let match_query = connection
+        .query_row("SELECT simple_query(?1)", params![search_text], |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()?;
+    let match_query = match_query.trim().to_string();
+    if match_query.is_empty() {
+        return None;
+    }
+
+    let limit_zero_preflight = connection.query_row(
+        "SELECT rowid FROM clipboard_items_fts WHERE clipboard_items_fts MATCH ?1 LIMIT 0",
+        params![match_query.as_str()],
+        |_| Ok(()),
+    );
+    if !matches!(
+        limit_zero_preflight,
+        Ok(()) | Err(rusqlite::Error::QueryReturnedNoRows)
+    ) {
+        return None;
+    }
+
+    match connection.query_row(
+        "SELECT rowid FROM clipboard_items_fts WHERE clipboard_items_fts MATCH ?1 LIMIT 1",
+        params![match_query.as_str()],
+        |_| Ok(()),
+    ) {
+        Ok(()) | Err(rusqlite::Error::QueryReturnedNoRows) => Some(match_query),
+        Err(_) => None,
+    }
 }
 
 fn active_item_exists(transaction: &Transaction<'_>, item_id: &str) -> rusqlite::Result<bool> {
@@ -889,22 +937,6 @@ fn refresh_item_pin_cache(
     Ok(())
 }
 
-fn make_fts_query(search_text: &str) -> String {
-    let terms = search_text
-        .split_whitespace()
-        .map(|term| term.trim_matches(|character: char| character.is_ascii_punctuation()))
-        .filter(|term| !term.is_empty())
-        .take(8)
-        .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
-        .collect::<Vec<_>>();
-
-    if terms.is_empty() {
-        format!("\"{}\"", search_text.replace('"', "\"\""))
-    } else {
-        terms.join(" AND ")
-    }
-}
-
 fn make_like_query(search_text: &str) -> String {
     let escaped = search_text
         .replace('\\', "\\\\")
@@ -990,12 +1022,7 @@ fn map_pinboard_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<PinboardSum
 
 #[cfg(test)]
 mod tests {
-    use super::{make_fts_query, make_like_query};
-
-    #[test]
-    fn make_fts_query_joins_normalized_terms() {
-        assert_eq!(make_fts_query(" alpha  beta... "), "\"alpha\" AND \"beta\"");
-    }
+    use super::make_like_query;
 
     #[test]
     fn make_like_query_escapes_sql_wildcards() {

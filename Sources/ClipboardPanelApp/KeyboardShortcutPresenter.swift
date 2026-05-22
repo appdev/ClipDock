@@ -19,6 +19,10 @@ public enum KeyboardShortcutPresenter {
         return RustKeyboardShortcut(keyCode: shortcut.keyCode, modifiers: modifiers)
     }
 
+    public static func normalizedOptional(_ shortcut: RustKeyboardShortcut?) -> RustKeyboardShortcut? {
+        shortcut.map(normalized)
+    }
+
     public static func isRecordable(_ shortcut: RustKeyboardShortcut) -> Bool {
         normalized(shortcut) == RustKeyboardShortcut(
             keyCode: shortcut.keyCode,
@@ -40,12 +44,54 @@ public enum KeyboardShortcutPresenter {
         return "\(modifierText) \(keyText)"
     }
 
+    public static func displayText(for shortcut: RustKeyboardShortcut?, noneText: String) -> String {
+        guard let shortcut else {
+            return noneText
+        }
+        return displayText(for: shortcut)
+    }
+
     public static func keyEquivalent(for shortcut: RustKeyboardShortcut) -> String? {
         let shortcut = normalized(shortcut)
         guard let value = keyEquivalentByCode[shortcut.keyCode] else {
             return nil
         }
         return value
+    }
+
+    public static func keyEquivalent(for shortcut: RustKeyboardShortcut?) -> String? {
+        guard let shortcut else { return nil }
+        return keyEquivalent(for: shortcut)
+    }
+
+    public static func modifierDisplayText(_ modifier: String) -> String {
+        switch canonicalModifier(modifier) {
+        case "command":
+            return "⌘ Command"
+        case "control":
+            return "⌃ Control"
+        case "option":
+            return "⌥ Option"
+        case "shift":
+            return "⇧ Shift"
+        default:
+            return modifier
+        }
+    }
+
+    public static func modifierGlyph(_ modifier: String) -> String {
+        switch canonicalModifier(modifier) {
+        case "command":
+            return "⌘"
+        case "control":
+            return "⌃"
+        case "option":
+            return "⌥"
+        case "shift":
+            return "⇧"
+        default:
+            return modifier
+        }
     }
 
     private static func normalizedModifiers(_ modifiers: [String]) -> [String] {
