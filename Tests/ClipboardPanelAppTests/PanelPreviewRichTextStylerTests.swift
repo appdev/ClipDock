@@ -43,26 +43,67 @@ struct PanelPreviewRichTextStylerTests {
     }
 
     @Test
-    func inlineSurfaceStylePromotesVisibleBackgroundToWholeSurface() {
+    func inlineSurfaceSuppressesNearWhiteDefaultBackgroundOnDarkSurface() {
         let bodyColor = NSColor(calibratedWhite: 0.88, alpha: 1)
         let darkSurface = NSColor(calibratedWhite: 0.08, alpha: 1)
         let source = NSMutableAttributedString(
             string: "Default Highlight",
-            attributes: [.foregroundColor: NSColor.black]
+            attributes: [
+                .foregroundColor: NSColor.black,
+                .backgroundColor: NSColor(calibratedWhite: 0.98, alpha: 1)
+            ]
         )
-        let highlightRange = NSRange(location: 8, length: 9)
-        source.addAttribute(.backgroundColor, value: NSColor.white, range: highlightRange)
 
-        let display = ClipboardRichTextPreviewStyler.inlineSurfaceAttributedString(
+        let plan = ClipboardRichTextPreviewStyler.inlineSurfaceDisplayPlan(
             source,
             bodyColor: bodyColor,
             surfaceColor: darkSurface
         )
 
-        #expect(display.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == NSColor.black)
-        #expect(display.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor == NSColor.black)
-        #expect(display.attribute(.backgroundColor, at: 8, effectiveRange: nil) == nil)
+        #expect(plan.promotedBackgroundColor == nil)
+        #expect(plan.attributedString.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == bodyColor)
+        #expect(plan.attributedString.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor == bodyColor)
+        #expect(plan.attributedString.attribute(.backgroundColor, at: 8, effectiveRange: nil) == nil)
         #expect(source.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == NSColor.black)
+        #expect(source.attribute(.backgroundColor, at: 0, effectiveRange: nil) != nil)
+    }
+
+    @Test
+    func suppressingDefaultBackgroundPreservesSyntaxColorsAndMapsDefaultLinks() {
+        let bodyColor = NSColor(calibratedWhite: 0.88, alpha: 1)
+        let linkColor = NSColor.systemBlue
+        let darkSurface = NSColor(calibratedWhite: 0.08, alpha: 1)
+        let source = NSMutableAttributedString(
+            string: "Default Syntax Link",
+            attributes: [
+                .foregroundColor: NSColor.black,
+                .backgroundColor: NSColor.white
+            ]
+        )
+        let syntaxRange = (source.string as NSString).range(of: "Syntax")
+        let linkRange = (source.string as NSString).range(of: "Link")
+        source.addAttribute(.foregroundColor, value: NSColor.systemPurple, range: syntaxRange)
+        source.addAttribute(.foregroundColor, value: NSColor.darkGray, range: linkRange)
+        source.addAttribute(.link, value: URL(string: "https://example.com")!, range: linkRange)
+
+        let plan = ClipboardRichTextPreviewStyler.displayPlan(
+            source,
+            bodyColor: bodyColor,
+            surfaceColor: darkSurface,
+            linkColor: linkColor
+        )
+
+        #expect(plan.promotedBackgroundColor == nil)
+        #expect(plan.attributedString.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == bodyColor)
+        #expect(
+            plan.attributedString.attribute(.foregroundColor, at: syntaxRange.location, effectiveRange: nil) as? NSColor
+                == NSColor.systemPurple
+        )
+        #expect(
+            plan.attributedString.attribute(.foregroundColor, at: linkRange.location, effectiveRange: nil) as? NSColor
+                == linkColor
+        )
+        #expect(plan.attributedString.attribute(.backgroundColor, at: syntaxRange.location, effectiveRange: nil) == nil)
     }
 
     @Test
@@ -117,6 +158,36 @@ struct PanelPreviewRichTextStylerTests {
 
         #expect(colorAndAlphaDistance(promoted, sourceBackground) < 0.01)
         #expect(plan.attributedString.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil)
+    }
+
+    @Test
+    func preservesMeaningfulBackgroundsOnDarkSurface() throws {
+        let darkSurface = NSColor(calibratedWhite: 0.08, alpha: 1)
+        let backgrounds = [
+            NSColor(calibratedRed: 1, green: 0.985, blue: 0.90, alpha: 1),
+            NSColor.darkGray,
+            NSColor.systemYellow
+        ]
+
+        for background in backgrounds {
+            let source = NSAttributedString(
+                string: "Meaningful background",
+                attributes: [
+                    .foregroundColor: NSColor.black,
+                    .backgroundColor: background
+                ]
+            )
+
+            let plan = ClipboardRichTextPreviewStyler.displayPlan(
+                source,
+                bodyColor: .white,
+                surfaceColor: darkSurface
+            )
+            let promoted = try #require(plan.promotedBackgroundColor)
+
+            #expect(colorAndAlphaDistance(promoted, background) < 0.05)
+            #expect(plan.attributedString.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil)
+        }
     }
 }
 

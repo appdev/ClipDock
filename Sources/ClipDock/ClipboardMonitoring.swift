@@ -83,7 +83,7 @@ struct ClipboardPayloadReader: ClipboardContentReading {
             return richText
         }
 
-        return readHTMLAsFlatRTF(from: pasteboard)
+        return nil
     }
 
     private func readFlatRTF(
@@ -119,30 +119,6 @@ struct ClipboardPayloadReader: ClipboardContentReading {
             guard let attributed = attributedString(from: data, documentType: .rtfd),
                   Date().timeIntervalSince(start) <= Limits.captureBudget,
                   hasRichEvidence(in: attributed, sourceData: nil, htmlBacked: htmlBacked),
-                  let text = normalizedPlainText(from: attributed),
-                  let rtfData = flatRTFData(from: attributed),
-                  rtfData.count <= Limits.maxRTFBytes
-            else {
-                continue
-            }
-            return ClipboardCapturedRichText(text: text, rtfData: rtfData)
-        }
-        return nil
-    }
-
-    private func readHTMLAsFlatRTF(from pasteboard: NSPasteboard) -> ClipboardCapturedRichText? {
-        for pasteboardType in [NSPasteboard.PasteboardType.html, NSPasteboard.PasteboardType("public.html")] {
-            guard let data = boundedData(for: pasteboardType, from: pasteboard, byteLimit: Limits.maxHTMLBytes),
-                  let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16),
-                  hasStrongRichHTMLEvidence(html),
-                  !isImageOnlyHTMLMetadata(html)
-            else {
-                continue
-            }
-
-            let start = Date()
-            guard let attributed = attributedString(from: data, documentType: .html),
-                  Date().timeIntervalSince(start) <= Limits.captureBudget,
                   let text = normalizedPlainText(from: attributed),
                   let rtfData = flatRTFData(from: attributed),
                   rtfData.count <= Limits.maxRTFBytes
@@ -259,10 +235,8 @@ struct ClipboardPayloadReader: ClipboardContentReading {
         let rawValue = type.rawValue
         return rawValue == NSPasteboard.PasteboardType.rtf.rawValue
             || rawValue == NSPasteboard.PasteboardType.rtfd.rawValue
-            || rawValue == NSPasteboard.PasteboardType.html.rawValue
             || rawValue == "public.rtf"
             || rawValue == "com.apple.rtfd"
-            || rawValue == "public.html"
     }
 
     private func hasRichEvidence(
@@ -322,61 +296,6 @@ struct ClipboardPayloadReader: ClipboardContentReading {
         }
     }
 
-    private func hasStrongRichHTMLEvidence(_ html: String) -> Bool {
-        let lower = html.lowercased()
-        var score = 0
-        if lower.range(of: #"<\s*(b|strong)\b"#, options: .regularExpression) != nil {
-            score += 1
-        }
-        if lower.range(of: #"<\s*(i|em)\b"#, options: .regularExpression) != nil {
-            score += 1
-        }
-        if lower.range(of: #"<\s*u\b"#, options: .regularExpression) != nil {
-            score += 2
-        }
-        if lower.range(of: #"<\s*a\b"#, options: .regularExpression) != nil {
-            score += 2
-        }
-        if score == 0, isCodePresentationOnlyHTML(lower) {
-            return false
-        }
-        if lower.range(of: richHTMLStylePattern, options: .regularExpression) != nil {
-            score += 2
-        }
-        return score >= 2
-    }
-
-    private func isCodePresentationOnlyHTML(_ lowercasedHTML: String) -> Bool {
-        let hasCodeStructure = lowercasedHTML.range(
-            of: #"<\s*(code|pre)\b|class\s*=\s*["'][^"']*(code|highlight|hljs|language-|markdown|prose)"#,
-            options: .regularExpression
-        ) != nil
-        guard hasCodeStructure else {
-            return false
-        }
-
-        return lowercasedHTML.range(
-            of: #"<\s*(b|strong|i|em|u|a)\b|font-weight\s*:\s*(bold|[6-9]00)|font-style\s*:\s*italic|text-decoration\s*:\s*(underline|line-through)"#,
-            options: .regularExpression
-        ) == nil
-    }
-
-    private var richHTMLStylePattern: String {
-        [
-            #"style\s*=\s*["'][^"']*"#,
-            #"("#,
-            #"font-weight\s*:\s*(bold|[6-9]00)"#,
-            #"|font-style\s*:\s*italic"#,
-            #"|text-decoration\s*:\s*(underline|line-through)"#,
-            #"|background(?:-color)?\s*:"#,
-            #"|(?<!background-)color\s*:"#,
-            #"|font-size\s*:"#,
-            #"|font-family\s*:"#,
-            #"|text-align\s*:\s*(center|right|justify)"#,
-            #")"#
-        ].joined()
-    }
-
     private func htmlString(from pasteboard: NSPasteboard) -> String? {
         for pasteboardType in [NSPasteboard.PasteboardType.html, NSPasteboard.PasteboardType("public.html")] {
             if let data = boundedData(for: pasteboardType, from: pasteboard, byteLimit: Limits.maxHTMLBytes),
@@ -385,29 +304,6 @@ struct ClipboardPayloadReader: ClipboardContentReading {
             }
         }
         return nil
-    }
-
-    private func isImageOnlyHTMLMetadata(_ html: String) -> Bool {
-        let lower = html.lowercased()
-        let containsImage = lower.range(of: #"<\s*img\b"#, options: .regularExpression) != nil
-        guard containsImage else { return false }
-
-        let withoutScripts = lower.replacingOccurrences(
-            of: #"<(script|style)\b[^>]*>.*?</\1>"#,
-            with: "",
-            options: [.regularExpression]
-        )
-        let withoutTags = withoutScripts.replacingOccurrences(
-            of: #"<[^>]+>"#,
-            with: " ",
-            options: [.regularExpression]
-        )
-        let decoded = withoutTags
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .replacingOccurrences(of: "&amp;", with: "&")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let nonWhitespaceCount = decoded.filter { !$0.isWhitespace }.count
-        return nonWhitespaceCount < 8
     }
 }
 

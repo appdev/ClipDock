@@ -192,26 +192,48 @@ struct ClipboardMonitoringTests {
 
     @Test
     @MainActor
-    func htmlTextConvertsToFlatRTFWhenNoImageOrFileEvidenceExists() throws {
-        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
-        pasteboard.clearContents()
-        pasteboard.setString(
-            #"<p>Hello <span style="font-weight: 700; color: #c00000">rich</span> text</p>"#,
-            forType: .html
-        )
+    func htmlOnlyContentFallsBackToPlainTextForBothHTMLTypes() throws {
+        for pasteboardType in [NSPasteboard.PasteboardType.html, NSPasteboard.PasteboardType("public.html")] {
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+            pasteboard.clearContents()
+            pasteboard.setString(
+                #"<p>Hello <span style="font-weight: 700; color: #c00000">rich</span> text</p>"#,
+                forType: pasteboardType
+            )
 
-        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
-        guard case .richText(let richText) = snapshot else {
-            Issue.record("Semantic textual HTML should convert to flat RTF rich text")
-            return
+            let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+            guard case .text(let text, let displayRichText) = snapshot else {
+                Issue.record("HTML-only content should be captured as plain text for \(pasteboardType.rawValue)")
+                continue
+            }
+
+            #expect(text == "Hello rich text")
+            #expect(displayRichText == nil)
         }
+    }
 
-        #expect(richText.text == "Hello rich text")
-        #expect(richText.rtfData.count > 0)
-        #expect(NSAttributedString(
-            rtf: richText.rtfData,
-            documentAttributes: nil
-        )?.string.trimmingCharacters(in: .whitespacesAndNewlines) == "Hello rich text")
+    @Test
+    @MainActor
+    func htmlWithPlainStringUsesTextWithoutDisplayRichTextForBothHTMLTypes() throws {
+        for pasteboardType in [NSPasteboard.PasteboardType.html, NSPasteboard.PasteboardType("public.html")] {
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+            pasteboard.clearContents()
+            _ = pasteboard.declareTypes([pasteboardType, .string], owner: nil)
+            #expect(pasteboard.setString(
+                #"<p>Hello <span style="font-weight: 700; color: #c00000">rich</span> text</p>"#,
+                forType: pasteboardType
+            ))
+            #expect(pasteboard.setString("Authoritative plain text", forType: .string))
+
+            let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+            guard case .text(let text, let displayRichText) = snapshot else {
+                Issue.record("HTML plus .string should be captured as plain text for \(pasteboardType.rawValue)")
+                continue
+            }
+
+            #expect(text == "Authoritative plain text")
+            #expect(displayRichText == nil)
+        }
     }
 
     @Test
@@ -278,6 +300,35 @@ struct ClipboardMonitoringTests {
 
         #expect(text == plainText)
         #expect(displayRichText?.text == plainText)
+        #expect(displayRichText?.rtfData == rtfData)
+    }
+
+    @Test
+    @MainActor
+    func htmlSidecarDoesNotPreventRealRTFDisplaySnapshot() throws {
+        let text = "HTML sidecar with real RTF"
+        let rtfData = try makeRTFData(text, attributes: [
+            .font: NSFont.boldSystemFont(ofSize: 14),
+            .foregroundColor: NSColor.systemPurple
+        ])
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        _ = pasteboard.declareTypes([.html, .string, .rtf], owner: nil)
+        #expect(pasteboard.setString(
+            #"<p><strong>HTML sidecar</strong> with <span style="color: purple">real RTF</span></p>"#,
+            forType: .html
+        ))
+        #expect(pasteboard.setString(text, forType: .string))
+        #expect(pasteboard.setData(rtfData, forType: .rtf))
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let capturedText, let displayRichText) = snapshot else {
+            Issue.record("HTML should not outrank matching plain text when the rich source is real RTF")
+            return
+        }
+
+        #expect(capturedText == text)
+        #expect(displayRichText?.text == text)
         #expect(displayRichText?.rtfData == rtfData)
     }
 

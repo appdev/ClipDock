@@ -57,12 +57,18 @@ enum ClipboardRichTextPreviewStyler {
         mutable.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
             let originalForeground = attributes[.foregroundColor] as? NSColor
             let preferredFallback = attributes[.link] == nil ? bodyColor : linkColor
+            let suppressesDefaultBackground = shouldSuppressDefaultDocumentBackground(
+                attributes[.backgroundColor] as? NSColor,
+                surfaceColor: surfaceColor
+            )
             let displayForeground = resolvedForegroundColor(
                 originalForeground,
-                fallback: preferredFallback
+                fallback: preferredFallback,
+                surfaceColor: surfaceColor,
+                suppressesDefaultBackground: suppressesDefaultBackground
             )
             mutable.addAttribute(.foregroundColor, value: displayForeground, range: range)
-            if promotedBackgroundColor != nil {
+            if promotedBackgroundColor != nil || suppressesDefaultBackground {
                 mutable.removeAttribute(.backgroundColor, range: range)
             }
         }
@@ -99,12 +105,18 @@ enum ClipboardRichTextPreviewStyler {
         mutable.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
             let originalForeground = attributes[.foregroundColor] as? NSColor
             let preferredFallback = attributes[.link] == nil ? bodyColor : linkColor
+            let suppressesDefaultBackground = shouldSuppressDefaultDocumentBackground(
+                attributes[.backgroundColor] as? NSColor,
+                surfaceColor: surfaceColor
+            )
             let displayForeground = resolvedForegroundColor(
                 originalForeground,
-                fallback: preferredFallback
+                fallback: preferredFallback,
+                surfaceColor: surfaceColor,
+                suppressesDefaultBackground: suppressesDefaultBackground
             )
             mutable.addAttribute(.foregroundColor, value: displayForeground, range: range)
-            if promotedBackgroundColor != nil {
+            if promotedBackgroundColor != nil || suppressesDefaultBackground {
                 mutable.removeAttribute(.backgroundColor, range: range)
             }
         }
@@ -127,6 +139,9 @@ enum ClipboardRichTextPreviewStyler {
             guard let color = (value as? NSColor)?.usingColorSpace(.deviceRGB),
                   color.alphaComponent >= 0.05
             else {
+                return
+            }
+            guard !shouldSuppressDefaultDocumentBackground(color, surfaceColor: surfaceColor) else {
                 return
             }
 
@@ -156,9 +171,104 @@ enum ClipboardRichTextPreviewStyler {
 
     private static func resolvedForegroundColor(
         _ color: NSColor?,
-        fallback: NSColor
+        fallback: NSColor,
+        surfaceColor: NSColor,
+        suppressesDefaultBackground: Bool
     ) -> NSColor {
-        color ?? fallback
+        guard let color else {
+            return fallback
+        }
+        guard suppressesDefaultBackground,
+              isLikelyDefaultForeground(color, on: surfaceColor)
+        else {
+            return color
+        }
+        return fallback
+    }
+
+    private static func shouldSuppressDefaultDocumentBackground(
+        _ color: NSColor?,
+        surfaceColor: NSColor
+    ) -> Bool {
+        guard let color,
+              isDarkSurface(surfaceColor),
+              let components = rgbComponents(color),
+              components.alpha >= 0.05
+        else {
+            return false
+        }
+
+        let channels = [components.red, components.green, components.blue]
+        let chroma = (channels.max() ?? 0) - (channels.min() ?? 0)
+        return channels.allSatisfy { $0 >= 0.92 } && chroma <= 0.06
+    }
+
+    private static func isLikelyDefaultForeground(
+        _ color: NSColor,
+        on surfaceColor: NSColor
+    ) -> Bool {
+        guard let foreground = rgbComponents(color),
+              let surface = rgbComponents(surfaceColor)
+        else {
+            return false
+        }
+
+        let channels = [foreground.red, foreground.green, foreground.blue]
+        let chroma = (channels.max() ?? 0) - (channels.min() ?? 0)
+        guard chroma <= 0.12 else {
+            return false
+        }
+
+        return perceivedBrightness(foreground) < 0.45
+            || contrastRatio(foreground, surface) < 4.5
+    }
+
+    private static func isDarkSurface(_ color: NSColor) -> Bool {
+        guard let components = rgbComponents(color) else { return false }
+        return perceivedBrightness(components) < 0.5
+    }
+
+    private static func rgbComponents(_ color: NSColor) -> (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat)? {
+        guard let rgb = color.usingColorSpace(.sRGB) ?? color.usingColorSpace(.deviceRGB) else {
+            return nil
+        }
+        return (
+            red: rgb.redComponent,
+            green: rgb.greenComponent,
+            blue: rgb.blueComponent,
+            alpha: rgb.alphaComponent
+        )
+    }
+
+    private static func perceivedBrightness(
+        _ components: (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat)
+    ) -> CGFloat {
+        components.red * 0.299 + components.green * 0.587 + components.blue * 0.114
+    }
+
+    private static func contrastRatio(
+        _ foreground: (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat),
+        _ background: (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat)
+    ) -> CGFloat {
+        let foregroundLuminance = relativeLuminance(foreground)
+        let backgroundLuminance = relativeLuminance(background)
+        return (max(foregroundLuminance, backgroundLuminance) + 0.05)
+            / (min(foregroundLuminance, backgroundLuminance) + 0.05)
+    }
+
+    private static func relativeLuminance(
+        _ components: (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat)
+    ) -> CGFloat {
+        let red = linearizedSRGBComponent(components.red)
+        let green = linearizedSRGBComponent(components.green)
+        let blue = linearizedSRGBComponent(components.blue)
+        return red * 0.2126 + green * 0.7152 + blue * 0.0722
+    }
+
+    private static func linearizedSRGBComponent(_ value: CGFloat) -> CGFloat {
+        value <= 0.03928
+            ? value / 12.92
+            : pow((value + 0.055) / 1.055, 2.4)
     }
 }
 
