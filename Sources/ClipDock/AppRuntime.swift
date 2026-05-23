@@ -1099,7 +1099,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func makeControlBar() -> NSView {
         let container = NSView()
 
-        let searchTextFont = NSFont.systemFont(ofSize: 15, weight: .regular)
+        let searchTextFont = NSFont.systemFont(ofSize: 14, weight: .regular)
         searchField.controlSize = .regular
         searchField.font = searchTextFont
         searchField.textColor = .labelColor
@@ -1376,7 +1376,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let textField = NSTextField(frame: inlineRenameFieldFrame(in: button))
         textField.placeholderString = placeholder
         textField.stringValue = pinboard.title
-        textField.font = .systemFont(ofSize: button.chipFontSize, weight: .medium)
+        textField.font = .systemFont(ofSize: button.chipFontSize, weight: .regular)
         textField.textColor = theme.panel.toolbarSelectedTextColor
         textField.backgroundColor = .clear
         textField.drawsBackground = false
@@ -3137,17 +3137,11 @@ extension FloatingPanelContentView {
     }
 
     var smokeSearchFieldFontWeight: CGFloat {
-        guard
-            let font = searchField.font,
-            let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any],
-            let weight = traits[.weight]
-        else {
-            return .greatestFiniteMagnitude
-        }
-        if let number = weight as? NSNumber {
-            return CGFloat(number.doubleValue)
-        }
-        return weight as? CGFloat ?? .greatestFiniteMagnitude
+        smokeFontWeight(searchField.font)
+    }
+
+    var smokeSearchFieldFontPointSize: CGFloat {
+        searchField.font?.pointSize ?? .greatestFiniteMagnitude
     }
 
     var smokeSearchFieldInnerWidth: CGFloat {
@@ -3536,6 +3530,34 @@ extension FloatingPanelContentView {
 
         return longButton.intrinsicContentSize.width > shortButton.intrinsicContentSize.width * 3
             && widthConstraints.allSatisfy { $0.relation == .greaterThanOrEqual }
+    }
+
+    func smokePinboardRenameUsesUnselectedFontStyle(pinboardID: String) -> Bool {
+        guard let pinboard = pinboardFilters.first(where: { $0.id == pinboardID }),
+              let button = pinboardButtons.first(where: { $0.pinboardID == pinboardID })
+        else { return false }
+
+        showRenamePinboardDialog(for: pinboard)
+        defer {
+            cancelInlinePinboardRename()
+        }
+        guard let font = activeRenameField?.font else { return false }
+        return abs(font.pointSize - button.chipFontSize) < 0.1
+            && smokeFontWeight(font) <= NSFont.Weight.regular.rawValue + 0.05
+    }
+
+    private func smokeFontWeight(_ font: NSFont?) -> CGFloat {
+        guard
+            let font,
+            let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any],
+            let weight = traits[.weight]
+        else {
+            return .greatestFiniteMagnitude
+        }
+        if let number = weight as? NSNumber {
+            return CGFloat(number.doubleValue)
+        }
+        return weight as? CGFloat ?? .greatestFiniteMagnitude
     }
 
     func smokeEmptyDefaultPinboardIsHidden() -> Bool {

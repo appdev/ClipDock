@@ -399,12 +399,16 @@ final class PanelItemCardRenderer {
         indexLabel.translatesAutoresizingMaskIntoConstraints = false
         indexLabel.stringValue = state.commandIndexText ?? ""
         indexLabel.isHidden = state.commandIndexText == nil
+        let indexBackgroundView = makeCommandIndexBackgroundView(
+            isHidden: state.commandIndexText == nil,
+            isColorCard: isColorCard
+        )
 
         let countLabel = NSTextField(labelWithString: state.footnoteText)
         countLabel.font = isImageCard
             ? .systemFont(ofSize: 12.5, weight: .medium)
             : (isLinkCard
-                ? .systemFont(ofSize: linkFooterTitle == nil ? 13.5 : 12.5, weight: .regular)
+                ? .systemFont(ofSize: 12.5, weight: .regular)
                 : .systemFont(ofSize: 10.5, weight: .medium))
         countLabel.textColor = isImageCard
             ? metrics.theme.card.imageFootnoteTextColor
@@ -422,7 +426,7 @@ final class PanelItemCardRenderer {
 
         let linkTitleLabel = linkFooterTitle.map { title in
             let label = NSTextField(labelWithString: leftToRightDisplayText(title))
-            label.font = .systemFont(ofSize: 14.5, weight: .semibold)
+            label.font = .systemFont(ofSize: 12.5, weight: .semibold)
             label.textColor = metrics.theme.card.primaryTextColor
             label.lineBreakMode = .byTruncatingTail
             label.maximumNumberOfLines = 1
@@ -464,8 +468,9 @@ final class PanelItemCardRenderer {
         } else {
             footerRow.addSubview(countLabel)
         }
+        footerRow.addSubview(indexBackgroundView)
         footerRow.addSubview(indexLabel)
-        container.configureCommandIndexLabel(indexLabel)
+        container.configureCommandIndexLabel(indexLabel, backgroundView: indexBackgroundView)
         container.setCommandIndexText(state.commandIndexText)
         let centeredCountConstraint = footnoteView.centerXAnchor.constraint(equalTo: footerRow.centerXAnchor)
         centeredCountConstraint.priority = isLinkCard ? .fittingSizeCompression : .defaultHigh
@@ -545,7 +550,7 @@ final class PanelItemCardRenderer {
 
             footerRow.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: metrics.cardInset),
             footerRow.trailingAnchor.constraint(equalTo: container.contentView!.trailingAnchor, constant: -metrics.cardInset),
-            footerRow.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: isLinkCard ? 0 : -13),
+            footerRow.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: isLinkCard ? -2 : -13),
             footerRow.heightAnchor.constraint(equalToConstant: footerHeight),
 
             isLinkCard
@@ -557,6 +562,11 @@ final class PanelItemCardRenderer {
                 : footnoteView.bottomAnchor.constraint(equalTo: footerRow.bottomAnchor),
             footnoteView.topAnchor.constraint(greaterThanOrEqualTo: footerRow.topAnchor),
             footnoteView.trailingAnchor.constraint(lessThanOrEqualTo: indexLabel.leadingAnchor, constant: -8),
+
+            indexBackgroundView.leadingAnchor.constraint(equalTo: indexLabel.leadingAnchor, constant: -7),
+            indexBackgroundView.trailingAnchor.constraint(equalTo: indexLabel.trailingAnchor, constant: 7),
+            indexBackgroundView.topAnchor.constraint(equalTo: indexLabel.topAnchor, constant: -3),
+            indexBackgroundView.bottomAnchor.constraint(equalTo: indexLabel.bottomAnchor, constant: 3),
 
             indexLabel.trailingAnchor.constraint(equalTo: footerRow.trailingAnchor),
             indexLabel.bottomAnchor.constraint(equalTo: footerRow.bottomAnchor, constant: isLinkCard ? -13 : 0),
@@ -664,7 +674,7 @@ final class PanelItemCardRenderer {
         richTextPreview: NSAttributedString?,
         bodyTextColor: NSColor
     ) -> PanelItemCardBodyTextView {
-        let font = NSFont.systemFont(ofSize: 12.5)
+        let font = NSFont.systemFont(ofSize: 13)
         let label: PanelItemCardBodyTextView
         if let richTextPreview {
             label = PanelItemCardBodyTextView(
@@ -722,17 +732,54 @@ final class PanelItemCardRenderer {
     }
 
     private func makeImageFootnoteBadgeView(isHidden: Bool) -> NSView {
-        let view = NSView()
+        let view = makeBlurredBadgeBackgroundView(
+            identifier: "ImageFootnoteBadgeBackground",
+            backgroundColor: metrics.theme.card.imageFootnoteBadgeBackgroundColor,
+            cornerRadius: 7,
+            shadowOpacity: metrics.theme.card.imageFootnoteBadgeShadowOpacity,
+            shadowRadius: 4,
+            shadowOffset: CGSize(width: 0, height: -1),
+            isHidden: isHidden
+        )
+        return view
+    }
+
+    private func makeCommandIndexBackgroundView(isHidden: Bool, isColorCard: Bool) -> NSView {
+        makeBlurredBadgeBackgroundView(
+            identifier: isColorCard ? "ColorCardCommandIndexBackground" : "PanelCardCommandIndexBackground",
+            backgroundColor: metrics.theme.card.imageFootnoteBadgeBackgroundColor.withAlphaComponent(0.58),
+            cornerRadius: 6,
+            shadowOpacity: 0,
+            shadowRadius: 0,
+            shadowOffset: .zero,
+            isHidden: isHidden
+        )
+    }
+
+    private func makeBlurredBadgeBackgroundView(
+        identifier: String,
+        backgroundColor: NSColor,
+        cornerRadius: CGFloat,
+        shadowOpacity: Float,
+        shadowRadius: CGFloat,
+        shadowOffset: CGSize,
+        isHidden: Bool
+    ) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.identifier = NSUserInterfaceItemIdentifier(identifier)
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.material = .hudWindow
+        view.blendingMode = .withinWindow
+        view.state = .active
         view.wantsLayer = true
-        view.layer?.backgroundColor = metrics.theme.card.imageFootnoteBadgeBackgroundColor.cgColor
-        view.layer?.cornerRadius = 7
-        view.layer?.borderWidth = 0.5
-        view.layer?.borderColor = metrics.theme.card.imageFootnoteBadgeBorderColor.cgColor
+        view.layer?.backgroundColor = backgroundColor.cgColor
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.borderWidth = 0
+        view.layer?.borderColor = NSColor.clear.cgColor
         view.layer?.shadowColor = NSColor.black.cgColor
-        view.layer?.shadowOpacity = metrics.theme.card.imageFootnoteBadgeShadowOpacity
-        view.layer?.shadowRadius = 4
-        view.layer?.shadowOffset = CGSize(width: 0, height: -1)
+        view.layer?.shadowOpacity = shadowOpacity
+        view.layer?.shadowRadius = shadowRadius
+        view.layer?.shadowOffset = shadowOffset
         view.layer?.contentsScale = backingScaleFactor
         view.isHidden = isHidden
         return view
@@ -1434,6 +1481,11 @@ private final class ColorCardSurfaceView: NSView {
 }
 
 @MainActor
+enum ImagePreviewCheckerboardStyle {
+    static let squareSide: CGFloat = 8
+}
+
+@MainActor
 private final class ProportionalImagePreviewView: NSImageView {
     private var imageGeometry: ProportionalImageGeometry?
     private let checkerboardBackgroundColor: NSColor?
@@ -1531,7 +1583,7 @@ private final class ProportionalImagePreviewView: NSImageView {
         checkerboardBackgroundColor.setFill()
         rect.fill()
 
-        let square: CGFloat = 10
+        let square = ImagePreviewCheckerboardStyle.squareSide
         checkerboardAlternateColor.setFill()
         let minX = Int(floor(rect.minX / square))
         let maxX = Int(ceil(rect.maxX / square))
@@ -1598,7 +1650,7 @@ private final class CheckerboardImagePreviewContainerView: NSView {
         checkerboardBackgroundColor.setFill()
         dirtyRect.fill()
 
-        let square: CGFloat = 10
+        let square = ImagePreviewCheckerboardStyle.squareSide
         checkerboardAlternateColor.setFill()
         let minX = Int(floor(dirtyRect.minX / square))
         let maxX = Int(ceil(dirtyRect.maxX / square))
@@ -1683,7 +1735,7 @@ private final class AspectFillImagePreviewView: NSImageView {
         checkerboardBackgroundColor.setFill()
         rect.fill()
 
-        let square: CGFloat = 10
+        let square = ImagePreviewCheckerboardStyle.squareSide
         checkerboardAlternateColor.setFill()
         let minX = Int(floor(rect.minX / square))
         let maxX = Int(ceil(rect.maxX / square))

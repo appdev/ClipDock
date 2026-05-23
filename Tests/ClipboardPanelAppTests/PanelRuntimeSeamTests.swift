@@ -562,6 +562,7 @@ struct PanelRuntimeSeamTests {
                 && abs(contentView.smokeSearchFieldHeight - 32) < 0.5
                 && abs(contentView.smokeSearchInputFieldHeight - 22) < 0.5
                 && abs(contentView.smokeSearchInputFieldVerticalCenterOffset) < 0.5
+                && abs(contentView.smokeSearchFieldFontPointSize - 14) < 0.1
                 && contentView.smokeSearchFieldFontWeight <= NSFont.Weight.regular.rawValue + 0.05
                 && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01
                 && !contentView.smokeSearchFieldIsHidden
@@ -3083,6 +3084,7 @@ struct PanelRuntimeSeamTests {
             typeText: "图片",
             summaryText: "",
             footnoteText: "400 × 200",
+            commandIndexText: "7",
             isSelected: true,
             preview: .image(
                 previewPath: largeImageURL.path,
@@ -3110,11 +3112,28 @@ struct PanelRuntimeSeamTests {
         #expect(String(describing: type(of: imageView)).contains("ProportionalImagePreviewView"))
 
         let badgeView = try #require(renderedCard.artifacts.footnoteBadgeViews.first)
+        let badgeEffectView = try #require(badgeView as? NSVisualEffectView)
         let badgeBackground = try #require(badgeView.layer?.backgroundColor)
         let badgeBackgroundAlpha = NSColor(cgColor: badgeBackground)?.alphaComponent ?? 0
         #expect(!badgeView.isHidden)
+        #expect(badgeEffectView.material == .hudWindow)
+        #expect(badgeEffectView.blendingMode == .withinWindow)
+        #expect(badgeEffectView.state == .active)
         #expect(badgeBackgroundAlpha > (theme.scheme == .light ? 0.85 : 0.65))
         #expect((badgeView.layer?.cornerRadius ?? 0) >= 6)
+        #expect(badgeView.layer?.borderWidth == 0)
+        let commandIndexBackground = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "PanelCardCommandIndexBackground"
+        } as? NSVisualEffectView)
+        let commandIndexBackgroundColor = try #require(
+            commandIndexBackground.layer?.backgroundColor.flatMap(NSColor.init(cgColor:))
+        )
+        #expect(!commandIndexBackground.isHidden)
+        #expect(commandIndexBackground.material == .hudWindow)
+        #expect(commandIndexBackground.blendingMode == .withinWindow)
+        #expect(commandIndexBackground.state == .active)
+        #expect(abs(commandIndexBackgroundColor.alphaComponent - 0.58) < 0.01)
+        #expect(commandIndexBackground.layer?.borderWidth == 0)
 
         let smallRenderedCard = renderer.render(PanelItemCardViewState(
             itemID: "image-card-small-no-upscale",
@@ -3631,6 +3650,9 @@ struct PanelRuntimeSeamTests {
         let commandIndexLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
             $0.identifier?.rawValue == "ColorCardCommandIndexLabel"
         } as? NSTextField)
+        let commandIndexBackground = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardCommandIndexBackground"
+        } as? NSVisualEffectView)
         let typeLabel = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
             $0.identifier?.rawValue == "PanelCardTypeLabel"
         } as? NSTextField)
@@ -3660,6 +3682,10 @@ struct PanelRuntimeSeamTests {
         #expect(colorAndAlphaDistance(hexLabel.textColor ?? .clear, .black) < 0.001)
         #expect(commandIndexLabel.stringValue == "7")
         #expect(!commandIndexLabel.isHidden)
+        #expect(!commandIndexBackground.isHidden)
+        #expect(commandIndexBackground.material == .hudWindow)
+        #expect(commandIndexBackground.blendingMode == .withinWindow)
+        #expect(commandIndexBackground.layer?.borderWidth == 0)
         #expect(colorAndAlphaDistance(commandIndexLabel.textColor ?? .clear, .black) < 0.001)
         #expect(!renderedCard.view.subviewsRecursiveForSmoke().contains {
             ($0 as? NSTextField)?.stringValue == "RGB 255, 0, 170"
@@ -3756,11 +3782,17 @@ struct PanelRuntimeSeamTests {
         #expect((cell.hostedCard?.subviewsRecursiveForSmoke().first {
             $0.identifier?.rawValue == "ColorCardCommandIndexLabel"
         } as? NSTextField)?.stringValue == "8")
+        #expect((cell.hostedCard?.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardCommandIndexBackground"
+        })?.isHidden == false)
 
         cell.applyTransientDecorations(isSelected: false, commandIndexText: nil)
         #expect((cell.hostedCard?.subviewsRecursiveForSmoke().first {
             $0.identifier?.rawValue == "ColorCardCommandIndexLabel"
         } as? NSTextField)?.isHidden == true)
+        #expect((cell.hostedCard?.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "ColorCardCommandIndexBackground"
+        })?.isHidden == true)
 
         cell.configure(
             entry: PanelItemCollectionEntry(
@@ -3966,7 +3998,7 @@ struct PanelRuntimeSeamTests {
         #expect(bodyLabel.isHidden)
         #expect(abs(previewFrame.minX) <= 1.5)
         #expect(abs(previewFrame.width - 218) <= 1.5)
-        #expect(abs(previewFrame.height - 120) <= 1.5)
+        #expect(abs(previewFrame.height - 118) <= 1.5)
         #expect(abs(footerBackgroundFrame.minX) <= 1.5)
         #expect(abs(footerBackgroundFrame.width - 218) <= 1.5)
         #expect(colorAndAlphaDistance(
@@ -4061,7 +4093,7 @@ struct PanelRuntimeSeamTests {
         let previewFrame = previewView.convert(previewView.bounds, to: renderedCard.cardView)
 
         #expect(abs(previewFrame.width - 274) <= 1.5)
-        #expect(abs(previewFrame.height - 176) <= 1.5)
+        #expect(abs(previewFrame.height - 174) <= 1.5)
     }
 
     @Test
@@ -4129,7 +4161,7 @@ struct PanelRuntimeSeamTests {
             .filter { !$0.isHidden && $0.stringValue.contains("github.com") }
 
         #expect(abs(previewFrame.width - 156) <= 1.5)
-        #expect(abs(previewFrame.height - 58) <= 1.5)
+        #expect(abs(previewFrame.height - 56) <= 1.5)
         #expect(linkIconView.isHidden)
         #expect(bodyLabel.isHidden)
         #expect(visibleGithubLabels.count >= 2)
@@ -4166,7 +4198,7 @@ struct PanelRuntimeSeamTests {
 
         #expect(visibleLabels.contains { $0.stringValue == "github.com/clipdock/clipdock" })
         #expect(!visibleLabels.contains { $0.stringValue == "github.com" })
-        #expect(abs(previewFrame.height - 138) <= 1.5)
+        #expect(abs(previewFrame.height - 136) <= 1.5)
     }
 
     @Test
@@ -4206,10 +4238,27 @@ struct PanelRuntimeSeamTests {
         let noTitlePreview = try #require(noTitleCard.artifacts.linkPreviewViews.first)
         let titledPreviewFrame = titledPreview.convert(titledPreview.bounds, to: titledCard.view)
         let noTitlePreviewFrame = noTitlePreview.convert(noTitlePreview.bounds, to: noTitleCard.view)
+        let titledCardLabels = titledCard.view.subviewsRecursiveForSmoke()
+            .compactMap { $0 as? NSTextField }
+            .filter { !$0.isHidden }
+        let titleLabel = try #require(titledCardLabels.first {
+            $0.stringValue.contains("GitHub · Change is constant")
+        })
+        let titledLinkLabel = try #require(titledCardLabels.first {
+            $0.stringValue.contains("github.com")
+        })
+        let noTitleLinkLabel = try #require(noTitleCard.view.subviewsRecursiveForSmoke()
+            .compactMap { $0 as? NSTextField }
+            .first {
+                !$0.isHidden && $0.stringValue.contains("github.com/clipdock/clipdock")
+            })
 
-        #expect(abs(titledPreviewFrame.height - 120) <= 1.5)
-        #expect(abs(noTitlePreviewFrame.height - 138) <= 1.5)
+        #expect(abs(titledPreviewFrame.height - 118) <= 1.5)
+        #expect(abs(noTitlePreviewFrame.height - 136) <= 1.5)
         #expect(abs(noTitlePreviewFrame.height - titledPreviewFrame.height - 18) <= 1.5)
+        #expect(abs((titleLabel.font?.pointSize ?? 0) - 12.5) < 0.1)
+        #expect(abs((titledLinkLabel.font?.pointSize ?? 0) - 12.5) < 0.1)
+        #expect(abs((noTitleLinkLabel.font?.pointSize ?? 0) - 12.5) < 0.1)
     }
 
     @Test
@@ -5201,6 +5250,39 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func pinboardChipSelectionAndRenameUseUnselectedFontStyle() {
+        let chip = PinboardChipButton()
+        chip.chipFontSize = 14
+        chip.chipIsSelected = false
+        let unselectedFont = chip.smokeChipFontForRealFunctionQA
+        chip.chipIsSelected = true
+        let selectedFont = chip.smokeChipFontForRealFunctionQA
+
+        #expect(abs(selectedFont.pointSize - unselectedFont.pointSize) < 0.1)
+        #expect(abs(fontWeight(selectedFont) - fontWeight(unselectedFont)) < 0.01)
+        #expect(fontWeight(selectedFont) <= NSFont.Weight.regular.rawValue + 0.05)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        controller.updatePinboards([
+            RustPinboardSummary(
+                id: "board-a",
+                title: "Board A",
+                colorCode: 4_293_940_557,
+                sortOrder: 0,
+                itemCount: 1,
+                createdAtMs: 0,
+                updatedAtMs: 0
+            )
+        ])
+
+        #expect(contentView.smokePinboardRenameUsesUnselectedFontStyle(pinboardID: "board-a"))
+        #expect(abs(contentView.smokeSearchFieldFontPointSize - unselectedFont.pointSize) < 0.1)
+        #expect(contentView.smokeSearchFieldFontWeight <= NSFont.Weight.regular.rawValue + 0.05)
+    }
+
+    @Test
+    @MainActor
     func prefetchedLoadMoreAppendsImmediatelyWithoutEnteringLoadingState() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -5893,6 +5975,19 @@ private func sendWheel(to scrollView: NSScrollView, deltaX: Int32, deltaY: Int32
 
     guard let event = NSEvent(cgEvent: cgEvent) else { return }
     scrollView.scrollWheel(with: event)
+}
+
+private func fontWeight(_ font: NSFont) -> CGFloat {
+    guard
+        let traits = font.fontDescriptor.object(forKey: .traits) as? [NSFontDescriptor.TraitKey: Any],
+        let weight = traits[.weight]
+    else {
+        return .greatestFiniteMagnitude
+    }
+    if let number = weight as? NSNumber {
+        return CGFloat(number.doubleValue)
+    }
+    return weight as? CGFloat ?? .greatestFiniteMagnitude
 }
 
 @MainActor

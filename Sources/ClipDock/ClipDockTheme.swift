@@ -266,7 +266,7 @@ enum ClipDockTheme {
             linkDefaultIconTintColor: NSColor.white.withAlphaComponent(0.38),
             linkResolvedIconBorderColor: NSColor.white.withAlphaComponent(0.20),
             appIconTileBackgroundColor: NSColor.white.withAlphaComponent(0.90),
-            imageFootnoteBadgeBackgroundColor: NSColor(calibratedWhite: 0.02, alpha: 0.72),
+            imageFootnoteBadgeBackgroundColor: NSColor(calibratedWhite: 0.12, alpha: 0.70),
             imageFootnoteBadgeBorderColor: NSColor.white.withAlphaComponent(0.18),
             imageFootnoteTextColor: NSColor.white.withAlphaComponent(0.88),
             imageFootnoteBadgeShadowOpacity: 0.22,
@@ -274,8 +274,8 @@ enum ClipDockTheme {
             cardShadowRadius: 6,
             cardShadowOffset: .zero,
             cardShadowOutset: 4,
-            imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.09, alpha: 1),
-            imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.15, alpha: 1)
+            imagePreviewCheckerboardBackgroundColor: NSColor(calibratedWhite: 0.08, alpha: 1),
+            imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.12, alpha: 1)
         ),
         preferences: ClipDockPreferencesTheme(
             windowBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),

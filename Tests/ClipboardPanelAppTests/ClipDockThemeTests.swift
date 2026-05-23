@@ -112,6 +112,26 @@ struct ClipDockThemeTests {
 
     @Test
     @MainActor
+    func darkImageCheckerboardUsesPasteLikePattern() throws {
+        let card = ClipDockTheme.current(for: NSAppearance(named: .darkAqua)).card
+        let backgroundLuminance = relativeLuminance(card.imagePreviewCheckerboardBackgroundColor)
+        let alternateLuminance = relativeLuminance(card.imagePreviewCheckerboardAlternateColor)
+
+        #expect(ImagePreviewCheckerboardStyle.squareSide == 8)
+        #expect(colorAndAlphaDistance(
+            card.imagePreviewCheckerboardBackgroundColor,
+            NSColor(calibratedWhite: 0.08, alpha: 1)
+        ) < 0.001)
+        #expect(colorAndAlphaDistance(
+            card.imagePreviewCheckerboardAlternateColor,
+            NSColor(calibratedWhite: 0.12, alpha: 1)
+        ) < 0.001)
+        #expect(alternateLuminance > backgroundLuminance)
+        #expect(alternateLuminance - backgroundLuminance < 0.012)
+    }
+
+    @Test
+    @MainActor
     func panelTintStaysLightAndTranslucent() throws {
         let palettes = [
             ClipDockTheme.current(for: NSAppearance(named: .aqua)),

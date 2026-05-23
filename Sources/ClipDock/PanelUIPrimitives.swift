@@ -342,6 +342,7 @@ final class ClipboardItemCardBox: NSBox {
     private weak var typeHeaderLabel: NSTextField?
     private weak var timeLabel: NSTextField?
     private weak var commandIndexLabel: NSTextField?
+    private weak var commandIndexBackgroundView: NSView?
     private var unselectedHeaderColor: NSColor = .clear
     private var themeSelectionBorderColor: NSColor = .systemBlue
     private var themeHeaderTextColor: NSColor = .white
@@ -384,6 +385,7 @@ final class ClipboardItemCardBox: NSBox {
         selectionHeaderView = nil
         typeHeaderLabel = nil
         timeLabel = nil
+        commandIndexBackgroundView = nil
     }
 
     func configureSelectionAppearance(
@@ -407,14 +409,17 @@ final class ClipboardItemCardBox: NSBox {
         applySelection(isSelected)
     }
 
-    func configureCommandIndexLabel(_ label: NSTextField) {
+    func configureCommandIndexLabel(_ label: NSTextField, backgroundView: NSView? = nil) {
         commandIndexLabel = label
+        commandIndexBackgroundView = backgroundView
         setCommandIndexText(nil)
     }
 
     func setCommandIndexText(_ text: String?) {
+        let isHidden = text == nil
         commandIndexLabel?.stringValue = text ?? ""
-        commandIndexLabel?.isHidden = text == nil
+        commandIndexLabel?.isHidden = isHidden
+        commandIndexBackgroundView?.isHidden = isHidden
     }
 
     func applySelection(_ isSelected: Bool) {
@@ -691,7 +696,11 @@ final class PinboardChipButton: PanelActionButton {
     }
 
     private func chipFont() -> NSFont {
-        NSFont.systemFont(ofSize: chipFontSize, weight: chipIsSelected ? .medium : .regular)
+        NSFont.systemFont(ofSize: chipFontSize, weight: .regular)
+    }
+
+    var smokeChipFontForRealFunctionQA: NSFont {
+        chipFont()
     }
 
     private func monochromeSymbolImage(named symbolName: String, color: NSColor) -> NSImage? {
