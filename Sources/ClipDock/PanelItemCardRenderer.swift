@@ -780,10 +780,10 @@ final class PanelItemCardRenderer {
             backgroundColor: promotedBackgroundColor,
             bodyTextColor: foreground.body,
             footerTextColor: foreground.footer,
-            fadeTopColor: promotedBackgroundColor.withAlphaComponent(0),
-            fadeMiddleColor: promotedBackgroundColor.withAlphaComponent(0.56),
-            fadeFooterColor: promotedBackgroundColor.withAlphaComponent(0.90),
-            fadeBottomColor: promotedBackgroundColor.withAlphaComponent(0.98)
+            fadeTopColor: metrics.theme.card.textBodyFadeTopColor,
+            fadeMiddleColor: metrics.theme.card.textBodyFadeMiddleColor,
+            fadeFooterColor: metrics.theme.card.textBodyFadeFooterColor,
+            fadeBottomColor: metrics.theme.card.textBodyFadeBottomColor
         )
     }
 

@@ -2770,7 +2770,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func darkTextCardRTFPreviewMapsBlackForegroundToReadableBodyColor() throws {
+    func darkTextCardRTFPreviewPreservesExplicitForegroundColor() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richTextDirectory = tempDirectory
@@ -2826,8 +2826,100 @@ struct PanelRuntimeSeamTests {
             renderedAttributedString.attribute(.foregroundColor, at: textLocation, effectiveRange: nil) as? NSColor
         )
 
-        #expect(colorAndAlphaDistance(renderedColor, darkTheme.card.primaryTextColor) < 0.001)
-        #expect(contrastRatio(renderedColor, darkTheme.card.textItemBackgroundColor) >= 4.5)
+        #expect(colorAndAlphaDistance(renderedColor, NSColor.black) < 0.001)
+        #expect(colorAndAlphaDistance(renderedColor, darkTheme.card.primaryTextColor) > 1.0)
+    }
+
+    @Test
+    @MainActor
+    func textCardBottomFadeIgnoresPromotedRichTextBackgroundColor() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let richTextDirectory = tempDirectory
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: richTextDirectory, withIntermediateDirectories: true)
+        let text = "按照 docs/itab-components/replica-quality-standard.md 仔细核查"
+        let promotedBackground = NSColor(srgbRed: 0.83, green: 0.83, blue: 0.83, alpha: 0.05)
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor(srgbRed: 0.83, green: 0.83, blue: 0.83, alpha: 1),
+                .backgroundColor: promotedBackground
+            ]
+        )
+        let rtfData = try attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let rtfURL = richTextDirectory.appendingPathComponent("light-background.rtf")
+        try rtfData.write(to: rtfURL)
+
+        let darkTheme = ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
+        let renderer = makeRuntimeCardRenderer(
+            appSupportDirectory: tempDirectory,
+            itemSide: 218,
+            theme: darkTheme
+        )
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "dark-rich-text-fixed-fade",
+            sourceAppName: "Codex",
+            relativeTimeText: "刚刚",
+            symbolName: "doc.richtext",
+            typeText: "富文本",
+            summaryText: text,
+            footnoteText: "\(text.count) 个字符",
+            isSelected: false,
+            preview: .none,
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Codex",
+                previewAssetPath: "assets/rich-text/light-background.rtf",
+                primaryText: text
+            )
+        ))
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+        let fadeView = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "TextBodyBottomFade"
+        })
+        let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        let renderedAttributedString = bodyLabel.attributedStringForTesting
+        let textLocation = try #require(
+            (renderedAttributedString.string as NSString).range(of: text).location == NSNotFound
+                ? nil
+                : (renderedAttributedString.string as NSString).range(of: text).location
+        )
+        let renderedTextColor = try #require(
+            renderedAttributedString.attribute(.foregroundColor, at: textLocation, effectiveRange: nil) as? NSColor
+        )
+        let fadeBitmap = try renderBitmap(of: fadeView)
+        let sampleX = max(0, fadeBitmap.pixelsWide / 2)
+        let upperSample = try #require(fadeBitmap.colorAt(x: sampleX, y: 1))
+        let lowerSample = try #require(fadeBitmap.colorAt(x: sampleX, y: max(1, fadeBitmap.pixelsHigh - 2)))
+        let fixedBottomDistance = min(
+            colorAndAlphaDistance(upperSample, darkTheme.card.textBodyFadeBottomColor),
+            colorAndAlphaDistance(lowerSample, darkTheme.card.textBodyFadeBottomColor)
+        )
+        let dynamicLightBottom = promotedBackground.withAlphaComponent(0.98)
+        let dynamicLightDistance = min(
+            colorAndAlphaDistance(upperSample, dynamicLightBottom),
+            colorAndAlphaDistance(lowerSample, dynamicLightBottom)
+        )
+
+        #expect(colorAndAlphaDistance(renderedCard.cardView.fillColor, promotedBackground) < 0.01)
+        #expect(colorAndAlphaDistance(
+            renderedTextColor,
+            NSColor(srgbRed: 0.83, green: 0.83, blue: 0.83, alpha: 1)
+        ) < 0.01)
+        #expect(fixedBottomDistance < 0.08)
+        #expect(dynamicLightDistance > 1.0)
     }
 
     @Test
@@ -5472,28 +5564,30 @@ private func colorAndAlphaDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
         + abs(lhs.alphaComponent - rhs.alphaComponent)
 }
 
-private func contrastRatio(_ foreground: NSColor, _ background: NSColor) -> CGFloat {
-    let foregroundLuminance = relativeLuminance(foreground)
-    let backgroundLuminance = relativeLuminance(background)
-    let lighter = max(foregroundLuminance, backgroundLuminance)
-    let darker = min(foregroundLuminance, backgroundLuminance)
-    return (lighter + 0.05) / (darker + 0.05)
-}
+@MainActor
+private func renderBitmap(of view: NSView) throws -> NSBitmapImageRep {
+    view.layoutSubtreeIfNeeded()
+    let width = max(1, Int(ceil(view.bounds.width)))
+    let height = max(1, Int(ceil(view.bounds.height)))
+    let bitmap = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ))
+    let graphicsContext = try #require(NSGraphicsContext(bitmapImageRep: bitmap))
 
-private func relativeLuminance(_ color: NSColor) -> CGFloat {
-    guard let color = color.usingColorSpace(.sRGB) else {
-        return 0
-    }
-
-    func channel(_ value: CGFloat) -> CGFloat {
-        value <= 0.03928
-            ? value / 12.92
-            : pow((value + 0.055) / 1.055, 2.4)
-    }
-
-    return 0.2126 * channel(color.redComponent)
-        + 0.7152 * channel(color.greenComponent)
-        + 0.0722 * channel(color.blueComponent)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = graphicsContext
+    view.displayIgnoringOpacity(view.bounds, in: graphicsContext)
+    NSGraphicsContext.restoreGraphicsState()
+    return bitmap
 }
 
 @MainActor

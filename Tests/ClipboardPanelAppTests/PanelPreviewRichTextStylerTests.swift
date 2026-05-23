@@ -4,7 +4,7 @@ import Testing
 
 struct PanelPreviewRichTextStylerTests {
     @Test
-    func mapsMissingAndLikelyDefaultColorsToTheme() {
+    func fillsMissingColorAndPreservesExplicitDefaultColor() {
         let bodyColor = NSColor(calibratedWhite: 0.88, alpha: 1)
         let darkSurface = NSColor(calibratedWhite: 0.08, alpha: 1)
         let source = NSMutableAttributedString(string: "Default Explicit")
@@ -21,7 +21,7 @@ struct PanelPreviewRichTextStylerTests {
         )
 
         #expect(display.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == bodyColor)
-        #expect(display.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor == bodyColor)
+        #expect(display.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor == NSColor.black)
         #expect(source.attribute(.foregroundColor, at: 0, effectiveRange: nil) == nil)
         #expect(source.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor == NSColor.black)
     }

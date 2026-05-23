@@ -55,15 +55,11 @@ enum ClipboardRichTextPreviewStyler {
         let promotedBackgroundColor = promotedBackgroundColor
             ?? contentBackgroundColor(in: source, surfaceColor: surfaceColor)
         mutable.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
-            let targetBackground = promotedBackgroundColor
-                ?? (attributes[.backgroundColor] as? NSColor)
-                ?? surfaceColor
             let originalForeground = attributes[.foregroundColor] as? NSColor
             let preferredFallback = attributes[.link] == nil ? bodyColor : linkColor
-            let displayForeground = adjustedForegroundColor(
+            let displayForeground = resolvedForegroundColor(
                 originalForeground,
-                fallback: preferredFallback,
-                against: targetBackground
+                fallback: preferredFallback
             )
             mutable.addAttribute(.foregroundColor, value: displayForeground, range: range)
             if promotedBackgroundColor != nil {
@@ -101,15 +97,11 @@ enum ClipboardRichTextPreviewStyler {
             surfaceColor: surfaceColor
         )
         mutable.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
-            let targetBackground = promotedBackgroundColor
-                ?? (attributes[.backgroundColor] as? NSColor)
-                ?? surfaceColor
             let originalForeground = attributes[.foregroundColor] as? NSColor
             let preferredFallback = attributes[.link] == nil ? bodyColor : linkColor
-            let displayForeground = adjustedForegroundColor(
+            let displayForeground = resolvedForegroundColor(
                 originalForeground,
-                fallback: preferredFallback,
-                against: targetBackground
+                fallback: preferredFallback
             )
             mutable.addAttribute(.foregroundColor, value: displayForeground, range: range)
             if promotedBackgroundColor != nil {
@@ -162,56 +154,11 @@ enum ClipboardRichTextPreviewStyler {
         return "\(red):\(green):\(blue):\(alpha)"
     }
 
-    private static func adjustedForegroundColor(
+    private static func resolvedForegroundColor(
         _ color: NSColor?,
-        fallback: NSColor,
-        against background: NSColor
+        fallback: NSColor
     ) -> NSColor {
-        guard let color else {
-            return fallback
-        }
-
-        guard contrastRatio(color, background) < 2.0,
-              isLikelyDefaultTextColor(color)
-        else {
-            return color
-        }
-
-        return fallback
-    }
-
-    private static func isLikelyDefaultTextColor(_ color: NSColor) -> Bool {
-        guard let rgb = color.usingColorSpace(.deviceRGB) else {
-            return true
-        }
-
-        let highest = max(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
-        let lowest = min(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
-        return highest - lowest < 0.08
-    }
-
-    private static func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
-        let first = relativeLuminance(lhs)
-        let second = relativeLuminance(rhs)
-        let lighter = max(first, second)
-        let darker = min(first, second)
-        return (lighter + 0.05) / (darker + 0.05)
-    }
-
-    private static func relativeLuminance(_ color: NSColor) -> CGFloat {
-        guard let rgb = color.usingColorSpace(.deviceRGB) else {
-            return 0
-        }
-
-        func channel(_ value: CGFloat) -> CGFloat {
-            value <= 0.03928
-                ? value / 12.92
-                : pow((value + 0.055) / 1.055, 2.4)
-        }
-
-        return 0.2126 * channel(rgb.redComponent)
-            + 0.7152 * channel(rgb.greenComponent)
-            + 0.0722 * channel(rgb.blueComponent)
+        color ?? fallback
     }
 }
 
