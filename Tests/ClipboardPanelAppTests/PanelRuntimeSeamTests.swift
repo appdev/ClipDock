@@ -435,6 +435,89 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func mainMenuIncludesResponderEditCommandsForSearchFieldPaste() {
+        let delegate = AppDelegate()
+        delegate.smokeConfigureMainMenuForRealFunctionQA()
+
+        let items = delegate.smokeEditMenuItemsForRealFunctionQA
+
+        #expect(items.contains {
+            $0.action == #selector(NSText.paste(_:))
+                && $0.keyEquivalent == "v"
+                && $0.modifiers == [.command]
+                && $0.targetIsNil
+        })
+        #expect(items.contains {
+            $0.action == #selector(NSText.cut(_:))
+                && $0.keyEquivalent == "x"
+                && $0.modifiers == [.command]
+                && $0.targetIsNil
+        })
+        #expect(items.contains {
+            $0.action == #selector(NSText.copy(_:))
+                && $0.keyEquivalent == "c"
+                && $0.modifiers == [.command]
+                && $0.targetIsNil
+        })
+        #expect(items.contains {
+            $0.action == #selector(NSText.selectAll(_:))
+                && $0.keyEquivalent == "a"
+                && $0.modifiers == [.command]
+                && $0.targetIsNil
+        })
+    }
+
+    @Test
+    @MainActor
+    func commandVPastesIntoFocusedSearchFieldThroughMainMenu() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let delegate = AppDelegate()
+        delegate.smokeConfigureMainMenuForRealFunctionQA()
+        let controller = delegate.smokePanelControllerForRealFunctionQA
+        let contentView = controller.smokeContentView
+        controller.show()
+        #expect(await waitForMainActor {
+            controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+        contentView.window?.makeKeyAndOrderFront(nil)
+        contentView.window?.makeMain()
+        contentView.smokeOpenSearch(text: "")
+        #expect(await waitForMainActor { contentView.smokeFirstResponderIsSearchField })
+
+        NSPasteboard.general.clearContents()
+        defer { NSPasteboard.general.clearContents() }
+        NSPasteboard.general.setString("pasted query", forType: .string)
+
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: contentView.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "v",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_V)
+        ))
+
+        #expect(NSApp.mainMenu?.performKeyEquivalent(with: event) == true)
+        let responder = try #require(contentView.window?.firstResponder)
+        #expect(responder.responds(to: #selector(NSText.paste(_:))))
+        #expect(responder.tryToPerform(#selector(NSText.paste(_:)), with: nil))
+        #expect(await waitForMainActor {
+            contentView.smokeSearchFieldStringValue == "pasted query"
+                && contentView.smokeSearchText == "pasted query"
+        })
+
+        controller.hide()
+    }
+
+    @Test
+    @MainActor
     func printableKeyStartsSearchFocusesFieldAndEmitsDebouncedQuery() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

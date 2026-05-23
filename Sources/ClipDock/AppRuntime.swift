@@ -125,6 +125,22 @@ final class PanelSearchField: NSSearchField {
     var onCancelButtonMouseDown: (() -> Bool)?
     var onCancelButtonClick: (() -> Void)?
 
+    @objc func cut(_ sender: Any?) {
+        currentEditor()?.cut(sender)
+    }
+
+    @objc func copy(_ sender: Any?) {
+        currentEditor()?.copy(sender)
+    }
+
+    @objc func paste(_ sender: Any?) {
+        currentEditor()?.paste(sender)
+    }
+
+    override func selectAll(_ sender: Any?) {
+        currentEditor()?.selectAll(sender)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let shouldHandleCancel = event.type == .leftMouseDown
             && isCancelButtonHit(event)
@@ -3092,6 +3108,10 @@ extension FloatingPanelContentView {
 
     var smokeSearchText: String {
         panelViewState().toolbar.searchText
+    }
+
+    var smokeSearchFieldStringValue: String {
+        searchField.stringValue
     }
 
     var smokeSearchFieldSelectedRange: NSRange? {

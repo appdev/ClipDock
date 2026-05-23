@@ -1982,7 +1982,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        editItem.submenu = makeEditMenu()
+        mainMenu.addItem(editItem)
+
         NSApp.mainMenu = mainMenu
+    }
+
+    private func makeEditMenu() -> NSMenu {
+        let editMenu = NSMenu(title: AppLocalization.text("menu.edit", defaultValue: "编辑"))
+        editMenu.addItem(makeResponderMenuItem(
+            title: AppLocalization.text("menu.undo", defaultValue: "撤销"),
+            action: Selector(("undo:")),
+            key: "z",
+            modifiers: [.command]
+        ))
+        editMenu.addItem(makeResponderMenuItem(
+            title: AppLocalization.text("menu.redo", defaultValue: "重做"),
+            action: Selector(("redo:")),
+            key: "Z",
+            modifiers: [.command, .shift]
+        ))
+        editMenu.addItem(.separator())
+        editMenu.addItem(makeResponderMenuItem(
+            title: AppLocalization.text("menu.cut", defaultValue: "剪切"),
+            action: #selector(NSText.cut(_:)),
+            key: "x",
+            modifiers: [.command]
+        ))
+        editMenu.addItem(makeResponderMenuItem(
+            title: AppLocalization.text("menu.copy", defaultValue: "复制"),
+            action: #selector(NSText.copy(_:)),
+            key: "c",
+            modifiers: [.command]
+        ))
+        editMenu.addItem(makeResponderMenuItem(
+            title: AppLocalization.text("menu.paste", defaultValue: "粘贴"),
+            action: #selector(NSText.paste(_:)),
+            key: "v",
+            modifiers: [.command]
+        ))
+        editMenu.addItem(.separator())
+        editMenu.addItem(makeResponderMenuItem(
+            title: AppLocalization.text("menu.selectAll", defaultValue: "全选"),
+            action: #selector(NSText.selectAll(_:)),
+            key: "a",
+            modifiers: [.command]
+        ))
+        return editMenu
     }
 
     private func configureStatusItem() {
@@ -2050,6 +2098,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.target = action == #selector(NSApplication.terminate(_:)) ? NSApp : self
         item.keyEquivalentModifierMask = modifiers
         item.image = MenuIcon.image(named: imageName, title: title)
+        return item
+    }
+
+    private func makeResponderMenuItem(
+        title: String,
+        action: Selector,
+        key: String,
+        modifiers: NSEvent.ModifierFlags
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = nil
+        item.keyEquivalentModifierMask = modifiers
         return item
     }
 
@@ -2207,6 +2267,10 @@ extension AppDelegate {
         configureStatusItem()
     }
 
+    func smokeConfigureMainMenuForRealFunctionQA() {
+        configureMainMenu()
+    }
+
     func smokeRemoveStatusItemForRealFunctionQA() {
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
@@ -2221,6 +2285,23 @@ extension AppDelegate {
             && statusItemMenu != nil
             && button.target === self
             && button.action == #selector(handleStatusItemClick(_:))
+    }
+
+    var smokeEditMenuItemsForRealFunctionQA: [(title: String, keyEquivalent: String, modifiers: NSEvent.ModifierFlags, action: Selector?, targetIsNil: Bool)] {
+        guard let editMenu = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == AppLocalization.text("menu.edit", defaultValue: "编辑") })?.submenu
+        else { return [] }
+
+        return editMenu.items
+            .filter { !$0.isSeparatorItem }
+            .map {
+                (
+                    title: $0.title,
+                    keyEquivalent: $0.keyEquivalent,
+                    modifiers: $0.keyEquivalentModifierMask,
+                    action: $0.action,
+                    targetIsNil: $0.target == nil
+                )
+            }
     }
 
     func smokeCaptureClipboardText(_ text: String, changeCount: Int64) {
