@@ -78,6 +78,31 @@ struct ClipboardMonitoringTests {
 
     @Test
     @MainActor
+    func filePreviewProviderSkipsThumbnailForMultipleFiles() async throws {
+        let appSupportURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sourceDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        let firstURL = sourceDirectory.appendingPathComponent("first.png")
+        let secondURL = sourceDirectory.appendingPathComponent("second.jpg")
+        try makePNGData(width: 20, height: 20).write(to: firstURL)
+        try makePNGData(width: 22, height: 22).write(to: secondURL)
+        let provider = ClipboardFilePreviewProvider(
+            appSupportURL: appSupportURL,
+            scaleProvider: { 1 }
+        )
+
+        let preview = await provider.cachePreview(
+            for: CapturedClipboardFiles(urls: [firstURL, secondURL]),
+            changeCount: 15
+        )
+
+        #expect(preview == nil)
+    }
+
+    @Test
+    @MainActor
     func bitmapImageDataIsCapturedAsLightweightImageSource() throws {
         let pngData = try makePNGData(width: 32, height: 20)
         let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))

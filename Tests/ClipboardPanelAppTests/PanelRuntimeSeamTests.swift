@@ -155,11 +155,18 @@ struct PanelRuntimeSeamTests {
         let controller = FloatingPanelController()
         let contentView = controller.smokeContentView
         let items = PanelQASamples.makePagedPanelItems(count: 4)
-        var copiedItemID: String?
+        var copiedItemIDs: [String] = []
         controller.onRuntimeAction = { [weak controller] action in
-            guard case .copyItem(let item) = action else { return }
-            copiedItemID = item.id
-            controller?.hideAfterCopyingSelection()
+            switch action {
+            case .copyItems(let items):
+                copiedItemIDs = items.map(\.id)
+                controller?.hideAfterCopyingSelection()
+            case .copyItem(let item):
+                copiedItemIDs = [item.id]
+                controller?.hideAfterCopyingSelection()
+            default:
+                break
+            }
         }
 
         controller.show()
@@ -179,7 +186,7 @@ struct PanelRuntimeSeamTests {
 
         PanelQAHarness.sendCommandC(to: contentView)
 
-        #expect(copiedItemID == ids[1])
+        #expect(copiedItemIDs == [ids[0], ids[1]])
         #expect(!controller.isVisible)
         #expect(controller.smokePanelIsActuallyVisible)
         #expect(controller.smokeHasActivePanelAnimation)
@@ -191,6 +198,152 @@ struct PanelRuntimeSeamTests {
         })
         #expect(contentView.smokeSelectedItemIDs == [ids[1]])
         #expect(contentView.smokeSelectedCardIDs() == [ids[1]])
+    }
+
+    @Test
+    @MainActor
+    func batchPasteboardWriterFiltersMixedTextAndImageToTextOnly() throws {
+        let imageURL = try writePasteboardWriterPNGFixture(name: "mixed.png")
+        let payload = ClipboardPastePayload.pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["text"],
+                representations: [.string("Mixed text")]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["image"],
+                representations: [.imageFile(imageURL)]
+            )
+        ])
+        let delegate = AppDelegate()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+
+        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+
+        let pasteboardItems = try #require(pasteboard.pasteboardItems)
+        #expect(pasteboardItems.count == 1)
+        #expect(pasteboardItems[0].string(forType: .string) == "Mixed text")
+        #expect(pasteboardItems[0].string(forType: .html) == nil)
+        #expect(pasteboardItems[0].data(forType: .rtfd) == nil)
+        #expect(pasteboard.readObjects(forClasses: [NSString.self], options: nil)?.count == 1)
+        #expect(pasteboard.readObjects(forClasses: [NSImage.self], options: nil)?.count == 0)
+        #expect(pasteboard.readObjects(forClasses: [NSURL.self], options: nil)?.count == 0)
+        #expect(pasteboard.propertyList(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) == nil)
+    }
+
+    @Test
+    @MainActor
+    func batchPasteboardWriterWritesMultipleImageItems() throws {
+        let firstURL = try writePasteboardWriterPNGFixture(name: "first.png")
+        let secondURL = try writePasteboardWriterPNGFixture(name: "second.png")
+        let payload = ClipboardPastePayload.pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["first"],
+                representations: [.imageFile(firstURL)]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["second"],
+                representations: [.imageFile(secondURL)]
+            )
+        ])
+        let delegate = AppDelegate()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+
+        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+
+        let pasteboardItems = try #require(pasteboard.pasteboardItems)
+        #expect(pasteboardItems.count == 2)
+        #expect(pasteboardItems.allSatisfy { $0.data(forType: .png) != nil })
+        #expect(pasteboardItems.map { $0.string(forType: .fileURL) } == [
+            firstURL.absoluteString,
+            secondURL.absoluteString
+        ])
+        #expect(pasteboardItems.allSatisfy { $0.string(forType: .html) == nil })
+        #expect(pasteboardItems.allSatisfy { $0.data(forType: .rtfd) == nil })
+        #expect(pasteboard.readObjects(forClasses: [NSImage.self], options: nil)?.count == 2)
+        let urlReadOptions: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let pasteboardURLs = try #require(
+            pasteboard.readObjects(forClasses: [NSURL.self], options: urlReadOptions) as? [URL]
+        )
+        #expect(pasteboardURLs.map(\.path) == [firstURL.path, secondURL.path])
+        let filenames = try #require(
+            pasteboard.propertyList(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) as? [String]
+        )
+        #expect(filenames == [firstURL.path, secondURL.path])
+    }
+
+    @Test
+    @MainActor
+    func batchPasteboardWriterWritesImageAndFileSelection() throws {
+        let imageURL = try writePasteboardWriterPNGFixture(name: "image.png")
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("report.pdf")
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("file payload".utf8).write(to: fileURL)
+        let payload = ClipboardPastePayload.pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["image"],
+                representations: [.imageFile(imageURL)]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["file"],
+                representations: [.fileURL(fileURL)]
+            )
+        ])
+        let delegate = AppDelegate()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+
+        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+
+        let pasteboardItems = try #require(pasteboard.pasteboardItems)
+        #expect(pasteboardItems.count == 2)
+        #expect(pasteboardItems[0].data(forType: .png) != nil)
+        #expect(pasteboardItems[0].string(forType: .fileURL) == imageURL.absoluteString)
+        #expect(pasteboard.readObjects(forClasses: [NSImage.self], options: nil)?.count == 1)
+        let urlReadOptions: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let pasteboardURLs = try #require(
+            pasteboard.readObjects(forClasses: [NSURL.self], options: urlReadOptions) as? [URL]
+        )
+        #expect(pasteboardURLs.map(\.path) == [imageURL.path, fileURL.path])
+        let filenames = try #require(
+            pasteboard.propertyList(forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")) as? [String]
+        )
+        #expect(filenames == [imageURL.path, fileURL.path])
+    }
+
+    @Test
+    @MainActor
+    func batchPasteboardWriterUsesCompositeOnlyForTextItems() throws {
+        let payload = ClipboardPastePayload.pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["first"],
+                representations: [.string("First")]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["second"],
+                representations: [.string("Second")]
+            )
+        ])
+        let delegate = AppDelegate()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        defer { pasteboard.clearContents() }
+
+        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+
+        let pasteboardItems = try #require(pasteboard.pasteboardItems)
+        #expect(pasteboardItems.count == 1)
+        #expect(pasteboard.string(forType: .string) == "First\nSecond")
+        #expect(pasteboard.readObjects(forClasses: [NSString.self], options: nil) as? [String] == ["First\nSecond"])
     }
 
     @Test
@@ -310,6 +463,9 @@ struct PanelRuntimeSeamTests {
                 && contentView.smokeSearchText == "R"
                 && contentView.smokeFirstResponderIsSearchField
         })
+        #expect(await waitForMainActor {
+            contentView.smokeSearchFieldSelectedRange == NSRange(location: 1, length: 0)
+        })
         #expect(queries.count == 1)
         #expect(queries.first?.searchText == "R")
         #expect(queries.first?.debounce == true)
@@ -333,6 +489,24 @@ struct PanelRuntimeSeamTests {
         #expect(contentView.smokeSearchFieldAccessibilityLabel == "搜索剪贴板内容或来源应用")
         #expect(contentView.smokeToolbarSearchButtonAccessibilityLabel == "搜索")
         #expect(contentView.smokeSearchClearButtonAccessibilityLabel == "清除搜索")
+
+        let secondEvent = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: contentView.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "e",
+            charactersIgnoringModifiers: "e",
+            isARepeat: false,
+            keyCode: UInt16(kVK_ANSI_E)
+        ))
+        contentView.window?.firstResponder?.keyDown(with: secondEvent)
+        PanelQAHarness.drainMainRunLoop()
+
+        #expect(contentView.smokeSearchText == "Re")
+        #expect(queries.last?.searchText == "Re")
 
         controller.hide()
     }
@@ -2386,12 +2560,18 @@ struct PanelRuntimeSeamTests {
                 isShowScanDeviceDialog
         )
         """
+        let sourceBackgroundColor = NSColor(
+            srgbRed: 0.96,
+            green: 0.94,
+            blue: 0.86,
+            alpha: 1
+        )
         let attributed = NSMutableAttributedString(
             string: code,
             attributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
                 .foregroundColor: NSColor.textColor,
-                .backgroundColor: NSColor.textBackgroundColor
+                .backgroundColor: sourceBackgroundColor
             ]
         )
         attributed.addAttribute(
@@ -2461,9 +2641,72 @@ struct PanelRuntimeSeamTests {
         ) as? NSColor
 
         #expect(renderedCard.state.typeText == "文本")
+        #expect(colorAndAlphaDistance(renderedCard.cardView.fillColor, sourceBackgroundColor) < 0.01)
         #expect(functionColor.greenComponent > functionColor.redComponent)
         #expect(abs(functionColor.greenComponent - expectedFunctionColor.greenComponent) < 0.08)
-        #expect(backgroundColor != nil)
+        #expect(backgroundColor == nil)
+    }
+
+    @Test
+    @MainActor
+    func darkTextCardRTFPreviewMapsBlackForegroundToReadableBodyColor() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let richTextDirectory = tempDirectory
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: richTextDirectory, withIntermediateDirectories: true)
+        let text = "iTab"
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.black
+            ]
+        )
+        let rtfData = try attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let rtfURL = richTextDirectory.appendingPathComponent("dark-default.rtf")
+        try rtfData.write(to: rtfURL)
+
+        let darkTheme = ClipDockTheme.current(for: NSAppearance(named: .darkAqua))
+        let renderer = makeRuntimeCardRenderer(
+            appSupportDirectory: tempDirectory,
+            itemSide: 218,
+            theme: darkTheme
+        )
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "dark-rtf-text",
+            sourceAppName: "TextEdit",
+            relativeTimeText: "刚刚",
+            symbolName: "doc.text",
+            typeText: "文本",
+            summaryText: text,
+            footnoteText: "\(text.count) 个字符",
+            isSelected: false,
+            preview: .none,
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "TextEdit",
+                previewAssetPath: "assets/rich-text/dark-default.rtf",
+                primaryText: text
+            )
+        ))
+
+        let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        let renderedAttributedString = bodyLabel.attributedStringForTesting
+        let textLocation = try #require(
+            (renderedAttributedString.string as NSString).range(of: text).location == NSNotFound
+                ? nil
+                : (renderedAttributedString.string as NSString).range(of: text).location
+        )
+        let renderedColor = try #require(
+            renderedAttributedString.attribute(.foregroundColor, at: textLocation, effectiveRange: nil) as? NSColor
+        )
+
+        #expect(colorAndAlphaDistance(renderedColor, darkTheme.card.primaryTextColor) < 0.001)
+        #expect(contrastRatio(renderedColor, darkTheme.card.textItemBackgroundColor) >= 4.5)
     }
 
     @Test
@@ -2528,6 +2771,7 @@ struct PanelRuntimeSeamTests {
         let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
         #expect(imageView.imageScaling == .scaleProportionallyDown)
         #expect(await waitForMainActor(attempts: 240) { imageView.image != nil })
+        #expect(String(describing: type(of: imageView)).contains("ProportionalImagePreviewView"))
 
         let badgeView = try #require(renderedCard.artifacts.footnoteBadgeViews.first)
         let badgeBackground = try #require(badgeView.layer?.backgroundColor)
@@ -2566,6 +2810,7 @@ struct PanelRuntimeSeamTests {
 
         let smallImageView = try #require(smallRenderedCard.artifacts.imagePreviewViews.first)
         #expect(smallImageView.imageScaling == .scaleProportionallyDown)
+        #expect(String(describing: type(of: smallImageView)).contains("ProportionalImagePreviewView"))
         #expect(await waitForMainActor(attempts: 240) { smallImageView.image != nil })
     }
 
@@ -2686,6 +2931,10 @@ struct PanelRuntimeSeamTests {
             )
         ))
 
+        let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        #expect(imageView.imageScaling == .scaleProportionallyDown)
+        #expect(String(describing: type(of: imageView)).contains("ProportionalImagePreviewView"))
+
         let thumbnailToken = try #require(renderedCard.artifacts.filePreviewThumbnailTokensForSmoke().first)
         #expect(PanelCardAssetResolver.filePreviewImageRequestIsActiveForSmoke(thumbnailToken))
 
@@ -2693,6 +2942,249 @@ struct PanelRuntimeSeamTests {
         RunLoop.main.run(until: Date().addingTimeInterval(0.18))
 
         #expect(!PanelCardAssetResolver.filePreviewImageRequestIsActiveForSmoke(thumbnailToken))
+    }
+
+    @Test
+    @MainActor
+    func multiFileCardUsesSystemMultipleDocumentIconWithoutThumbnailRequest() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let firstURL = tempDirectory.appendingPathComponent("first.png")
+        let secondURL = tempDirectory.appendingPathComponent("second.jpg")
+        try writePNG(to: firstURL, width: 96, height: 64)
+        try writePNG(to: secondURL, width: 88, height: 66)
+
+        PanelCardAssetResolver.fileThumbnailGenerationDelayForSmoke = .milliseconds(100)
+        defer {
+            PanelCardAssetResolver.fileThumbnailGenerationDelayForSmoke = nil
+        }
+
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "multi-file-card",
+            sourceAppName: "Finder",
+            relativeTimeText: "now",
+            symbolName: "folder",
+            typeText: "2 个文件",
+            summaryText: "",
+            footnoteText: "多个文件",
+            isSelected: true,
+            preview: .file(accessibilityLabel: "Finder"),
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Finder",
+                primaryText: "\(firstURL.path)\n\(secondURL.path)",
+                fileCount: 2
+            )
+        ))
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+
+        let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        let image = try #require(imageView.image)
+        let systemIcon = try #require(NSImage(named: NSImage.Name("NSMultipleDocuments")))
+        #expect(abs(image.size.width - systemIcon.size.width) < 0.01)
+        #expect(abs(image.size.height - systemIcon.size.height) < 0.01)
+        #expect(imageView.imageScaling == .scaleProportionallyDown)
+        #expect(String(describing: type(of: imageView)).contains("ProportionalImagePreviewView"))
+        #expect(renderedCard.artifacts.previewHeightConstraints.isEmpty)
+        #expect(imageView.frame.height >= 110)
+        let drawnBounds = try #require(alphaBoundingBox(of: imageView))
+        #expect(drawnBounds.height >= imageView.bounds.height * 0.74)
+        #expect(renderedCard.artifacts.filePreviewThumbnailTokensForSmoke().isEmpty)
+    }
+
+    @Test
+    @MainActor
+    func singleImageFileCardUsesImagePreviewLayout() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let imageFileURL = tempDirectory.appendingPathComponent("image-file-card.png")
+        try writePNG(to: imageFileURL, width: 220, height: 140)
+
+        let itemSide: CGFloat = 218
+        let headerHeight: CGFloat = 48
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: itemSide)
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: RustClipboardItemSummary(
+                id: "image-file-card",
+                itemType: "file",
+                summary: "image-file-card.png · \(imageFileURL.path)",
+                primaryText: imageFileURL.path,
+                contentHash: "image-file-card",
+                sourceAppId: "com.apple.finder",
+                sourceAppName: "Finder",
+                sourceAppIconPath: nil,
+                previewAssetPath: nil,
+                payloadAssetPath: nil,
+                sourceConfidence: "high",
+                firstCopiedAtMs: 1,
+                lastCopiedAtMs: 1,
+                copyCount: 1,
+                isPinned: false,
+                sizeBytes: 4096,
+                previewState: "ready",
+                fileItems: [
+                    RustClipboardFileItemSummary(
+                        path: imageFileURL.path,
+                        fileName: "image-file-card.png",
+                        fileExtension: "png",
+                        byteCount: 4096,
+                        isDirectory: false,
+                        width: 220,
+                        height: 140,
+                        contentType: "public.png"
+                    )
+                ]
+            ),
+            selectedItemID: "image-file-card",
+            relativeTimeFormatter: { _ in "now" }
+        )
+        let renderedCard = renderer.render(state)
+
+        #expect(renderedCard.state.symbolName == "photo")
+        #expect(renderedCard.state.typeText == "图片")
+        #expect(renderedCard.state.footnoteText == "220 × 140")
+        #expect(renderedCard.artifacts.previewHeightConstraints.isEmpty)
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: itemSide, height: itemSide))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+
+        let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        let imageFrame = imageView.convert(imageView.bounds, to: renderedCard.cardView)
+        #expect(imageView.imageScaling == .scaleProportionallyDown)
+        #expect(String(describing: type(of: imageView)).contains("ProportionalImagePreviewView"))
+        #expect(await waitForMainActor(attempts: 240) { imageView.image != nil })
+        #expect(abs(imageFrame.width - itemSide) <= 1.5)
+        #expect(abs(imageFrame.height - (itemSide - headerHeight)) <= 1.5)
+    }
+
+    @Test
+    @MainActor
+    func fileCardStillUsesFilePreviewLayoutForNonImageFiles() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let fileURL = tempDirectory.appendingPathComponent("plain-file-card.txt")
+        try "plain file card".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: tempDirectory, itemSide: 218)
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "image-file-card",
+            sourceAppName: "Finder",
+            relativeTimeText: "now",
+            symbolName: "folder",
+            typeText: "文件",
+            summaryText: "",
+            footnoteText: fileURL.lastPathComponent,
+            isSelected: true,
+            preview: .file(accessibilityLabel: "Finder"),
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Finder",
+                primaryText: fileURL.path
+            )
+        ))
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+
+        let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
+        #expect(imageView.imageScaling == .scaleProportionallyDown)
+        #expect(String(describing: type(of: imageView)).contains("ProportionalImagePreviewView"))
+        #expect(imageView.image != nil)
+        #expect(renderedCard.artifacts.previewHeightConstraints.isEmpty)
+        #expect(imageView.frame.height >= 110)
+        let drawnBounds = try #require(alphaBoundingBox(of: imageView))
+        #expect(drawnBounds.height >= imageView.bounds.height * 0.74)
+    }
+
+    @Test
+    @MainActor
+    func filePreviewUsesSystemIconsForRepresentativeSingleFileTypes() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let textURL = tempDirectory.appendingPathComponent("document.txt")
+        let pdfURL = tempDirectory.appendingPathComponent("document.pdf")
+        let zipURL = tempDirectory.appendingPathComponent("archive.zip")
+        let folderURL = tempDirectory.appendingPathComponent("folder", isDirectory: true)
+        try "plain text".write(to: textURL, atomically: true, encoding: .utf8)
+        try Data("%PDF-1.4\n".utf8).write(to: pdfURL)
+        try Data([0x50, 0x4b, 0x03, 0x04]).write(to: zipURL)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+
+        let resolver = PanelCardAssetResolver(appSupportDirectory: tempDirectory)
+        for url in [textURL, pdfURL, zipURL, folderURL] {
+            let request = PanelCardAssetRequest(primaryText: url.path)
+            let image = try #require(resolver.filePreviewImage(for: request))
+            let expectedIcon = NSWorkspace.shared.icon(forFile: url.path)
+
+            #expect(!resolver.isMultipleFileRequest(request))
+            #expect(image.tiffRepresentation == expectedIcon.tiffRepresentation)
+        }
+    }
+
+    @Test
+    @MainActor
+    func multiFilePreviewUsesMultipleDocumentsIconForRepresentativeCombinations() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let firstImageURL = tempDirectory.appendingPathComponent("first.png")
+        let secondImageURL = tempDirectory.appendingPathComponent("second.jpg")
+        let textURL = tempDirectory.appendingPathComponent("document.txt")
+        let pdfURL = tempDirectory.appendingPathComponent("document.pdf")
+        let folderURL = tempDirectory.appendingPathComponent("folder", isDirectory: true)
+        try writePNG(to: firstImageURL, width: 96, height: 64)
+        try writePNG(to: secondImageURL, width: 88, height: 66)
+        try "plain text".write(to: textURL, atomically: true, encoding: .utf8)
+        try Data("%PDF-1.4\n".utf8).write(to: pdfURL)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+
+        let resolver = PanelCardAssetResolver(appSupportDirectory: tempDirectory)
+        let systemIcon = try #require(NSImage(named: NSImage.Name("NSMultipleDocuments")))
+        let requests = [
+            PanelCardAssetRequest(
+                primaryText: "\(firstImageURL.path)\n\(secondImageURL.path)",
+                fileCount: 2
+            ),
+            PanelCardAssetRequest(
+                primaryText: "\(textURL.path)\n\(pdfURL.path)",
+                fileCount: 2
+            ),
+            PanelCardAssetRequest(
+                primaryText: "\(folderURL.path)\n\(textURL.path)",
+                fileCount: 2
+            ),
+            PanelCardAssetRequest(
+                primaryText: textURL.path,
+                fileCount: 2
+            )
+        ]
+
+        for request in requests {
+            let image = try #require(resolver.filePreviewImage(for: request))
+
+            #expect(resolver.isMultipleFileRequest(request))
+            #expect(image.tiffRepresentation == systemIcon.tiffRepresentation)
+        }
     }
 
     @Test
@@ -3026,6 +3518,8 @@ struct PanelRuntimeSeamTests {
 
         let imageView = try #require(renderedCard.artifacts.imagePreviewViews.first)
         #expect(imageView.image != nil)
+        #expect(imageView.imageScaling == .scaleProportionallyDown)
+        #expect(String(describing: type(of: imageView)).contains("ProportionalImagePreviewView"))
         #expect(renderedCard.artifacts.filePreviewThumbnailTokensForSmoke().isEmpty)
     }
 
@@ -4312,6 +4806,50 @@ struct PanelRuntimeSeamTests {
                 && !delegate.smokeIsLoadingMoreClipboardItems
         })
     }
+
+    @Test
+    @MainActor
+    func captureStorageErrorKeepsLastRenderedPanelItemsVisible() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let delegate = AppDelegate()
+        let controller = delegate.smokePanelControllerForRealFunctionQA
+        let contentView = controller.smokeContentView
+        let items = [
+            makeRuntimeTextItem(id: "existing-a", summary: "Already visible A"),
+            makeRuntimeTextItem(id: "existing-b", summary: "Already visible B")
+        ]
+
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: items,
+                totalCount: Int64(items.count),
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        controller.show()
+        #expect(contentView.smokeOrderedCardItemIDs() == items.map(\.id))
+
+        delegate.smokeApplyCaptureResultForRealFunctionQA(ClipboardCaptureHandlingResult(
+            statusText: "捕获：database_busy",
+            shouldRefreshList: false,
+            storageError: RustCoreError(
+                code: "database_busy",
+                messageKey: "clipboard.error.database_busy",
+                recoverable: true,
+                message: "database busy"
+            )
+        ))
+
+        #expect(contentView.smokeCurrentItemCount == items.count)
+        #expect(contentView.smokeOrderedCardItemIDs() == items.map(\.id))
+        #expect(delegate.smokeStorageStatusTextForRealFunctionQA == "捕获：database_busy")
+
+        controller.hide()
+    }
 }
 
 private func makeRuntimeFileItem(
@@ -4513,7 +5051,7 @@ private func makeTextPreviewContent(body: String, itemType: String = "text") -> 
         itemID: UUID().uuidString,
         itemType: itemType,
         title: "文本",
-        subtitle: itemType == "rich_text" ? "富文本" : "文本",
+        subtitle: "文本",
         body: body,
         metadata: "",
         sourceAppName: "Notes",
@@ -4809,6 +5347,109 @@ private func colorAndAlphaDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
         + abs(lhs.greenComponent - rhs.greenComponent)
         + abs(lhs.blueComponent - rhs.blueComponent)
         + abs(lhs.alphaComponent - rhs.alphaComponent)
+}
+
+private func contrastRatio(_ foreground: NSColor, _ background: NSColor) -> CGFloat {
+    let foregroundLuminance = relativeLuminance(foreground)
+    let backgroundLuminance = relativeLuminance(background)
+    let lighter = max(foregroundLuminance, backgroundLuminance)
+    let darker = min(foregroundLuminance, backgroundLuminance)
+    return (lighter + 0.05) / (darker + 0.05)
+}
+
+private func relativeLuminance(_ color: NSColor) -> CGFloat {
+    guard let color = color.usingColorSpace(.sRGB) else {
+        return 0
+    }
+
+    func channel(_ value: CGFloat) -> CGFloat {
+        value <= 0.03928
+            ? value / 12.92
+            : pow((value + 0.055) / 1.055, 2.4)
+    }
+
+    return 0.2126 * channel(color.redComponent)
+        + 0.7152 * channel(color.greenComponent)
+        + 0.0722 * channel(color.blueComponent)
+}
+
+@MainActor
+private func alphaBoundingBox(of view: NSView) -> NSRect? {
+    view.layoutSubtreeIfNeeded()
+    let width = Int(ceil(view.bounds.width))
+    let height = Int(ceil(view.bounds.height))
+    guard width > 0,
+          height > 0,
+          let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+          )
+    else {
+        return nil
+    }
+
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+
+    var minX = width
+    var minY = height
+    var maxX = -1
+    var maxY = -1
+    for y in 0..<height {
+        for x in 0..<width {
+            guard (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 else {
+                continue
+            }
+            minX = min(minX, x)
+            minY = min(minY, y)
+            maxX = max(maxX, x)
+            maxY = max(maxY, y)
+        }
+    }
+
+    guard maxX >= minX, maxY >= minY else {
+        return nil
+    }
+
+    return NSRect(
+        x: CGFloat(minX),
+        y: CGFloat(minY),
+        width: CGFloat(maxX - minX + 1),
+        height: CGFloat(maxY - minY + 1)
+    )
+}
+
+private func writePasteboardWriterPNGFixture(name: String) throws -> URL {
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent(name)
+    let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: 2,
+        pixelsHigh: 2,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    )
+    bitmap?.setColor(NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1), atX: 0, y: 0)
+    bitmap?.setColor(NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1), atX: 1, y: 0)
+    bitmap?.setColor(NSColor(deviceRed: 0, green: 1, blue: 0, alpha: 1), atX: 0, y: 1)
+    bitmap?.setColor(NSColor(deviceRed: 1, green: 1, blue: 0, alpha: 1), atX: 1, y: 1)
+    let data = try #require(bitmap?.representation(using: .png, properties: [:]))
+    try data.write(to: url)
+    return url
 }
 
 @MainActor

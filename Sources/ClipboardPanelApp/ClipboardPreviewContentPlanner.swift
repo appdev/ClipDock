@@ -61,14 +61,15 @@ public enum ClipboardPreviewContentPlanner {
         appSupportDirectory: URL,
         fileManager: FileManager = .default
     ) -> ClipboardPreviewContent {
-        let body = previewBody(for: item)
-        let imageURL = previewImageURL(
+        let fileURLs = previewFileURLs(
             for: item,
             appSupportDirectory: appSupportDirectory,
             fileManager: fileManager
         )
-        let fileURLs = previewFileURLs(
+        let body = previewBody(for: item)
+        let imageURL = previewImageURL(
             for: item,
+            fileURLs: fileURLs,
             appSupportDirectory: appSupportDirectory,
             fileManager: fileManager
         )
@@ -173,6 +174,7 @@ public enum ClipboardPreviewContentPlanner {
 
     private static func previewImageURL(
         for item: RustClipboardItemSummary,
+        fileURLs: [URL],
         appSupportDirectory: URL,
         fileManager: FileManager
     ) -> URL? {
@@ -188,6 +190,9 @@ public enum ClipboardPreviewContentPlanner {
             )
 
         case "file":
+            guard fileURLs.count <= 1 else {
+                return nil
+            }
             return ClipboardAssetPathResolver.firstExistingURL(
                 for: [item.previewAssetPath],
                 appSupportDirectory: appSupportDirectory,

@@ -164,6 +164,21 @@ final class PanelItemCardShadowHostView: NSView {
     }
 }
 
+private struct TextCardSurfaceStyle {
+    let backgroundColor: NSColor
+    let bodyTextColor: NSColor
+    let footerTextColor: NSColor
+    let fadeTopColor: NSColor
+    let fadeMiddleColor: NSColor
+    let fadeFooterColor: NSColor
+    let fadeBottomColor: NSColor
+}
+
+private struct RichTextCardBodyPreview {
+    let attributedString: NSAttributedString
+    let promotedBackgroundColor: NSColor?
+}
+
 @MainActor
 final class PanelItemCardRenderer {
     private let cardAssetResolver: PanelCardAssetResolver
@@ -189,9 +204,22 @@ final class PanelItemCardRenderer {
     ) -> PanelRenderedItemCard {
         let resolvedItem = cardAssetResolver.resolvedItem(for: state.assetRequest)
         let isTextLikeItem = state.symbolName == "doc.text" || state.symbolName == "doc.richtext"
-        let cardBackgroundColor = isTextLikeItem
+        let defaultCardBackgroundColor = isTextLikeItem
             ? metrics.theme.card.textItemBackgroundColor
             : metrics.theme.card.backgroundColor
+        let richTextBodyPreviewPlan = isTextLikeItem
+            ? richTextBodyPreview(
+                fallbackText: state.summaryText,
+                assetRequest: state.assetRequest,
+                defaultSurfaceColor: defaultCardBackgroundColor
+            )
+            : nil
+        let textSurfaceStyle = textCardSurfaceStyle(
+            promotedBackgroundColor: richTextBodyPreviewPlan?.promotedBackgroundColor
+        )
+        let cardBackgroundColor = isTextLikeItem
+            ? textSurfaceStyle.backgroundColor
+            : defaultCardBackgroundColor
 
         let iconView = SourceIconImageView()
         iconView.image = resolvedItem.sourceIconImage
@@ -324,30 +352,31 @@ final class PanelItemCardRenderer {
         } else {
             isColorCard = false
         }
-        let isTextBodyCard = !isImageCard
-            && !isLinkCard
-            && !isColorCard
-            && isTextLikeItem
-            && !state.summaryText.isEmpty
-
-        let summaryLabel = makeBodyLabel(
-            state.summaryText,
-            assetRequest: state.assetRequest,
-            usesRichTextPreview: isTextLikeItem
-        )
-        let contentFillsAvailableArea = isImageCard || isLinkCard || isColorCard
-        let contentContainer = makeCardContentContainer(
-            previewView: previewBundle.view,
-            summaryLabel: summaryLabel,
-            fillsAvailableArea: contentFillsAvailableArea,
-            showsSummary: !isColorCard
-        )
         let isFileCard: Bool
         if case .file = state.preview {
             isFileCard = true
         } else {
             isFileCard = false
         }
+        let isTextBodyCard = !isImageCard
+            && !isLinkCard
+            && !isColorCard
+            && !isFileCard
+            && isTextLikeItem
+            && !state.summaryText.isEmpty
+
+        let summaryLabel = makeBodyLabel(
+            state.summaryText,
+            richTextPreview: richTextBodyPreviewPlan?.attributedString,
+            bodyTextColor: textSurfaceStyle.bodyTextColor
+        )
+        let contentFillsAvailableArea = isImageCard || isLinkCard || isColorCard
+        let contentContainer = makeCardContentContainer(
+            previewView: previewBundle.view,
+            summaryLabel: summaryLabel,
+            fillsAvailableArea: contentFillsAvailableArea,
+            showsSummary: !isColorCard && !isFileCard
+        )
         let linkFooterTitle: String?
         if case .link(let title, _, _, _, _, _) = state.preview {
             let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -358,7 +387,8 @@ final class PanelItemCardRenderer {
 
         let indexLabel = NSTextField(labelWithString: "")
         indexLabel.font = .systemFont(ofSize: 10.5, weight: .medium)
-        indexLabel.textColor = self.colorSurfaceForegroundColor(for: state.preview) ?? .tertiaryLabelColor
+        indexLabel.textColor = self.colorSurfaceForegroundColor(for: state.preview)
+            ?? (isTextBodyCard ? textSurfaceStyle.footerTextColor : .tertiaryLabelColor)
         indexLabel.lineBreakMode = .byTruncatingTail
         indexLabel.identifier = NSUserInterfaceItemIdentifier(
             isColorCard ? "ColorCardCommandIndexLabel" : "PanelCardCommandIndexLabel"
@@ -378,7 +408,7 @@ final class PanelItemCardRenderer {
                 : .systemFont(ofSize: 10.5, weight: .medium))
         countLabel.textColor = isImageCard
             ? metrics.theme.card.imageFootnoteTextColor
-            : (isLinkCard ? metrics.theme.card.secondaryTextColor : metrics.theme.card.footerTextColor)
+            : (isLinkCard ? metrics.theme.card.secondaryTextColor : textSurfaceStyle.footerTextColor)
         countLabel.lineBreakMode = isFileCard ? .byTruncatingMiddle : .byTruncatingTail
         countLabel.maximumNumberOfLines = isFileCard ? 2 : 1
         countLabel.preferredMaxLayoutWidth = metrics.defaultItemSide - metrics.cardInset * 2 - 26
@@ -412,7 +442,10 @@ final class PanelItemCardRenderer {
         let countBadgeView = makeImageFootnoteBadgeView(isHidden: !isImageCard || state.footnoteText.isEmpty)
         let footnoteView: NSView = isImageCard ? countBadgeView : (linkFooterStack ?? countLabel)
         let linkFooterBackgroundView = makeLinkFooterBackgroundView(isHidden: !isLinkCard)
-        let textBodyFadeView = makeTextBodyFadeView(isHidden: !isTextBodyCard)
+        let textBodyFadeView = makeTextBodyFadeView(
+            isHidden: !isTextBodyCard,
+            surfaceStyle: textSurfaceStyle
+        )
         let footerRow = NSView()
         footerRow.userInterfaceLayoutDirection = .leftToRight
         footerRow.translatesAutoresizingMaskIntoConstraints = false
@@ -466,6 +499,8 @@ final class PanelItemCardRenderer {
             contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor)
         } else if isLinkCard {
             contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: footerRow.topAnchor)
+        } else if isFileCard {
+            contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: footerRow.topAnchor, constant: -5)
         } else if isTextBodyCard {
             contentBottomConstraint = contentContainer.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor)
         } else {
@@ -626,27 +661,22 @@ final class PanelItemCardRenderer {
 
     private func makeBodyLabel(
         _ text: String,
-        assetRequest: PanelCardAssetRequest,
-        usesRichTextPreview: Bool
+        richTextPreview: NSAttributedString?,
+        bodyTextColor: NSColor
     ) -> PanelItemCardBodyTextView {
         let font = NSFont.systemFont(ofSize: 12.5)
-        let textColor = metrics.theme.card.primaryTextColor
         let label: PanelItemCardBodyTextView
-        if usesRichTextPreview,
-           let attributedText = richTextBodyPreview(
-            fallbackText: text,
-            assetRequest: assetRequest
-           ) {
+        if let richTextPreview {
             label = PanelItemCardBodyTextView(
-                attributedString: attributedText,
+                attributedString: richTextPreview,
                 fallbackFont: font,
-                fallbackTextColor: textColor
+                fallbackTextColor: bodyTextColor
             )
         } else {
             label = PanelItemCardBodyTextView(
                 text: leftToRightDisplayText(text),
                 font: font,
-                textColor: textColor
+                textColor: bodyTextColor
             )
         }
         label.preferredTextWidth = metrics.defaultItemSide - metrics.cardInset * 2 - 4
@@ -656,8 +686,9 @@ final class PanelItemCardRenderer {
 
     private func richTextBodyPreview(
         fallbackText: String,
-        assetRequest: PanelCardAssetRequest
-    ) -> NSAttributedString? {
+        assetRequest: PanelCardAssetRequest,
+        defaultSurfaceColor: NSColor
+    ) -> RichTextCardBodyPreview? {
         guard let attributed = cardAssetResolver.richTextPreviewAttributedString(for: assetRequest),
               attributed.length > 0,
               !fallbackText.isEmpty
@@ -673,7 +704,21 @@ final class PanelItemCardRenderer {
 
         let preview = NSMutableAttributedString(string: "\u{200E}")
         preview.append(attributed.attributedSubstring(from: NSRange(location: 0, length: boundedLength)))
-        return preview
+        let promotedBackgroundColor = ClipboardRichTextPreviewStyler.promotedContentBackgroundColor(
+            preview,
+            surfaceColor: defaultSurfaceColor
+        )
+        let surfaceStyle = textCardSurfaceStyle(promotedBackgroundColor: promotedBackgroundColor)
+        let displayPlan = ClipboardRichTextPreviewStyler.inlineSurfaceDisplayPlan(
+            preview,
+            bodyColor: surfaceStyle.bodyTextColor,
+            surfaceColor: surfaceStyle.backgroundColor,
+            promotedBackgroundColor: promotedBackgroundColor
+        )
+        return RichTextCardBodyPreview(
+            attributedString: displayPlan.attributedString,
+            promotedBackgroundColor: displayPlan.promotedBackgroundColor
+        )
     }
 
     private func makeImageFootnoteBadgeView(isHidden: Bool) -> NSView {
@@ -704,17 +749,73 @@ final class PanelItemCardRenderer {
         return view
     }
 
-    private func makeTextBodyFadeView(isHidden: Bool) -> NSView {
+    private func makeTextBodyFadeView(isHidden: Bool, surfaceStyle: TextCardSurfaceStyle) -> NSView {
         let view = PanelTextBodyFadeView(
-            topColor: metrics.theme.card.textBodyFadeTopColor,
-            middleColor: metrics.theme.card.textBodyFadeMiddleColor,
-            footerColor: metrics.theme.card.textBodyFadeFooterColor,
-            bottomColor: metrics.theme.card.textBodyFadeBottomColor
+            topColor: surfaceStyle.fadeTopColor,
+            middleColor: surfaceStyle.fadeMiddleColor,
+            footerColor: surfaceStyle.fadeFooterColor,
+            bottomColor: surfaceStyle.fadeBottomColor
         )
         view.identifier = NSUserInterfaceItemIdentifier("TextBodyBottomFade")
         view.translatesAutoresizingMaskIntoConstraints = false
         view.isHidden = isHidden
         return view
+    }
+
+    private func textCardSurfaceStyle(promotedBackgroundColor: NSColor?) -> TextCardSurfaceStyle {
+        guard let promotedBackgroundColor = promotedBackgroundColor?.usingColorSpace(.sRGB) else {
+            return TextCardSurfaceStyle(
+                backgroundColor: metrics.theme.card.textItemBackgroundColor,
+                bodyTextColor: metrics.theme.card.primaryTextColor,
+                footerTextColor: metrics.theme.card.footerTextColor,
+                fadeTopColor: metrics.theme.card.textBodyFadeTopColor,
+                fadeMiddleColor: metrics.theme.card.textBodyFadeMiddleColor,
+                fadeFooterColor: metrics.theme.card.textBodyFadeFooterColor,
+                fadeBottomColor: metrics.theme.card.textBodyFadeBottomColor
+            )
+        }
+
+        let foreground = readableTextColor(for: promotedBackgroundColor)
+        return TextCardSurfaceStyle(
+            backgroundColor: promotedBackgroundColor,
+            bodyTextColor: foreground.body,
+            footerTextColor: foreground.footer,
+            fadeTopColor: promotedBackgroundColor.withAlphaComponent(0),
+            fadeMiddleColor: promotedBackgroundColor.withAlphaComponent(0.56),
+            fadeFooterColor: promotedBackgroundColor.withAlphaComponent(0.90),
+            fadeBottomColor: promotedBackgroundColor.withAlphaComponent(0.98)
+        )
+    }
+
+    private func readableTextColor(for background: NSColor) -> (body: NSColor, footer: NSColor) {
+        let luminance = relativeLuminance(background)
+        if luminance > 0.54 {
+            return (
+                NSColor(calibratedWhite: 0.08, alpha: 0.96),
+                NSColor(calibratedWhite: 0.32, alpha: 0.72)
+            )
+        }
+
+        return (
+            NSColor.white.withAlphaComponent(0.92),
+            NSColor.white.withAlphaComponent(0.42)
+        )
+    }
+
+    private func relativeLuminance(_ color: NSColor) -> CGFloat {
+        guard let rgb = color.usingColorSpace(.sRGB) else {
+            return 0
+        }
+
+        func channel(_ value: CGFloat) -> CGFloat {
+            value <= 0.03928
+                ? value / 12.92
+                : pow((value + 0.055) / 1.055, 2.4)
+        }
+
+        return 0.2126 * channel(rgb.redComponent)
+            + 0.7152 * channel(rgb.greenComponent)
+            + 0.0722 * channel(rgb.blueComponent)
     }
 
     private func makePreviewBundle(
@@ -782,7 +883,7 @@ final class PanelItemCardRenderer {
         )
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let imageView = ProportionalDownImagePreviewView(
+        let imageView = ProportionalImagePreviewView(
             checkerboardBackgroundColor: metrics.theme.card.imagePreviewCheckerboardBackgroundColor,
             checkerboardAlternateColor: metrics.theme.card.imagePreviewCheckerboardAlternateColor
         )
@@ -953,14 +1054,15 @@ final class PanelItemCardRenderer {
 
         let maximumPreviewSize = NSSize(width: metrics.defaultItemSide - 72, height: 132)
         let filePreviewURLs = cardAssetResolver.filePreviewURLs(for: assetRequest)
-        let imageView = FilePreviewImageView()
+        let isMultipleFile = cardAssetResolver.isMultipleFileRequest(assetRequest, urls: filePreviewURLs)
+        let imageView = ProportionalImagePreviewView(allowsUpscaling: true)
         imageView.image = cardAssetResolver.filePreviewImage(
             for: assetRequest,
             maximumSize: maximumPreviewSize,
             scale: backingScaleFactor
         )
             ?? NSImage(systemSymbolName: "doc", accessibilityDescription: accessibilityLabel)
-        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageScaling = .scaleProportionallyDown
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.wantsLayer = true
         imageView.layer?.cornerRadius = 8
@@ -968,37 +1070,31 @@ final class PanelItemCardRenderer {
         imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
         container.addSubview(imageView)
 
-        let loadIdentifier = imageView.identifier
-        imageView.thumbnailToken = PanelCardAssetResolver.loadFilePreviewImageAsync(
-            urls: filePreviewURLs,
-            maximumSize: maximumPreviewSize,
-            scale: backingScaleFactor
-        ) { [weak imageView] image in
-            guard imageView?.identifier == loadIdentifier,
-                  let image
-            else {
-                return
+        if !isMultipleFile {
+            let loadIdentifier = imageView.identifier
+            imageView.thumbnailToken = PanelCardAssetResolver.loadFilePreviewImageAsync(
+                urls: filePreviewURLs,
+                maximumSize: maximumPreviewSize,
+                scale: backingScaleFactor
+            ) { [weak imageView] image in
+                guard imageView?.identifier == loadIdentifier,
+                      let image
+                else {
+                    return
+                }
+                imageView?.image = image
             }
-            imageView?.image = image
         }
 
-        let heightConstraint = container.heightAnchor.constraint(equalToConstant: 92)
-        heightConstraint.priority = .defaultHigh
-        let widthConstraint = imageView.widthAnchor.constraint(lessThanOrEqualToConstant: metrics.defaultItemSide - 72)
         NSLayoutConstraint.activate([
-            heightConstraint,
-            imageView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            imageView.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            widthConstraint,
-            imageView.heightAnchor.constraint(lessThanOrEqualToConstant: 132),
-            imageView.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
-            imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 54)
+            imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: container.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
 
         return PreviewBundle(
             view: container,
-            previewHeightConstraints: [heightConstraint],
-            previewWidthConstraints: [widthConstraint],
             imagePreviewViews: [imageView]
         )
     }
@@ -1338,19 +1434,30 @@ private final class ColorCardSurfaceView: NSView {
 }
 
 @MainActor
-private final class ProportionalDownImagePreviewView: NSImageView {
+private final class ProportionalImagePreviewView: NSImageView {
     private var imageGeometry: ProportionalImageGeometry?
-    private let checkerboardBackgroundColor: NSColor
-    private let checkerboardAlternateColor: NSColor
+    private let checkerboardBackgroundColor: NSColor?
+    private let checkerboardAlternateColor: NSColor?
+    private let allowsUpscaling: Bool
     var previewImageLoadToken: PanelPreviewImageLoadToken? {
         didSet {
             PanelCardAssetResolver.cancelPreviewImageLoad(oldValue)
         }
     }
+    var thumbnailToken: PanelFilePreviewThumbnailToken? {
+        didSet {
+            PanelCardAssetResolver.cancelFilePreviewImageRequest(oldValue)
+        }
+    }
 
-    init(checkerboardBackgroundColor: NSColor, checkerboardAlternateColor: NSColor) {
+    init(
+        checkerboardBackgroundColor: NSColor? = nil,
+        checkerboardAlternateColor: NSColor? = nil,
+        allowsUpscaling: Bool = false
+    ) {
         self.checkerboardBackgroundColor = checkerboardBackgroundColor
         self.checkerboardAlternateColor = checkerboardAlternateColor
+        self.allowsUpscaling = allowsUpscaling
         super.init(frame: .zero)
     }
 
@@ -1362,6 +1469,13 @@ private final class ProportionalDownImagePreviewView: NSImageView {
         didSet {
             imageGeometry = image.flatMap(Self.imageGeometry(for:))
             needsDisplay = true
+        }
+    }
+
+    deinit {
+        let thumbnailToken = thumbnailToken
+        Task { @MainActor in
+            PanelCardAssetResolver.cancelFilePreviewImageRequest(thumbnailToken)
         }
     }
 
@@ -1380,11 +1494,11 @@ private final class ProportionalDownImagePreviewView: NSImageView {
             return
         }
 
-        let scale = min(
+        let fittingScale = min(
             bounds.width / imageGeometry.size.width,
-            bounds.height / imageGeometry.size.height,
-            1
+            bounds.height / imageGeometry.size.height
         )
+        let scale = allowsUpscaling ? fittingScale : min(fittingScale, 1)
         let drawSize = NSSize(
             width: floor(imageGeometry.size.width * scale),
             height: floor(imageGeometry.size.height * scale)
@@ -1408,6 +1522,12 @@ private final class ProportionalDownImagePreviewView: NSImageView {
     }
 
     private func drawCheckerboard(in rect: NSRect) {
+        guard let checkerboardBackgroundColor,
+              let checkerboardAlternateColor
+        else {
+            return
+        }
+
         checkerboardBackgroundColor.setFill()
         rect.fill()
 
@@ -1431,14 +1551,25 @@ private final class ProportionalDownImagePreviewView: NSImageView {
     }
 
     private static func imageGeometry(for image: NSImage) -> ProportionalImageGeometry? {
-        if let bitmap = image.representations
-            .compactMap({ $0 as? NSBitmapImageRep })
-            .max(by: { ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh) }) {
-            return ProportionalImageGeometry(size: NSSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+        if let representationSize = image.representations
+            .compactMap(Self.pixelSize(for:))
+            .max(by: { ($0.width * $0.height) < ($1.width * $1.height) }) {
+            return ProportionalImageGeometry(size: representationSize)
         }
 
         guard image.size.width > 0, image.size.height > 0 else { return nil }
         return ProportionalImageGeometry(size: image.size)
+    }
+
+    private static func pixelSize(for representation: NSImageRep) -> NSSize? {
+        if representation.pixelsWide > 0, representation.pixelsHigh > 0 {
+            return NSSize(width: representation.pixelsWide, height: representation.pixelsHigh)
+        }
+
+        guard representation.size.width > 0, representation.size.height > 0 else {
+            return nil
+        }
+        return representation.size
     }
 
     private struct ProportionalImageGeometry {
@@ -1640,22 +1771,6 @@ private final class LinkPreviewBlockView: NSView {
 }
 
 @MainActor
-private final class FilePreviewImageView: NSImageView {
-    var thumbnailToken: PanelFilePreviewThumbnailToken? {
-        didSet {
-            PanelCardAssetResolver.cancelFilePreviewImageRequest(oldValue)
-        }
-    }
-
-    deinit {
-        let token = thumbnailToken
-        Task { @MainActor in
-            PanelCardAssetResolver.cancelFilePreviewImageRequest(token)
-        }
-    }
-}
-
-@MainActor
 private protocol PanelCardAsyncWorkCancellable: AnyObject {
     func cancelPanelCardAsyncWork()
 }
@@ -1670,15 +1785,16 @@ private protocol PanelCardFilePreviewThumbnailTokenProviding: AnyObject {
     var thumbnailToken: PanelFilePreviewThumbnailToken? { get }
 }
 
-extension ProportionalDownImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
+extension ProportionalImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
 extension AspectFillImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
 extension LinkIconImagePreviewView: PanelCardPreviewImageLoadTokenProviding {}
 extension SourceIconImageView: PanelCardPreviewImageLoadTokenProviding {}
-extension FilePreviewImageView: PanelCardFilePreviewThumbnailTokenProviding {}
+extension ProportionalImagePreviewView: PanelCardFilePreviewThumbnailTokenProviding {}
 
-extension ProportionalDownImagePreviewView: PanelCardAsyncWorkCancellable {
+extension ProportionalImagePreviewView: PanelCardAsyncWorkCancellable {
     func cancelPanelCardAsyncWork() {
         previewImageLoadToken = nil
+        thumbnailToken = nil
     }
 }
 
@@ -1697,11 +1813,5 @@ extension LinkIconImagePreviewView: PanelCardAsyncWorkCancellable {
 extension SourceIconImageView: PanelCardAsyncWorkCancellable {
     func cancelPanelCardAsyncWork() {
         previewImageLoadToken = nil
-    }
-}
-
-extension FilePreviewImageView: PanelCardAsyncWorkCancellable {
-    func cancelPanelCardAsyncWork() {
-        thumbnailToken = nil
     }
 }

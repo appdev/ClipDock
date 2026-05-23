@@ -43,6 +43,29 @@ struct PanelPreviewRichTextStylerTests {
     }
 
     @Test
+    func inlineSurfaceStyleKeepsReadableBackgroundsWhileMappingDarkDefaults() {
+        let bodyColor = NSColor(calibratedWhite: 0.88, alpha: 1)
+        let darkSurface = NSColor(calibratedWhite: 0.08, alpha: 1)
+        let source = NSMutableAttributedString(
+            string: "Default Highlight",
+            attributes: [.foregroundColor: NSColor.black]
+        )
+        let highlightRange = NSRange(location: 8, length: 9)
+        source.addAttribute(.backgroundColor, value: NSColor.white, range: highlightRange)
+
+        let display = ClipboardRichTextPreviewStyler.inlineSurfaceAttributedString(
+            source,
+            bodyColor: bodyColor,
+            surfaceColor: darkSurface
+        )
+
+        #expect(display.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == bodyColor)
+        #expect(display.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor == NSColor.black)
+        #expect(display.attribute(.backgroundColor, at: 8, effectiveRange: nil) as? NSColor == NSColor.white)
+        #expect(source.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == NSColor.black)
+    }
+
+    @Test
     func promotesDominantBackgroundToContentSurface() throws {
         let source = NSMutableAttributedString(
             string: "2026-05-19 11:26:01 ClipDock log line\nsecond log line",

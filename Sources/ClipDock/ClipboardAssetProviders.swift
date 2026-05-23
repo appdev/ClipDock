@@ -490,6 +490,10 @@ final class ClipboardFilePreviewProvider {
         for files: CapturedClipboardFiles,
         changeCount: Int
     ) async -> ClipboardStoredFilePreview? {
+        guard files.urls.count == 1 else {
+            return nil
+        }
+
         guard let sourceURL = files.urls.first(where: { fileManager.fileExists(atPath: $0.path) }) else {
             return nil
         }

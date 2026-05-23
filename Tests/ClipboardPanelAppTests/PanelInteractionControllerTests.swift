@@ -370,7 +370,8 @@ struct PanelInteractionControllerTests {
     }
 
     @Test
-    func copySelectedItemEmitsCopyActionAndClearsCommandHints() {
+    func copySelectionUsesSelectedCountAndClearsCommandHints() {
+        let items = [makePanelInteractionItem(id: "a"), makePanelInteractionItem(id: "b")]
         let controller = makePanelInteractionController(
             sceneState: PanelSceneState(
                 selection: PanelSelectionState(
@@ -379,13 +380,48 @@ struct PanelInteractionControllerTests {
                     rangeAnchorItemID: "a",
                     isCommandHintModeEnabled: true
                 )
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 2,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
             )
         )
 
-        let result = controller.dispatch(.copySelectedItem)
+        let result = controller.dispatch(.copySelection)
 
         #expect(result.viewState.selectedItemID == "b")
         #expect(result.viewState.selectedItemIDs == ["a", "b"])
+        #expect(!result.viewState.isCommandHintModeEnabled)
+        #expect(result.effects == [
+            .commandHints([:]),
+            .preview(.close),
+            .external(.copyItems(itemIDs: ["a", "b"]))
+        ])
+    }
+
+    @Test
+    func copySelectionCopiesOneItemWhenOnlyOneItemIsSelected() {
+        let items = [makePanelInteractionItem(id: "b")]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(
+                selection: PanelSelectionState(
+                    selectedItemID: "b",
+                    isCommandHintModeEnabled: true
+                )
+            ),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 1,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.copySelection)
+
+        #expect(result.viewState.selectedItemID == "b")
         #expect(!result.viewState.isCommandHintModeEnabled)
         #expect(result.effects == [
             .commandHints([:]),
@@ -571,6 +607,64 @@ struct PanelInteractionControllerTests {
         #expect(result.effects == [
             .preview(.close),
             .external(.copyItemAsPlainText(itemID: "b"))
+        ])
+    }
+
+    @Test
+    func managementCopyUsesSelectedBatchWhenItemIsSelected() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(selection: PanelSelectionState(
+                selectedItemID: "c",
+                selectedItemIDs: ["c", "a"],
+                rangeAnchorItemID: "c"
+            )),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 3,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.management(itemID: "c", action: .copy))
+
+        #expect(result.effects == [
+            .preview(.close),
+            .external(.copyItems(itemIDs: ["a", "c"]))
+        ])
+    }
+
+    @Test
+    func managementCopyAsPlainTextUsesSelectedBatchWhenItemIsSelected() {
+        let items = [
+            makePanelInteractionItem(id: "a"),
+            makePanelInteractionItem(id: "b"),
+            makePanelInteractionItem(id: "c")
+        ]
+        let controller = makePanelInteractionController(
+            sceneState: PanelSceneState(selection: PanelSelectionState(
+                selectedItemID: "c",
+                selectedItemIDs: ["c", "a"],
+                rangeAnchorItemID: "c"
+            )),
+            listViewState: PanelListViewState(
+                presentation: .items(items),
+                totalCount: 3,
+                hasMoreItems: false,
+                isLoadingMoreItems: false
+            )
+        )
+
+        let result = controller.dispatch(.management(itemID: "c", action: .copyAsPlainText))
+
+        #expect(result.effects == [
+            .preview(.close),
+            .external(.copyItemsAsPlainText(itemIDs: ["a", "c"]))
         ])
     }
 

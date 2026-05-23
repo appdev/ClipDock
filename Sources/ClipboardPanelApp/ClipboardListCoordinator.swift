@@ -111,6 +111,7 @@ public enum ClipboardPinboardMutationRequest: Sendable, Equatable {
 public enum BatchMutationKind: Sendable, Equatable {
     case delete(pinboardID: String?)
     case setPinboardMembership(pinboardID: String, isMember: Bool)
+    case recordCopied
 }
 
 public enum BatchMutationOutcome: Sendable, Equatable {
@@ -501,7 +502,13 @@ public final class ClipboardListCoordinator {
             self.onBatchMutationCompleted?(batchResult)
 
             if successfulRequests.contains(where: { self.refreshAfterBatchMutationIsNeeded($0) }) {
-                self.refreshLoadedWindow()
+                let preservesScroll = successfulRequests.allSatisfy {
+                    if case .recordCopied = $0 {
+                        return true
+                    }
+                    return false
+                }
+                self.refreshLoadedWindow(preserveScrollPositionOnStructuralChange: preservesScroll)
             }
         }
     }
@@ -817,6 +824,8 @@ public final class ClipboardListCoordinator {
                 return isMember
                     ? AppLocalization.format("pinboard.status.batchJoined", defaultValue: "Pinboard：已加入 %lld 项", succeeded)
                     : AppLocalization.format("pinboard.status.batchRemoved", defaultValue: "Pinboard：已移除 %lld 项", succeeded)
+            case .recordCopied:
+                return AppLocalization.format("copy.status.batchRecentTimeUpdated", defaultValue: "复制：已更新 %lld 项最近时间", succeeded)
             }
         case .partialFailure:
             return AppLocalization.format("item.status.batchPartial", defaultValue: "条目：已处理 %lld/%lld 项", succeeded, Int64(total))

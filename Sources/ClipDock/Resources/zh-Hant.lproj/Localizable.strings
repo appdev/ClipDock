@@ -76,7 +76,7 @@
 "item.type.file" = "檔案";
 "item.type.image" = "圖片";
 "item.type.link" = "連結";
-"item.type.richText" = "RTF 文字";
+"item.type.richText" = "文字";
 "item.type.text" = "文字";
 "launchAtLogin.enabled" = "已加入登入項目";
 "launchAtLogin.notFound" = "可使用登入代理啟動";
@@ -130,7 +130,7 @@
 "pinboard.status.storageUninitialized" = "Pinboard：儲存未初始化";
 "pinboard.status.updatingColor" = "Pinboard：正在更新色彩…";
 "pinboard.untitled" = "未命名";
-"preferences.alwaysPlainText.detail" = "Paste text, rich text, links, and colors as plain text";
+"preferences.alwaysPlainText.detail" = "Paste text, links, and colors as plain text";
 "preferences.alwaysPlainText.title" = "Always paste as plain text";
 "preferences.appearanceMode.detail" = "Controls panel, settings, and previews";
 "preferences.appearanceMode.title" = "Display Mode";
@@ -206,9 +206,10 @@
 "preview.characterCount" = "%@ characters";
 "preview.close" = "關閉預覽";
 "preview.copyCountSuffix" = " · 複製 %lld 次";
-"preview.fileCount" = "%lld files";
+"preview.fileCount" = "%lld 個檔案";
 "preview.lineCount" = "%@ lines";
 "preview.loading" = "載入預覽";
+"preview.multipleFiles" = "多個檔案";
 "preview.unavailable" = "預覽不可用";
 "query.status.error" = "查詢：%@";
 "relativeTime.daysAgo" = "%lld 天前";

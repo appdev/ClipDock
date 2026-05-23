@@ -124,8 +124,8 @@ struct PanelItemCardPresentationTests {
             )
         )
 
-        #expect(presentation.symbolName == "doc.richtext")
-        #expect(presentation.displayType == "富文本")
+        #expect(presentation.symbolName == "doc.text")
+        #expect(presentation.displayType == "文本")
         #expect(presentation.summaryText == String((richText as NSString).substring(to: 500)))
         #expect((presentation.summaryText as NSString).length == 500)
         #expect(presentation.footnoteText == "\(richText.trimmingCharacters(in: .whitespacesAndNewlines).count) 个字符")
@@ -277,7 +277,7 @@ struct PanelItemCardPresentationTests {
             for: makeItem(
                 itemType: "file",
                 summary: "report.pdf · /tmp/report.pdf",
-                primaryText: "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt",
+                primaryText: "/Users/evan/Downloads/report.pdf",
                 copyCount: 3
             )
         )
@@ -285,13 +285,97 @@ struct PanelItemCardPresentationTests {
         #expect(presentation.symbolName == "folder")
         #expect(presentation.displayType == "文件")
         #expect(presentation.summaryText.isEmpty)
-        #expect(presentation.footnoteText == "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt")
+        #expect(presentation.footnoteText == "/Users/evan/Downloads/report.pdf")
         #expect(presentation.fileTitle == "report.pdf")
-        #expect(presentation.fileDetail == "/Users/evan/Downloads/report.pdf\n/Users/evan/Desktop/notes.txt")
+        #expect(presentation.fileDetail == "/Users/evan/Downloads/report.pdf")
     }
 
     @Test
-    func presentsFileWithoutStoredPathUsingPathFallback() {
+    func presentsSingleImageFileAsImageCard() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "file",
+                summary: "shot.png · /Users/evan/Desktop/shot.png",
+                primaryText: "/Users/evan/Desktop/shot.png",
+                fileItems: [
+                    RustClipboardFileItemSummary(
+                        path: "/Users/evan/Desktop/shot.png",
+                        fileName: "shot.png",
+                        fileExtension: "png",
+                        byteCount: 4096,
+                        isDirectory: false,
+                        width: 721,
+                        height: 679,
+                        contentType: "public.png"
+                    )
+                ]
+            )
+        )
+
+        #expect(presentation.symbolName == "photo")
+        #expect(presentation.displayType == "图片")
+        #expect(presentation.summaryText.isEmpty)
+        #expect(presentation.footnoteText == "721 × 679")
+        #expect(presentation.fileTitle == nil)
+        #expect(presentation.fileDetail == nil)
+    }
+
+    @Test
+    func presentsMultiFileCountAsHeaderTitle() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "file",
+                summary: "2 个文件 · first.png",
+                primaryText: "/Users/evan/Downloads/first.png\n/Users/evan/Desktop/second.jpg"
+            )
+        )
+
+        #expect(presentation.symbolName == "folder")
+        #expect(presentation.displayType == "2 个文件")
+        #expect(presentation.fileTitle == "2 个文件")
+        #expect(presentation.footnoteText == "多个文件")
+        #expect(presentation.fileDetail == "多个文件")
+    }
+
+    @Test
+    func presentsMultipleImageFilesAsMultiFileCard() {
+        let presentation = PanelItemCardPresenter.presentation(
+            for: makeItem(
+                itemType: "file",
+                summary: "2 个图片文件",
+                primaryText: "/Users/evan/Downloads/first.png\n/Users/evan/Desktop/second.jpg",
+                fileItems: [
+                    RustClipboardFileItemSummary(
+                        path: "/Users/evan/Downloads/first.png",
+                        fileName: "first.png",
+                        fileExtension: "png",
+                        byteCount: 1024,
+                        isDirectory: false,
+                        width: 96,
+                        height: 64,
+                        contentType: "public.png"
+                    ),
+                    RustClipboardFileItemSummary(
+                        path: "/Users/evan/Desktop/second.jpg",
+                        fileName: "second.jpg",
+                        fileExtension: "jpg",
+                        byteCount: 2048,
+                        isDirectory: false,
+                        width: 88,
+                        height: 66,
+                        contentType: "public.jpeg"
+                    )
+                ]
+            )
+        )
+
+        #expect(presentation.symbolName == "folder")
+        #expect(presentation.displayType == "2 个文件")
+        #expect(presentation.footnoteText == "多个文件")
+    }
+
+    @Test
+    func presentsMultiFileWithoutStoredPathUsingMultipleFilesLabel() {
         let presentation = PanelItemCardPresenter.presentation(
             for: makeItem(
                 itemType: "file",
@@ -302,8 +386,8 @@ struct PanelItemCardPresentationTests {
         )
 
         #expect(presentation.summaryText.isEmpty)
-        #expect(presentation.footnoteText == "本地文件路径")
-        #expect(presentation.fileDetail == "本地文件路径")
+        #expect(presentation.footnoteText == "多个文件")
+        #expect(presentation.fileDetail == "多个文件")
     }
 }
 
@@ -314,7 +398,8 @@ private func makeItem(
     isPinned: Bool = false,
     copyCount: Int64 = 1,
     sizeBytes: Int64 = 128,
-    linkMetadata: RustLinkMetadataSummary? = nil
+    linkMetadata: RustLinkMetadataSummary? = nil,
+    fileItems: [RustClipboardFileItemSummary] = []
 ) -> RustClipboardItemSummary {
     RustClipboardItemSummary(
         id: UUID().uuidString,
@@ -334,6 +419,7 @@ private func makeItem(
         isPinned: isPinned,
         sizeBytes: sizeBytes,
         previewState: "ready",
+        fileItems: fileItems,
         linkMetadata: linkMetadata
     )
 }

@@ -3,7 +3,9 @@ import Foundation
 public enum PanelExternalAction: Equatable, Sendable {
     case queryChanged(searchText: String, itemType: String?, sourceAppID: String?, pinboardID: String?, debounce: Bool)
     case copyItem(itemID: String)
+    case copyItems(itemIDs: [String])
     case copyItemAsPlainText(itemID: String)
+    case copyItemsAsPlainText(itemIDs: [String])
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
     case setPinboardMembershipBatch(itemIDs: [String], pinboardID: String, isMember: Bool)
     case deleteItem(itemID: String, pinboardID: String?)
@@ -38,7 +40,7 @@ public enum PanelInteractionAction: Equatable, Sendable {
     case startSearch(initialText: String)
     case dismissSearch
     case copyItem(itemID: String)
-    case copySelectedItem
+    case copySelection
     case deleteSelectedItem
     case selection(PanelSelectionIntent)
     case selectItem(id: String, scrollIntoView: Bool)
@@ -247,8 +249,10 @@ public final class PanelInteractionController {
                 .external(.copyItem(itemID: itemID))
             ])
 
-        case .copySelectedItem:
-            guard let selectedItemID = viewState.selectedItemID else {
+        case .copySelection:
+            let itemIDs = orderedSelectedItemIDs()
+            guard let selectedItemID = viewState.selectedItemID,
+                  !itemIDs.isEmpty else {
                 return makeResult()
             }
 
@@ -257,7 +261,7 @@ public final class PanelInteractionController {
             return makeResult(effects: [
                 .commandHints([:]),
                 .preview(.close),
-                .external(.copyItem(itemID: selectedItemID))
+                copyEffect(itemIDs: itemIDs)
             ])
 
         case .deleteSelectedItem:
@@ -383,17 +387,19 @@ public final class PanelInteractionController {
         case .management(let itemID, let action):
             switch action {
             case .copy:
+                let itemIDs = orderedSelectedItemIDs(containing: itemID)
                 contentController.copyItem(itemID: itemID)
                 return makeResult(effects: [
                     .preview(.close),
-                    .external(.copyItem(itemID: itemID))
+                    copyEffect(itemIDs: itemIDs)
                 ])
 
             case .copyAsPlainText:
+                let itemIDs = orderedSelectedItemIDs(containing: itemID)
                 contentController.copyItem(itemID: itemID)
                 return makeResult(effects: [
                     .preview(.close),
-                    .external(.copyItemAsPlainText(itemID: itemID))
+                    copyEffect(itemIDs: itemIDs, asPlainText: true)
                 ])
 
             case .delete:
@@ -476,6 +482,18 @@ public final class PanelInteractionController {
         let selectedItemIDs = contentController.orderedSelectedItemIDs()
         guard let itemID else { return selectedItemIDs }
         return selectedItemIDs.contains(itemID) ? selectedItemIDs : [itemID]
+    }
+
+    private func copyEffect(itemIDs: [String], asPlainText: Bool = false) -> PanelInteractionEffect {
+        if itemIDs.count == 1, let itemID = itemIDs.first {
+            return asPlainText
+                ? .external(.copyItemAsPlainText(itemID: itemID))
+                : .external(.copyItem(itemID: itemID))
+        }
+
+        return asPlainText
+            ? .external(.copyItemsAsPlainText(itemIDs: itemIDs))
+            : .external(.copyItems(itemIDs: itemIDs))
     }
 
     private func deleteEffect(itemIDs: [String]) -> PanelInteractionEffect {

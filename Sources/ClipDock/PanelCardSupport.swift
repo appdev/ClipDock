@@ -218,13 +218,17 @@ final class PanelCardAssetResolver {
         maximumSize: NSSize = NSSize(width: 96, height: 96),
         scale: CGFloat = NSScreen.main?.backingScaleFactor ?? 2
     ) -> NSImage? {
+        let urls = filePreviewURLs(for: request)
+        if isMultipleFileRequest(request, urls: urls) {
+            return Self.multipleFilesIcon()
+        }
+
         for path in existingPreviewImagePaths(paths: [request.previewAssetPath]) {
             if let image = Self.loadCachedImage(path: path) {
                 return image
             }
         }
 
-        let urls = filePreviewURLs(for: request)
         if let cachedThumbnail = Self.cachedFileThumbnail(
             urls: urls,
             maximumSize: maximumSize,
@@ -235,9 +239,7 @@ final class PanelCardAssetResolver {
 
         for url in urls {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
-            icon.size = NSSize(width: 96, height: 96)
-            return icon
+            return NSWorkspace.shared.icon(forFile: url.path)
         }
 
         return NSImage(systemSymbolName: "folder", accessibilityDescription: AppLocalization.itemTypeTitle("file"))
@@ -248,6 +250,10 @@ final class PanelCardAssetResolver {
             request.primaryText,
             appSupportDirectory: appSupportDirectory ?? defaultAppSupportDirectory()
         )
+    }
+
+    func isMultipleFileRequest(_ request: PanelCardAssetRequest, urls: [URL]? = nil) -> Bool {
+        max(request.fileCount, urls?.count ?? filePreviewURLs(for: request).count) > 1
     }
 
     @discardableResult
@@ -502,6 +508,11 @@ final class PanelCardAssetResolver {
         }
 
         return image
+    }
+
+    private static func multipleFilesIcon() -> NSImage? {
+        NSImage(named: NSImage.Name("NSMultipleDocuments"))
+            ?? NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: AppLocalization.text("preview.multipleFiles", defaultValue: "多个文件"))
     }
 
     private static func cachedImageInMemory(path: String) -> NSImage? {

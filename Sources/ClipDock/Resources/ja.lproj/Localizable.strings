@@ -76,7 +76,7 @@
 "item.type.file" = "ファイル";
 "item.type.image" = "画像";
 "item.type.link" = "リンク";
-"item.type.richText" = "リッチテキスト";
+"item.type.richText" = "テキスト";
 "item.type.text" = "テキスト";
 "launchAtLogin.enabled" = "ログイン項目に追加済み";
 "launchAtLogin.notFound" = "ログインエージェントで起動できます";
@@ -130,7 +130,7 @@
 "pinboard.status.storageUninitialized" = "Pinboard：ストレージが初期化されていません";
 "pinboard.status.updatingColor" = "Pinboard：カラーを更新中…";
 "pinboard.untitled" = "名称未設定";
-"preferences.alwaysPlainText.detail" = "Paste text, rich text, links, and colors as plain text";
+"preferences.alwaysPlainText.detail" = "Paste text, links, and colors as plain text";
 "preferences.alwaysPlainText.title" = "Always paste as plain text";
 "preferences.appearanceMode.detail" = "Controls panel, settings, and previews";
 "preferences.appearanceMode.title" = "Display Mode";
@@ -206,9 +206,10 @@
 "preview.characterCount" = "%@ characters";
 "preview.close" = "プレビューを閉じる";
 "preview.copyCountSuffix" = " · %lld 回コピー";
-"preview.fileCount" = "%lld files";
+"preview.fileCount" = "%lld 個のファイル";
 "preview.lineCount" = "%@ lines";
 "preview.loading" = "プレビューを読み込み中";
+"preview.multipleFiles" = "複数のファイル";
 "preview.unavailable" = "プレビューできません";
 "query.status.error" = "検索：%@";
 "relativeTime.daysAgo" = "%lld 日前";

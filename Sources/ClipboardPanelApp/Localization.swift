@@ -27,7 +27,7 @@ public enum AppLocalization {
         case "color":
             return text("item.type.color", defaultValue: "颜色")
         case "rich_text":
-            return text("item.type.richText", defaultValue: "富文本")
+            return text("item.type.text", defaultValue: "文本")
         default:
             return text("item.type.text", defaultValue: "文本")
         }

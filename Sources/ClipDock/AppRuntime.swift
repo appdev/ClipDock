@@ -1125,7 +1125,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let searchBar = PanelSearchBarView(searchField: searchField)
         searchBar.onActivateSearchField = { [weak self] in
             guard let self else { return }
-            self.window?.makeFirstResponder(self.searchField)
+            self.focusSearchField()
         }
         searchBar.onClear = { [weak self] in
             self?.handleCustomSearchClearButtonClick()
@@ -1843,7 +1843,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         if commandPressed,
            let character = event.charactersIgnoringModifiers?.lowercased() {
             if character == "c" {
-                applyInteractionAction(.copySelectedItem)
+                applyInteractionAction(.copySelection)
                 return true
             }
 
@@ -2121,9 +2121,17 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         case .copyItem(let itemID):
             guard let item = interactionController.item(withID: itemID) else { return }
             onRuntimeAction?(.copyItem(item))
+        case .copyItems(let itemIDs):
+            let items = resolvedItems(for: itemIDs)
+            guard !items.isEmpty else { return }
+            onRuntimeAction?(.copyItems(items))
         case .copyItemAsPlainText(let itemID):
             guard let item = interactionController.item(withID: itemID) else { return }
             onRuntimeAction?(.copyItemAsPlainText(item))
+        case .copyItemsAsPlainText(let itemIDs):
+            let items = resolvedItems(for: itemIDs)
+            guard !items.isEmpty else { return }
+            onRuntimeAction?(.copyItemsAsPlainText(items))
         case .setPinboardMembership(let itemID, let pinboardID, let isMember):
             guard let item = interactionController.item(withID: itemID) else { return }
             onRuntimeAction?(.setPinboardMembership(
@@ -2161,10 +2169,30 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func focus(_ target: PanelFocusTarget) {
         switch target {
         case .searchField:
-            window?.makeFirstResponder(searchField)
+            focusSearchField()
         case .panel:
             window?.makeFirstResponder(self)
         }
+    }
+
+    private func focusSearchField() {
+        guard let window else { return }
+        window.makeFirstResponder(searchField)
+        placeSearchInsertionPointAtEnd()
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.window?.firstResponder === self.searchField
+                    || self.window?.firstResponder === self.searchField.currentEditor()
+            else { return }
+
+            self.placeSearchInsertionPointAtEnd()
+        }
+    }
+
+    private func placeSearchInsertionPointAtEnd() {
+        guard let editor = searchField.currentEditor() else { return }
+        let endLocation = (searchField.stringValue as NSString).length
+        editor.selectedRange = NSRange(location: endLocation, length: 0)
     }
 
     private func applyPreviewRequest(_ request: PanelPreviewRequest) {
@@ -2670,7 +2698,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func handleCustomSearchClearButtonClick() {
         guard panelViewState().toolbar.isSearchVisible else { return }
         applyInteractionAction(.clearSearchText)
-        window?.makeFirstResponder(searchField)
+        focusSearchField()
         updateSearchChromeState()
     }
 
@@ -3058,6 +3086,10 @@ extension FloatingPanelContentView {
 
     var smokeSearchText: String {
         panelViewState().toolbar.searchText
+    }
+
+    var smokeSearchFieldSelectedRange: NSRange? {
+        searchField.currentEditor()?.selectedRange
     }
 
     var smokeSearchFieldWidth: CGFloat {

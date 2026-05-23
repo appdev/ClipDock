@@ -77,9 +77,93 @@ struct PanelItemCardViewStateTests {
 
         #expect(state.preview == .file(accessibilityLabel: "Preview"))
         #expect(state.summaryText.isEmpty)
-        #expect(state.footnoteText == "/tmp/report.pdf\n/tmp/notes.txt")
+        #expect(state.footnoteText == "多个文件")
         #expect(state.assetRequest.payloadAssetPath == "snapshots/report.json")
         #expect(state.assetRequest.primaryText == "/tmp/report.pdf\n/tmp/notes.txt")
+        #expect(state.assetRequest.fileCount == 2)
+        #expect(state.typeText == "2 个文件")
+    }
+
+    @Test
+    func singleImageFileMapsToImagePreviewState() {
+        let item = makePanelItemCardStateItem(
+            id: "image-file-1",
+            itemType: "file",
+            summary: "image-file.png · /tmp/image-file.png",
+            primaryText: "/tmp/image-file.png",
+            fileItems: [
+                RustClipboardFileItemSummary(
+                    path: "/tmp/image-file.png",
+                    fileName: "image-file.png",
+                    fileExtension: "png",
+                    byteCount: 4096,
+                    isDirectory: false,
+                    width: 721,
+                    height: 679,
+                    contentType: "public.png"
+                )
+            ]
+        )
+
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: nil,
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        #expect(state.symbolName == "photo")
+        #expect(state.typeText == "图片")
+        #expect(state.footnoteText == "721 × 679")
+        #expect(state.preview == .image(
+            previewPath: "/tmp/image-file.png",
+            payloadPath: "/tmp/image-file.png",
+            summary: "image-file.png · /tmp/image-file.png"
+        ))
+        #expect(state.assetRequest.fileCount == 1)
+    }
+
+    @Test
+    func multipleImageFilesMapToMultiFilePreviewState() {
+        let item = makePanelItemCardStateItem(
+            id: "multi-image-file",
+            itemType: "file",
+            summary: "2 个图片文件",
+            primaryText: "/tmp/first.png\n/tmp/second.jpg",
+            fileItems: [
+                RustClipboardFileItemSummary(
+                    path: "/tmp/first.png",
+                    fileName: "first.png",
+                    fileExtension: "png",
+                    byteCount: 1024,
+                    isDirectory: false,
+                    width: 96,
+                    height: 64,
+                    contentType: "public.png"
+                ),
+                RustClipboardFileItemSummary(
+                    path: "/tmp/second.jpg",
+                    fileName: "second.jpg",
+                    fileExtension: "jpg",
+                    byteCount: 2048,
+                    isDirectory: false,
+                    width: 88,
+                    height: 66,
+                    contentType: "public.jpeg"
+                )
+            ]
+        )
+
+        let state = PanelItemCardViewStateAdapter.makeViewState(
+            for: item,
+            selectedItemID: nil,
+            relativeTimeFormatter: { _ in "now" }
+        )
+
+        #expect(state.symbolName == "folder")
+        #expect(state.typeText == "2 个文件")
+        #expect(state.footnoteText == "多个文件")
+        #expect(state.preview == .file(accessibilityLabel: "Preview"))
+        #expect(state.assetRequest.fileCount == 2)
     }
 
     @Test
@@ -291,6 +375,7 @@ private func makePanelItemCardStateItem(
     primaryText: String?,
     previewAssetPath: String? = nil,
     payloadAssetPath: String? = nil,
+    fileItems: [RustClipboardFileItemSummary] = [],
     linkMetadata: RustLinkMetadataSummary? = nil
 ) -> RustClipboardItemSummary {
     RustClipboardItemSummary(
@@ -311,6 +396,7 @@ private func makePanelItemCardStateItem(
         isPinned: false,
         sizeBytes: 2048,
         previewState: "ready",
+        fileItems: fileItems,
         linkMetadata: linkMetadata
     )
 }

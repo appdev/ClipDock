@@ -8,6 +8,7 @@ public struct PanelCardAssetRequest: Equatable, Sendable {
     public let previewAssetPath: String?
     public let payloadAssetPath: String?
     public let primaryText: String?
+    public let fileCount: Int
 
     public init(
         sourceAppId: String? = nil,
@@ -16,7 +17,8 @@ public struct PanelCardAssetRequest: Equatable, Sendable {
         sourceAppIconHeaderColor: Int64? = nil,
         previewAssetPath: String? = nil,
         payloadAssetPath: String? = nil,
-        primaryText: String? = nil
+        primaryText: String? = nil,
+        fileCount: Int = 0
     ) {
         self.sourceAppId = sourceAppId
         self.sourceAppName = sourceAppName
@@ -25,6 +27,7 @@ public struct PanelCardAssetRequest: Equatable, Sendable {
         self.previewAssetPath = previewAssetPath
         self.payloadAssetPath = payloadAssetPath
         self.primaryText = primaryText
+        self.fileCount = fileCount
     }
 }
 
@@ -90,6 +93,7 @@ public enum PanelItemCardViewStateAdapter {
         selectedItemIDs: Set<String> = [],
         relativeTimeFormatter: (Int64) -> String = PanelItemCardViewStateAdapter.defaultRelativeTimeText(from:)
     ) -> PanelItemCardViewState {
+        let imageFileVisual = ClipboardFileVisualClassifier.singleImageFileVisual(for: item)
         let presentation = PanelItemCardPresenter.presentation(for: item)
         let sourceAppName = item.sourceAppName
             ?? AppLocalization.text("source.unknown", defaultValue: "未知来源")
@@ -110,7 +114,8 @@ public enum PanelItemCardViewStateAdapter {
             preview: previewState(
                 item: item,
                 presentation: presentation,
-                sourceAppName: sourceAppName
+                sourceAppName: sourceAppName,
+                imageFileVisual: imageFileVisual
             ),
             assetRequest: PanelCardAssetRequest(
                 sourceAppId: item.sourceAppId,
@@ -119,7 +124,8 @@ public enum PanelItemCardViewStateAdapter {
                 sourceAppIconHeaderColor: item.sourceAppIconHeaderColor,
                 previewAssetPath: item.previewAssetPath,
                 payloadAssetPath: item.payloadAssetPath,
-                primaryText: item.primaryText
+                primaryText: item.primaryText,
+                fileCount: PanelItemCardPresenter.fileCount(for: item)
             )
         )
     }
@@ -127,7 +133,8 @@ public enum PanelItemCardViewStateAdapter {
     private static func previewState(
         item: RustClipboardItemSummary,
         presentation: PanelItemCardPresentation,
-        sourceAppName: String
+        sourceAppName: String,
+        imageFileVisual: ClipboardSingleImageFileVisual?
     ) -> PanelCardPreviewState {
         switch item.itemType {
         case "image":
@@ -146,6 +153,13 @@ public enum PanelItemCardViewStateAdapter {
                 accessibilityLabel: sourceAppName
             )
         case "file":
+            if let imageFileVisual {
+                return .image(
+                    previewPath: imageFileVisual.previewPath,
+                    payloadPath: imageFileVisual.previewPath,
+                    summary: item.summary
+                )
+            }
             return .file(accessibilityLabel: sourceAppName)
         case "color":
             guard let colorValue = presentation.colorValue else {

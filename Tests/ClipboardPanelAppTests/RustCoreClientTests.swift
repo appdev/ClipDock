@@ -1040,6 +1040,308 @@ struct RustCoreClientTests {
     }
 
     @Test
+    func plansMultiItemPastePayloadFromSelectedItemsInOrder() {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let items = [
+            makePastePayloadPlannerItem(id: "a", itemType: "text", primaryText: "First"),
+            makePastePayloadPlannerItem(id: "b", itemType: "link", primaryText: "https://example.com"),
+            makePastePayloadPlannerItem(id: "c", itemType: "color", primaryText: "#ff00aa")
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["a"],
+                representations: [.string("First")]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["b"],
+                representations: [.string("https://example.com")]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["c"],
+                representations: [.string("#FF00AA")]
+            )
+        ]))
+    }
+
+    @Test
+    func plansMixedTextAndImageAsTextOnlyPasteboardItems() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = tempDirectory.appendingPathComponent("assets/paste.png")
+        try FileManager.default.createDirectory(
+            at: imageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("png payload".utf8).write(to: imageURL)
+        let items = [
+            makePastePayloadPlannerItem(id: "text", itemType: "text", primaryText: "First"),
+            makePastePayloadPlannerItem(
+                id: "image",
+                itemType: "image",
+                primaryText: nil,
+                payloadAssetPath: "assets/paste.png"
+            )
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["text"],
+                representations: [.string("First")]
+            )
+        ]))
+    }
+
+    @Test
+    func plansMixedImageAndFileAsCopyableMediaAndFileItems() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = tempDirectory.appendingPathComponent("assets/paste.png")
+        let fileURL = tempDirectory.appendingPathComponent("documents/report.pdf")
+        try FileManager.default.createDirectory(
+            at: imageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("png payload".utf8).write(to: imageURL)
+        try Data("file payload".utf8).write(to: fileURL)
+        let items = [
+            makePastePayloadPlannerItem(
+                id: "image",
+                itemType: "image",
+                primaryText: nil,
+                payloadAssetPath: "assets/paste.png"
+            ),
+            makePastePayloadPlannerItem(
+                id: "file",
+                itemType: "file",
+                primaryText: fileURL.path
+            )
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["image"],
+                representations: [.imageFile(imageURL)]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["file"],
+                representations: [.fileURL(fileURL.standardizedFileURL)]
+            )
+        ]))
+    }
+
+    @Test
+    func plansMixedImageAndImageFileAsImagePasteboardItems() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = tempDirectory.appendingPathComponent("assets/paste.png")
+        let imageFileURL = tempDirectory.appendingPathComponent("documents/screenshot.png")
+        try FileManager.default.createDirectory(
+            at: imageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: imageFileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("png payload".utf8).write(to: imageURL)
+        try Data("image file payload".utf8).write(to: imageFileURL)
+        let items = [
+            makePastePayloadPlannerItem(
+                id: "image",
+                itemType: "image",
+                primaryText: nil,
+                payloadAssetPath: "assets/paste.png"
+            ),
+            makePastePayloadPlannerItem(
+                id: "image-file",
+                itemType: "file",
+                primaryText: imageFileURL.path
+            )
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["image"],
+                representations: [.imageFile(imageURL)]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["image-file"],
+                representations: [.imageFile(imageFileURL.standardizedFileURL)]
+            )
+        ]))
+    }
+
+    @Test
+    func plansMultipleImagePasteboardItems() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let firstURL = tempDirectory.appendingPathComponent("assets/first.png")
+        let secondURL = tempDirectory.appendingPathComponent("assets/second.png")
+        try FileManager.default.createDirectory(
+            at: firstURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("first image".utf8).write(to: firstURL)
+        try Data("second image".utf8).write(to: secondURL)
+        let items = [
+            makePastePayloadPlannerItem(
+                id: "first",
+                itemType: "image",
+                primaryText: nil,
+                payloadAssetPath: "assets/first.png"
+            ),
+            makePastePayloadPlannerItem(
+                id: "second",
+                itemType: "image",
+                primaryText: nil,
+                payloadAssetPath: "assets/second.png"
+            )
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["first"],
+                representations: [.imageFile(firstURL)]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["second"],
+                representations: [.imageFile(secondURL)]
+            )
+        ]))
+    }
+
+    @Test
+    func plansRichTextAndTextPasteboardItemsWithRTFFallback() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let rtfURL = tempDirectory.appendingPathComponent("assets/rich.rtf")
+        try FileManager.default.createDirectory(
+            at: rtfURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data(#"{\rtf1\ansi Rich}"#.utf8).write(to: rtfURL)
+        let items = [
+            makePastePayloadPlannerItem(
+                id: "rich",
+                itemType: "rich_text",
+                primaryText: "Rich",
+                payloadAssetPath: "assets/rich.rtf"
+            ),
+            makePastePayloadPlannerItem(id: "text", itemType: "text", primaryText: "Plain")
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["rich"],
+                representations: [.rtf(rtfURL), .string("Rich")]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["text"],
+                representations: [.string("Plain")]
+            )
+        ]))
+    }
+
+    @Test
+    func plansPlainTextBatchBySkippingMediaItems() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = tempDirectory.appendingPathComponent("assets/paste.png")
+        try FileManager.default.createDirectory(
+            at: imageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("png payload".utf8).write(to: imageURL)
+        let items = [
+            makePastePayloadPlannerItem(id: "text", itemType: "text", primaryText: "First"),
+            makePastePayloadPlannerItem(
+                id: "image",
+                itemType: "image",
+                primaryText: nil,
+                payloadAssetPath: "assets/paste.png"
+            ),
+            makePastePayloadPlannerItem(id: "link", itemType: "link", primaryText: "https://example.com")
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["text", "link"],
+                representations: [.string("First\nhttps://example.com")]
+            )
+        ]))
+    }
+
+    @Test
+    func plansPlainTextBatchWithOnlyImagesAsUnsupported() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let imageURL = tempDirectory.appendingPathComponent("assets/paste.png")
+        try FileManager.default.createDirectory(
+            at: imageURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("png payload".utf8).write(to: imageURL)
+        let items = [
+            makePastePayloadPlannerItem(
+                id: "image",
+                itemType: "image",
+                primaryText: nil,
+                payloadAssetPath: "assets/paste.png"
+            )
+        ]
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items + items,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        )
+
+        #expect(payload == .unsupported(reason: "unsupported_type"))
+    }
+
+    @Test
     func plansRichTextPastePayloadFromRTFAssetWithPlainFallback() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1248,6 +1550,96 @@ struct RustCoreClientTests {
     }
 
     @Test
+    func plansImageFilePastePayloadAsImage() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let imageFileURL = tempDirectory.appendingPathComponent("copied-screenshot.webp")
+        try Data("image file payload".utf8).write(to: imageFileURL)
+        let item = makePastePayloadPlannerItem(
+            id: "image-file",
+            itemType: "file",
+            primaryText: imageFileURL.path
+        )
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .imageFile(imageFileURL.standardizedFileURL))
+        #expect(ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory,
+            alwaysPasteAsPlainText: true
+        ) == .imageFile(imageFileURL.standardizedFileURL))
+    }
+
+    @Test
+    func plansMultipleImageFileURLsAsSeparateImagePasteboardItems() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let firstImageFileURL = tempDirectory.appendingPathComponent("first.png")
+        let secondImageFileURL = tempDirectory.appendingPathComponent("second.webp")
+        try Data("first image file payload".utf8).write(to: firstImageFileURL)
+        try Data("second image file payload".utf8).write(to: secondImageFileURL)
+        let item = makePastePayloadPlannerItem(
+            id: "image-files",
+            itemType: "file",
+            primaryText: "\(firstImageFileURL.path)\n\(secondImageFileURL.path)"
+        )
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["image-files"],
+                representations: [.imageFile(firstImageFileURL.standardizedFileURL)]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["image-files"],
+                representations: [.imageFile(secondImageFileURL.standardizedFileURL)]
+            )
+        ]))
+    }
+
+    @Test
+    func plansMixedImageAndDocumentFileURLsAsSeparatePasteboardItems() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        let imageFileURL = tempDirectory.appendingPathComponent("screenshot.png")
+        let documentURL = tempDirectory.appendingPathComponent("notes.pdf")
+        try Data("image file payload".utf8).write(to: imageFileURL)
+        try Data("document file payload".utf8).write(to: documentURL)
+        let item = makePastePayloadPlannerItem(
+            id: "mixed-files",
+            itemType: "file",
+            primaryText: "\(imageFileURL.path)\n\(documentURL.path)"
+        )
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(payload == .pasteboardItems([
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["mixed-files"],
+                representations: [.imageFile(imageFileURL.standardizedFileURL)]
+            ),
+            ClipboardPasteboardItemPayload(
+                sourceItemIDs: ["mixed-files"],
+                representations: [.fileURL(documentURL.standardizedFileURL)]
+            )
+        ]))
+    }
+
+    @Test
     func plansTextPreviewContentFromCapturedItem() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1314,7 +1706,7 @@ struct RustCoreClientTests {
         )
 
         #expect(preview.itemType == "rich_text")
-        #expect(preview.subtitle == "富文本")
+        #expect(preview.subtitle == "文本")
         #expect(preview.body == "Preview rich")
         #expect(preview.richTextURL == rtfURL)
         #expect(preview.imageURL == nil)
@@ -1503,4 +1895,33 @@ private func writeBridgeWebP(
     data.append(payload)
     try data.write(to: url)
     return BridgeWebPFixture(url: url, byteCount: data.count)
+}
+
+private func makePastePayloadPlannerItem(
+    id: String,
+    itemType: String,
+    primaryText: String?,
+    payloadAssetPath: String? = nil,
+    payloadState: String = "ready"
+) -> RustClipboardItemSummary {
+    RustClipboardItemSummary(
+        id: id,
+        itemType: itemType,
+        summary: primaryText ?? id,
+        primaryText: primaryText,
+        contentHash: id,
+        sourceAppId: nil,
+        sourceAppName: nil,
+        sourceAppIconPath: nil,
+        previewAssetPath: nil,
+        payloadAssetPath: payloadAssetPath,
+        sourceConfidence: "high",
+        firstCopiedAtMs: 1,
+        lastCopiedAtMs: 1,
+        copyCount: 1,
+        isPinned: false,
+        sizeBytes: 1,
+        previewState: "ready",
+        payloadState: payloadState
+    )
 }

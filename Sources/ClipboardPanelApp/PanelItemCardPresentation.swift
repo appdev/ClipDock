@@ -42,13 +42,14 @@ public enum PanelItemCardPresenter {
         for item: RustClipboardItemSummary,
         byteCountFormatter: (Int64) -> String = { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
     ) -> PanelItemCardPresentation {
-        let displayType = displayType(for: item)
+        let imageFileVisual = ClipboardFileVisualClassifier.singleImageFileVisual(for: item)
+        let displayType = displayType(for: item, imageFileVisual: imageFileVisual)
         let linkMetadata = linkPresentation(for: item)
         let fileMetadata = filePresentation(for: item)
         let colorValue = colorPresentation(for: item)
 
         return PanelItemCardPresentation(
-            symbolName: symbolName(forItemType: item.itemType),
+            symbolName: symbolName(forItemType: item.itemType, imageFileVisual: imageFileVisual),
             displayType: displayType,
             summaryText: summaryText(
                 for: item,
@@ -58,14 +59,15 @@ public enum PanelItemCardPresenter {
                 for: item,
                 linkMetadata: linkMetadata,
                 fileMetadata: fileMetadata,
+                imageFileVisual: imageFileVisual,
                 colorValue: colorValue,
                 byteCountFormatter: byteCountFormatter
             ),
             linkHost: item.itemType == "link" ? linkMetadata.host : nil,
             linkDetail: item.itemType == "link" ? linkMetadata.detail : nil,
             linkTitle: item.itemType == "link" ? linkMetadata.title : nil,
-            fileTitle: item.itemType == "file" ? fileMetadata.title : nil,
-            fileDetail: item.itemType == "file" ? fileMetadata.detail : nil,
+            fileTitle: item.itemType == "file" && imageFileVisual == nil ? fileMetadata.title : nil,
+            fileDetail: item.itemType == "file" && imageFileVisual == nil ? fileMetadata.detail : nil,
             colorValue: item.itemType == "color" ? colorValue : nil
         )
     }
@@ -78,7 +80,14 @@ public enum PanelItemCardPresenter {
             : ""
     }
 
-    private static func symbolName(forItemType itemType: String) -> String {
+    private static func symbolName(
+        forItemType itemType: String,
+        imageFileVisual: ClipboardSingleImageFileVisual?
+    ) -> String {
+        if itemType == "file", imageFileVisual != nil {
+            return "photo"
+        }
+
         switch itemType {
         case "link":
             return "link"
@@ -89,14 +98,40 @@ public enum PanelItemCardPresenter {
         case "color":
             return "paintpalette"
         case "rich_text":
-            return "doc.richtext"
+            return "doc.text"
         default:
             return "doc.text"
         }
     }
 
-    private static func displayType(for item: RustClipboardItemSummary) -> String {
-        AppLocalization.itemTypeTitle(item.itemType)
+    private static func displayType(
+        for item: RustClipboardItemSummary,
+        imageFileVisual: ClipboardSingleImageFileVisual?
+    ) -> String {
+        if item.itemType == "file" {
+            if imageFileVisual != nil {
+                return AppLocalization.itemTypeTitle("image")
+            }
+
+            let count = fileCount(for: item)
+            if count > 1 {
+                return multipleFileTitle(count: count)
+            }
+        }
+
+        return AppLocalization.itemTypeTitle(item.itemType)
+    }
+
+    static func fileCount(for item: RustClipboardItemSummary) -> Int {
+        ClipboardFileVisualClassifier.fileCount(for: item)
+    }
+
+    static func multipleFileTitle(count: Int) -> String {
+        AppLocalization.format("preview.fileCount", defaultValue: "%lld 个文件", Int64(count))
+    }
+
+    static func multipleFilesLabel() -> String {
+        AppLocalization.text("preview.multipleFiles", defaultValue: "多个文件")
     }
 
     private static func summaryText(
@@ -143,6 +178,7 @@ public enum PanelItemCardPresenter {
         for item: RustClipboardItemSummary,
         linkMetadata: (host: String, detail: String, title: String?),
         fileMetadata: (title: String, detail: String),
+        imageFileVisual: ClipboardSingleImageFileVisual?,
         colorValue: ClipboardColorValue?,
         byteCountFormatter: (Int64) -> String
     ) -> String {
@@ -154,6 +190,9 @@ public enum PanelItemCardPresenter {
                 ? compactLinkDisplayText(from: linkMetadata.detail)
                 : linkMetadata.host
         case "file":
+            if let imageFileVisual {
+                return imageFileVisual.resolutionText
+            }
             return fileMetadata.detail
         case "color":
             return colorValue == nil
@@ -227,6 +266,11 @@ public enum PanelItemCardPresenter {
     }
 
     private static func filePresentation(for item: RustClipboardItemSummary) -> (title: String, detail: String) {
+        let count = fileCount(for: item)
+        if count > 1 {
+            return (multipleFileTitle(count: count), multipleFilesLabel())
+        }
+
         let summary = item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let primaryPathText = item.primaryText?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !summary.isEmpty else {

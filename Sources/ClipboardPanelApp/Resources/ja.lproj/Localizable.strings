@@ -16,6 +16,8 @@
 "color.format.unavailable" = "カラー形式を利用できません";
 "copy.status.recentTimeUpdated" = "コピー：最近の時刻を更新しました";
 "file.localPath" = "ローカルファイルパス";
+"preview.fileCount" = "%lld 個のファイル";
+"preview.multipleFiles" = "複数のファイル";
 "item.footnote.characters" = "%lld 文字";
 "item.status.cleared" = "項目：%lld 件を消去しました";
 "item.status.deleted" = "項目：削除しました";
@@ -27,7 +29,7 @@
 "item.type.file" = "ファイル";
 "item.type.image" = "画像";
 "item.type.link" = "リンク";
-"item.type.richText" = "リッチテキスト";
+"item.type.richText" = "テキスト";
 "item.type.text" = "テキスト";
 "launchAtLogin.enabled" = "ログイン項目に追加済み";
 "launchAtLogin.notFound" = "ログインエージェントで起動できます";

@@ -76,7 +76,7 @@
 "item.type.file" = "파일";
 "item.type.image" = "이미지";
 "item.type.link" = "링크";
-"item.type.richText" = "서식 있는 텍스트";
+"item.type.richText" = "텍스트";
 "item.type.text" = "텍스트";
 "launchAtLogin.enabled" = "로그인 항목에 추가됨";
 "launchAtLogin.notFound" = "로그인 에이전트로 시작할 수 있음";
@@ -130,7 +130,7 @@
 "pinboard.status.storageUninitialized" = "Pinboard: 저장소가 초기화되지 않음";
 "pinboard.status.updatingColor" = "Pinboard: 색상 업데이트 중…";
 "pinboard.untitled" = "제목 없음";
-"preferences.alwaysPlainText.detail" = "Paste text, rich text, links, and colors as plain text";
+"preferences.alwaysPlainText.detail" = "Paste text, links, and colors as plain text";
 "preferences.alwaysPlainText.title" = "Always paste as plain text";
 "preferences.appearanceMode.detail" = "Controls panel, settings, and previews";
 "preferences.appearanceMode.title" = "Display Mode";
@@ -206,9 +206,10 @@
 "preview.characterCount" = "%@ characters";
 "preview.close" = "미리보기 닫기";
 "preview.copyCountSuffix" = " · %lld회 복사됨";
-"preview.fileCount" = "%lld files";
+"preview.fileCount" = "%lld개 파일";
 "preview.lineCount" = "%@ lines";
 "preview.loading" = "미리보기 로드 중";
+"preview.multipleFiles" = "여러 파일";
 "preview.unavailable" = "미리보기를 사용할 수 없음";
 "query.status.error" = "쿼리: %@";
 "relativeTime.daysAgo" = "%lld일 전";

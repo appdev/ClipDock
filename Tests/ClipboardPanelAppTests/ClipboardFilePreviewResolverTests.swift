@@ -173,4 +173,45 @@ struct ClipboardFilePreviewResolverTests {
         #expect(preview.imageURL == thumbnailURL)
         #expect(preview.body == missingPath)
     }
+
+    @Test
+    func previewPlannerIgnoresStoredThumbnailForMultipleFiles() throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let thumbnailDirectory = tempDirectory.appendingPathComponent("thumbnails", isDirectory: true)
+        try FileManager.default.createDirectory(at: thumbnailDirectory, withIntermediateDirectories: true)
+        let thumbnailURL = thumbnailDirectory.appendingPathComponent("multi-file-thumb.png")
+        try Data("thumbnail".utf8).write(to: thumbnailURL)
+        let firstURL = tempDirectory.appendingPathComponent("first.png")
+        let secondURL = tempDirectory.appendingPathComponent("second.jpg")
+        try Data("first".utf8).write(to: firstURL)
+        try Data("second".utf8).write(to: secondURL)
+        let item = RustClipboardItemSummary(
+            id: "multi-file-preview",
+            itemType: "file",
+            summary: "2 个文件 · first.png",
+            primaryText: "\(firstURL.path)\n\(secondURL.path)",
+            contentHash: "multi-file-preview",
+            sourceAppId: "com.apple.finder",
+            sourceAppName: "Finder",
+            sourceAppIconPath: nil,
+            previewAssetPath: "thumbnails/multi-file-thumb.png",
+            payloadAssetPath: nil,
+            sourceConfidence: "high",
+            firstCopiedAtMs: 1,
+            lastCopiedAtMs: 1,
+            copyCount: 1,
+            isPinned: false,
+            sizeBytes: 12,
+            previewState: "ready"
+        )
+
+        let preview = ClipboardPreviewContentPlanner.preview(
+            for: item,
+            appSupportDirectory: tempDirectory
+        )
+
+        #expect(preview.fileURLs == [firstURL.standardizedFileURL, secondURL.standardizedFileURL])
+        #expect(preview.imageURL == nil)
+    }
 }

@@ -25,6 +25,65 @@ enum ClipboardRichTextPreviewStyler {
         ).attributedString
     }
 
+    static func inlineSurfaceAttributedString(
+        _ source: NSAttributedString,
+        bodyColor: NSColor,
+        surfaceColor: NSColor,
+        linkColor: NSColor = .linkColor
+    ) -> NSAttributedString {
+        inlineSurfaceDisplayPlan(
+            source,
+            bodyColor: bodyColor,
+            surfaceColor: surfaceColor,
+            linkColor: linkColor
+        ).attributedString
+    }
+
+    static func inlineSurfaceDisplayPlan(
+        _ source: NSAttributedString,
+        bodyColor: NSColor,
+        surfaceColor: NSColor,
+        linkColor: NSColor = .linkColor,
+        promotedBackgroundColor: NSColor? = nil
+    ) -> DisplayPlan {
+        let mutable = NSMutableAttributedString(attributedString: source)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+        guard fullRange.length > 0 else {
+            return DisplayPlan(attributedString: mutable, promotedBackgroundColor: nil)
+        }
+
+        let promotedBackgroundColor = promotedBackgroundColor
+            ?? contentBackgroundColor(in: source, surfaceColor: surfaceColor)
+        mutable.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+            let targetBackground = promotedBackgroundColor
+                ?? (attributes[.backgroundColor] as? NSColor)
+                ?? surfaceColor
+            let originalForeground = attributes[.foregroundColor] as? NSColor
+            let preferredFallback = attributes[.link] == nil ? bodyColor : linkColor
+            let displayForeground = adjustedForegroundColor(
+                originalForeground,
+                fallback: preferredFallback,
+                against: targetBackground
+            )
+            mutable.addAttribute(.foregroundColor, value: displayForeground, range: range)
+            if promotedBackgroundColor != nil {
+                mutable.removeAttribute(.backgroundColor, range: range)
+            }
+        }
+
+        return DisplayPlan(
+            attributedString: mutable,
+            promotedBackgroundColor: promotedBackgroundColor
+        )
+    }
+
+    static func promotedContentBackgroundColor(
+        _ source: NSAttributedString,
+        surfaceColor: NSColor
+    ) -> NSColor? {
+        contentBackgroundColor(in: source, surfaceColor: surfaceColor)
+    }
+
     static func displayPlan(
         _ source: NSAttributedString,
         bodyColor: NSColor,
@@ -135,11 +194,23 @@ enum ClipboardRichTextPreviewStyler {
             return fallback
         }
 
-        guard contrastRatio(color, background) < 3.0 else {
+        guard contrastRatio(color, background) < 2.0,
+              isLikelyDefaultTextColor(color)
+        else {
             return color
         }
 
         return fallback
+    }
+
+    private static func isLikelyDefaultTextColor(_ color: NSColor) -> Bool {
+        guard let rgb = color.usingColorSpace(.deviceRGB) else {
+            return true
+        }
+
+        let highest = max(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
+        let lowest = min(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
+        return highest - lowest < 0.08
     }
 
     private static func contrastRatio(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
@@ -932,7 +1003,7 @@ private final class ClipboardPreviewViewController: NSViewController {
         case "color":
             return AppLocalization.itemTypeTitle("color")
         case "rich_text":
-            return AppLocalization.itemTypeTitle("rich_text")
+            return AppLocalization.itemTypeTitle("text")
         default:
             return AppLocalization.itemTypeTitle("text")
         }

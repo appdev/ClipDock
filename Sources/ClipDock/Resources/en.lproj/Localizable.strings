@@ -76,7 +76,7 @@
 "item.type.file" = "File";
 "item.type.image" = "Image";
 "item.type.link" = "Link";
-"item.type.richText" = "Rich Text";
+"item.type.richText" = "Text";
 "item.type.text" = "Text";
 "launchAtLogin.enabled" = "Added to Login Items";
 "launchAtLogin.notFound" = "Can start with the login agent";
@@ -130,7 +130,7 @@
 "pinboard.status.storageUninitialized" = "Pinboard: Storage uninitialized";
 "pinboard.status.updatingColor" = "Pinboard: Updating color...";
 "pinboard.untitled" = "Untitled";
-"preferences.alwaysPlainText.detail" = "Paste text, rich text, links, and colors as plain text";
+"preferences.alwaysPlainText.detail" = "Paste text, links, and colors as plain text";
 "preferences.alwaysPlainText.title" = "Always paste as plain text";
 "preferences.appearanceMode.detail" = "Controls panel, settings, and previews";
 "preferences.appearanceMode.title" = "Display Mode";
@@ -209,6 +209,7 @@
 "preview.fileCount" = "%lld files";
 "preview.lineCount" = "%@ lines";
 "preview.loading" = "Loading preview";
+"preview.multipleFiles" = "Multiple files";
 "preview.unavailable" = "Preview unavailable";
 "query.status.error" = "Query: %@";
 "relativeTime.daysAgo" = "%lldd ago";

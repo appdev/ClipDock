@@ -74,6 +74,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case failure(message: String)
     }
 
+    private struct PasteboardWritingBatch {
+        var writings: [any NSPasteboardWriting] = []
+        var fileURLs: [URL] = []
+    }
+
+    private enum PasteboardWritingBatchResult {
+        case success(PasteboardWritingBatch)
+        case failure(message: String)
+    }
+
+    private enum PasteboardImageWriteResult {
+        case success(Bool)
+        case failure(message: String)
+    }
+
     private enum PanelToggleDebounce {
         static let duplicateEventInterval: TimeInterval = 0.04
     }
@@ -407,6 +422,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.panelController.invalidateCachedListPages()
                 }
                 self?.refreshPinboards()
+            case .recordCopied:
+                self?.panelController.invalidateCachedListPages()
             }
         }
         self.listCoordinator = listCoordinator
@@ -568,8 +585,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             case .copyItem(let item):
                 self?.copySelectedItemToPasteboard(item)
+            case .copyItems(let items):
+                self?.copySelectedItemsToPasteboard(items)
             case .copyItemAsPlainText(let item):
                 self?.copyItemAsPlainTextToPasteboard(item)
+            case .copyItemsAsPlainText(let items):
+                self?.copyItemsAsPlainTextToPasteboard(items)
             case .copyPath(let pathText):
                 self?.copyPathToPasteboard(pathText)
             case .setPinboardMembership(let item, let pinboardID, let isMember):
@@ -748,6 +769,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func copySelectedItemsToPasteboard(_ items: [RustClipboardItemSummary]) {
+        guard let firstItem = items.first else { return }
+        guard items.count > 1 else {
+            copySelectedItemToPasteboard(firstItem)
+            return
+        }
+        guard let appSupportURL else {
+            storageStatusText = AppLocalization.text("copy.status.storageUninitialized", defaultValue: "复制：存储未初始化")
+            refreshStatusText()
+            return
+        }
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: appSupportURL,
+            alwaysPasteAsPlainText: currentPreferences.shortcuts.alwaysPasteAsPlainText
+        )
+        let copiedItems = copiedItems(from: items, payload: payload)
+        copyItemsToPasteboard(copiedItems, payload: payload, statusText: AppLocalization.format(
+            "copy.status.batchWrittenToClipboard",
+            defaultValue: "复制：已写入 %lld 项",
+            Int64(copiedItems.count)
+        ))
+    }
+
     private func copyItemAsPlainTextToPasteboard(_ item: RustClipboardItemSummary) {
         let payload = ClipboardPastePayloadPlanner.plainTextPayload(for: item)
         let token = "self-\(UUID().uuidString)"
@@ -768,6 +814,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .failure(let message):
             storageStatusText = AppLocalization.format("copyPlainText.status.message", defaultValue: "复制为纯文本：%@", message)
+            refreshStatusText()
+        }
+    }
+
+    private func copyItemsAsPlainTextToPasteboard(_ items: [RustClipboardItemSummary]) {
+        guard let firstItem = items.first else { return }
+        guard items.count > 1 else {
+            copyItemAsPlainTextToPasteboard(firstItem)
+            return
+        }
+        guard let appSupportURL else {
+            storageStatusText = AppLocalization.text("copy.status.storageUninitialized", defaultValue: "复制：存储未初始化")
+            refreshStatusText()
+            return
+        }
+
+        let payload = ClipboardPastePayloadPlanner.payload(
+            for: items,
+            appSupportDirectory: appSupportURL,
+            alwaysPasteAsPlainText: true
+        )
+        let copiedItems = copiedItems(from: items, payload: payload)
+        copyItemsToPasteboard(copiedItems, payload: payload, statusText: AppLocalization.format(
+            "copyPlainText.status.batchWrittenToClipboard",
+            defaultValue: "复制为纯文本：已写入 %lld 项",
+            Int64(copiedItems.count)
+        ))
+    }
+
+    private func copiedItems(
+        from items: [RustClipboardItemSummary],
+        payload: ClipboardPastePayload
+    ) -> [RustClipboardItemSummary] {
+        let sourceItemIDs = payload.sourceItemIDs
+        guard !sourceItemIDs.isEmpty else {
+            return items
+        }
+
+        let itemByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        return sourceItemIDs.compactMap { itemByID[$0] }
+    }
+
+    private func copyItemsToPasteboard(
+        _ items: [RustClipboardItemSummary],
+        payload: ClipboardPastePayload,
+        statusText: String
+    ) {
+        let token = "self-\(UUID().uuidString)"
+        let startChangeCount = NSPasteboard.general.changeCount + 1
+
+        switch writeClipboardPayload(payload, token: token) {
+        case .success(let changeCount):
+            clipboardMonitor.markSelfWrite(
+                token: token,
+                from: startChangeCount,
+                through: changeCount
+            )
+            showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
+            let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
+            let didScheduleDirectPaste = pasteDirectlyToTarget && scheduleCommandVToTargetIfPermitted()
+            storageStatusText = if pasteDirectlyToTarget {
+                didScheduleDirectPaste
+                    ? AppLocalization.text("copy.status.sentToTarget", defaultValue: "复制：已发送到目标")
+                    : AppLocalization.text("copy.status.requiresAccessibility", defaultValue: "复制：请在辅助功能中允许 ClipDock")
+            } else {
+                statusText
+            }
+            refreshStatusText()
+            performItemBatchMutation(
+                items.map { .recordCopied(itemID: $0.id) },
+                summaryKind: .recordCopied
+            )
+            panelController.hideAfterCopyingSelection()
+            if didScheduleDirectPaste {
+                scheduleCommandVToTarget()
+            }
+
+        case .failure(let message):
+            storageStatusText = AppLocalization.format("copy.status.message", defaultValue: "复制：%@", message)
             refreshStatusText()
         }
     }
@@ -883,6 +1008,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
 
+        case .pasteboardItems(let itemPayloads):
+            guard !itemPayloads.isEmpty else {
+                return .failure(message: pasteUnsupportedReasonText("empty_selection"))
+            }
+
+            let writableItemPayloads = pasteboardItemPayloadsForWrite(itemPayloads)
+            guard !writableItemPayloads.isEmpty else {
+                return .failure(message: pasteUnsupportedReasonText("unsupported_type"))
+            }
+
+            var batch = PasteboardWritingBatch()
+            let compositeItem = shouldWriteCompositePasteboardItem(for: writableItemPayloads)
+                ? compositePasteboardItem(for: writableItemPayloads)
+                : nil
+            let rawItemPayloads = compositeItem == nil
+                ? writableItemPayloads
+                : writableItemPayloads.filter(shouldPreserveRawPasteboardItemAlongsideComposite)
+            for itemPayload in rawItemPayloads {
+                switch pasteboardWritingBatch(for: itemPayload) {
+                case .success(let itemBatch):
+                    batch.writings.append(contentsOf: itemBatch.writings)
+                    batch.fileURLs.append(contentsOf: itemBatch.fileURLs)
+                case .failure(let message):
+                    return .failure(message: message)
+                }
+            }
+
+            if let compositeItem {
+                batch.writings.insert(compositeItem, at: 0)
+            }
+
+            guard !batch.writings.isEmpty else {
+                return .failure(message: pasteUnsupportedReasonText("unsupported_type"))
+            }
+
+            pasteboard.clearContents()
+            didWrite = pasteboard.writeObjects(batch.writings)
+            if didWrite, !batch.fileURLs.isEmpty {
+                _ = pasteboard.setPropertyList(
+                    batch.fileURLs.map(\.path),
+                    forType: NSPasteboard.PasteboardType("NSFilenamesPboardType")
+                )
+            }
+
         case .unsupported(let reason):
             return .failure(message: pasteUnsupportedReasonText(reason))
         }
@@ -895,6 +1064,317 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = pasteboard.setString(token, forType: ClipboardMonitor.selfWriteTokenPasteboardType)
         }
         return .success(changeCount: pasteboard.changeCount)
+    }
+
+    private func pasteboardWritingBatch(
+        for itemPayload: ClipboardPasteboardItemPayload
+    ) -> PasteboardWritingBatchResult {
+        var batch = PasteboardWritingBatch()
+        let pasteboardItem = NSPasteboardItem()
+        var didSetPasteboardItemRepresentation = false
+
+        for representation in itemPayload.representations {
+            switch representation {
+            case .string(let text):
+                didSetPasteboardItemRepresentation = pasteboardItem.setString(text, forType: .string)
+                    || didSetPasteboardItemRepresentation
+
+            case .rtf(let url):
+                guard let rtfData = try? Data(contentsOf: url),
+                      !rtfData.isEmpty else {
+                    continue
+                }
+                didSetPasteboardItemRepresentation = pasteboardItem.setData(rtfData, forType: .rtf)
+                    || didSetPasteboardItemRepresentation
+                didSetPasteboardItemRepresentation = pasteboardItem.setData(
+                    rtfData,
+                    forType: NSPasteboard.PasteboardType("public.rtf")
+                ) || didSetPasteboardItemRepresentation
+
+            case .imageFile(let url):
+                switch writeImageRepresentations(to: pasteboardItem, url: url) {
+                case .success(let wroteImage):
+                    didSetPasteboardItemRepresentation = wroteImage || didSetPasteboardItemRepresentation
+                    if wroteImage {
+                        didSetPasteboardItemRepresentation = writeFileURLRepresentation(to: pasteboardItem, url: url)
+                            || didSetPasteboardItemRepresentation
+                        batch.fileURLs.append(url)
+                    }
+                case .failure(let message):
+                    return .failure(message: message)
+                }
+
+            case .fileURL(let url):
+                batch.writings.append(url as NSURL)
+                batch.fileURLs.append(url)
+            }
+        }
+
+        if didSetPasteboardItemRepresentation {
+            batch.writings.append(pasteboardItem)
+        }
+
+        return batch.writings.isEmpty
+            ? .failure(message: pasteUnsupportedReasonText("unsupported_type"))
+            : .success(batch)
+    }
+
+    private func writeImageRepresentations(
+        to pasteboardItem: NSPasteboardItem,
+        url: URL
+    ) -> PasteboardImageWriteResult {
+        let sourceData = try? Data(contentsOf: url)
+        let sourceType = pasteboardImageType(for: url)
+        let image = NSImage(contentsOf: url)
+        let tiffData = image?.tiffRepresentation
+        guard sourceData != nil || tiffData != nil else {
+            return .failure(message: AppLocalization.text("copy.error.imageDataCannotWrite", defaultValue: "图片数据无法写入"))
+        }
+
+        var wroteImage = false
+        if let sourceData, let sourceType {
+            wroteImage = pasteboardItem.setData(sourceData, forType: sourceType.primary) || wroteImage
+            for alias in sourceType.aliases {
+                wroteImage = pasteboardItem.setData(sourceData, forType: alias) || wroteImage
+            }
+        }
+
+        if let tiffData {
+            wroteImage = pasteboardItem.setData(tiffData, forType: .tiff) || wroteImage
+        }
+
+        return wroteImage
+            ? .success(true)
+            : .failure(message: AppLocalization.text("copy.error.imageDataCannotWrite", defaultValue: "图片数据无法写入"))
+    }
+
+    private func writeFileURLRepresentation(to pasteboardItem: NSPasteboardItem, url: URL) -> Bool {
+        pasteboardItem.setString(url.absoluteString, forType: .fileURL)
+    }
+
+    private func pasteboardItemPayloadsForWrite(
+        _ itemPayloads: [ClipboardPasteboardItemPayload]
+    ) -> [ClipboardPasteboardItemPayload] {
+        guard itemPayloads.contains(where: hasImageRepresentation),
+              itemPayloads.contains(where: hasTextRepresentation) else {
+            return itemPayloads
+        }
+
+        return itemPayloads.filter(hasTextRepresentation)
+    }
+
+    private func hasTextRepresentation(_ itemPayload: ClipboardPasteboardItemPayload) -> Bool {
+        itemPayload.representations.contains { representation in
+            switch representation {
+            case .string, .rtf:
+                true
+            case .imageFile, .fileURL:
+                false
+            }
+        }
+    }
+
+    private func hasImageRepresentation(_ itemPayload: ClipboardPasteboardItemPayload) -> Bool {
+        itemPayload.representations.contains { representation in
+            switch representation {
+            case .imageFile:
+                true
+            case .string, .rtf, .fileURL:
+                false
+            }
+        }
+    }
+
+    private func shouldWriteCompositePasteboardItem(
+        for itemPayloads: [ClipboardPasteboardItemPayload]
+    ) -> Bool {
+        guard itemPayloads.count > 1 else { return false }
+
+        return itemPayloads.allSatisfy { itemPayload in
+            itemPayload.representations.allSatisfy { representation in
+                switch representation {
+                case .string, .rtf:
+                    true
+                case .imageFile, .fileURL:
+                    false
+                }
+            }
+        }
+    }
+
+    private func shouldPreserveRawPasteboardItemAlongsideComposite(
+        _ itemPayload: ClipboardPasteboardItemPayload
+    ) -> Bool {
+        itemPayload.representations.contains { representation in
+            switch representation {
+            case .fileURL:
+                true
+            case .string, .rtf, .imageFile:
+                false
+            }
+        }
+    }
+
+    private func compositePasteboardItem(
+        for itemPayloads: [ClipboardPasteboardItemPayload]
+    ) -> NSPasteboardItem? {
+        guard itemPayloads.count > 1 else { return nil }
+
+        let attributedText = NSMutableAttributedString()
+        var htmlFragments: [String] = []
+        var plainTextFragments: [String] = []
+
+        for itemPayload in itemPayloads {
+            guard let compositeContent = compositeContent(for: itemPayload) else { continue }
+
+            if attributedText.length > 0 {
+                attributedText.append(NSAttributedString(string: "\n"))
+            }
+            attributedText.append(compositeContent.attributedText)
+            htmlFragments.append(compositeContent.html)
+            if !compositeContent.plainText.isEmpty {
+                plainTextFragments.append(compositeContent.plainText)
+            }
+        }
+
+        guard attributedText.length > 0 || !htmlFragments.isEmpty else {
+            return nil
+        }
+
+        let pasteboardItem = NSPasteboardItem()
+        var didSetRepresentation = false
+        let range = NSRange(location: 0, length: attributedText.length)
+        if attributedText.length > 0,
+           let rtfdData = try? attributedText.data(
+            from: range,
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+           ) {
+            didSetRepresentation = pasteboardItem.setData(rtfdData, forType: .rtfd)
+                || didSetRepresentation
+        }
+        if attributedText.length > 0,
+           let rtfData = try? attributedText.data(
+            from: range,
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+           ) {
+            didSetRepresentation = pasteboardItem.setData(rtfData, forType: .rtf)
+                || didSetRepresentation
+            didSetRepresentation = pasteboardItem.setData(
+                rtfData,
+                forType: NSPasteboard.PasteboardType("public.rtf")
+            ) || didSetRepresentation
+        }
+        if !htmlFragments.isEmpty {
+            let html = "<html><body>\(htmlFragments.joined(separator: "<br>"))</body></html>"
+            didSetRepresentation = pasteboardItem.setString(html, forType: .html)
+                || didSetRepresentation
+        }
+        if !plainTextFragments.isEmpty {
+            didSetRepresentation = pasteboardItem.setString(
+                plainTextFragments.joined(separator: "\n"),
+                forType: .string
+            ) || didSetRepresentation
+        }
+
+        return didSetRepresentation ? pasteboardItem : nil
+    }
+
+    private struct CompositePasteboardContent {
+        let attributedText: NSAttributedString
+        let html: String
+        let plainText: String
+    }
+
+    private func compositeContent(
+        for itemPayload: ClipboardPasteboardItemPayload
+    ) -> CompositePasteboardContent? {
+        if let rtfRepresentation = itemPayload.representations.compactMap(\.rtfURL).first,
+           let rtfData = try? Data(contentsOf: rtfRepresentation),
+           let attributedText = try? NSAttributedString(
+            data: rtfData,
+            options: [.documentType: NSAttributedString.DocumentType.rtf],
+            documentAttributes: nil
+           ) {
+            let plainText = itemPayload.representations.compactMap(\.stringValue).first ?? attributedText.string
+            return CompositePasteboardContent(
+                attributedText: attributedText,
+                html: escapeHTML(plainText),
+                plainText: plainText
+            )
+        }
+
+        let imageURLs = itemPayload.representations.compactMap(\.imageFileURL)
+        if !imageURLs.isEmpty {
+            let attributedText = NSMutableAttributedString()
+            let htmlFragments = imageURLs.compactMap(htmlImageFragment)
+            for imageURL in imageURLs {
+                guard let image = NSImage(contentsOf: imageURL) else { continue }
+                let attachment = NSTextAttachment()
+                attachment.image = image
+                attributedText.append(NSAttributedString(attachment: attachment))
+            }
+            if attributedText.length > 0 || !htmlFragments.isEmpty {
+                return CompositePasteboardContent(
+                    attributedText: attributedText,
+                    html: htmlFragments.joined(separator: "<br>"),
+                    plainText: ""
+                )
+            }
+        }
+
+        let fileURLText = itemPayload.representations
+            .compactMap(\.fileURL)
+            .map(\.path)
+        let textFragments = itemPayload.representations.compactMap(\.stringValue) + fileURLText
+        guard !textFragments.isEmpty else {
+            return nil
+        }
+        let text = textFragments.joined(separator: "\n")
+        return CompositePasteboardContent(
+            attributedText: NSAttributedString(string: text),
+            html: escapeHTML(text).replacingOccurrences(of: "\n", with: "<br>"),
+            plainText: text
+        )
+    }
+
+    private func htmlImageFragment(for url: URL) -> String? {
+        guard let mimeType = htmlImageMIMEType(for: url),
+              let data = try? Data(contentsOf: url),
+              !data.isEmpty else {
+            return nil
+        }
+
+        return #"<img src="data:\#(mimeType);base64,\#(data.base64EncodedString())">"#
+    }
+
+    private func htmlImageMIMEType(for url: URL) -> String? {
+        switch url.pathExtension.lowercased() {
+        case "webp":
+            return "image/webp"
+        case "heic":
+            return "image/heic"
+        case "heif":
+            return "image/heif"
+        case "jpg", "jpeg":
+            return "image/jpeg"
+        case "png":
+            return "image/png"
+        case "tif", "tiff":
+            return "image/tiff"
+        case "gif":
+            return "image/gif"
+        default:
+            return nil
+        }
+    }
+
+    private func escapeHTML(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     private func pasteboardImageType(
@@ -1183,7 +1663,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let error = result.storageError {
-            panelController.updateStorageState(.failure(error))
+            ClipDockPerformanceLog.event(
+                "capture.storageError.nonDestructive",
+                detail: "error=\(error.code)"
+            )
         }
 
         if result.shouldRefreshList {
@@ -1689,6 +2172,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+private extension ClipboardPasteboardItemRepresentation {
+    var stringValue: String? {
+        guard case .string(let value) = self else { return nil }
+        return value
+    }
+
+    var rtfURL: URL? {
+        guard case .rtf(let url) = self else { return nil }
+        return url
+    }
+
+    var imageFileURL: URL? {
+        guard case .imageFile(let url) = self else { return nil }
+        return url
+    }
+
+    var fileURL: URL? {
+        guard case .fileURL(let url) = self else { return nil }
+        return url
+    }
+}
+
 @MainActor
 extension AppDelegate {
     func smokePrepareRealFunctionQA(appSupportURL: URL) {
@@ -1720,6 +2225,10 @@ extension AppDelegate {
 
     func smokeCaptureClipboardText(_ text: String, changeCount: Int64) {
         captureClipboardText(text, changeCount: Int(changeCount))
+    }
+
+    func smokeApplyCaptureResultForRealFunctionQA(_ result: ClipboardCaptureHandlingResult) {
+        applyCaptureResult(result)
     }
 
     func smokeTogglePanelForRealFunctionQA() {
@@ -1802,6 +2311,16 @@ extension AppDelegate {
 
     var smokeStorageStatusTextForRealFunctionQA: String {
         storageStatusText
+    }
+
+    func smokeWriteClipboardPayloadForRealFunctionQA(_ payload: ClipboardPastePayload) -> Bool {
+        let token = "smoke-\(UUID().uuidString)"
+        switch writeClipboardPayload(payload, token: token) {
+        case .success:
+            return true
+        case .failure:
+            return false
+        }
     }
 
     func smokePerformBatchMutationForRealFunctionQA(

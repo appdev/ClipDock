@@ -1560,7 +1560,7 @@ private struct PreferenceGeneralSection: View {
                 PreferenceDivider()
                 PreferenceRow(
                     title: AppLocalization.text("preferences.alwaysPlainText.title", defaultValue: "始终以纯文本粘贴"),
-                    detail: AppLocalization.text("preferences.alwaysPlainText.detail", defaultValue: "文本、富文本、链接与颜色取用时写入纯文本")
+                    detail: AppLocalization.text("preferences.alwaysPlainText.detail", defaultValue: "文本、链接与颜色取用时写入纯文本")
                 ) {
                     Toggle(
                         "",
@@ -2915,7 +2915,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                         ),
                         makeSettingRow(
                             title: AppLocalization.text("preferences.alwaysPlainText.title", defaultValue: "始终以纯文本粘贴"),
-                            detail: AppLocalization.text("preferences.alwaysPlainText.detail", defaultValue: "文本、富文本、链接与颜色取用时写入纯文本"),
+                            detail: AppLocalization.text("preferences.alwaysPlainText.detail", defaultValue: "文本、链接与颜色取用时写入纯文本"),
                             control: makeSwitch(
                                 isOn: preferences.shortcuts.alwaysPasteAsPlainText
                             ) { [weak self] isOn in

@@ -16,6 +16,8 @@
 "color.format.unavailable" = "색상 형식을 사용할 수 없음";
 "copy.status.recentTimeUpdated" = "복사: 최근 시간 업데이트됨";
 "file.localPath" = "로컬 파일 경로";
+"preview.fileCount" = "%lld개 파일";
+"preview.multipleFiles" = "여러 파일";
 "item.footnote.characters" = "%lld자";
 "item.status.cleared" = "항목: %lld개 정리됨";
 "item.status.deleted" = "항목: 삭제됨";
@@ -27,7 +29,7 @@
 "item.type.file" = "파일";
 "item.type.image" = "이미지";
 "item.type.link" = "링크";
-"item.type.richText" = "서식 있는 텍스트";
+"item.type.richText" = "텍스트";
 "item.type.text" = "텍스트";
 "launchAtLogin.enabled" = "로그인 항목에 추가됨";
 "launchAtLogin.notFound" = "로그인 에이전트로 시작할 수 있음";

@@ -16,6 +16,8 @@
 "color.format.unavailable" = "Color format unavailable";
 "copy.status.recentTimeUpdated" = "Copy: Updated recent time";
 "file.localPath" = "Local file path";
+"preview.fileCount" = "%lld files";
+"preview.multipleFiles" = "Multiple files";
 "item.footnote.characters" = "%lld characters";
 "item.status.cleared" = "Items: Cleared %lld";
 "item.status.deleted" = "Item: Deleted";
@@ -27,7 +29,7 @@
 "item.type.file" = "File";
 "item.type.image" = "Image";
 "item.type.link" = "Link";
-"item.type.richText" = "Rich Text";
+"item.type.richText" = "Text";
 "item.type.text" = "Text";
 "launchAtLogin.enabled" = "Added to Login Items";
 "launchAtLogin.notFound" = "Can start with the login agent";

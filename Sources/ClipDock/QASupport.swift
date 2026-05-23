@@ -2063,6 +2063,7 @@ final class PanelInteractionSmokeProbe {
 
     private(set) var queries: [Query] = []
     var copiedItemID: String?
+    var copiedItemIDs: [String] = []
     private(set) var pinboardRequest: (itemID: String, pinboardID: String, isMember: Bool)?
     private(set) var deletedItemID: String?
     private(set) var hideCount = 0
@@ -2089,9 +2090,19 @@ final class PanelInteractionSmokeProbe {
                 ))
             case .copyItem(let item):
                 self?.copiedItemID = item.id
+                self?.copiedItemIDs = [item.id]
+                controller?.hideAfterCopyingSelection()
+            case .copyItems(let items):
+                self?.copiedItemID = items.first?.id
+                self?.copiedItemIDs = items.map(\.id)
                 controller?.hideAfterCopyingSelection()
             case .copyItemAsPlainText(let item):
                 self?.copiedItemID = item.id
+                self?.copiedItemIDs = [item.id]
+                controller?.hideAfterCopyingSelection()
+            case .copyItemsAsPlainText(let items):
+                self?.copiedItemID = items.first?.id
+                self?.copiedItemIDs = items.map(\.id)
                 controller?.hideAfterCopyingSelection()
             case .copyPath:
                 controller?.hideAfterCopyingSelection()

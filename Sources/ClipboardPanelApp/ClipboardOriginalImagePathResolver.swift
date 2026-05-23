@@ -90,7 +90,7 @@ public enum ClipboardOriginalImagePathResolver {
             .path
     }
 
-    private static func isImageFileItem(_ item: RustClipboardFileItemSummary) -> Bool {
+    public static func isImageFileItem(_ item: RustClipboardFileItemSummary) -> Bool {
         guard !item.isDirectory else { return false }
 
         if let contentType = item.contentType?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -107,7 +107,7 @@ public enum ClipboardOriginalImagePathResolver {
         return isImagePath(item.path)
     }
 
-    private static func isImagePath(_ path: String) -> Bool {
+    public static func isImagePath(_ path: String) -> Bool {
         let fileExtension = URL(fileURLWithPath: path).pathExtension
         return extensionConformsToImage(fileExtension)
     }
