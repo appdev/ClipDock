@@ -43,7 +43,7 @@ struct PanelPreviewRichTextStylerTests {
     }
 
     @Test
-    func inlineSurfaceStyleKeepsReadableBackgroundsWhileMappingDarkDefaults() {
+    func inlineSurfaceStylePromotesVisibleBackgroundToWholeSurface() {
         let bodyColor = NSColor(calibratedWhite: 0.88, alpha: 1)
         let darkSurface = NSColor(calibratedWhite: 0.08, alpha: 1)
         let source = NSMutableAttributedString(
@@ -59,9 +59,9 @@ struct PanelPreviewRichTextStylerTests {
             surfaceColor: darkSurface
         )
 
-        #expect(display.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == bodyColor)
+        #expect(display.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == NSColor.black)
         #expect(display.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor == NSColor.black)
-        #expect(display.attribute(.backgroundColor, at: 8, effectiveRange: nil) as? NSColor == NSColor.white)
+        #expect(display.attribute(.backgroundColor, at: 8, effectiveRange: nil) == nil)
         #expect(source.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == NSColor.black)
     }
 
@@ -94,16 +94,17 @@ struct PanelPreviewRichTextStylerTests {
     }
 
     @Test
-    func keepsInlineCodeBackgroundInline() {
+    func promotesAnyVisibleRichTextBackgroundToContentSurface() throws {
         let source = NSMutableAttributedString(string: "text displayRTF plain text")
+        let sourceBackground = NSColor(calibratedRed: 1, green: 0.985, blue: 0.90, alpha: 1)
         source.addAttribute(
             .backgroundColor,
-            value: NSColor(calibratedRed: 1, green: 0.96, blue: 0.82, alpha: 1),
+            value: sourceBackground,
             range: NSRange(location: 0, length: 4)
         )
         source.addAttribute(
             .backgroundColor,
-            value: NSColor(calibratedRed: 1, green: 0.96, blue: 0.82, alpha: 1),
+            value: sourceBackground,
             range: NSRange(location: 5, length: 10)
         )
 
@@ -112,8 +113,22 @@ struct PanelPreviewRichTextStylerTests {
             bodyColor: .black,
             surfaceColor: .white
         )
+        let promoted = try #require(plan.promotedBackgroundColor)
 
-        #expect(plan.promotedBackgroundColor == nil)
-        #expect(plan.attributedString.attribute(.backgroundColor, at: 0, effectiveRange: nil) != nil)
+        #expect(colorAndAlphaDistance(promoted, sourceBackground) < 0.01)
+        #expect(plan.attributedString.attribute(.backgroundColor, at: 0, effectiveRange: nil) == nil)
     }
+}
+
+private func colorAndAlphaDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+    guard let lhs = lhs.usingColorSpace(.sRGB),
+          let rhs = rhs.usingColorSpace(.sRGB)
+    else {
+        return .greatestFiniteMagnitude
+    }
+
+    return abs(lhs.redComponent - rhs.redComponent)
+        + abs(lhs.greenComponent - rhs.greenComponent)
+        + abs(lhs.blueComponent - rhs.blueComponent)
+        + abs(lhs.alphaComponent - rhs.alphaComponent)
 }

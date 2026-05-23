@@ -131,11 +131,9 @@ enum ClipboardRichTextPreviewStyler {
         guard fullRange.length > 0 else { return nil }
 
         var candidates: [String: (length: Int, color: NSColor)] = [:]
-        var coveredLength = 0
         source.enumerateAttribute(.backgroundColor, in: fullRange, options: []) { value, range, _ in
             guard let color = (value as? NSColor)?.usingColorSpace(.deviceRGB),
-                  color.alphaComponent >= 0.05,
-                  colorDistance(color, surfaceColor) >= 0.08
+                  color.alphaComponent >= 0.05
             else {
                 return
             }
@@ -146,20 +144,13 @@ enum ClipboardRichTextPreviewStyler {
                 length: (existing?.length ?? 0) + range.length,
                 color: existing?.color ?? color
             )
-            coveredLength += range.length
         }
 
-        guard coveredLength > 0,
-              let dominant = candidates.values.max(by: { $0.length < $1.length })
+        guard let dominant = candidates.values.max(by: { $0.length < $1.length })
         else {
             return nil
         }
 
-        let dominantCoverage = CGFloat(dominant.length) / CGFloat(fullRange.length)
-        let totalCoverage = CGFloat(coveredLength) / CGFloat(fullRange.length)
-        guard dominantCoverage >= 0.55 || (dominantCoverage >= 0.45 && totalCoverage >= 0.70) else {
-            return nil
-        }
         return dominant.color
     }
 
@@ -169,20 +160,6 @@ enum ClipboardRichTextPreviewStyler {
         let blue = Int((color.blueComponent * 255).rounded())
         let alpha = Int((color.alphaComponent * 255).rounded())
         return "\(red):\(green):\(blue):\(alpha)"
-    }
-
-    private static func colorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
-        guard let lhs = lhs.usingColorSpace(.deviceRGB),
-              let rhs = rhs.usingColorSpace(.deviceRGB)
-        else {
-            return 0
-        }
-
-        return max(
-            abs(lhs.redComponent - rhs.redComponent),
-            abs(lhs.greenComponent - rhs.greenComponent),
-            abs(lhs.blueComponent - rhs.blueComponent)
-        )
     }
 
     private static func adjustedForegroundColor(
