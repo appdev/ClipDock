@@ -37,30 +37,45 @@ struct LinkMetadataAssetWriteResult: Sendable, Equatable {
     let imageRelativePath: String?
 }
 
-actor LinkMetadataCoordinator {
-    private enum Defaults {
-        static let batchLimit: Int64 = 3
-        static let leaseTimeoutMs: Int64 = 60_000
-    }
+struct LinkMetadataCoordinatorConfiguration: Sendable, Equatable {
+    let maxConcurrentFetches: Int
+    let batchLimit: Int64
+    let leaseTimeoutMs: Int64
 
+    init(
+        maxConcurrentFetches: Int = 3,
+        batchLimit: Int64 = 6,
+        leaseTimeoutMs: Int64 = 60_000
+    ) {
+        self.maxConcurrentFetches = max(1, maxConcurrentFetches)
+        self.batchLimit = max(1, batchLimit)
+        self.leaseTimeoutMs = max(1, leaseTimeoutMs)
+    }
+}
+
+actor LinkMetadataCoordinator {
     private let coreClient: RustCoreClient
     private let appSupportDirectory: URL
+    private let configuration: LinkMetadataCoordinatorConfiguration
     private let fetcher: LinkMetadataFetching
     private let assetWriter: LinkMetadataAssetWriting
     private let onMetadataChanged: LinkMetadataChangeHandler
     private var isStopped = false
-    private var task: Task<Void, Never>?
+    private var schedulerTask: Task<Void, Never>?
+    private var activeFetchTasks: [String: Task<Void, Never>] = [:]
     private var rescheduleRequested = false
 
     init(
         coreClient: RustCoreClient,
         appSupportDirectory: URL,
+        configuration: LinkMetadataCoordinatorConfiguration = LinkMetadataCoordinatorConfiguration(),
         fetcher: LinkMetadataFetching = LinkPresentationMetadataFetcher(),
         assetWriter: LinkMetadataAssetWriting? = nil,
         onMetadataChanged: @escaping LinkMetadataChangeHandler
     ) {
         self.coreClient = coreClient
         self.appSupportDirectory = appSupportDirectory
+        self.configuration = configuration
         self.fetcher = fetcher
         self.assetWriter = assetWriter ?? LinkMetadataAssetWriter(appSupportDirectory: appSupportDirectory)
         self.onMetadataChanged = onMetadataChanged
@@ -74,11 +89,11 @@ actor LinkMetadataCoordinator {
 
     func scheduleSoon() {
         guard !isStopped else { return }
-        if task != nil {
+        if schedulerTask != nil {
             rescheduleRequested = true
             return
         }
-        task = Task { [weak self] in
+        schedulerTask = Task { [weak self] in
             await self?.runScheduledPass()
         }
     }
@@ -86,37 +101,61 @@ actor LinkMetadataCoordinator {
     func stop() {
         isStopped = true
         rescheduleRequested = false
-        task?.cancel()
-        task = nil
+        schedulerTask?.cancel()
+        schedulerTask = nil
+        for task in activeFetchTasks.values {
+            task.cancel()
+        }
+        activeFetchTasks.removeAll()
     }
 
     private func runScheduledPass() async {
         defer {
-            task = nil
+            schedulerTask = nil
             if !isStopped, rescheduleRequested {
                 rescheduleRequested = false
                 scheduleSoon()
             }
         }
         while !isStopped, !Task.isCancelled {
+            let availableSlots = configuration.maxConcurrentFetches - activeFetchTasks.count
+            guard availableSlots > 0 else { return }
+            let claimLimit = min(configuration.batchLimit, Int64(availableSlots))
             switch coreClient.claimLinkMetadataFetchBatch(
                 appSupportDirectory: appSupportDirectory,
-                limit: Defaults.batchLimit,
-                leaseTimeoutMs: Defaults.leaseTimeoutMs
+                limit: claimLimit,
+                leaseTimeoutMs: configuration.leaseTimeoutMs
             ) {
             case .success(let candidates):
                 guard !candidates.isEmpty else { return }
+                let activeCountBeforeStarting = activeFetchTasks.count
                 for candidate in candidates {
                     guard !isStopped, !Task.isCancelled else { break }
-                    await process(candidate)
+                    startProcessing(candidate)
                 }
-                if candidates.count < Defaults.batchLimit {
+                if candidates.count < claimLimit ||
+                    activeFetchTasks.count == activeCountBeforeStarting ||
+                    activeFetchTasks.count >= configuration.maxConcurrentFetches {
                     return
                 }
             case .failure:
                 return
             }
         }
+    }
+
+    private func startProcessing(_ candidate: RustLinkMetadataFetchCandidate) {
+        guard activeFetchTasks[candidate.itemId] == nil else { return }
+        activeFetchTasks[candidate.itemId] = Task { [weak self] in
+            await self?.process(candidate)
+            await self?.processDidFinish(itemID: candidate.itemId)
+        }
+    }
+
+    private func processDidFinish(itemID: String) {
+        activeFetchTasks[itemID] = nil
+        guard !isStopped else { return }
+        scheduleSoon()
     }
 
     private func process(_ candidate: RustLinkMetadataFetchCandidate) async {
@@ -249,13 +288,16 @@ enum LinkMetadataFetchError: Error, Equatable {
 
 final class LinkPresentationMetadataFetcher: LinkMetadataFetching, @unchecked Sendable {
     private let timeout: TimeInterval
+    private let metadataProvider: LinkMetadataProviderLoading
     private let imageFetcher: LinkMetadataPageImageFetching
 
     init(
-        timeout: TimeInterval = 30,
+        timeout: TimeInterval = 12,
+        metadataProvider: LinkMetadataProviderLoading = LinkPresentationMetadataProviderLoader(),
         imageFetcher: LinkMetadataPageImageFetching = OpenGraphLinkMetadataImageFetcher()
     ) {
         self.timeout = timeout
+        self.metadataProvider = metadataProvider
         self.imageFetcher = imageFetcher
     }
 
@@ -267,15 +309,41 @@ final class LinkPresentationMetadataFetcher: LinkMetadataFetching, @unchecked Se
             throw LinkMetadataFetchError.privacySensitive
         }
 
-        let payload = try await MetadataProviderBox(timeout: timeout).fetchPayload(url: url)
-        let images = await imageFetcher.fetchImages(for: payload.canonicalURL)
-        return LinkMetadataFetchPayload(
-            title: payload.title,
-            canonicalURL: payload.canonicalURL,
-            originalURL: payload.originalURL,
-            iconData: images.iconData,
-            previewData: images.previewData
-        )
+        async let originalImages = imageFetcher.fetchImages(for: url)
+        do {
+            let payload = try await metadataProvider.fetchPayload(url: url, timeout: timeout)
+            var images = await originalImages
+            if !images.hasAssets, payload.canonicalURL != url {
+                images = await imageFetcher.fetchImages(for: payload.canonicalURL)
+            }
+            return LinkMetadataFetchPayload(
+                title: payload.title,
+                canonicalURL: payload.canonicalURL,
+                originalURL: payload.originalURL,
+                iconData: images.iconData,
+                previewData: images.previewData
+            )
+        } catch {
+            let images = await originalImages
+            guard images.hasAssets else { throw error }
+            return LinkMetadataFetchPayload(
+                title: nil,
+                canonicalURL: url,
+                originalURL: url,
+                iconData: images.iconData,
+                previewData: images.previewData
+            )
+        }
+    }
+}
+
+protocol LinkMetadataProviderLoading: Sendable {
+    func fetchPayload(url: URL, timeout: TimeInterval) async throws -> LinkMetadataFetchPayload
+}
+
+struct LinkPresentationMetadataProviderLoader: LinkMetadataProviderLoading {
+    func fetchPayload(url: URL, timeout: TimeInterval) async throws -> LinkMetadataFetchPayload {
+        try await MetadataProviderBox(timeout: timeout).fetchPayload(url: url)
     }
 }
 
@@ -284,45 +352,122 @@ struct LinkMetadataFetchedImages: Sendable, Equatable {
     let previewData: LinkMetadataImagePayload?
 }
 
+private extension LinkMetadataFetchedImages {
+    var hasAssets: Bool {
+        iconData != nil || previewData != nil
+    }
+}
+
 protocol LinkMetadataPageImageFetching: Sendable {
     func fetchImages(for pageURL: URL) async -> LinkMetadataFetchedImages
 }
 
+private final class MetadataProviderContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<LinkMetadataFetchPayload, any Error>?
+    private var result: Result<LinkMetadataFetchPayload, any Error>?
+
+    func install(_ continuation: CheckedContinuation<LinkMetadataFetchPayload, any Error>) {
+        let storedResult: Result<LinkMetadataFetchPayload, any Error>?
+        lock.lock()
+        if let result {
+            storedResult = result
+        } else {
+            self.continuation = continuation
+            storedResult = nil
+        }
+        lock.unlock()
+
+        if let storedResult {
+            Self.resume(continuation, with: storedResult)
+        }
+    }
+
+    @discardableResult
+    func finish(_ result: Result<LinkMetadataFetchPayload, any Error>) -> Bool {
+        let continuation: CheckedContinuation<LinkMetadataFetchPayload, any Error>?
+        lock.lock()
+        guard self.result == nil else {
+            lock.unlock()
+            return false
+        }
+        self.result = result
+        continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+
+        if let continuation {
+            Self.resume(continuation, with: result)
+        }
+        return true
+    }
+
+    private static func resume(
+        _ continuation: CheckedContinuation<LinkMetadataFetchPayload, any Error>,
+        with result: Result<LinkMetadataFetchPayload, any Error>
+    ) {
+        switch result {
+        case .success(let payload):
+            continuation.resume(returning: payload)
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
+    }
+}
+
 private final class MetadataProviderBox: @unchecked Sendable {
     private let provider = LPMetadataProvider()
+    private let timeout: TimeInterval
 
     init(timeout: TimeInterval) {
+        self.timeout = timeout
         provider.timeout = timeout
         provider.shouldFetchSubresources = false
     }
 
     func fetchPayload(url: URL) async throws -> LinkMetadataFetchPayload {
-        try await withTaskCancellationHandler {
+        let gate = MetadataProviderContinuationGate()
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation(isolation: nil) { continuation in
+                gate.install(continuation)
+                let timeoutTask = Task { [provider, timeout] in
+                    try? await Task.sleep(nanoseconds: Self.timeoutNanoseconds(timeout))
+                    guard !Task.isCancelled else { return }
+                    if gate.finish(.failure(LinkMetadataFetchError.timedOut)) {
+                        provider.cancel()
+                    }
+                }
                 provider.startFetchingMetadata(for: url) { metadata, error in
+                    timeoutTask.cancel()
                     if let error = error as NSError? {
-                        continuation.resume(throwing: Self.fetchError(from: error))
+                        gate.finish(.failure(Self.fetchError(from: error)))
                         return
                     }
                     guard let metadata else {
-                        continuation.resume(throwing: LinkMetadataFetchError.provider)
+                        gate.finish(.failure(LinkMetadataFetchError.provider))
                         return
                     }
                     let title = Self.nonEmpty(metadata.title)
                     let canonicalURL = metadata.url ?? url
                     let originalURL = metadata.originalURL
-                    continuation.resume(returning: LinkMetadataFetchPayload(
+                    gate.finish(.success(LinkMetadataFetchPayload(
                         title: title,
                         canonicalURL: canonicalURL,
                         originalURL: originalURL,
                         iconData: nil,
                         previewData: nil
-                    ))
+                    )))
                 }
             }
         } onCancel: {
-            provider.cancel()
+            if gate.finish(.failure(LinkMetadataFetchError.cancelled)) {
+                provider.cancel()
+            }
         }
+    }
+
+    private static func timeoutNanoseconds(_ timeout: TimeInterval) -> UInt64 {
+        UInt64(max(timeout, 0.001) * 1_000_000_000)
     }
 
     private static func nonEmpty(_ value: String?) -> String? {
@@ -351,8 +496,8 @@ private final class MetadataProviderBox: @unchecked Sendable {
 
 final class OpenGraphLinkMetadataImageFetcher: LinkMetadataPageImageFetching, @unchecked Sendable {
     private enum Defaults {
-        static let pageTimeout: TimeInterval = 12
-        static let imageTimeout: TimeInterval = 12
+        static let pageTimeout: TimeInterval = 8
+        static let imageTimeout: TimeInterval = 6
         static let maxHTMLBytes = 512 * 1_024
         static let maxImageBytes = 5 * 1_024 * 1_024
         static let maxPreviewCandidates = 4
@@ -764,13 +909,7 @@ enum LinkMetadataURLPolicy {
     }
 
     static func isPrivacySensitive(_ url: URL) -> Bool {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              let host = components.host?.lowercased()
-        else {
-            return true
-        }
-
-        if host == "localhost" || host.hasSuffix(".local") || isPrivateIPAddress(host) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return true
         }
 
@@ -796,33 +935,5 @@ enum LinkMetadataURLPolicy {
                         || name.contains("\(keyword)-")
                 }
         } ?? false
-    }
-
-    private static func isPrivateIPAddress(_ host: String) -> Bool {
-        let host = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-        if host == "::1" || host == "0:0:0:0:0:0:0:1" {
-            return true
-        }
-        if host.contains(":") {
-            return host.hasPrefix("fc")
-                || host.hasPrefix("fd")
-                || host.hasPrefix("fe80:")
-        }
-        let parts = host.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 4 else { return false }
-        switch parts[0] {
-        case 10, 127:
-            return true
-        case 100:
-            return (64...127).contains(parts[1])
-        case 172:
-            return (16...31).contains(parts[1])
-        case 192:
-            return parts[1] == 168
-        case 169:
-            return parts[1] == 254
-        default:
-            return false
-        }
     }
 }

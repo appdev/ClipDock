@@ -1024,6 +1024,55 @@ fn privacy_sensitive_failure_does_not_auto_retry() {
 }
 
 #[test]
+fn recapturing_privacy_sensitive_failure_resets_metadata_pending() {
+    let (_, mut core) = open_temp_core();
+    let result = capture_pending_link(
+        &mut core,
+        "http://127.0.0.1:23000/",
+        "http://127.0.0.1:23000/",
+    );
+    let candidate = core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .unwrap()
+        .remove(0);
+
+    core.fail_link_metadata_fetch(
+        &result.item_id,
+        candidate.lease_started_at_ms,
+        "privacy_sensitive",
+        None,
+    )
+    .unwrap();
+
+    let recaptured = capture_pending_link(
+        &mut core,
+        "http://127.0.0.1:23000/",
+        "http://127.0.0.1:23000/",
+    );
+    assert_eq!(recaptured.item_id, result.item_id);
+
+    let metadata: (String, Option<String>, Option<i64>) = core
+        .connection
+        .query_row(
+            r#"
+            SELECT metadata_state, failure_code, next_retry_at_ms
+            FROM link_metadata
+            WHERE item_id = ?1
+            "#,
+            params![result.item_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(metadata, ("pending".to_string(), None, None));
+
+    let candidates = core
+        .claim_link_metadata_fetch_batch(1, 60_000)
+        .expect("claim reset privacy failure");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].item_id, recaptured.item_id);
+}
+
+#[test]
 fn capture_rich_text_inserts_rtf_asset_and_payload_path() {
     let (temp_dir, mut core) = open_temp_core();
     let rtf = br#"{\rtf1\ansi{\fonttbl\f0 Helvetica;}\f0\b Bold rich text\b0}"#;

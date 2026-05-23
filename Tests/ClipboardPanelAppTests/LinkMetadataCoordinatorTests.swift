@@ -95,6 +95,93 @@ struct LinkMetadataCoordinatorTests {
     }
 
     @Test
+    func coordinatorDoesNotBlockLaterLinksBehindPausedFetch() async throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+        try capturePendingLink(
+            client: client,
+            appSupportDirectory: tempDirectory,
+            urlText: "https://example.com/first",
+            changeCount: 1
+        )
+        try capturePendingLink(
+            client: client,
+            appSupportDirectory: tempDirectory,
+            urlText: "https://example.com/second",
+            changeCount: 2
+        )
+        let fetcher = PausingLinkMetadataFetcher()
+        let coordinator = LinkMetadataCoordinator(
+            coreClient: client,
+            appSupportDirectory: tempDirectory,
+            configuration: LinkMetadataCoordinatorConfiguration(maxConcurrentFetches: 2),
+            fetcher: fetcher,
+            assetWriter: MockLinkMetadataAssetWriter(),
+            onMetadataChanged: {}
+        )
+
+        await coordinator.apply(preferences: RustPreferencesDocument())
+
+        try await fetcher.waitForFetchCount(2)
+        await fetcher.releaseAll()
+        let readyCount = try await waitForReadyMetadataCount(
+            client: client,
+            appSupportDirectory: tempDirectory,
+            expectedCount: 2
+        )
+        #expect(readyCount == 2)
+    }
+
+    @Test
+    func coordinatorHonorsConcurrentFetchLimit() async throws {
+        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let client = RustCoreClient()
+        try capturePendingLink(
+            client: client,
+            appSupportDirectory: tempDirectory,
+            urlText: "https://example.com/first",
+            changeCount: 1
+        )
+        try capturePendingLink(
+            client: client,
+            appSupportDirectory: tempDirectory,
+            urlText: "https://example.com/second",
+            changeCount: 2
+        )
+        try capturePendingLink(
+            client: client,
+            appSupportDirectory: tempDirectory,
+            urlText: "https://example.com/third",
+            changeCount: 3
+        )
+        let fetcher = PausingLinkMetadataFetcher()
+        let coordinator = LinkMetadataCoordinator(
+            coreClient: client,
+            appSupportDirectory: tempDirectory,
+            configuration: LinkMetadataCoordinatorConfiguration(maxConcurrentFetches: 2),
+            fetcher: fetcher,
+            assetWriter: MockLinkMetadataAssetWriter(),
+            onMetadataChanged: {}
+        )
+
+        await coordinator.apply(preferences: RustPreferencesDocument())
+
+        try await fetcher.waitForFetchCount(2)
+        try await fetcher.expectFetchCountRemains(2)
+        await fetcher.releaseNext()
+        try await fetcher.waitForFetchCount(3)
+        await fetcher.releaseAll()
+        let readyCount = try await waitForReadyMetadataCount(
+            client: client,
+            appSupportDirectory: tempDirectory,
+            expectedCount: 3
+        )
+        #expect(readyCount == 3)
+    }
+
+    @Test
     func coordinatorPersistsReturnedLinkImageAssets() async throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -289,10 +376,70 @@ struct LinkMetadataCoordinatorTests {
     }
 
     @Test
-    func urlPolicyTreatsPrivateAndSensitiveLinksAsPrivacySensitive() throws {
-        #expect(LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "http://192.168.1.4/dashboard"))))
-        #expect(LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "http://[fd00::1]/dashboard"))))
+    func linkPresentationFetcherFallsBackToImageAssetsWhenProviderTimesOut() async throws {
+        let imageData = try tinyPNGData()
+        let pageURL = try #require(URL(string: "https://example.com/docs"))
+        let iconURL = try #require(URL(string: "https://example.com/favicon.ico"))
+        let html = """
+        <html>
+          <head>
+            <link rel="icon" href="\(iconURL.absoluteString)">
+          </head>
+        </html>
+        """
+        let fetcher = LinkPresentationMetadataFetcher(
+            timeout: 0.01,
+            metadataProvider: MockLinkMetadataProvider(error: LinkMetadataFetchError.timedOut),
+            imageFetcher: OpenGraphLinkMetadataImageFetcher(
+                httpClient: MockLinkMetadataHTTPClient(responses: [
+                    pageURL.absoluteString: MockHTTPResponse(
+                        data: Data(html.utf8),
+                        mimeType: "text/html"
+                    ),
+                    iconURL.absoluteString: MockHTTPResponse(
+                        data: imageData,
+                        mimeType: "image/x-icon"
+                    )
+                ])
+            )
+        )
+
+        let payload = try await fetcher.fetch(url: pageURL)
+
+        #expect(payload.title == nil)
+        #expect(payload.canonicalURL == pageURL)
+        #expect(payload.originalURL == pageURL)
+        #expect(payload.iconData?.data == imageData)
+        #expect(payload.previewData == nil)
+    }
+
+    @Test
+    func linkPresentationFetcherThrowsTimeoutWhenProviderTimesOutWithoutAssets() async throws {
+        let pageURL = try #require(URL(string: "https://example.com/docs"))
+        let fetcher = LinkPresentationMetadataFetcher(
+            timeout: 0.01,
+            metadataProvider: MockLinkMetadataProvider(error: LinkMetadataFetchError.timedOut),
+            imageFetcher: OpenGraphLinkMetadataImageFetcher(
+                httpClient: MockLinkMetadataHTTPClient(responses: [:])
+            )
+        )
+
+        do {
+            _ = try await fetcher.fetch(url: pageURL)
+            Issue.record("Expected timeout when metadata provider and image fetch both fail")
+        } catch let error as LinkMetadataFetchError {
+            #expect(error == .timedOut)
+        }
+    }
+
+    @Test
+    func urlPolicyAllowsLocalLinksAndBlocksSensitiveQueryKeys() throws {
+        #expect(!LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "http://127.0.0.1:23000/"))))
+        #expect(!LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "http://localhost:23000/"))))
+        #expect(!LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "http://192.168.1.4/dashboard"))))
+        #expect(!LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "http://[fd00::1]/dashboard"))))
         #expect(LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "https://example.com/callback?access_token=secret"))))
+        #expect(LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "http://127.0.0.1:23000/callback?token=secret"))))
         #expect(LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "https://example.com/callback?session-id=secret"))))
         #expect(!LinkMetadataURLPolicy.isPrivacySensitive(try #require(URL(string: "https://example.com/docs?utm_source=test"))))
     }
@@ -366,9 +513,22 @@ private actor PausingLinkMetadataFetcher: LinkMetadataFetching {
         Issue.record("Timed out waiting for \(expectedCount) metadata fetches")
     }
 
+    func expectFetchCountRemains(_ expectedCount: Int) async throws {
+        for _ in 0..<6 {
+            try await Task.sleep(nanoseconds: 25_000_000)
+            #expect(fetchedURLs.count == expectedCount)
+        }
+    }
+
     func releaseNext() {
         guard !continuations.isEmpty else { return }
         continuations.removeFirst().resume()
+    }
+
+    func releaseAll() {
+        while !continuations.isEmpty {
+            continuations.removeFirst().resume()
+        }
     }
 }
 
@@ -382,9 +542,39 @@ private struct MockLinkMetadataAssetWriter: LinkMetadataAssetWriting {
     }
 }
 
+private struct MockLinkMetadataProvider: LinkMetadataProviderLoading {
+    let payload: LinkMetadataFetchPayload?
+    let error: LinkMetadataFetchError?
+
+    init(payload: LinkMetadataFetchPayload? = nil, error: LinkMetadataFetchError? = nil) {
+        self.payload = payload
+        self.error = error
+    }
+
+    func fetchPayload(url: URL, timeout: TimeInterval) async throws -> LinkMetadataFetchPayload {
+        if let payload {
+            return payload
+        }
+        if let error {
+            throw error
+        }
+        return LinkMetadataFetchPayload(
+            title: "Example Docs",
+            canonicalURL: url,
+            originalURL: url,
+            iconData: nil,
+            previewData: nil
+        )
+    }
+}
+
 private struct MockHTTPResponse: Sendable {
     let data: Data
     let mimeType: String
+}
+
+private enum MockHTTPClientError: Error {
+    case missingResponse
 }
 
 private struct MockLinkMetadataHTTPClient: LinkMetadataHTTPClient {
@@ -392,7 +582,9 @@ private struct MockLinkMetadataHTTPClient: LinkMetadataHTTPClient {
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let url = try #require(request.url)
-        let response = try #require(responses[url.absoluteString])
+        guard let response = responses[url.absoluteString] else {
+            throw MockHTTPClientError.missingResponse
+        }
         return (
             response.data,
             URLResponse(
