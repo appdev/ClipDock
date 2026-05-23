@@ -3062,7 +3062,7 @@ fn preferences_update_persists_normalized_document() {
     let saved = core.update_preferences(preferences).unwrap();
     let reloaded = core.get_preferences().unwrap();
 
-    assert_eq!(saved.general.default_panel_height, 560);
+    assert_eq!(saved.general.default_panel_height, 999);
     assert!(!saved.general.copy_completion_hud_enabled);
     assert_eq!(saved.history.max_items, 5000);
     assert_eq!(saved.history.retention_days, 365);

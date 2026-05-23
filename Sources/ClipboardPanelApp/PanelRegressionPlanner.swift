@@ -4,8 +4,7 @@ import Foundation
 public enum BottomPanelGeometryPlanner {
     public static let defaultHeight: CGFloat = 302
     public static let minimumHeight: CGFloat = 260
-    public static let maximumHeight: CGFloat = 560
-    public static let maximumHeightRatio: CGFloat = 0.62
+    public static let maximumHeightRatio: CGFloat = 0.3
     public static let outerMargin: CGFloat = 10
 
     public static func clampedHeight(
@@ -14,7 +13,7 @@ public enum BottomPanelGeometryPlanner {
     ) -> CGFloat {
         let maximum = max(
             minimumHeight,
-            min(maximumHeight, screenHeight * maximumHeightRatio)
+            screenHeight * maximumHeightRatio
         )
         return min(max(height, minimumHeight), maximum)
     }

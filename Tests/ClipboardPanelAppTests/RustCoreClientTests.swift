@@ -881,7 +881,7 @@ struct RustCoreClientTests {
         ).get()
         let reloaded = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(saved.preferences.general.defaultPanelHeight == 560)
+        #expect(saved.preferences.general.defaultPanelHeight == 999)
         #expect(!saved.preferences.general.copyCompletionHUDEnabled)
         #expect(saved.preferences.history.maxItems == 5000)
         #expect(saved.preferences.history.retentionDays == 365)

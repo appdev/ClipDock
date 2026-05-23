@@ -528,7 +528,7 @@ impl Default for PreferencesDocument {
 
 impl PreferencesDocument {
     pub fn normalized(mut self) -> Self {
-        self.general.default_panel_height = self.general.default_panel_height.clamp(260, 560);
+        self.general.default_panel_height = self.general.default_panel_height.max(260);
         self.history.max_items = default_max_items();
         self.history.retention_days = self.history.retention_days.clamp(1, 365);
         self.history.record_images = true;

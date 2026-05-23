@@ -26,7 +26,7 @@ struct PanelVisualSnapshotTests {
         try pngData.write(to: outputURL, options: .atomic)
 
         #expect(bitmap.pixelsWide == 940)
-        #expect(bitmap.pixelsHigh == 302)
+        #expect(bitmap.pixelsHigh == 260)
         #expect(pngData.count > 12_000)
         #expect(FileManager.default.fileExists(atPath: outputURL.path))
         assertColor(

@@ -15,7 +15,12 @@ struct PanelRegressionPlannerTests {
         #expect(frame.minX == -1430)
         #expect(frame.minY == -30)
         #expect(frame.width == 1420)
-        #expect(frame.height == 558)
+        #expect(frame.height == 270)
+    }
+
+    @Test
+    func bottomPanelMaximumHeightUsesScreenRatioWithoutFixedCeiling() {
+        #expect(BottomPanelGeometryPlanner.clampedHeight(999, screenHeight: 3_000) == 900)
     }
 
     @Test
@@ -29,15 +34,15 @@ struct PanelRegressionPlannerTests {
         let grown = BottomPanelGeometryPlanner.resizedHeight(
             startHeight: 320,
             deltaY: 120,
-            screenHeight: 900
+            screenHeight: 1_200
         )
         let shrunk = BottomPanelGeometryPlanner.resizedHeight(
             startHeight: 320,
             deltaY: -300,
-            screenHeight: 900
+            screenHeight: 1_200
         )
 
-        #expect(grown == 440)
+        #expect(grown == 360)
         #expect(shrunk == 260)
     }
 
@@ -82,11 +87,11 @@ struct PanelRegressionPlannerTests {
         #expect(frames[0].minX == -1430)
         #expect(frames[0].minY == -30)
         #expect(frames[0].width == 1420)
-        #expect(frames[0].height == 558)
+        #expect(frames[0].height == 270)
         #expect(frames[1].minX == 10)
         #expect(frames[1].minY == 10)
         #expect(frames[1].width == 1708)
-        #expect(frames[1].height == 560)
+        #expect(abs(frames[1].height - 335.1) < 0.001)
     }
 
     @Test
