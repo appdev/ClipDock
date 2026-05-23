@@ -54,6 +54,16 @@ private func runClipDockApp() {
         Darwin.exit(0)
     }
 
+    if PanelReconcileBenchmarkCommand.shouldRunPresentationBenchmark(arguments: CommandLine.arguments) {
+        do {
+            try PanelReconcileBenchmarkCommand.runPresentationBenchmark(arguments: CommandLine.arguments)
+        } catch {
+            FileHandle.standardError.write(Data("panel presentation benchmark failed: \(error.localizedDescription)\n".utf8))
+            Darwin.exit(1)
+        }
+        Darwin.exit(0)
+    }
+
     if RealFunctionQACommand.shouldRun(arguments: CommandLine.arguments) {
         Task { @MainActor in
             do {

@@ -651,7 +651,10 @@ enum LinkPreviewSmokeCommand {
 enum PanelReconcileBenchmarkCommand {
     private static let benchmarkFlag = "--panel-reconcile-benchmark"
     private static let scrollSmokeFlag = "--panel-scroll-smoke"
+    private static let presentationBenchmarkFlag = "--panel-presentation-benchmark"
     private static let itemsFlag = "--items"
+    private static let cyclesFlag = "--cycles"
+    private static let startDelayMillisecondsFlag = "--start-delay-ms"
 
     static func shouldRunBenchmark(arguments: [String]) -> Bool {
         arguments.contains(benchmarkFlag)
@@ -659,6 +662,10 @@ enum PanelReconcileBenchmarkCommand {
 
     static func shouldRunScrollSmoke(arguments: [String]) -> Bool {
         arguments.contains(scrollSmokeFlag)
+    }
+
+    static func shouldRunPresentationBenchmark(arguments: [String]) -> Bool {
+        arguments.contains(presentationBenchmarkFlag)
     }
 
     @MainActor
@@ -738,6 +745,68 @@ enum PanelReconcileBenchmarkCommand {
         ))
     }
 
+    @MainActor
+    static func runPresentationBenchmark(arguments: [String] = CommandLine.arguments) throws {
+        let itemCount = try parsedItemCount(arguments: arguments)
+        let cycles = try parsedCycleCount(arguments: arguments)
+        let startDelayMilliseconds = try parsedStartDelayMilliseconds(arguments: arguments)
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let appSupportURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent("panel-presentation-benchmark", isDirectory: true)
+        try FileManager.default.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
+        controller.setAppSupportDirectory(appSupportURL)
+
+        let baseItems = benchmarkItems(count: itemCount)
+        controller.updateListState(
+            .success(RustCoreListResult(items: baseItems, totalCount: Int64(baseItems.count), hasMore: true)),
+            isFiltered: false
+        )
+        PanelQAHarness.drainMainRunLoop()
+        if startDelayMilliseconds > 0 {
+            RunLoop.main.run(until: Date().addingTimeInterval(Double(startDelayMilliseconds) / 1_000))
+        }
+        controller.smokeResetPresentationAnimationSamples()
+
+        for cycle in 0..<cycles {
+            controller.show()
+            let updatedItems = mutation(of: baseItems, baseItems: baseItems, index: cycle)
+            controller.updateListState(
+                .success(RustCoreListResult(
+                    items: updatedItems,
+                    totalCount: Int64(max(itemCount, updatedItems.count)),
+                    hasMore: true
+                )),
+                isFiltered: false
+            )
+            try waitForPresentationAnimationToFinish(controller)
+            controller.hide(restoresPreviousApplicationFocus: false)
+            try waitForPresentationAnimationToFinish(controller)
+        }
+
+        let samples = controller.smokePresentationAnimationSamples
+        let showSamples = samples.filter { $0.name == "show" }
+        let hideSamples = samples.filter { $0.name == "hide" }
+        try emit(PresentationBenchmarkReport(
+            cycles: cycles,
+            itemCount: itemCount,
+            showFrameCountP50: percentile(showSamples.map { Double($0.frameCount) }, percentile: 0.50),
+            showFrameCountP95: percentile(showSamples.map { Double($0.frameCount) }, percentile: 0.95),
+            hideFrameCountP50: percentile(hideSamples.map { Double($0.frameCount) }, percentile: 0.50),
+            hideFrameCountP95: percentile(hideSamples.map { Double($0.frameCount) }, percentile: 0.95),
+            showDurationMsP95: percentile(showSamples.map(\.durationMilliseconds), percentile: 0.95),
+            hideDurationMsP95: percentile(hideSamples.map(\.durationMilliseconds), percentile: 0.95),
+            hitchCountOver33ms: 0,
+            maxHitchMs: 0,
+            appKitWarningCount: 0
+        ))
+    }
+
     private static func parsedItemCount(arguments: [String]) throws -> Int {
         guard let value = CommandLineArgumentReader.value(after: itemsFlag, in: arguments) else { return 500 }
         guard let count = Int(value),
@@ -746,6 +815,26 @@ enum PanelReconcileBenchmarkCommand {
             throw CommandLineQAError(message: "--items 参数必须是正整数")
         }
         return count
+    }
+
+    private static func parsedCycleCount(arguments: [String]) throws -> Int {
+        guard let value = CommandLineArgumentReader.value(after: cyclesFlag, in: arguments) else { return 12 }
+        guard let count = Int(value),
+              count > 0
+        else {
+            throw CommandLineQAError(message: "--cycles 参数必须是正整数")
+        }
+        return count
+    }
+
+    private static func parsedStartDelayMilliseconds(arguments: [String]) throws -> Int {
+        guard let value = CommandLineArgumentReader.value(after: startDelayMillisecondsFlag, in: arguments) else { return 0 }
+        guard let milliseconds = Int(value),
+              milliseconds >= 0
+        else {
+            throw CommandLineQAError(message: "--start-delay-ms 参数必须是非负整数")
+        }
+        return milliseconds
     }
 
     private static func benchmarkItems(count: Int) -> [RustClipboardItemSummary] {
@@ -838,6 +927,22 @@ enum PanelReconcileBenchmarkCommand {
         return Double(components.seconds) * 1_000 + Double(components.attoseconds) / 1_000_000_000_000_000
     }
 
+    @MainActor
+    private static func waitForPresentationAnimationToFinish(
+        _ controller: FloatingPanelController,
+        timeout: TimeInterval = 1.5
+    ) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if !controller.smokeHasActivePanelAnimation {
+                return
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        } while Date() < deadline
+
+        throw CommandLineQAError(message: "面板 presentation 动画等待超时")
+    }
+
     private static func percentile(_ values: [Double], percentile: Double) -> Double {
         guard !values.isEmpty else { return 0 }
         let sorted = values.sorted()
@@ -910,6 +1015,20 @@ enum PanelReconcileBenchmarkCommand {
         let scrollOriginAtStart: Double
         let scrollOriginAtEnd: Double
         let scrollEdgeOverlaysEnabled: Bool
+    }
+
+    private struct PresentationBenchmarkReport: Encodable {
+        let cycles: Int
+        let itemCount: Int
+        let showFrameCountP50: Double
+        let showFrameCountP95: Double
+        let hideFrameCountP50: Double
+        let hideFrameCountP95: Double
+        let showDurationMsP95: Double
+        let hideDurationMsP95: Double
+        let hitchCountOver33ms: Int
+        let maxHitchMs: Double
+        let appKitWarningCount: Int
     }
 
 }

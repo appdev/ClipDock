@@ -1934,9 +1934,13 @@ struct PanelRuntimeSeamTests {
         #expect(await waitForMainActor { controller.isVisible })
         #expect(controller.smokePanelAlphaValue == 1)
         let shownFrame = controller.smokePanelFrame
+        let presentationWindowFrame = controller.smokePresentationWindowFrame
+        let presentationHostFrame = controller.smokePresentationHostFrame
         let entranceFrame = controller.smokeEntranceAnimationFrame
         let hiddenFrame = controller.smokeHiddenAnimationFrame
 
+        #expect(presentationWindowFrame == shownFrame)
+        #expect(presentationHostFrame == CGRect(origin: .zero, size: shownFrame.size))
         #expect(entranceFrame.minY < shownFrame.minY)
         #expect(entranceFrame.maxY < shownFrame.minY)
         #expect(entranceFrame.width == shownFrame.width)
@@ -1946,9 +1950,25 @@ struct PanelRuntimeSeamTests {
         #expect(hiddenFrame.width == shownFrame.width)
         #expect(hiddenFrame.height == shownFrame.height)
 
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokeHasActivePanelAnimation
+        })
+        #expect(controller.smokePresentationWindowFrame == shownFrame)
+        #expect(controller.smokePresentationHostFrame == CGRect(origin: .zero, size: shownFrame.size))
+        #expect(controller.smokePresentationHostTransformIsIdentity)
+        #expect(abs(controller.smokePresentationHostOpacity - 1) < 0.001)
+
         controller.hide()
         #expect(!controller.isVisible)
         #expect(controller.smokePanelAlphaValue == 1)
+        #expect(controller.smokePresentationWindowFrame == shownFrame)
+
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+        #expect(controller.smokePresentationWindowFrame == shownFrame)
+        #expect(controller.smokePresentationHostTransformIsIdentity)
+        #expect(abs(controller.smokePresentationHostOpacity - 1) < 0.001)
     }
 
     @Test
@@ -1999,13 +2019,112 @@ struct PanelRuntimeSeamTests {
         try? await Task.sleep(nanoseconds: 40_000_000)
 
         controller.show()
-        try? await Task.sleep(nanoseconds: 260_000_000)
 
         #expect(controller.isVisible)
         #expect(controller.smokePanelIsActuallyVisible)
-        #expect(!controller.smokeHasActivePanelAnimation)
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokeHasActivePanelAnimation
+        })
         #expect(controller.smokeHasOutsideClickMonitoring)
         #expect(controller.smokePanelAlphaValue == 1)
+    }
+
+    @Test
+    @MainActor
+    func floatingPanelControllerCoalescesFullListUpdatesDuringPresentationAnimation() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let firstItems = PanelQASamples.makePagedPanelItems(count: 3)
+        let latestItems = PanelQASamples.makePagedPanelItems(count: 5).map { item in
+            RustClipboardItemSummary(
+                id: "latest-\(item.id)",
+                itemType: item.itemType,
+                summary: item.summary,
+                primaryText: item.primaryText,
+                contentHash: "latest-\(item.contentHash)",
+                sourceAppId: item.sourceAppId,
+                sourceAppName: item.sourceAppName,
+                sourceAppIconPath: item.sourceAppIconPath,
+                previewAssetPath: item.previewAssetPath,
+                payloadAssetPath: item.payloadAssetPath,
+                sourceConfidence: item.sourceConfidence,
+                firstCopiedAtMs: item.firstCopiedAtMs,
+                lastCopiedAtMs: item.lastCopiedAtMs,
+                copyCount: item.copyCount,
+                isPinned: item.isPinned,
+                sizeBytes: item.sizeBytes,
+                previewState: item.previewState,
+                fileItems: item.fileItems,
+                linkMetadata: item.linkMetadata
+            )
+        }
+
+        controller.updateListState(
+            .success(RustCoreListResult(items: firstItems, totalCount: Int64(firstItems.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(controller.smokeContentView.smokeCurrentItemCount == firstItems.count)
+
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(items: latestItems, totalCount: Int64(latestItems.count), hasMore: false)),
+            isFiltered: false
+        )
+
+        #expect(controller.smokeHasActivePanelAnimation)
+        #expect(controller.smokeContentView.smokeOrderedCardItemIDs() == firstItems.map(\.id))
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokeHasActivePanelAnimation
+                && controller.smokeContentView.smokeOrderedCardItemIDs() == latestItems.map(\.id)
+        })
+
+        controller.hide(restoresPreviousApplicationFocus: false)
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+    }
+
+    @Test
+    @MainActor
+    func floatingPanelControllerFlushesDeferredListUpdateWhenPresentationIsCanceledByNonAnimatedShow() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let firstItems = [
+            makeRuntimeTextItem(id: "first-1", summary: "First 1"),
+            makeRuntimeTextItem(id: "first-2", summary: "First 2"),
+            makeRuntimeTextItem(id: "first-3", summary: "First 3")
+        ]
+        let latestItems = [
+            makeRuntimeTextItem(id: "latest-1", summary: "Latest 1"),
+            makeRuntimeTextItem(id: "latest-2", summary: "Latest 2")
+        ]
+
+        controller.updateListState(
+            .success(RustCoreListResult(items: firstItems, totalCount: Int64(firstItems.count), hasMore: false)),
+            isFiltered: false
+        )
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(items: latestItems, totalCount: Int64(latestItems.count), hasMore: false)),
+            isFiltered: false
+        )
+        #expect(controller.smokeContentView.smokeOrderedCardItemIDs() == firstItems.map(\.id))
+
+        controller.show()
+
+        #expect(!controller.smokeHasActivePanelAnimation)
+        #expect(controller.smokeContentView.smokeOrderedCardItemIDs() == latestItems.map(\.id))
+
+        controller.hide(restoresPreviousApplicationFocus: false)
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
     }
 
     @Test
@@ -4162,8 +4281,9 @@ struct PanelRuntimeSeamTests {
         try? await Task.sleep(nanoseconds: 140_000_000)
         delegate.smokeTogglePanelForRealFunctionQA()
         #expect(await waitForMainActor { delegate.smokePanelIsVisibleForRealFunctionQA })
-        try? await Task.sleep(nanoseconds: 260_000_000)
-        #expect(!delegate.smokePanelControllerForRealFunctionQA.smokeHasActivePanelAnimation)
+        #expect(await waitForMainActor(attempts: 240) {
+            !delegate.smokePanelControllerForRealFunctionQA.smokeHasActivePanelAnimation
+        })
         let backgroundAlphaBeforeHide = delegate.smokePanelControllerForRealFunctionQA.smokePanelContentBackgroundAlpha
 
         delegate.smokeResignActiveForRealFunctionQA()
@@ -4196,11 +4316,12 @@ struct PanelRuntimeSeamTests {
 
         try? await Task.sleep(nanoseconds: 60_000_000)
         delegate.smokeTogglePanelForRealFunctionQA()
-        try? await Task.sleep(nanoseconds: 260_000_000)
 
         #expect(delegate.smokePanelIsVisibleForRealFunctionQA)
         #expect(delegate.smokePanelControllerForRealFunctionQA.smokePanelIsActuallyVisible)
-        #expect(!delegate.smokePanelControllerForRealFunctionQA.smokeHasActivePanelAnimation)
+        #expect(await waitForMainActor(attempts: 240) {
+            !delegate.smokePanelControllerForRealFunctionQA.smokeHasActivePanelAnimation
+        })
     }
 
     @Test

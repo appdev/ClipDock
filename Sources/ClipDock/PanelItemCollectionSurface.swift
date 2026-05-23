@@ -298,6 +298,7 @@ final class PanelItemCollectionSurface: NSObject,
     }
 
     func updatePanelHeight(_ itemSide: CGFloat) {
+        let itemSide = sanitizedItemSide(itemSide)
         metrics = PanelItemCollectionLayoutMetrics(
             itemSide: itemSide,
             itemSpacing: metrics.itemSpacing,
@@ -324,9 +325,11 @@ final class PanelItemCollectionSurface: NSObject,
     func restoreScrollOrigin(_ origin: NSPoint) {
         layoutForCurrentBounds()
         let range = horizontalScrollRange()
+        let requestedX = origin.x.isFinite ? origin.x : range.lowerBound
+        let requestedY = origin.y.isFinite ? origin.y : scrollView.contentView.bounds.origin.y
         let clampedOrigin = NSPoint(
-            x: min(max(range.lowerBound, origin.x), range.upperBound),
-            y: origin.y
+            x: min(max(range.lowerBound, requestedX), range.upperBound),
+            y: requestedY
         )
         scrollView.contentView.scroll(to: clampedOrigin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
@@ -338,7 +341,8 @@ final class PanelItemCollectionSurface: NSObject,
 
     func horizontalScrollRange() -> ClosedRange<CGFloat> {
         let minX: CGFloat = 0
-        let maxX = collectionView.frame.width - scrollView.contentView.bounds.width
+        let rawMaxX = collectionView.frame.width - scrollView.contentView.bounds.width
+        let maxX = rawMaxX.isFinite ? rawMaxX : minX
         return minX...max(minX, maxX)
     }
 
@@ -607,16 +611,29 @@ final class PanelItemCollectionSurface: NSObject,
                 + CGFloat(max(0, itemCount - 1)) * effectiveItemSpacing
                 + metrics.horizontalContentInset * 2
         }
-        collectionView.frame = NSRect(x: 0, y: 0, width: width, height: collectionHeight(for: metrics.itemSide))
+        let documentWidth = width.isFinite ? max(metrics.horizontalContentInset * 2, width) : metrics.horizontalContentInset * 2
+        collectionView.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: documentWidth,
+            height: collectionHeight(for: metrics.itemSide)
+        )
         collectionView.needsLayout = true
         flowLayout.invalidateLayout()
     }
 
     private func collectionHeight(for itemSide: CGFloat) -> CGFloat {
         PanelItemCollectionGeometry.hostSide(
-            for: itemSide,
+            for: sanitizedItemSide(itemSide),
             shadowOutset: metrics.shadowOutset
         ) + 1
+    }
+
+    private func sanitizedItemSide(_ itemSide: CGFloat) -> CGFloat {
+        guard itemSide.isFinite, itemSide > 0 else {
+            return max(1, metrics.itemSide.isFinite ? metrics.itemSide : 1)
+        }
+        return max(1, itemSide)
     }
 
     private func layoutItemSize(for itemSide: CGFloat) -> NSSize {

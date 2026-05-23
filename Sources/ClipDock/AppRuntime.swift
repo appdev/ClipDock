@@ -22,6 +22,7 @@ func makeFloatingPanelHostView(contentView: FloatingPanelContentView) -> NSView 
         effectView.state = .active
         effectView.wantsLayer = true
         effectView.layer?.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
+        effectView.layer?.cornerCurve = .continuous
         effectView.layer?.masksToBounds = true
         effectView.layer?.backgroundColor = tintColor.cgColor
         effectView.addSubview(contentView)
@@ -863,6 +864,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         currentPanelHeight = panelHeight
         let itemSide = itemSideLength(for: panelHeight)
         activeListPage.updatePanelHeight(itemSide)
+    }
+
+    var hasRenderedNonEmptyListContent: Bool {
+        activeListPage.hasRenderedContent && !currentItems().isEmpty
     }
 
     private func itemSideLength(for panelHeight: CGFloat) -> CGFloat {

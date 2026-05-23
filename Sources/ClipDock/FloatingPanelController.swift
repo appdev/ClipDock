@@ -1,11 +1,13 @@
 import AppKit
 import Carbon.HIToolbox
 import ClipboardPanelApp
+import QuartzCore
 
 private enum PanelPresentationAnimation {
     static let showDuration: TimeInterval = 0.16
     static let hideDuration: TimeInterval = 0.18
-    static let frameIntervalNanoseconds: UInt64 = 16_666_667
+    static let hiddenOpacity: Float = 0.92
+    static let layerAnimationKey = "clipdock.panel.presentation"
 
     static func entranceFrame(for frame: NSRect) -> NSRect {
         offscreenFrame(for: frame)
@@ -15,20 +17,21 @@ private enum PanelPresentationAnimation {
         offscreenFrame(for: frame)
     }
 
+    static func hiddenTranslationY(shownFrame: NSRect, hiddenFrame: NSRect) -> CGFloat {
+        hiddenFrame.minY - shownFrame.minY
+    }
+
     private static let offscreenMargin: CGFloat = 12
 
     private static func offscreenFrame(for frame: NSRect) -> NSRect {
         frame.offsetBy(dx: 0, dy: -(frame.height + offscreenMargin))
     }
+}
 
-    static func interpolatedFrame(from startFrame: NSRect, to endFrame: NSRect, progress: CGFloat) -> NSRect {
-        NSRect(
-            x: startFrame.origin.x + (endFrame.origin.x - startFrame.origin.x) * progress,
-            y: startFrame.origin.y + (endFrame.origin.y - startFrame.origin.y) * progress,
-            width: startFrame.size.width + (endFrame.size.width - startFrame.size.width) * progress,
-            height: startFrame.size.height + (endFrame.size.height - startFrame.size.height) * progress
-        )
-    }
+struct PanelPresentationAnimationSample: Equatable {
+    let name: String
+    let durationMilliseconds: Double
+    let frameCount: Int
 }
 
 private enum PanelPresentationTiming {
@@ -51,6 +54,97 @@ private enum PanelPresentationTiming {
             let inverse = 1 - clamped
             return 1 - inverse * inverse * inverse
         }
+    }
+
+    var mediaTimingFunction: CAMediaTimingFunction {
+        switch self {
+        case .easeIn:
+            return CAMediaTimingFunction(controlPoints: 0.55, 0, 1, 0.45)
+        case .easeInOut:
+            return CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1)
+        case .easeOut:
+            return CAMediaTimingFunction(controlPoints: 0, 0.55, 0.45, 1)
+        }
+    }
+}
+
+private final class PanelPresentationRootView: NSView {
+    weak var presentationHostView: NSView?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let presentationHostView,
+              !presentationHostView.isHidden,
+              presentationHostView.alphaValue > 0.01
+        else {
+            return nil
+        }
+
+        let pointInHost = convert(point, to: presentationHostView)
+        guard presentationHostView.bounds.contains(pointInHost) else {
+            return nil
+        }
+
+        return presentationHostView.hitTest(pointInHost)
+    }
+}
+
+private final class PanelAnimationCompletionDelegate: NSObject, CAAnimationDelegate {
+    private let completion: (Bool) -> Void
+
+    init(completion: @escaping (Bool) -> Void) {
+        self.completion = completion
+    }
+
+    func animationDidStop(_ anim: CAAnimation, finished flag: Bool) {
+        completion(flag)
+    }
+}
+
+private extension CATransform3D {
+    var isApproximatelyIdentity: Bool {
+        let identity = CATransform3DIdentity
+        let tolerance: CGFloat = 0.0001
+        return abs(m11 - identity.m11) < tolerance
+            && abs(m12 - identity.m12) < tolerance
+            && abs(m13 - identity.m13) < tolerance
+            && abs(m14 - identity.m14) < tolerance
+            && abs(m21 - identity.m21) < tolerance
+            && abs(m22 - identity.m22) < tolerance
+            && abs(m23 - identity.m23) < tolerance
+            && abs(m24 - identity.m24) < tolerance
+            && abs(m31 - identity.m31) < tolerance
+            && abs(m32 - identity.m32) < tolerance
+            && abs(m33 - identity.m33) < tolerance
+            && abs(m34 - identity.m34) < tolerance
+            && abs(m41 - identity.m41) < tolerance
+            && abs(m42 - identity.m42) < tolerance
+            && abs(m43 - identity.m43) < tolerance
+            && abs(m44 - identity.m44) < tolerance
+    }
+}
+
+@MainActor
+private final class PanelAnimationFrameSampler {
+    private var timer: Timer?
+    private(set) var frameCount = 0
+    let samplingMode = "tickTimer"
+
+    func start() {
+        _ = stop()
+        frameCount = 1
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.frameCount += 1
+            }
+        }
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func stop() -> Int {
+        timer?.invalidate()
+        timer = nil
+        return frameCount
     }
 }
 
@@ -116,6 +210,8 @@ final class FloatingPanelController {
 
     private let panel: FloatingPanel
     private let contentView: FloatingPanelContentView
+    private let presentationRootView = PanelPresentationRootView(frame: .zero)
+    private let presentationHostView: NSView
     private let focusApplicationProvider: PanelFocusApplicationProviding
     private let heightPreferenceStore: PanelHeightPreferenceStoring
     private let mainBundleIdentifier: String?
@@ -129,12 +225,31 @@ final class FloatingPanelController {
     private var isPanelPresented = false
     private var animationGeneration = 0
     private var pendingCopySelectionCollapseAfterHide = false
-    private var panelAnimationTask: Task<Void, Never>?
+    private var activePanelAnimation: ActivePanelAnimation?
+    private var semanticPanelFrame: NSRect?
+    private var pendingListUpdateAfterPresentation: PendingListUpdate?
+    private var presentationAnimationSamples: [PanelPresentationAnimationSample] = []
     private var resizePerformanceStart: TimeInterval?
     private var resizePerformanceEventCount = 0
     private var resizePerformanceSlowestFrameMilliseconds = 0.0
 
     var onRuntimeAction: ((PanelRuntimeAction) -> Void)?
+
+    private struct ActivePanelAnimation {
+        let generation: Int
+        let name: String
+        let startTime: TimeInterval
+        let sampler: PanelAnimationFrameSampler
+        let delegate: PanelAnimationCompletionDelegate
+    }
+
+    private struct PendingListUpdate {
+        let result: Result<RustCoreListResult, RustCoreError>
+        let isFiltered: Bool
+        let append: Bool
+        let scope: ClipboardListScope?
+        let preserveScrollPositionOnStructuralChange: Bool
+    }
 
     init(
         focusApplicationProvider: PanelFocusApplicationProviding = NSWorkspace.shared,
@@ -149,6 +264,7 @@ final class FloatingPanelController {
             resizeStartHeight = storedHeight
         }
         contentView = FloatingPanelContentView(frame: .zero)
+        presentationHostView = makeFloatingPanelHostView(contentView: contentView)
         panel = FloatingPanel(
             contentRect: NSRect(x: 0, y: 0, width: 920, height: Self.defaultPanelHeight),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
@@ -180,22 +296,24 @@ final class FloatingPanelController {
         isPanelPresented = true
         animationGeneration += 1
         let generation = animationGeneration
-        let startFrame: NSRect
-
-        if shouldAnimateEntrance, !panel.isVisible {
-            startFrame = PanelPresentationAnimation.entranceFrame(for: finalFrame)
-            ClipDockPerformanceLog.measure("panel.show.setEntranceFrame") {
-                panel.setFrame(startFrame, display: true)
-            }
-        } else {
-            startFrame = panel.frame
-            panel.alphaValue = 1
-        }
+        let hiddenFrame = PanelPresentationAnimation.entranceFrame(for: finalFrame)
+        let startingLayerState = captureCurrentPresentationLayerState()
+        let fromTransform = startingLayerState?.transform
+            ?? CATransform3DMakeTranslation(
+                0,
+                PanelPresentationAnimation.hiddenTranslationY(shownFrame: finalFrame, hiddenFrame: hiddenFrame),
+                0
+            )
+        let fromOpacity = startingLayerState?.opacity ?? PanelPresentationAnimation.hiddenOpacity
 
         ClipDockPerformanceLog.event(
             "panel.show.request",
             detail: "animated=\(shouldAnimateEntrance) alreadyVisible=\(panel.isVisible)"
         )
+        configurePresentationWindow(shownFrame: finalFrame)
+        if shouldAnimateEntrance {
+            setPresentationLayerState(transform: fromTransform, opacity: fromOpacity)
+        }
         ClipDockPerformanceLog.measure("panel.show.orderWindow") {
             panel.makeKeyAndOrderFront(nil)
         }
@@ -205,14 +323,20 @@ final class FloatingPanelController {
         guard shouldAnimateEntrance else {
             cancelPanelAnimation()
             panel.setFrame(finalFrame, display: true)
+            semanticPanelFrame = finalFrame
+            configurePresentationHostForStableShownFrame(finalFrame)
             ClipDockPerformanceLog.finish("panel.show.finished", start: showStart, detail: "animated=false")
+            flushPendingListUpdateAfterPresentationIfNeeded()
             return
         }
 
-        startPanelFrameAnimation(
+        startPanelLayerPresentationAnimation(
             name: "show",
-            from: startFrame,
-            to: finalFrame,
+            fromTransform: fromTransform,
+            toTransform: CATransform3DIdentity,
+            fromOpacity: fromOpacity,
+            toOpacity: 1,
+            shownFrame: finalFrame,
             duration: PanelPresentationAnimation.showDuration,
             timing: .easeInOut,
             generation: generation
@@ -258,14 +382,22 @@ final class FloatingPanelController {
 
         animationGeneration += 1
         let generation = animationGeneration
-        let startFrame = panel.frame
         let shownFrame = targetPanelFrameForCurrentPresentation() ?? panel.frame
         let hiddenFrame = PanelPresentationAnimation.dismissedFrame(for: shownFrame)
+        let startingLayerState = captureCurrentPresentationLayerState()
+        configurePresentationWindow(shownFrame: shownFrame)
 
-        startPanelFrameAnimation(
+        startPanelLayerPresentationAnimation(
             name: "hide",
-            from: startFrame,
-            to: hiddenFrame,
+            fromTransform: startingLayerState?.transform ?? CATransform3DIdentity,
+            toTransform: CATransform3DMakeTranslation(
+                0,
+                PanelPresentationAnimation.hiddenTranslationY(shownFrame: shownFrame, hiddenFrame: hiddenFrame),
+                0
+            ),
+            fromOpacity: startingLayerState?.opacity ?? 1,
+            toOpacity: PanelPresentationAnimation.hiddenOpacity,
+            shownFrame: shownFrame,
             duration: PanelPresentationAnimation.hideDuration,
             timing: .easeIn,
             generation: generation
@@ -273,7 +405,8 @@ final class FloatingPanelController {
             guard let self, !self.isPanelPresented else { return }
             self.panel.orderOut(nil)
             self.panel.setFrame(shownFrame, display: false)
-            self.panel.alphaValue = 1
+            self.semanticPanelFrame = shownFrame
+            self.configurePresentationHostForStableShownFrame(shownFrame)
             ClipDockPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "animated=true")
             self.finishHiddenTransition(afterHidden: afterHidden)
         }
@@ -332,6 +465,21 @@ final class FloatingPanelController {
         scope: ClipboardListScope? = nil,
         preserveScrollPositionOnStructuralChange: Bool = false
     ) {
+        if shouldDeferListUpdateUntilPresentationCompletes(append: append) {
+            pendingListUpdateAfterPresentation = PendingListUpdate(
+                result: result,
+                isFiltered: isFiltered,
+                append: append,
+                scope: scope,
+                preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
+            )
+            ClipDockPerformanceLog.event(
+                "panel.listUpdate.deferred",
+                detail: "append=\(append) scope=\(scope.map(String.init(describing:)) ?? "nil")"
+            )
+            return
+        }
+
         contentView.updateListState(
             result,
             isFiltered: isFiltered,
@@ -482,8 +630,11 @@ final class FloatingPanelController {
     private func applyPanelFrame(on screen: NSScreen, height: CGFloat, animate: Bool) {
         let frame = targetPanelFrame(on: screen, height: height)
 
+        cancelPanelAnimation()
         contentView.updatePanelHeight(height)
         panel.setFrame(frame, display: true, animate: animate)
+        semanticPanelFrame = frame
+        configurePresentationHostForStableShownFrame(frame)
     }
 
     private func targetPanelFrameForCurrentPresentation() -> NSRect? {
@@ -498,15 +649,97 @@ final class FloatingPanelController {
         )
     }
 
-    private func cancelPanelAnimation() {
-        panelAnimationTask?.cancel()
-        panelAnimationTask = nil
+    private func configurePresentationWindow(shownFrame: NSRect) {
+        cancelPanelAnimation()
+        semanticPanelFrame = shownFrame
+        if panel.frame != shownFrame {
+            panel.setFrame(shownFrame, display: true)
+        }
+        presentationRootView.frame = NSRect(origin: .zero, size: shownFrame.size)
+        presentationHostView.frame = presentationRootView.bounds
+        contentView.frame = presentationHostView.bounds
     }
 
-    private func startPanelFrameAnimation(
+    private func configurePresentationHostForStableShownFrame(_ shownFrame: NSRect) {
+        semanticPanelFrame = shownFrame
+        presentationRootView.frame = NSRect(origin: .zero, size: shownFrame.size)
+        presentationHostView.frame = presentationRootView.bounds
+        contentView.frame = presentationHostView.bounds
+        resetPresentationLayerState()
+    }
+
+    private func resetPresentationLayerState() {
+        guard let layer = presentationHostView.layer else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAnimation(forKey: PanelPresentationAnimation.layerAnimationKey)
+        layer.transform = CATransform3DIdentity
+        layer.opacity = 1
+        layer.shouldRasterize = false
+        CATransaction.commit()
+    }
+
+    private func setPresentationLayerState(transform: CATransform3D, opacity: Float) {
+        guard let layer = presentationHostView.layer else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = transform
+        layer.opacity = opacity
+        CATransaction.commit()
+    }
+
+    private func captureCurrentPresentationLayerState() -> (transform: CATransform3D, opacity: Float)? {
+        guard let layer = presentationHostView.layer else { return nil }
+
+        if let presentationLayer = layer.presentation() {
+            let transform = presentationLayer.transform
+            let opacity = presentationLayer.opacity
+            layer.removeAnimation(forKey: PanelPresentationAnimation.layerAnimationKey)
+            setPresentationLayerState(transform: transform, opacity: opacity)
+            return (transform, opacity)
+        }
+
+        return (layer.transform, layer.opacity)
+    }
+
+    private func cancelPanelAnimation() {
+        guard let activePanelAnimation else { return }
+
+        _ = activePanelAnimation.sampler.stop()
+        self.activePanelAnimation = nil
+        presentationHostView.layer?.removeAnimation(forKey: PanelPresentationAnimation.layerAnimationKey)
+    }
+
+    private func shouldDeferListUpdateUntilPresentationCompletes(append: Bool) -> Bool {
+        activePanelAnimation != nil && !append && contentView.hasRenderedNonEmptyListContent
+    }
+
+    private func flushPendingListUpdateAfterPresentationIfNeeded() {
+        guard let pendingListUpdateAfterPresentation else { return }
+
+        self.pendingListUpdateAfterPresentation = nil
+        contentView.updateListState(
+            pendingListUpdateAfterPresentation.result,
+            isFiltered: pendingListUpdateAfterPresentation.isFiltered,
+            append: pendingListUpdateAfterPresentation.append,
+            scope: pendingListUpdateAfterPresentation.scope,
+            preserveScrollPositionOnStructuralChange: pendingListUpdateAfterPresentation.preserveScrollPositionOnStructuralChange
+        )
+        ClipDockPerformanceLog.event(
+            "panel.listUpdate.flushed",
+            detail: "append=\(pendingListUpdateAfterPresentation.append) scope=\(pendingListUpdateAfterPresentation.scope.map(String.init(describing:)) ?? "nil")"
+        )
+    }
+
+    private func startPanelLayerPresentationAnimation(
         name: String,
-        from startFrame: NSRect,
-        to endFrame: NSRect,
+        fromTransform: CATransform3D,
+        toTransform: CATransform3D,
+        fromOpacity: Float,
+        toOpacity: Float,
+        shownFrame: NSRect,
         duration: TimeInterval,
         timing: PanelPresentationTiming,
         generation: Int,
@@ -514,53 +747,98 @@ final class FloatingPanelController {
     ) {
         cancelPanelAnimation()
 
-        guard startFrame != endFrame, duration > 0 else {
-            panel.setFrame(endFrame, display: true)
+        guard duration > 0,
+              let layer = presentationHostView.layer
+        else {
+            panel.setFrame(shownFrame, display: true)
+            semanticPanelFrame = shownFrame
+            configurePresentationHostForStableShownFrame(shownFrame)
             completion()
+            flushPendingListUpdateAfterPresentationIfNeeded()
             return
         }
 
-        panelAnimationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+        if panel.frame != shownFrame {
+            panel.setFrame(shownFrame, display: true)
+        }
+        semanticPanelFrame = shownFrame
+        presentationRootView.frame = NSRect(origin: .zero, size: shownFrame.size)
+        presentationHostView.frame = presentationRootView.bounds
+        contentView.frame = presentationHostView.bounds
 
-            let startTime = ProcessInfo.processInfo.systemUptime
-            var frameCount = 0
-
-            while !Task.isCancelled {
-                let elapsed = ProcessInfo.processInfo.systemUptime - startTime
-                let linearProgress = min(max(elapsed / duration, 0), 1)
-                let progress = timing.progress(for: CGFloat(linearProgress))
-                let frame = PanelPresentationAnimation.interpolatedFrame(
-                    from: startFrame,
-                    to: endFrame,
-                    progress: progress
-                )
-                frameCount += 1
-                self.panel.setFrame(frame, display: true)
-
-                if linearProgress >= 1 {
-                    break
-                }
-
-                do {
-                    try await Task.sleep(nanoseconds: PanelPresentationAnimation.frameIntervalNanoseconds)
-                } catch {
-                    if self.animationGeneration == generation {
-                        self.panelAnimationTask = nil
-                    }
+        let sampler = PanelAnimationFrameSampler()
+        sampler.start()
+        let startTime = ProcessInfo.processInfo.systemUptime
+        let delegate = PanelAnimationCompletionDelegate { [weak self] finished in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      finished,
+                      self.animationGeneration == generation,
+                      self.activePanelAnimation?.generation == generation
+                else {
                     return
                 }
-            }
 
-            guard !Task.isCancelled, self.animationGeneration == generation else { return }
-            self.panel.setFrame(endFrame, display: true)
-            self.panelAnimationTask = nil
-            ClipDockPerformanceLog.event(
-                "panel.animation.finished",
-                detail: "name=\(name) durationMs=\(ClipDockPerformanceLog.format((ProcessInfo.processInfo.systemUptime - startTime) * 1_000)) frames=\(frameCount)"
-            )
-            completion()
+                let frameCount = self.activePanelAnimation?.sampler.stop() ?? 0
+                self.activePanelAnimation = nil
+                self.panel.setFrame(shownFrame, display: true)
+                self.configurePresentationHostForStableShownFrame(shownFrame)
+                let durationMilliseconds = (ProcessInfo.processInfo.systemUptime - startTime) * 1_000
+                self.presentationAnimationSamples.append(PanelPresentationAnimationSample(
+                    name: name,
+                    durationMilliseconds: durationMilliseconds,
+                    frameCount: frameCount
+                ))
+                ClipDockPerformanceLog.event(
+                    "panel.animation.finished",
+                    detail: [
+                        "name=\(name)",
+                        "driver=coreAnimation",
+                        "samplingMode=\(sampler.samplingMode)",
+                        "durationMs=\(ClipDockPerformanceLog.format(durationMilliseconds))",
+                        "frames=\(frameCount)"
+                    ].joined(separator: " ")
+                )
+                completion()
+                self.flushPendingListUpdateAfterPresentationIfNeeded()
+            }
         }
+
+        activePanelAnimation = ActivePanelAnimation(
+            generation: generation,
+            name: name,
+            startTime: startTime,
+            sampler: sampler,
+            delegate: delegate
+        )
+
+        let transformAnimation = CABasicAnimation(keyPath: "transform")
+        transformAnimation.fromValue = NSValue(caTransform3D: fromTransform)
+        transformAnimation.toValue = NSValue(caTransform3D: toTransform)
+        transformAnimation.duration = duration
+        transformAnimation.timingFunction = timing.mediaTimingFunction
+
+        let opacityAnimation = CABasicAnimation(keyPath: "opacity")
+        opacityAnimation.fromValue = fromOpacity
+        opacityAnimation.toValue = toOpacity
+        opacityAnimation.duration = duration
+        opacityAnimation.timingFunction = timing.mediaTimingFunction
+
+        let animationGroup = CAAnimationGroup()
+        animationGroup.animations = [transformAnimation, opacityAnimation]
+        animationGroup.duration = duration
+        animationGroup.timingFunction = timing.mediaTimingFunction
+        animationGroup.isRemovedOnCompletion = true
+        animationGroup.delegate = delegate
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.shouldRasterize = false
+        layer.allowsEdgeAntialiasing = true
+        layer.transform = toTransform
+        layer.opacity = toOpacity
+        layer.add(animationGroup, forKey: PanelPresentationAnimation.layerAnimationKey)
+        CATransaction.commit()
     }
 
     private func rememberPreviousFocusApplicationIfNeeded() {
@@ -634,11 +912,19 @@ final class FloatingPanelController {
     }
 
     private func configurePanel() {
-        panel.contentView = makeFloatingPanelHostView(contentView: contentView)
+        presentationRootView.wantsLayer = true
+        presentationRootView.layer?.backgroundColor = NSColor.clear.cgColor
+        presentationRootView.layer?.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
+        presentationRootView.layer?.cornerCurve = .continuous
+        presentationRootView.layer?.masksToBounds = true
+        presentationRootView.presentationHostView = presentationHostView
+        presentationRootView.addSubview(presentationHostView)
+        panel.contentView = presentationRootView
         panel.isOpaque = false
         panel.alphaValue = 1
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.animationBehavior = .none
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [
@@ -717,7 +1003,7 @@ final class FloatingPanelController {
         return PanelInteractionPlanner.shouldHideForOutsideMouseDown(
             eventWindowIsPanel: eventWindow === panel,
             mouseLocation: mouseLocation,
-            panelFrame: panel.frame
+            panelFrame: semanticPanelFrame ?? panel.frame
         )
     }
 
@@ -758,7 +1044,7 @@ extension FloatingPanelController {
     }
 
     var smokePanelFrame: CGRect {
-        panel.frame
+        semanticPanelFrame ?? panel.frame
     }
 
     var smokePreferredHeight: CGFloat {
@@ -771,6 +1057,23 @@ extension FloatingPanelController {
 
     var smokePanelAlphaValue: CGFloat {
         panel.alphaValue
+    }
+
+    var smokePresentationWindowFrame: CGRect {
+        panel.frame
+    }
+
+    var smokePresentationHostFrame: CGRect {
+        presentationHostView.frame
+    }
+
+    var smokePresentationHostTransformIsIdentity: Bool {
+        guard let transform = presentationHostView.layer?.transform else { return false }
+        return transform.isApproximatelyIdentity
+    }
+
+    var smokePresentationHostOpacity: Float {
+        presentationHostView.layer?.opacity ?? 0
     }
 
     var smokePanelContentBackgroundAlpha: CGFloat {
@@ -796,15 +1099,23 @@ extension FloatingPanelController {
     }
 
     var smokeHasActivePanelAnimation: Bool {
-        panelAnimationTask != nil
+        activePanelAnimation != nil
+    }
+
+    var smokePresentationAnimationSamples: [PanelPresentationAnimationSample] {
+        presentationAnimationSamples
+    }
+
+    func smokeResetPresentationAnimationSamples() {
+        presentationAnimationSamples.removeAll()
     }
 
     var smokeEntranceAnimationFrame: CGRect {
-        PanelPresentationAnimation.entranceFrame(for: panel.frame)
+        PanelPresentationAnimation.entranceFrame(for: semanticPanelFrame ?? panel.frame)
     }
 
     var smokeHiddenAnimationFrame: CGRect {
-        PanelPresentationAnimation.dismissedFrame(for: panel.frame)
+        PanelPresentationAnimation.dismissedFrame(for: semanticPanelFrame ?? panel.frame)
     }
 
     var smokeHasOutsideClickMonitoring: Bool {
