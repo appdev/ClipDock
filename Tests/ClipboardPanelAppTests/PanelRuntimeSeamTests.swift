@@ -1939,6 +1939,8 @@ struct PanelRuntimeSeamTests {
         let entranceFrame = controller.smokeEntranceAnimationFrame
         let hiddenFrame = controller.smokeHiddenAnimationFrame
 
+        #expect(controller.smokePresentationHostIsWindowContentView)
+        #expect(controller.smokePresentationWindowHasRoundedMask)
         #expect(presentationWindowFrame == shownFrame)
         #expect(presentationHostFrame == CGRect(origin: .zero, size: shownFrame.size))
         #expect(entranceFrame.minY < shownFrame.minY)

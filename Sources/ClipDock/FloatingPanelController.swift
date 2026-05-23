@@ -68,26 +68,6 @@ private enum PanelPresentationTiming {
     }
 }
 
-private final class PanelPresentationRootView: NSView {
-    weak var presentationHostView: NSView?
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let presentationHostView,
-              !presentationHostView.isHidden,
-              presentationHostView.alphaValue > 0.01
-        else {
-            return nil
-        }
-
-        let pointInHost = convert(point, to: presentationHostView)
-        guard presentationHostView.bounds.contains(pointInHost) else {
-            return nil
-        }
-
-        return presentationHostView.hitTest(pointInHost)
-    }
-}
-
 private final class PanelAnimationCompletionDelegate: NSObject, CAAnimationDelegate {
     private let completion: (Bool) -> Void
 
@@ -210,7 +190,6 @@ final class FloatingPanelController {
 
     private let panel: FloatingPanel
     private let contentView: FloatingPanelContentView
-    private let presentationRootView = PanelPresentationRootView(frame: .zero)
     private let presentationHostView: NSView
     private let focusApplicationProvider: PanelFocusApplicationProviding
     private let heightPreferenceStore: PanelHeightPreferenceStoring
@@ -655,17 +634,31 @@ final class FloatingPanelController {
         if panel.frame != shownFrame {
             panel.setFrame(shownFrame, display: true)
         }
-        presentationRootView.frame = NSRect(origin: .zero, size: shownFrame.size)
-        presentationHostView.frame = presentationRootView.bounds
+        presentationHostView.frame = NSRect(origin: .zero, size: shownFrame.size)
         contentView.frame = presentationHostView.bounds
+        configurePresentationWindowMask()
     }
 
     private func configurePresentationHostForStableShownFrame(_ shownFrame: NSRect) {
         semanticPanelFrame = shownFrame
-        presentationRootView.frame = NSRect(origin: .zero, size: shownFrame.size)
-        presentationHostView.frame = presentationRootView.bounds
+        presentationHostView.frame = NSRect(origin: .zero, size: shownFrame.size)
         contentView.frame = presentationHostView.bounds
+        configurePresentationWindowMask()
         resetPresentationLayerState()
+    }
+
+    private func configurePresentationWindowMask() {
+        guard let maskView = presentationHostView.superview else { return }
+        maskView.wantsLayer = true
+        guard let layer = maskView.layer else { return }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.backgroundColor = NSColor.clear.cgColor
+        layer.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
+        layer.cornerCurve = .continuous
+        layer.masksToBounds = true
+        CATransaction.commit()
     }
 
     private func resetPresentationLayerState() {
@@ -762,9 +755,9 @@ final class FloatingPanelController {
             panel.setFrame(shownFrame, display: true)
         }
         semanticPanelFrame = shownFrame
-        presentationRootView.frame = NSRect(origin: .zero, size: shownFrame.size)
-        presentationHostView.frame = presentationRootView.bounds
+        presentationHostView.frame = NSRect(origin: .zero, size: shownFrame.size)
         contentView.frame = presentationHostView.bounds
+        configurePresentationWindowMask()
 
         let sampler = PanelAnimationFrameSampler()
         sampler.start()
@@ -912,14 +905,8 @@ final class FloatingPanelController {
     }
 
     private func configurePanel() {
-        presentationRootView.wantsLayer = true
-        presentationRootView.layer?.backgroundColor = NSColor.clear.cgColor
-        presentationRootView.layer?.cornerRadius = FloatingPanelContentView.panelBackgroundCornerRadius
-        presentationRootView.layer?.cornerCurve = .continuous
-        presentationRootView.layer?.masksToBounds = true
-        presentationRootView.presentationHostView = presentationHostView
-        presentationRootView.addSubview(presentationHostView)
-        panel.contentView = presentationRootView
+        panel.contentView = presentationHostView
+        configurePresentationWindowMask()
         panel.isOpaque = false
         panel.alphaValue = 1
         panel.backgroundColor = .clear
@@ -1074,6 +1061,17 @@ extension FloatingPanelController {
 
     var smokePresentationHostOpacity: Float {
         presentationHostView.layer?.opacity ?? 0
+    }
+
+    var smokePresentationHostIsWindowContentView: Bool {
+        panel.contentView === presentationHostView
+    }
+
+    var smokePresentationWindowHasRoundedMask: Bool {
+        guard let layer = presentationHostView.superview?.layer else { return false }
+
+        return layer.masksToBounds
+            && abs(layer.cornerRadius - FloatingPanelContentView.panelBackgroundCornerRadius) < 0.001
     }
 
     var smokePanelContentBackgroundAlpha: CGFloat {
