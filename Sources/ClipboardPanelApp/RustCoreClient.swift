@@ -121,17 +121,20 @@ public struct RustGeneralPreferences: Equatable, Codable, Sendable {
     public var launchAtLogin: Bool
     public var showMenuBarItem: Bool
     public var copyCompletionHUDEnabled: Bool
+    public var externalCopySoundEnabled: Bool
     public var defaultPanelHeight: Int64
 
     public init(
         launchAtLogin: Bool = false,
         showMenuBarItem: Bool = true,
         copyCompletionHUDEnabled: Bool = true,
+        externalCopySoundEnabled: Bool = true,
         defaultPanelHeight: Int64 = 302
     ) {
         self.launchAtLogin = launchAtLogin
         self.showMenuBarItem = showMenuBarItem
         self.copyCompletionHUDEnabled = copyCompletionHUDEnabled
+        self.externalCopySoundEnabled = externalCopySoundEnabled
         self.defaultPanelHeight = defaultPanelHeight
     }
 
@@ -139,6 +142,7 @@ public struct RustGeneralPreferences: Equatable, Codable, Sendable {
         case launchAtLogin = "launch_at_login"
         case showMenuBarItem = "show_menu_bar_item"
         case copyCompletionHUDEnabled = "copy_completion_hud_enabled"
+        case externalCopySoundEnabled = "external_copy_sound_enabled"
         case defaultPanelHeight = "default_panel_height"
     }
 
@@ -149,6 +153,10 @@ public struct RustGeneralPreferences: Equatable, Codable, Sendable {
         self.copyCompletionHUDEnabled = try container.decodeIfPresent(
             Bool.self,
             forKey: .copyCompletionHUDEnabled
+        ) ?? true
+        self.externalCopySoundEnabled = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .externalCopySoundEnabled
         ) ?? true
         self.defaultPanelHeight = try container.decodeIfPresent(
             Int64.self,

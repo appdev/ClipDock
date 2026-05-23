@@ -581,6 +581,8 @@ pub struct GeneralPreferences {
     pub show_menu_bar_item: bool,
     #[serde(default = "default_true")]
     pub copy_completion_hud_enabled: bool,
+    #[serde(default = "default_true")]
+    pub external_copy_sound_enabled: bool,
     #[serde(default = "default_panel_height")]
     pub default_panel_height: i64,
 }
@@ -591,6 +593,7 @@ impl Default for GeneralPreferences {
             launch_at_login: false,
             show_menu_bar_item: true,
             copy_completion_hud_enabled: true,
+            external_copy_sound_enabled: true,
             default_panel_height: default_panel_height(),
         }
     }

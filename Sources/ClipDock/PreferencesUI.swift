@@ -690,6 +690,7 @@ final class PreferencesWindowController: NSWindowController {
         }
         viewModel.persist { $0.general.showMenuBarItem.toggle() }
         viewModel.persist { $0.general.copyCompletionHUDEnabled.toggle() }
+        viewModel.persist { $0.general.externalCopySoundEnabled.toggle() }
         viewModel.persist { $0.appearance.previewPopoverEnabled.toggle() }
         viewModel.persist { $0.linkPreview.webPreviewEnabled.toggle() }
         viewModel.persist { $0.shortcuts.pasteDirectlyToTarget.toggle() }
@@ -1531,6 +1532,22 @@ private struct PreferenceGeneralSection: View {
                         isOn: Binding(
                             get: { model.state.preferences.general.copyCompletionHUDEnabled },
                             set: { isOn in model.persist { $0.general.copyCompletionHUDEnabled = isOn } }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+                PreferenceDivider()
+                PreferenceRow(
+                    title: AppLocalization.text("preferences.copySound.title", defaultValue: "复制音效"),
+                    detail: AppLocalization.text("preferences.copySound.detail", defaultValue: "在其他应用复制内容后播放音效")
+                ) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { model.state.preferences.general.externalCopySoundEnabled },
+                            set: { isOn in model.persist { $0.general.externalCopySoundEnabled = isOn } }
                         )
                     )
                     .labelsHidden()
@@ -2898,6 +2915,13 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                             detail: AppLocalization.text("preferences.copyCompletionHUD.detail", defaultValue: "复制成功后显示短暂提示"),
                             control: makeSwitch(isOn: preferences.general.copyCompletionHUDEnabled) { [weak self] isOn in
                                 self?.persist { $0.general.copyCompletionHUDEnabled = isOn }
+                            }
+                        ),
+                        makeSettingRow(
+                            title: AppLocalization.text("preferences.copySound.title", defaultValue: "复制音效"),
+                            detail: AppLocalization.text("preferences.copySound.detail", defaultValue: "在其他应用复制内容后播放音效"),
+                            control: makeSwitch(isOn: preferences.general.externalCopySoundEnabled) { [weak self] isOn in
+                                self?.persist { $0.general.externalCopySoundEnabled = isOn }
                             }
                         )
                     ]),

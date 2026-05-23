@@ -143,6 +143,8 @@
 "preferences.appearanceMode.title" = "Display Mode";
 "preferences.copyCompletionHUD.detail" = "Show a short confirmation after copying";
 "preferences.copyCompletionHUD.title" = "Copy Completion HUD";
+"preferences.copySound.detail" = "다른 앱에서 복사한 뒤 소리를 재생";
+"preferences.copySound.title" = "복사 소리";
 "preferences.directPaste.detail.enabled" = "Paste the selected item into the current app automatically";
 "preferences.directPaste.detail.requiresAccessibility" = "Allow ClipDock in Accessibility settings";
 "preferences.directPaste.title" = "Paste directly to target";

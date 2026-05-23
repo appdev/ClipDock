@@ -104,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let launchAtLoginController = LaunchAtLoginController()
     private let accessibilityPermissionController = AccessibilityPermissionController()
     private let copyCompletionHUDController = CopyCompletionHUDController()
+    private let copySoundFeedbackPlayer: CopySoundFeedbackPlaying = CopySoundFeedbackPlayer()
     private let sourceApplicationTracker = SourceApplicationTracker()
     private let clipboardMonitor = ClipboardMonitor()
     private let updateCoordinator = AppUpdateCoordinator()
@@ -559,6 +560,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showCopyCompletionHUDIfEnabled(eventID: String) {
         guard currentPreferences.general.copyCompletionHUDEnabled else { return }
         copyCompletionHUDController.show(eventID: eventID)
+    }
+
+    private func playExternalCopySoundIfEnabled() {
+        let frontmostApplication = NSWorkspace.shared.frontmostApplication.map {
+            ExternalCopySoundApplicationIdentity(
+                processIdentifier: $0.processIdentifier,
+                bundleIdentifier: $0.bundleIdentifier
+            )
+        }
+        guard ExternalCopySoundPolicy.shouldPlay(
+            preferences: currentPreferences,
+            frontmostApplication: frontmostApplication,
+            isCurrentApplicationActive: NSApp.isActive
+        ) else {
+            return
+        }
+        copySoundFeedbackPlayer.playCopySound()
     }
 
     private func selfCopyCompletionEventID(changeCount: Int?, token: String) -> String {
@@ -1699,6 +1717,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             applyCaptureResult(skipResult)
             return
         }
+        playExternalCopySoundIfEnabled()
 
         enqueueCaptureRegistration { [weak self, text, displayRichText, changeCount, preferences, source] in
             guard let self,
@@ -1737,6 +1756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             applyCaptureResult(skipResult)
             return
         }
+        playExternalCopySoundIfEnabled()
 
         enqueueCaptureRegistration { [weak self, richText, changeCount, preferences, source] in
             guard let self,
@@ -1769,6 +1789,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             applyCaptureResult(skipResult)
             return
         }
+        playExternalCopySoundIfEnabled()
 
         enqueueCaptureRegistration { [weak self, image, changeCount, preferences, source] in
             guard let self,
@@ -1926,6 +1947,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             applyCaptureResult(skipResult)
             return
         }
+        playExternalCopySoundIfEnabled()
 
         enqueueCaptureRegistration { [weak self, files, changeCount, preferences, source] in
             var enrichedFiles = await Task.detached(priority: .utility) {

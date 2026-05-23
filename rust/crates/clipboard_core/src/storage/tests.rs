@@ -2877,6 +2877,8 @@ fn default_preferences_document_is_seeded() {
     assert_eq!(preferences.general.default_panel_height, 320);
     assert!(row.1.contains("\"copy_completion_hud_enabled\":true"));
     assert!(preferences.general.copy_completion_hud_enabled);
+    assert!(row.1.contains("\"external_copy_sound_enabled\":true"));
+    assert!(preferences.general.external_copy_sound_enabled);
     assert_eq!(preferences.history.max_items, 5000);
     assert_eq!(preferences.appearance.mode, "system");
     assert!(preferences.link_preview.web_preview_enabled);
@@ -3026,6 +3028,7 @@ fn preferences_update_persists_normalized_document() {
     let mut preferences = core.get_preferences().unwrap();
     preferences.general.default_panel_height = 999;
     preferences.general.copy_completion_hud_enabled = false;
+    preferences.general.external_copy_sound_enabled = false;
     preferences.history.max_items = 10;
     preferences.history.retention_days = 999;
     preferences.history.record_images = false;
@@ -3064,6 +3067,7 @@ fn preferences_update_persists_normalized_document() {
 
     assert_eq!(saved.general.default_panel_height, 999);
     assert!(!saved.general.copy_completion_hud_enabled);
+    assert!(!saved.general.external_copy_sound_enabled);
     assert_eq!(saved.history.max_items, 5000);
     assert_eq!(saved.history.retention_days, 365);
     assert!(saved.history.record_images);
@@ -3158,6 +3162,7 @@ fn preferences_parse_keeps_backward_compatible_missing_ignore_list() {
     let preferences = preferences::parse_preferences_document(legacy_json).unwrap();
 
     assert!(preferences.general.copy_completion_hud_enabled);
+    assert!(preferences.general.external_copy_sound_enabled);
     assert_eq!(
         preferences.ignore_list.ignored_app_identifiers,
         vec![

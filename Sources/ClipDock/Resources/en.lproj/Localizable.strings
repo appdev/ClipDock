@@ -143,6 +143,8 @@
 "preferences.appearanceMode.title" = "Display Mode";
 "preferences.copyCompletionHUD.detail" = "Show a short confirmation after copying";
 "preferences.copyCompletionHUD.title" = "Copy Completion HUD";
+"preferences.copySound.detail" = "Play a sound after copying in other apps";
+"preferences.copySound.title" = "Copy sound";
 "preferences.directPaste.detail.enabled" = "Paste the selected item into the current app automatically";
 "preferences.directPaste.detail.requiresAccessibility" = "Allow ClipDock in Accessibility settings";
 "preferences.directPaste.title" = "Paste directly to target";
