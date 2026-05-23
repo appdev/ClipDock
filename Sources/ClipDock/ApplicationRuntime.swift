@@ -757,8 +757,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 AppLocalization.text("copy.status.writtenToClipboard", defaultValue: "复制：已写入剪贴板")
             }
             refreshStatusText()
-            performItemMutation(.recordCopied(itemID: item.id))
             panelController.hideAfterCopyingSelection()
+            performItemMutation(.recordCopied(itemID: item.id))
             if didScheduleDirectPaste {
                 scheduleCommandVToTarget()
             }
@@ -809,8 +809,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
             storageStatusText = AppLocalization.text("copyPlainText.status.writtenToClipboard", defaultValue: "复制为纯文本：已写入剪贴板")
             refreshStatusText()
-            performItemMutation(.recordCopied(itemID: item.id))
             panelController.hideAfterCopyingSelection()
+            performItemMutation(.recordCopied(itemID: item.id))
 
         case .failure(let message):
             storageStatusText = AppLocalization.format("copyPlainText.status.message", defaultValue: "复制为纯文本：%@", message)
@@ -882,11 +882,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 statusText
             }
             refreshStatusText()
+            panelController.hideAfterCopyingSelection()
             performItemBatchMutation(
                 items.map { .recordCopied(itemID: $0.id) },
                 summaryKind: .recordCopied
             )
-            panelController.hideAfterCopyingSelection()
             if didScheduleDirectPaste {
                 scheduleCommandVToTarget()
             }

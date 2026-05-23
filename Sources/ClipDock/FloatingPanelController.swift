@@ -34,6 +34,14 @@ struct PanelPresentationAnimationSample: Equatable {
     let frameCount: Int
 }
 
+struct PanelPresentationAnimationCompletionSnapshot: Equatable {
+    let name: String
+    let panelIsVisible: Bool
+    let hostTransformTranslationY: CGFloat
+    let hostTransformIsIdentity: Bool
+    let hostOpacity: Float
+}
+
 private enum PanelPresentationTiming {
     case easeIn
     case easeInOut
@@ -208,6 +216,7 @@ final class FloatingPanelController {
     private var semanticPanelFrame: NSRect?
     private var pendingListUpdateAfterPresentation: PendingListUpdate?
     private var presentationAnimationSamples: [PanelPresentationAnimationSample] = []
+    private var presentationAnimationCompletionObserver: ((PanelPresentationAnimationCompletionSnapshot) -> Void)?
     private var resizePerformanceStart: TimeInterval?
     private var resizePerformanceEventCount = 0
     private var resizePerformanceSlowestFrameMilliseconds = 0.0
@@ -379,7 +388,8 @@ final class FloatingPanelController {
             shownFrame: shownFrame,
             duration: PanelPresentationAnimation.hideDuration,
             timing: .easeIn,
-            generation: generation
+            generation: generation,
+            resetPresentationLayerBeforeCompletion: false
         ) { [weak self] in
             guard let self, !self.isPanelPresented else { return }
             self.panel.orderOut(nil)
@@ -736,6 +746,7 @@ final class FloatingPanelController {
         duration: TimeInterval,
         timing: PanelPresentationTiming,
         generation: Int,
+        resetPresentationLayerBeforeCompletion: Bool = true,
         completion: @escaping @MainActor () -> Void
     ) {
         cancelPanelAnimation()
@@ -775,7 +786,21 @@ final class FloatingPanelController {
                 let frameCount = self.activePanelAnimation?.sampler.stop() ?? 0
                 self.activePanelAnimation = nil
                 self.panel.setFrame(shownFrame, display: true)
-                self.configurePresentationHostForStableShownFrame(shownFrame)
+                if resetPresentationLayerBeforeCompletion {
+                    self.configurePresentationHostForStableShownFrame(shownFrame)
+                }
+                if let observer = self.presentationAnimationCompletionObserver {
+                    self.presentationAnimationCompletionObserver = nil
+                    let layer = self.presentationHostView.layer
+                    let transform = layer?.transform ?? CATransform3DIdentity
+                    observer(PanelPresentationAnimationCompletionSnapshot(
+                        name: name,
+                        panelIsVisible: self.panel.isVisible,
+                        hostTransformTranslationY: transform.m42,
+                        hostTransformIsIdentity: transform.isApproximatelyIdentity,
+                        hostOpacity: layer?.opacity ?? 0
+                    ))
+                }
                 let durationMilliseconds = (ProcessInfo.processInfo.systemUptime - startTime) * 1_000
                 self.presentationAnimationSamples.append(PanelPresentationAnimationSample(
                     name: name,
@@ -1106,6 +1131,12 @@ extension FloatingPanelController {
 
     func smokeResetPresentationAnimationSamples() {
         presentationAnimationSamples.removeAll()
+    }
+
+    func smokeObserveNextPresentationAnimationCompletion(
+        _ observer: @escaping (PanelPresentationAnimationCompletionSnapshot) -> Void
+    ) {
+        presentationAnimationCompletionObserver = observer
     }
 
     var smokeEntranceAnimationFrame: CGRect {

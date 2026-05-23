@@ -184,6 +184,8 @@ struct PanelRuntimeSeamTests {
         #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
         #expect(contentView.smokeSelectedCardIDs() == [ids[0], ids[1]])
 
+        PanelQAHarness.sendCommandModifier(down: true, to: contentView)
+        #expect(!contentView.smokeCommandHintTexts().isEmpty)
         PanelQAHarness.sendCommandC(to: contentView)
 
         #expect(copiedItemIDs == [ids[0], ids[1]])
@@ -192,12 +194,14 @@ struct PanelRuntimeSeamTests {
         #expect(controller.smokeHasActivePanelAnimation)
         #expect(contentView.smokeSelectedItemIDs == [ids[0], ids[1]])
         #expect(contentView.smokeSelectedCardIDs() == [ids[0], ids[1]])
+        #expect(!contentView.smokeCommandHintTexts().isEmpty)
 
         #expect(await waitForMainActor(attempts: 240) {
             !controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
         })
         #expect(contentView.smokeSelectedItemIDs == [ids[1]])
         #expect(contentView.smokeSelectedCardIDs() == [ids[1]])
+        #expect(contentView.smokeCommandHintTexts().isEmpty)
     }
 
     @Test
@@ -1971,6 +1975,42 @@ struct PanelRuntimeSeamTests {
         #expect(controller.smokePresentationWindowFrame == shownFrame)
         #expect(controller.smokePresentationHostTransformIsIdentity)
         #expect(abs(controller.smokePresentationHostOpacity - 1) < 0.001)
+    }
+
+    @Test
+    @MainActor
+    func hidingPanelKeepsDismissedTransformUntilWindowOrdersOut() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        controller.show()
+        #expect(await waitForMainActor(attempts: 240) {
+            controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+
+        var completionSnapshot: PanelPresentationAnimationCompletionSnapshot?
+        controller.smokeObserveNextPresentationAnimationCompletion { snapshot in
+            completionSnapshot = snapshot
+        }
+
+        controller.hide(restoresPreviousApplicationFocus: false)
+
+        #expect(await waitForMainActor(attempts: 240) {
+            completionSnapshot != nil
+        })
+        let snapshot = try #require(completionSnapshot)
+        #expect(snapshot.name == "hide")
+        #expect(snapshot.panelIsVisible)
+        #expect(!snapshot.hostTransformIsIdentity)
+        #expect(snapshot.hostTransformTranslationY < -1)
+        #expect(snapshot.hostOpacity < 1)
+
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+        #expect(controller.smokePresentationHostTransformIsIdentity)
     }
 
     @Test
@@ -4609,6 +4649,90 @@ struct PanelRuntimeSeamTests {
         }
 
         controller.hide()
+    }
+
+    @Test
+    @MainActor
+    func quickPasteHideDefersPostCopyListRefreshUntilPanelIsHidden() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        let initialItems = Array(PanelQASamples.makePagedPanelItems(count: 3))
+        let refreshedItems = initialItems.reversed().map { item in
+            RustClipboardItemSummary(
+                id: "refreshed-\(item.id)",
+                itemType: item.itemType,
+                summary: item.summary,
+                primaryText: item.primaryText,
+                contentHash: "refreshed-\(item.contentHash)",
+                sourceAppId: item.sourceAppId,
+                sourceAppName: item.sourceAppName,
+                sourceAppIconPath: item.sourceAppIconPath,
+                previewAssetPath: item.previewAssetPath,
+                payloadAssetPath: item.payloadAssetPath,
+                sourceConfidence: item.sourceConfidence,
+                firstCopiedAtMs: item.firstCopiedAtMs,
+                lastCopiedAtMs: item.lastCopiedAtMs,
+                copyCount: item.copyCount,
+                isPinned: item.isPinned,
+                sizeBytes: item.sizeBytes,
+                previewState: item.previewState,
+                fileItems: item.fileItems,
+                linkMetadata: item.linkMetadata
+            )
+        }
+        var copiedItemID: String?
+
+        controller.onRuntimeAction = { [weak controller] action in
+            guard let controller else { return }
+            if case .copyItem(let item) = action {
+                copiedItemID = item.id
+                controller.hideAfterCopyingSelection()
+                controller.updateListState(
+                    .success(RustCoreListResult(
+                        items: refreshedItems,
+                        totalCount: Int64(refreshedItems.count),
+                        hasMore: false
+                    )),
+                    isFiltered: false
+                )
+            }
+        }
+
+        controller.show()
+        controller.updateListState(
+            .success(RustCoreListResult(
+                items: initialItems,
+                totalCount: Int64(initialItems.count),
+                hasMore: false
+            )),
+            isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+        #expect(await waitForMainActor(attempts: 240) {
+            controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+
+        PanelQAHarness.sendCommandModifier(down: true, to: contentView)
+        #expect(!contentView.smokeCommandHintTexts().isEmpty)
+        PanelQAHarness.sendCommandNumber(1, to: contentView)
+
+        #expect(copiedItemID == initialItems[0].id)
+        #expect(!controller.isVisible)
+        #expect(controller.smokePanelIsActuallyVisible)
+        #expect(controller.smokeHasActivePanelAnimation)
+        #expect(contentView.smokeOrderedCardItemIDs() == initialItems.map(\.id))
+        #expect(!contentView.smokeCommandHintTexts().isEmpty)
+
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokePanelIsActuallyVisible
+                && !controller.smokeHasActivePanelAnimation
+                && contentView.smokeOrderedCardItemIDs() == refreshedItems.map(\.id)
+        })
+        #expect(contentView.smokeCommandHintTexts().isEmpty)
     }
 
     @Test

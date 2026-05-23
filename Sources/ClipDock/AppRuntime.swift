@@ -2475,6 +2475,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     func collapseCopySelectionAfterPanelHidden() {
         applyInteractionResult(interactionController.collapseSelectionToPrimary())
+        applyInteractionAction(.setCommandHintMode(enabled: false, visibleItemIDs: []))
     }
 
     private func scrollSelectedItemIntoView() {

@@ -334,7 +334,7 @@ struct PanelInteractionControllerTests {
     }
 
     @Test
-    func commandCopyClearsHintsAndEmitsCopyAction() {
+    func commandCopyKeepsHintsUntilCopyHideCompletesAndEmitsCopyAction() {
         let items = [
             makePanelInteractionItem(id: "a"),
             makePanelInteractionItem(id: "b"),
@@ -361,16 +361,15 @@ struct PanelInteractionControllerTests {
         ))
 
         #expect(result.viewState.selectedItemID == "b")
-        #expect(!result.viewState.isCommandHintModeEnabled)
+        #expect(result.viewState.isCommandHintModeEnabled)
         #expect(result.effects == [
-            .commandHints([:]),
             .preview(.close),
             .external(.copyItem(itemID: "b"))
         ])
     }
 
     @Test
-    func copySelectionUsesSelectedCountAndClearsCommandHints() {
+    func copySelectionUsesSelectedCountAndKeepsHintsUntilCopyHideCompletes() {
         let items = [makePanelInteractionItem(id: "a"), makePanelInteractionItem(id: "b")]
         let controller = makePanelInteractionController(
             sceneState: PanelSceneState(
@@ -393,9 +392,8 @@ struct PanelInteractionControllerTests {
 
         #expect(result.viewState.selectedItemID == "b")
         #expect(result.viewState.selectedItemIDs == ["a", "b"])
-        #expect(!result.viewState.isCommandHintModeEnabled)
+        #expect(result.viewState.isCommandHintModeEnabled)
         #expect(result.effects == [
-            .commandHints([:]),
             .preview(.close),
             .external(.copyItems(itemIDs: ["a", "b"]))
         ])
@@ -422,9 +420,8 @@ struct PanelInteractionControllerTests {
         let result = controller.dispatch(.copySelection)
 
         #expect(result.viewState.selectedItemID == "b")
-        #expect(!result.viewState.isCommandHintModeEnabled)
+        #expect(result.viewState.isCommandHintModeEnabled)
         #expect(result.effects == [
-            .commandHints([:]),
             .preview(.close),
             .external(.copyItem(itemID: "b"))
         ])

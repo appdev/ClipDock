@@ -256,10 +256,8 @@ public final class PanelInteractionController {
                 return makeResult()
             }
 
-            contentController.setCommandHintMode(enabled: false)
             contentController.copyItem(itemID: selectedItemID)
             return makeResult(effects: [
-                .commandHints([:]),
                 .preview(.close),
                 copyEffect(itemIDs: itemIDs)
             ])
@@ -342,10 +340,8 @@ public final class PanelInteractionController {
                 return makeResult()
             }
 
-            contentController.setCommandHintMode(enabled: false)
             contentController.copyItem(itemID: itemID)
             return makeResult(effects: [
-                .commandHints([:]),
                 .preview(.close),
                 .external(.copyItem(itemID: itemID))
             ])
@@ -358,10 +354,8 @@ public final class PanelInteractionController {
                 return makeResult()
             }
 
-            contentController.setCommandHintMode(enabled: false)
             contentController.copyItem(itemID: itemID)
             return makeResult(effects: [
-                .commandHints([:]),
                 .preview(.close),
                 .external(.copyItemAsPlainText(itemID: itemID))
             ])
