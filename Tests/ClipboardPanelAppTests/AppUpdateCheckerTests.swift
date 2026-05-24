@@ -87,10 +87,43 @@ struct AppUpdateCheckerTests {
     }
 
     @Test
+    func scheduleChecksImmediatelyAfterTenWhenNeverAttempted() throws {
+        let calendar = fixedCalendar()
+        let now = try date("2026-05-20T14:00:00Z")
+        let expectedNext = try date("2026-05-21T10:00:00Z")
+
+        let plan = AppUpdatePlanner.schedule(
+            now: now,
+            lastAttemptDate: nil,
+            calendar: calendar
+        )
+
+        #expect(plan.shouldCheckNow)
+        #expect(plan.nextCheckDate == expectedNext)
+    }
+
+    @Test
     func scheduleDoesNotCheckTwiceAfterTodayAttempt() throws {
         let calendar = fixedCalendar()
         let now = try date("2026-05-20T11:30:00Z")
         let todayAttempt = try date("2026-05-20T10:05:00Z")
+        let expectedNext = try date("2026-05-21T10:00:00Z")
+
+        let plan = AppUpdatePlanner.schedule(
+            now: now,
+            lastAttemptDate: todayAttempt,
+            calendar: calendar
+        )
+
+        #expect(!plan.shouldCheckNow)
+        #expect(plan.nextCheckDate == expectedNext)
+    }
+
+    @Test
+    func scheduleDoesNotCatchUpWhenAlreadyAttemptedEarlierToday() throws {
+        let calendar = fixedCalendar()
+        let now = try date("2026-05-20T14:00:00Z")
+        let todayAttempt = try date("2026-05-20T09:05:00Z")
         let expectedNext = try date("2026-05-21T10:00:00Z")
 
         let plan = AppUpdatePlanner.schedule(
@@ -243,6 +276,50 @@ struct AppUpdateCheckerTests {
 
     @Test
     @MainActor
+    func automaticCheckPromptDoesNotBlockSettingsChecksWhileAwaitingAction() async throws {
+        let release = try makeRelease(version: "v0.2.0")
+        let provider = FakeAppUpdateProvider(release: release)
+        let promptPresenter = FakeAppUpdatePromptPresenter(action: nil)
+        let urlOpener = FakeAppUpdateURLOpener()
+        let stateStore = InMemoryAppUpdateStateStore()
+        let coordinator = AppUpdateCoordinator(
+            provider: provider,
+            promptPresenter: promptPresenter,
+            urlOpener: urlOpener,
+            stateStore: stateStore,
+            versionProvider: FakeAppVersionProvider(version: "0.1.3"),
+            calendar: fixedCalendar(),
+            now: { Date(timeIntervalSince1970: 1_779_282_000) }
+        )
+        var statuses: [AppUpdateSettingsStatus] = []
+        coordinator.onSettingsUpdateStatusChanged = { status in
+            statuses.append(status)
+        }
+
+        coordinator.start()
+        await waitFor {
+            promptPresenter.requestCount == 1
+        }
+        coordinator.checkForSettingsUpdate()
+        await waitFor {
+            statuses.last == .available(release)
+        }
+
+        #expect(promptPresenter.requestedRelease == release)
+        #expect(promptPresenter.requestedCurrentVersion == "0.1.3")
+        #expect(promptPresenter.pendingActionCount == 1)
+        #expect(provider.requestCount == 2)
+        #expect(statuses.first == .checking)
+        #expect(statuses.last == .available(release))
+        #expect(urlOpener.openedURLs.isEmpty)
+
+        promptPresenter.completePendingAction(.download)
+
+        #expect(urlOpener.openedURLs == [release.downloadURL])
+    }
+
+    @Test
+    @MainActor
     func preferencesVersionRowClickRequestsReleasePageWhenUpdateIsAvailable() throws {
         let release = try makeRelease(version: "v0.2.0")
         let controller = PreferencesWindowController()
@@ -311,23 +388,39 @@ private final class FakeAppUpdateProvider: AppUpdateProviding {
 
 @MainActor
 private final class FakeAppUpdatePromptPresenter: AppUpdatePromptPresenting {
-    let action: AppUpdatePromptAction
+    let action: AppUpdatePromptAction?
     private(set) var requestCount = 0
     private(set) var requestedRelease: AppUpdateRelease?
     private(set) var requestedCurrentVersion: String?
+    private var pendingActions: [(AppUpdatePromptAction) -> Void] = []
 
-    init(action: AppUpdatePromptAction = .skipForNow) {
+    var pendingActionCount: Int {
+        pendingActions.count
+    }
+
+    init(action: AppUpdatePromptAction? = .skipForNow) {
         self.action = action
     }
 
     func presentUpdatePrompt(
         release: AppUpdateRelease,
-        currentVersion: String
-    ) -> AppUpdatePromptAction {
+        currentVersion: String,
+        onAction: @escaping (AppUpdatePromptAction) -> Void
+    ) {
         requestCount += 1
         requestedRelease = release
         requestedCurrentVersion = currentVersion
-        return action
+        if let action {
+            onAction(action)
+        } else {
+            pendingActions.append(onAction)
+        }
+    }
+
+    func completePendingAction(_ action: AppUpdatePromptAction) {
+        guard !pendingActions.isEmpty else { return }
+        let onAction = pendingActions.removeFirst()
+        onAction(action)
     }
 }
 

@@ -2,15 +2,22 @@ import AppKit
 
 @MainActor
 final class AppUpdatePromptWindowPresenter: AppUpdatePromptPresenting {
+    private var activeControllers: [AppUpdatePromptWindowController] = []
+
     func presentUpdatePrompt(
         release: AppUpdateRelease,
-        currentVersion: String
-    ) -> AppUpdatePromptAction {
+        currentVersion: String,
+        onAction: @escaping (AppUpdatePromptAction) -> Void
+    ) {
         let controller = AppUpdatePromptWindowController(
             release: release,
             currentVersion: currentVersion
-        )
-        return controller.presentAndWait()
+        ) { [weak self] controller, action in
+            self?.activeControllers.removeAll { $0 === controller }
+            onAction(action)
+        }
+        activeControllers.append(controller)
+        controller.present()
     }
 }
 
@@ -21,10 +28,15 @@ private final class AppUpdatePromptWindowController: NSWindowController, NSWindo
         static let minimumSize = NSSize(width: 680, height: 430)
     }
 
-    private var selectedAction: AppUpdatePromptAction = .skipForNow
     private var didComplete = false
+    private let onCompletion: (AppUpdatePromptWindowController, AppUpdatePromptAction) -> Void
 
-    init(release: AppUpdateRelease, currentVersion: String) {
+    init(
+        release: AppUpdateRelease,
+        currentVersion: String,
+        onCompletion: @escaping (AppUpdatePromptWindowController, AppUpdatePromptAction) -> Void
+    ) {
+        self.onCompletion = onCompletion
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Layout.initialSize),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -54,20 +66,17 @@ private final class AppUpdatePromptWindowController: NSWindowController, NSWindo
         fatalError("init(coder:) has not been implemented")
     }
 
-    func presentAndWait() -> AppUpdatePromptAction {
-        guard let window else { return .skipForNow }
-        selectedAction = .skipForNow
+    func present() {
+        guard let window else {
+            complete(.skipForNow)
+            return
+        }
         didComplete = false
 
         window.level = .normal
         window.center()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        while !didComplete && window.isVisible {
-            _ = RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
-        }
-        window.orderOut(nil)
-        return selectedAction
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -78,8 +87,8 @@ private final class AppUpdatePromptWindowController: NSWindowController, NSWindo
     private func complete(_ action: AppUpdatePromptAction) {
         guard !didComplete else { return }
         didComplete = true
-        selectedAction = action
         window?.orderOut(nil)
+        onCompletion(self, action)
     }
 }
 

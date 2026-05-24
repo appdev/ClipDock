@@ -129,13 +129,20 @@ enum AppUpdatePlanner {
     ) -> AppUpdateSchedulePlan {
         let todayCheckDate = checkDate(onSameDayAs: now, calendar: calendar)
         let nextCheckDate = nextDailyCheckDate(after: now, calendar: calendar)
+        let alreadyAttemptedToday = lastAttemptDate.map {
+            calendar.isDate($0, inSameDayAs: now)
+        } ?? false
+
+        guard !alreadyAttemptedToday else {
+            return AppUpdateSchedulePlan(shouldCheckNow: false, nextCheckDate: nextCheckDate)
+        }
+
         guard now >= todayCheckDate else {
             return AppUpdateSchedulePlan(shouldCheckNow: false, nextCheckDate: todayCheckDate)
         }
 
-        let alreadyAttemptedForToday = lastAttemptDate.map { $0 >= todayCheckDate } ?? false
         return AppUpdateSchedulePlan(
-            shouldCheckNow: !alreadyAttemptedForToday,
+            shouldCheckNow: true,
             nextCheckDate: nextCheckDate
         )
     }
@@ -429,8 +436,9 @@ enum AppUpdateSettingsStatus: Equatable {
 protocol AppUpdatePromptPresenting: AnyObject {
     func presentUpdatePrompt(
         release: AppUpdateRelease,
-        currentVersion: String
-    ) -> AppUpdatePromptAction
+        currentVersion: String,
+        onAction: @escaping (AppUpdatePromptAction) -> Void
+    )
 }
 
 @MainActor
@@ -556,13 +564,12 @@ final class AppUpdateCoordinator {
     }
 
     func presentUpdatePrompt(for release: AppUpdateRelease) {
-        handlePromptAction(
-            promptPresenter.presentUpdatePrompt(
-                release: release,
-                currentVersion: versionProvider.currentShortVersion()
-            ),
-            for: release
-        )
+        promptPresenter.presentUpdatePrompt(
+            release: release,
+            currentVersion: versionProvider.currentShortVersion()
+        ) { [weak self] action in
+            self?.handlePromptAction(action, for: release)
+        }
     }
 
     private func scheduleNextCheck(from date: Date) {
@@ -621,13 +628,12 @@ final class AppUpdateCoordinator {
             }
 
             let currentVersion = versionProvider.currentShortVersion()
-            handlePromptAction(
-                promptPresenter.presentUpdatePrompt(
-                    release: candidate,
-                    currentVersion: currentVersion
-                ),
-                for: candidate
-            )
+            promptPresenter.presentUpdatePrompt(
+                release: candidate,
+                currentVersion: currentVersion
+            ) { [weak self] action in
+                self?.handlePromptAction(action, for: candidate)
+            }
         } catch {
             return
         }
