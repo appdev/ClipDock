@@ -2285,6 +2285,47 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func copyHideRestoresPreviouslyFocusedApplicationAfterWindowOrdersOut() async throws {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let previousApplication = StubFocusApplication(
+            processIdentifier: 42_011,
+            bundleIdentifier: "com.example.editor"
+        )
+        let provider = StubFocusApplicationProvider(frontmostApplication: previousApplication)
+        let controller = FloatingPanelController(
+            focusApplicationProvider: provider,
+            mainBundleIdentifier: "com.example.paste"
+        )
+
+        controller.show()
+        #expect(await waitForMainActor(attempts: 240) {
+            controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+        provider.frontmostApplication = StubFocusApplication(
+            processIdentifier: 42_012,
+            bundleIdentifier: "com.example.browser"
+        )
+
+        controller.hideAfterCopyingSelection()
+
+        #expect(!controller.isVisible)
+        #expect(controller.smokePanelIsActuallyVisible)
+        #expect(controller.smokeHasActivePanelAnimation)
+        #expect(previousApplication.activateCount == 0)
+        #expect(provider.frontmostApplication?.activateCount == 0)
+
+        #expect(await waitForMainActor(attempts: 240) {
+            !controller.smokePanelIsActuallyVisible && !controller.smokeHasActivePanelAnimation
+        })
+        #expect(previousApplication.activateCount == 1)
+        #expect(provider.frontmostApplication?.activateCount == 0)
+    }
+
+    @Test
+    @MainActor
     func outsideClickHideDoesNotStealFocusBackFromClickedApplication() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)

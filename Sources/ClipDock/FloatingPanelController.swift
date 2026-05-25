@@ -340,6 +340,18 @@ final class FloatingPanelController {
         restoresPreviousApplicationFocus: Bool = true,
         afterHidden: (() -> Void)? = nil
     ) {
+        hide(
+            restoresPreviousApplicationFocus: restoresPreviousApplicationFocus,
+            restoresFocusAfterWindowOrderOut: false,
+            afterHidden: afterHidden
+        )
+    }
+
+    private func hide(
+        restoresPreviousApplicationFocus: Bool,
+        restoresFocusAfterWindowOrderOut: Bool,
+        afterHidden: (() -> Void)? = nil
+    ) {
         let hideStart = ClipDockPerformanceLog.mark()
         let wasPresented = isPanelPresented
         guard wasPresented || panel.isVisible else {
@@ -352,19 +364,24 @@ final class FloatingPanelController {
 
         let shouldRestoreFocus = wasPresented && restoresPreviousApplicationFocus
         let focusApplication = shouldRestoreFocus ? previousFocusApplication : nil
+        let shouldRestoreFocusAfterWindowOrderOut = focusApplication != nil && restoresFocusAfterWindowOrderOut
         previousFocusApplication = nil
         ClipDockPerformanceLog.measure("panel.hide.closePreview") {
             contentView.closePreviewPopover()
         }
         isPanelPresented = false
         stopOutsideClickMonitoring()
-        ClipDockPerformanceLog.measure("panel.hide.restoreFocus") {
-            restoreFocus(to: focusApplication)
+        if !shouldRestoreFocusAfterWindowOrderOut {
+            restoreFocusToPreviousApplication(focusApplication, stage: "panel.hide.restoreFocus")
         }
 
         guard panel.isVisible else {
             ClipDockPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "alreadyHidden=true")
-            finishHiddenTransition(afterHidden: afterHidden)
+            finishHiddenPanel(
+                afterHidden: afterHidden,
+                focusApplication: focusApplication,
+                restoresFocusAfterWindowOrderOut: shouldRestoreFocusAfterWindowOrderOut
+            )
             return
         }
 
@@ -397,13 +414,43 @@ final class FloatingPanelController {
             self.semanticPanelFrame = shownFrame
             self.configurePresentationHostForStableShownFrame(shownFrame)
             ClipDockPerformanceLog.finish("panel.hide.finished", start: hideStart, detail: "animated=true")
-            self.finishHiddenTransition(afterHidden: afterHidden)
+            self.finishHiddenPanel(
+                afterHidden: afterHidden,
+                focusApplication: focusApplication,
+                restoresFocusAfterWindowOrderOut: shouldRestoreFocusAfterWindowOrderOut
+            )
+        }
+    }
+
+    private func finishHiddenPanel(
+        afterHidden: (() -> Void)?,
+        focusApplication: PanelFocusApplication?,
+        restoresFocusAfterWindowOrderOut: Bool
+    ) {
+        if restoresFocusAfterWindowOrderOut {
+            restoreFocusToPreviousApplication(
+                focusApplication,
+                stage: "panel.hide.restoreFocusAfterOrderOut"
+            )
+        }
+        finishHiddenTransition(afterHidden: afterHidden)
+    }
+
+    private func restoreFocusToPreviousApplication(
+        _ focusApplication: PanelFocusApplication?,
+        stage: String
+    ) {
+        ClipDockPerformanceLog.measure(stage) {
+            restoreFocus(to: focusApplication)
         }
     }
 
     func hideAfterCopyingSelection(restoresPreviousApplicationFocus: Bool = true) {
         pendingCopySelectionCollapseAfterHide = true
-        hide(restoresPreviousApplicationFocus: restoresPreviousApplicationFocus)
+        hide(
+            restoresPreviousApplicationFocus: restoresPreviousApplicationFocus,
+            restoresFocusAfterWindowOrderOut: true
+        )
     }
 
     private func finishHiddenTransition(afterHidden: (() -> Void)?) {
