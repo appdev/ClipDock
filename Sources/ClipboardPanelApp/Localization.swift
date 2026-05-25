@@ -61,11 +61,52 @@ private enum ResourceBundleLocator {
         var urls: [URL] = []
 
         if let resourceURL = Bundle.main.resourceURL {
-            urls.append(resourceURL.appendingPathComponent(bundleName))
+            urls.append(contentsOf: ancestorCandidates(from: resourceURL, bundleName: bundleName))
         }
 
-        urls.append(Bundle.main.bundleURL.appendingPathComponent(bundleName))
-        urls.append(Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent(bundleName))
+        urls.append(contentsOf: ancestorCandidates(from: Bundle.main.bundleURL, bundleName: bundleName))
+
+        if let executableURL = Bundle.main.executableURL {
+            urls.append(contentsOf: ancestorCandidates(
+                from: executableURL.deletingLastPathComponent(),
+                bundleName: bundleName
+            ))
+        }
+
+        let currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        urls.append(contentsOf: swiftPMBuildCandidates(from: currentDirectoryURL, bundleName: bundleName))
+
+        return urls
+    }
+
+    private static func ancestorCandidates(from baseURL: URL, bundleName: String) -> [URL] {
+        var urls: [URL] = []
+        var currentURL = baseURL
+        for _ in 0..<6 {
+            urls.append(currentURL.appendingPathComponent(bundleName))
+            currentURL.deleteLastPathComponent()
+        }
+        return urls
+    }
+
+    private static func swiftPMBuildCandidates(from packageURL: URL, bundleName: String) -> [URL] {
+        let buildURL = packageURL.appendingPathComponent(".build")
+        var urls = [
+            buildURL.appendingPathComponent("debug").appendingPathComponent(bundleName),
+            buildURL.appendingPathComponent("release").appendingPathComponent(bundleName)
+        ]
+
+        guard let buildEntries = try? FileManager.default.contentsOfDirectory(
+            at: buildURL,
+            includingPropertiesForKeys: nil
+        ) else {
+            return urls
+        }
+
+        for entry in buildEntries {
+            urls.append(entry.appendingPathComponent("debug").appendingPathComponent(bundleName))
+            urls.append(entry.appendingPathComponent("release").appendingPathComponent(bundleName))
+        }
 
         return urls
     }

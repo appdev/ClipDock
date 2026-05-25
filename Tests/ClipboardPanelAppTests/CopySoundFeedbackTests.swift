@@ -11,6 +11,7 @@ struct CopySoundFeedbackTests {
         let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey])
 
         #expect(url.lastPathComponent == "Copy.aiff")
+        #expect(url.path.contains("ClipDock_ClipDock.bundle"))
         #expect((resourceValues.fileSize ?? 0) > 0)
     }
 

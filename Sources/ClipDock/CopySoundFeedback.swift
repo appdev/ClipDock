@@ -19,11 +19,11 @@ final class CopySoundFeedbackPlayer: CopySoundFeedbackPlaying {
         copySound.play()
     }
 
-    static func copySoundResourceURL(bundle: Bundle = .module) -> URL? {
+    static func copySoundResourceURL(bundle: Bundle = ClipDockResources.bundle) -> URL? {
         bundle.url(forResource: "Copy", withExtension: "aiff")
     }
 
-    private static func makeCopySound(bundle: Bundle = .module) -> NSSound? {
+    private static func makeCopySound(bundle: Bundle = ClipDockResources.bundle) -> NSSound? {
         guard let url = copySoundResourceURL(bundle: bundle) else {
             return nil
         }
