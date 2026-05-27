@@ -3391,6 +3391,10 @@ extension FloatingPanelContentView {
         activeListPage.visibleCards()
     }
 
+    func smokeBodyAttributedStrings(itemID: String) -> [NSAttributedString] {
+        activeListPage.visibleBodyAttributedStrings(for: itemID)
+    }
+
     func smokeOrderedCardBoxes() -> [ClipboardItemCardBox] {
         activeListPage.visibleCards()
     }

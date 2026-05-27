@@ -180,6 +180,11 @@ private struct RichTextCardBodyPreview {
 }
 
 @MainActor
+protocol PanelTextBodyFadeColorProviding {
+    var smokeFadeBottomColor: NSColor { get }
+}
+
+@MainActor
 final class PanelItemCardRenderer {
     private let cardAssetResolver: PanelCardAssetResolver
     private let metrics: PanelItemCardRendererMetrics
@@ -210,8 +215,7 @@ final class PanelItemCardRenderer {
         let richTextBodyPreviewPlan = isTextLikeItem
             ? richTextBodyPreview(
                 fallbackText: state.summaryText,
-                assetRequest: state.assetRequest,
-                defaultSurfaceColor: defaultCardBackgroundColor
+                assetRequest: state.assetRequest
             )
             : nil
         let textSurfaceStyle = textCardSurfaceStyle(
@@ -696,8 +700,7 @@ final class PanelItemCardRenderer {
 
     private func richTextBodyPreview(
         fallbackText: String,
-        assetRequest: PanelCardAssetRequest,
-        defaultSurfaceColor: NSColor
+        assetRequest: PanelCardAssetRequest
     ) -> RichTextCardBodyPreview? {
         guard let attributed = cardAssetResolver.richTextPreviewAttributedString(for: assetRequest),
               attributed.length > 0,
@@ -714,16 +717,12 @@ final class PanelItemCardRenderer {
 
         let preview = NSMutableAttributedString(string: "\u{200E}")
         preview.append(attributed.attributedSubstring(from: NSRange(location: 0, length: boundedLength)))
-        let promotedBackgroundColor = ClipboardRichTextPreviewStyler.promotedContentBackgroundColor(
-            preview,
-            surfaceColor: defaultSurfaceColor
-        )
-        let surfaceStyle = textCardSurfaceStyle(promotedBackgroundColor: promotedBackgroundColor)
+        let surfaceStyle = textCardSurfaceStyle(promotedBackgroundColor: nil)
         let displayPlan = ClipboardRichTextPreviewStyler.inlineSurfaceDisplayPlan(
             preview,
             bodyColor: surfaceStyle.bodyTextColor,
             surfaceColor: surfaceStyle.backgroundColor,
-            promotedBackgroundColor: promotedBackgroundColor
+            promotesBackgroundToSurface: false
         )
         return RichTextCardBodyPreview(
             attributedString: displayPlan.attributedString,
@@ -1396,7 +1395,7 @@ final class PanelItemCardBodyTextView: NSView {
 }
 
 @MainActor
-private final class PanelTextBodyFadeView: NSView {
+private final class PanelTextBodyFadeView: NSView, PanelTextBodyFadeColorProviding {
     private let topColor: NSColor
     private let middleColor: NSColor
     private let footerColor: NSColor
@@ -1418,6 +1417,10 @@ private final class PanelTextBodyFadeView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
+    }
+
+    var smokeFadeBottomColor: NSColor {
+        bottomColor
     }
 
     override func draw(_ dirtyRect: NSRect) {

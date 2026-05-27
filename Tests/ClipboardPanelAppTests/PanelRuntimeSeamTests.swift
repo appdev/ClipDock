@@ -2927,10 +2927,10 @@ struct PanelRuntimeSeamTests {
         ) as? NSColor
 
         #expect(renderedCard.state.typeText == "文本")
-        #expect(colorAndAlphaDistance(renderedCard.cardView.fillColor, sourceBackgroundColor) < 0.01)
+        #expect(colorAndAlphaDistance(renderedCard.cardView.fillColor, theme.card.textItemBackgroundColor) < 0.01)
         #expect(functionColor.greenComponent > functionColor.redComponent)
         #expect(abs(functionColor.greenComponent - expectedFunctionColor.greenComponent) < 0.08)
-        #expect(backgroundColor == nil)
+        #expect(backgroundColor.map { colorAndAlphaDistance($0, sourceBackgroundColor) < 0.01 } == true)
     }
 
     @Test
@@ -2997,7 +2997,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func textCardBottomFadeIgnoresPromotedRichTextBackgroundColor() throws {
+    func textCardKeepsRichTextBackgroundInsideContentAndUsesThemeFade() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richTextDirectory = tempDirectory
@@ -3005,13 +3005,13 @@ struct PanelRuntimeSeamTests {
             .appendingPathComponent("rich-text", isDirectory: true)
         try FileManager.default.createDirectory(at: richTextDirectory, withIntermediateDirectories: true)
         let text = "按照 docs/itab-components/replica-quality-standard.md 仔细核查"
-        let promotedBackground = NSColor(srgbRed: 0.83, green: 0.83, blue: 0.83, alpha: 0.05)
+        let sourceBackground = NSColor(srgbRed: 0.83, green: 0.83, blue: 0.83, alpha: 0.05)
         let attributed = NSAttributedString(
             string: text,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13),
                 .foregroundColor: NSColor(srgbRed: 0.83, green: 0.83, blue: 0.83, alpha: 1),
-                .backgroundColor: promotedBackground
+                .backgroundColor: sourceBackground
             ]
         )
         let rtfData = try attributed.data(
@@ -3064,6 +3064,9 @@ struct PanelRuntimeSeamTests {
         let renderedTextColor = try #require(
             renderedAttributedString.attribute(.foregroundColor, at: textLocation, effectiveRange: nil) as? NSColor
         )
+        let renderedBackgroundColor = try #require(
+            renderedAttributedString.attribute(.backgroundColor, at: textLocation, effectiveRange: nil) as? NSColor
+        )
         let fadeBitmap = try renderBitmap(of: fadeView)
         let sampleX = max(0, fadeBitmap.pixelsWide / 2)
         let upperSample = try #require(fadeBitmap.colorAt(x: sampleX, y: 1))
@@ -3072,19 +3075,123 @@ struct PanelRuntimeSeamTests {
             colorAndAlphaDistance(upperSample, darkTheme.card.textBodyFadeBottomColor),
             colorAndAlphaDistance(lowerSample, darkTheme.card.textBodyFadeBottomColor)
         )
-        let dynamicLightBottom = promotedBackground.withAlphaComponent(0.98)
+        let dynamicLightBottom = sourceBackground.withAlphaComponent(0.98)
         let dynamicLightDistance = min(
             colorAndAlphaDistance(upperSample, dynamicLightBottom),
             colorAndAlphaDistance(lowerSample, dynamicLightBottom)
         )
 
-        #expect(colorAndAlphaDistance(renderedCard.cardView.fillColor, promotedBackground) < 0.01)
+        #expect(colorAndAlphaDistance(renderedCard.cardView.fillColor, darkTheme.card.textItemBackgroundColor) < 0.01)
         #expect(colorAndAlphaDistance(
             renderedTextColor,
             NSColor(srgbRed: 0.83, green: 0.83, blue: 0.83, alpha: 1)
         ) < 0.01)
+        #expect(colorAndAlphaDistance(renderedBackgroundColor, sourceBackground) < 0.01)
         #expect(fixedBottomDistance < 0.08)
         #expect(dynamicLightDistance > 1.0)
+    }
+
+    @Test
+    @MainActor
+    func lightTextCardKeepsDarkTerminalBackgroundInsideContentAndUsesLightThemeFade() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let richTextDirectory = tempDirectory
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("rich-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: richTextDirectory, withIntermediateDirectories: true)
+        let text = """
+        Last login: Sat May 23
+        16:07:44 on ttys006
+        git clone https://github.com/appdev/siyuan-unlock.git
+        Cloning into 'siyuan-unlock'...
+        """
+        let terminalBackground = NSColor(srgbRed: 0.24, green: 0.24, blue: 0.24, alpha: 1)
+        let attributed = NSMutableAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+                .foregroundColor: NSColor.white,
+                .backgroundColor: terminalBackground
+            ]
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemGreen,
+            range: (text as NSString).range(of: "git")
+        )
+        let rtfData = try attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let rtfURL = richTextDirectory.appendingPathComponent("terminal.rtf")
+        try rtfData.write(to: rtfURL)
+
+        let lightTheme = ClipDockTheme.current(for: NSAppearance(named: .aqua))
+        let renderer = makeRuntimeCardRenderer(
+            appSupportDirectory: tempDirectory,
+            itemSide: 218,
+            theme: lightTheme
+        )
+        let renderedCard = renderer.render(PanelItemCardViewState(
+            itemID: "light-terminal-rich-text",
+            sourceAppName: "Terminal",
+            relativeTimeText: "刚刚",
+            symbolName: "doc.richtext",
+            typeText: "文本",
+            summaryText: text,
+            footnoteText: "\(text.count) 个字符",
+            isSelected: false,
+            preview: .none,
+            assetRequest: PanelCardAssetRequest(
+                sourceAppName: "Terminal",
+                previewAssetPath: "assets/rich-text/terminal.rtf",
+                primaryText: text
+            )
+        ))
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 218, height: 218))
+        host.addSubview(renderedCard.view)
+        NSLayoutConstraint.activate([
+            renderedCard.view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            renderedCard.view.topAnchor.constraint(equalTo: host.topAnchor)
+        ])
+        host.layoutSubtreeIfNeeded()
+        let fadeView = try #require(renderedCard.view.subviewsRecursiveForSmoke().first {
+            $0.identifier?.rawValue == "TextBodyBottomFade"
+        })
+        let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        let renderedAttributedString = bodyLabel.attributedStringForTesting
+        let gitLocation = try #require(
+            (renderedAttributedString.string as NSString).range(of: "git").location == NSNotFound
+                ? nil
+                : (renderedAttributedString.string as NSString).range(of: "git").location
+        )
+        let renderedBackgroundColor = try #require(
+            renderedAttributedString.attribute(.backgroundColor, at: gitLocation, effectiveRange: nil) as? NSColor
+        )
+        let renderedTextColor = try #require(
+            renderedAttributedString.attribute(.foregroundColor, at: gitLocation, effectiveRange: nil) as? NSColor
+        )
+        let fadeBitmap = try renderBitmap(of: fadeView)
+        let sampleX = max(0, fadeBitmap.pixelsWide / 2)
+        let upperSample = try #require(fadeBitmap.colorAt(x: sampleX, y: 1))
+        let lowerSample = try #require(fadeBitmap.colorAt(x: sampleX, y: max(1, fadeBitmap.pixelsHigh - 2)))
+        let fixedLightDistance = min(
+            colorAndAlphaDistance(upperSample, lightTheme.card.textBodyFadeBottomColor),
+            colorAndAlphaDistance(lowerSample, lightTheme.card.textBodyFadeBottomColor)
+        )
+        let dynamicDarkBottom = terminalBackground.withAlphaComponent(0.98)
+        let dynamicDarkDistance = min(
+            colorAndAlphaDistance(upperSample, dynamicDarkBottom),
+            colorAndAlphaDistance(lowerSample, dynamicDarkBottom)
+        )
+
+        #expect(colorAndAlphaDistance(renderedCard.cardView.fillColor, lightTheme.card.textItemBackgroundColor) < 0.01)
+        #expect(colorAndAlphaDistance(renderedBackgroundColor, terminalBackground) < 0.01)
+        #expect(colorAndAlphaDistance(renderedTextColor, NSColor.systemGreen) < 0.08)
+        #expect(fixedLightDistance < 0.08)
+        #expect(dynamicDarkDistance > 1.0)
     }
 
     @Test

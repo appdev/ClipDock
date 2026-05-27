@@ -69,6 +69,31 @@ struct PanelPreviewRichTextStylerTests {
     }
 
     @Test
+    func inlineSurfaceCanPreserveContentBackgroundWithoutPromotingIt() throws {
+        let terminalBackground = NSColor(calibratedWhite: 0.24, alpha: 1)
+        let source = NSAttributedString(
+            string: "git clone https://github.com/appdev/siyuan-unlock.git",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .backgroundColor: terminalBackground
+            ]
+        )
+
+        let plan = ClipboardRichTextPreviewStyler.inlineSurfaceDisplayPlan(
+            source,
+            bodyColor: .black,
+            surfaceColor: .white,
+            promotesBackgroundToSurface: false
+        )
+        let background = try #require(
+            plan.attributedString.attribute(.backgroundColor, at: 0, effectiveRange: nil) as? NSColor
+        )
+
+        #expect(plan.promotedBackgroundColor == nil)
+        #expect(colorAndAlphaDistance(background, terminalBackground) < 0.01)
+    }
+
+    @Test
     func suppressingDefaultBackgroundPreservesSyntaxColorsAndMapsDefaultLinks() {
         let bodyColor = NSColor(calibratedWhite: 0.88, alpha: 1)
         let linkColor = NSColor.systemBlue

@@ -163,6 +163,10 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
         view.needsLayout = true
     }
 
+    func bodyAttributedStringsForSmoke() -> [NSAttributedString] {
+        artifacts?.bodyLabels.map(\.attributedStringForTesting) ?? []
+    }
+
     func cleanupForRemoval() {
         cleanupHostedCard()
     }
@@ -482,6 +486,18 @@ final class PanelItemCollectionSurface: NSObject,
 
     func visibleCards() -> [ClipboardItemCardBox] {
         visibleCells().compactMap(\.hostedCard)
+    }
+
+    func visibleBodyAttributedStrings(for itemID: String) -> [NSAttributedString] {
+        guard let index = indexByID[itemID] else { return [] }
+        let indexPath = IndexPath(item: index, section: 0)
+        guard collectionView.indexPathsForVisibleItems().contains(indexPath),
+              let cell = collectionView.item(at: indexPath) as? PanelItemCollectionCell,
+              cell.itemID == itemID
+        else {
+            return []
+        }
+        return cell.bodyAttributedStringsForSmoke()
     }
 
     func collectionDocumentWidth() -> CGFloat {

@@ -1164,6 +1164,9 @@ enum PinboardRealQACommand {
         )
         let githubAssets = try PanelQASamples.prepareRealGitHubSampleAssets(appSupportURL: appSupportURL)
         let sourceIconPaths = try PanelQASamples.makeSourceAppIconPaths(outputDirectory: appSupportURL)
+        let terminalRichTextPreviewURL = try PanelQASamples.makeTerminalRichTextPreviewURL(
+            outputDirectory: appSupportURL
+        )
         PanelCardAssetResolver.primePreviewImageCacheForSmoke(paths: [
             imagePreviewURL.path,
             filePreviewURL.path,
@@ -1174,7 +1177,8 @@ enum PinboardRealQACommand {
             imagePayloadPath: imageURL.path,
             filePreviewPath: filePreviewURL.path,
             linkMetadata: githubAssets.linkMetadata,
-            sourceIconPaths: sourceIconPaths
+            sourceIconPaths: sourceIconPaths,
+            terminalRichTextPreviewPath: terminalRichTextPreviewURL.path
         )
         let frame = CommandLineWindowPlacement.bottomPanelFrame(
             arguments: arguments,
@@ -1210,7 +1214,7 @@ enum PinboardRealQACommand {
 
         let mode = mode(arguments: arguments)
         let targetPinboardID = mode == "ai" ? "ai" : "untitled-new"
-        if mode == "overview" || mode == "preview" {
+        if mode == "overview" || mode == "preview" || mode == "verify-rich-text" {
             contentView.updateListState(
                 .success(RustCoreListResult(
                     items: sampleItems,
@@ -1242,6 +1246,11 @@ enum PinboardRealQACommand {
             break
         }
 
+        if mode == "verify-rich-text" {
+            try verifyRichTextCard(contentView: contentView)
+            return
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             switch mode {
             case "menu":
@@ -1267,6 +1276,97 @@ enum PinboardRealQACommand {
 
     private static func mode(arguments: [String]) -> String {
         CommandLineArgumentReader.value(after: flag, in: arguments) ?? "toolbar"
+    }
+
+    @MainActor
+    private static func verifyRichTextCard(contentView: FloatingPanelContentView) throws {
+        let itemID = "panel-smoke-text"
+        RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+        contentView.layoutSubtreeIfNeeded()
+
+        let theme = ClipDockTheme.current(for: contentView)
+        guard let card = contentView.smokeCardBoxes().first(where: { $0.itemID == itemID }) else {
+            throw CommandLineQAError(message: "rich text QA card is not visible")
+        }
+        guard colorAndAlphaDistance(card.fillColor, theme.card.textItemBackgroundColor) < 0.01 else {
+            throw CommandLineQAError(message: "rich text QA card fill does not use themed text surface")
+        }
+        guard let attributed = contentView.smokeBodyAttributedStrings(itemID: itemID).first else {
+            throw CommandLineQAError(message: "rich text QA body attributed string is missing")
+        }
+        let gitRange = (attributed.string as NSString).range(of: "git")
+        guard gitRange.location != NSNotFound else {
+            throw CommandLineQAError(message: "rich text QA body does not contain terminal sample text")
+        }
+        let expectedTerminalBackground = NSColor(deviceWhite: 0.24, alpha: 1)
+        guard let renderedBackground = attributed.attribute(
+            .backgroundColor,
+            at: gitRange.location,
+            effectiveRange: nil
+        ) as? NSColor else {
+            throw CommandLineQAError(message: "rich text QA body did not preserve terminal background")
+        }
+        guard colorAndAlphaDistance(renderedBackground, expectedTerminalBackground) < 0.01 else {
+            throw CommandLineQAError(message: "rich text QA body terminal background changed")
+        }
+        guard let fadeView = descendant(in: card, identifier: "TextBodyBottomFade"),
+              let fadeColors = fadeView as? PanelTextBodyFadeColorProviding
+        else {
+            throw CommandLineQAError(message: "rich text QA bottom fade is missing")
+        }
+        guard colorAndAlphaDistance(
+            fadeColors.smokeFadeBottomColor,
+            theme.card.textBodyFadeBottomColor
+        ) < 0.01 else {
+            throw CommandLineQAError(message: "rich text QA fade does not use themed bottom color")
+        }
+
+        print("rich_text_card_verify=passed")
+        print("card_fill=\(rgbaDescription(card.fillColor))")
+        print("theme_text_surface=\(rgbaDescription(theme.card.textItemBackgroundColor))")
+        print("content_background=\(rgbaDescription(renderedBackground))")
+        print("expected_terminal_background=\(rgbaDescription(expectedTerminalBackground))")
+        print("fade_bottom=\(rgbaDescription(fadeColors.smokeFadeBottomColor))")
+        print("theme_fade_bottom=\(rgbaDescription(theme.card.textBodyFadeBottomColor))")
+    }
+
+    @MainActor
+    private static func descendant(in view: NSView, identifier: String) -> NSView? {
+        if view.identifier?.rawValue == identifier {
+            return view
+        }
+        for subview in view.subviews {
+            if let found = descendant(in: subview, identifier: identifier) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private static func colorAndAlphaDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        guard let lhs = lhs.usingColorSpace(.sRGB),
+              let rhs = rhs.usingColorSpace(.sRGB)
+        else {
+            return .greatestFiniteMagnitude
+        }
+
+        return abs(lhs.redComponent - rhs.redComponent)
+            + abs(lhs.greenComponent - rhs.greenComponent)
+            + abs(lhs.blueComponent - rhs.blueComponent)
+            + abs(lhs.alphaComponent - rhs.alphaComponent)
+    }
+
+    private static func rgbaDescription(_ color: NSColor) -> String {
+        guard let rgb = color.usingColorSpace(.sRGB) else {
+            return "unavailable"
+        }
+        return String(
+            format: "%.3f,%.3f,%.3f,%.3f",
+            rgb.redComponent,
+            rgb.greenComponent,
+            rgb.blueComponent,
+            rgb.alphaComponent
+        )
     }
 
     @MainActor

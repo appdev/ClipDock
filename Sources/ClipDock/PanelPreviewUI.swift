@@ -44,7 +44,8 @@ enum ClipboardRichTextPreviewStyler {
         bodyColor: NSColor,
         surfaceColor: NSColor,
         linkColor: NSColor = .linkColor,
-        promotedBackgroundColor: NSColor? = nil
+        promotedBackgroundColor: NSColor? = nil,
+        promotesBackgroundToSurface: Bool = true
     ) -> DisplayPlan {
         let mutable = NSMutableAttributedString(attributedString: source)
         let fullRange = NSRange(location: 0, length: mutable.length)
@@ -52,8 +53,9 @@ enum ClipboardRichTextPreviewStyler {
             return DisplayPlan(attributedString: mutable, promotedBackgroundColor: nil)
         }
 
-        let promotedBackgroundColor = promotedBackgroundColor
-            ?? contentBackgroundColor(in: source, surfaceColor: surfaceColor)
+        let promotedBackgroundColor = promotesBackgroundToSurface
+            ? (promotedBackgroundColor ?? contentBackgroundColor(in: source, surfaceColor: surfaceColor))
+            : nil
         mutable.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
             let originalForeground = attributes[.foregroundColor] as? NSColor
             let preferredFallback = attributes[.link] == nil ? bodyColor : linkColor

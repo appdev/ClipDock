@@ -19,6 +19,14 @@ enum PanelQASamples {
         let imageURL: URL
     }
 
+    private static let terminalRichTextSampleText = """
+    Last login: Sat May 23
+    16:07:44 on ttys006
+    ~/IdeaProjects
+    git clone https://github.com/appdev/siyuan-unlock.git
+    Cloning into 'siyuan-unlock'...
+    """
+
     private static let sourceAppIconFixtures: [SourceAppIconFixture] = [
         SourceAppIconFixture(
             key: "Chrome",
@@ -559,6 +567,37 @@ enum PanelQASamples {
         return url
     }
 
+    static func makeTerminalRichTextPreviewURL(outputDirectory: URL) throws -> URL {
+        let attributed = NSMutableAttributedString(
+            string: terminalRichTextSampleText,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+                .foregroundColor: NSColor.white,
+                .backgroundColor: NSColor(deviceWhite: 0.24, alpha: 1)
+            ]
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemGreen,
+            range: (terminalRichTextSampleText as NSString).range(of: "git")
+        )
+        attributed.addAttribute(
+            .foregroundColor,
+            value: NSColor.systemBlue,
+            range: (terminalRichTextSampleText as NSString).range(of: "~/IdeaProjects")
+        )
+
+        let data = try attributed.data(
+            from: NSRange(location: 0, length: attributed.length),
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
+        )
+        let directory = outputDirectory.appendingPathComponent("styled-text", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("terminal-paste.rtf")
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
     @MainActor
     static func makePanelInteractionSmokeImageURL(outputDirectory: URL) throws -> URL {
         let image = NSImage(size: NSSize(width: 360, height: 220))
@@ -588,20 +627,27 @@ enum PanelQASamples {
         imagePayloadPath: String? = nil,
         filePreviewPath: String? = nil,
         linkMetadata: RustLinkMetadataSummary? = nil,
-        sourceIconPaths: [String: String] = [:]
+        sourceIconPaths: [String: String] = [:],
+        terminalRichTextPreviewPath: String? = nil
     ) -> [RustClipboardItemSummary] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let firstText = terminalRichTextPreviewPath == nil
+            ? "ClipDock 提供本地剪贴板历史、快速预览与 Pinboard 分类管理，适合高频跨应用工作流。"
+            : terminalRichTextSampleText
         var items = [
             makeItem(
                 id: "panel-smoke-text",
                 itemType: "text",
-                summary: "ClipDock 提供本地剪贴板历史、快速预览与 Pinboard 分类管理，适合高频跨应用工作流。",
-                primaryText: "ClipDock 提供本地剪贴板历史、快速预览与 Pinboard 分类管理，适合高频跨应用工作流。",
-                sourceAppName: "备忘录",
+                summary: firstText,
+                primaryText: firstText,
+                sourceAppName: terminalRichTextPreviewPath == nil ? "备忘录" : "终端",
                 timestamp: now,
                 contentHash: "panel-smoke-panel-smoke-text",
-                sourceAppIconPath: sourceIconPaths["Notes"],
-                sizeBytes: 112
+                sourceAppIconPath: terminalRichTextPreviewPath == nil
+                    ? sourceIconPaths["Notes"]
+                    : sourceIconPaths["Terminal"],
+                previewAssetPath: terminalRichTextPreviewPath,
+                sizeBytes: Int64(firstText.utf8.count)
             ),
             makeItem(
                 id: "panel-smoke-image",
