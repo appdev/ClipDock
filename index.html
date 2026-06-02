@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>ClipDock - 贴在屏幕底部的 macOS 剪贴坞</title>
-  <meta name="description" content="ClipDock 在 macOS 上找回、预览、固定并复用复制过的文字、链接、代码、图片和文件。本地保存剪贴板历史，支持全键盘操作，快捷键呼出，不打断当前工作。">
+  <meta name="description" content="ClipDock 是一款 macOS 剪贴板工具，帮你找回、预览、固定和复用复制过的文字、链接、代码、图片和文件。默认本地保存，需要多设备时可接入自托管同步，并用 P2P 按需传输图片和文件。">
   <meta name="application-name" content="ClipDock">
   <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0b0c10" media="(prefers-color-scheme: dark)">
@@ -26,7 +26,7 @@
   <meta property="og:site_name" content="ClipDock">
   <meta property="og:url" content="https://clip.run.ci/">
   <meta property="og:title" content="ClipDock - 贴在屏幕底部的 macOS 剪贴坞">
-  <meta property="og:description" content="找回、预览、固定并复用复制过的文字、链接、代码、图片和文件。本地保存剪贴板历史，支持全键盘操作，快捷键呼出，不打断当前工作。">
+  <meta property="og:description" content="找回、预览、固定和复用复制过的文字、链接、代码、图片和文件。默认本地保存，需要多设备时可接入自托管同步，并用 P2P 按需传输图片和文件。">
   <meta property="og:image" content="https://clip.run.ci/assets/site/og-image.jpg">
   <meta property="og:image:type" content="image/jpeg">
   <meta property="og:image:width" content="1200">
@@ -34,7 +34,7 @@
   <meta property="og:image:alt" content="ClipDock 在 macOS 上的剪贴坞预览">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ClipDock - 贴在屏幕底部的 macOS 剪贴坞">
-  <meta name="twitter:description" content="找回、预览、固定并复用复制过的文字、链接、代码、图片和文件。本地保存剪贴板历史，支持全键盘操作，快捷键呼出，不打断当前工作。">
+  <meta name="twitter:description" content="找回、预览、固定和复用复制过的文字、链接、代码、图片和文件。默认本地保存，需要多设备时可接入自托管同步，并用 P2P 按需传输图片和文件。">
   <meta name="twitter:image" content="https://clip.run.ci/assets/site/og-image.jpg">
   <meta name="twitter:image:alt" content="ClipDock 在 macOS 上的剪贴坞预览">
   <style>
@@ -1348,6 +1348,7 @@
     </a>
     <nav class="nav-links" aria-label="Primary">
       <a href="#features"><span data-copy="zh">功能</span><span data-copy="en">Features</span></a>
+      <a href="#sync"><span data-copy="zh">同步</span><span data-copy="en">Sync</span></a>
       <a href="#pinboard">Pinboard</a>
       <a href="#privacy"><span data-copy="zh">隐私</span><span data-copy="en">Privacy</span></a>
     </nav>
@@ -1371,8 +1372,8 @@
           <span data-copy="en"><span class="title-line">Copy once </span><span class="title-line">Reuse anytime</span></span>
         </h1>
         <p class="hero-sub">
-          <span data-copy="zh">把文字、链接、代码、图片和文件收进屏幕底部的剪贴坞。需要时快捷键呼出，用键盘搜索、预览和复用，当前工作不必切走</span>
-          <span data-copy="en">ClipDock keeps copied text, links, code, images, and files in a native shelf at the bottom of your Mac. Open it with a shortcut, search, preview, and reuse from the keyboard without leaving your flow</span>
+          <span data-copy="zh">把文字、链接、代码、图片和文件收进屏幕底部的剪贴坞。平时快捷键呼出，用键盘搜索、预览、取用；需要多设备时，再接入自托管同步和 P2P 下载</span>
+          <span data-copy="en">ClipDock keeps copied text, links, code, images, and files in a native shelf at the bottom of your Mac. Open it with a shortcut, search, preview, reuse, then add self-hosted sync and P2P downloads when more devices are involved</span>
         </p>
         <div class="hero-actions">
           <a class="button" href="https://github.com/appdev/ClipDock/releases">
@@ -1425,7 +1426,7 @@
           <span data-copy="en">Recents and pinned material, each in its place</span>
         </h2>
         <p class="section-sub">
-          <span data-copy="zh">临时内容自动进入最近列表；长期要用的资料固定到 Pinboard。通过来源图标、类型卡片和链接预览，打开面板就能判断该取哪一条</span>
+          <span data-copy="zh">临时内容进入最近列表；长期要用的资料固定到 Pinboard。来源图标、类型卡片和链接预览都放在面板里，打开就知道该取哪一条</span>
           <span data-copy="en">Temporary clips flow into Recents automatically. Durable material stays in Pinboard, with source icons, typed cards, and link previews making each item easy to recognize</span>
         </p>
       </div>
@@ -1474,25 +1475,25 @@
     <section id="features" class="section story">
       <div class="story-copy reveal">
         <h2 class="section-title">
-          <span data-copy="zh">复制不会在下一次复制后消失</span>
+          <span data-copy="zh">复制过的内容，不该被下一次复制冲掉</span>
           <span data-copy="en">A copy should not vanish after the next one</span>
         </h2>
         <p class="section-sub">
-          <span data-copy="zh">ClipDock 把真实工作里的复制记录整理成可扫描、可预览、可固定的底部面板。刚用过的内容可以找回，常用资料也能沉淀下来；键盘就能完成移动、搜索、预览、复制和删除</span>
+          <span data-copy="zh">ClipDock 把工作里不断出现的复制记录，整理成可扫描、可预览、可固定的底部面板。刚用过的内容可以找回，常用资料也能沉淀下来；移动、搜索、预览、复制和删除都能用键盘完成</span>
           <span data-copy="en">ClipDock turns real clipboard activity into a native bottom panel you can scan, preview, and pin. Recover what was recent, keep what you reuse, and handle navigation, search, preview, copy, and delete from the keyboard</span>
         </p>
         <div class="steps">
           <div class="step" style="--step-color: var(--accent);">
             <span class="step-index">1</span>
-            <div><h3>Recall</h3><p><span data-copy="zh">按类型、来源应用和时间找回刚复制的内容</span><span data-copy="en">Find recent clips by type, source app, and time</span></p></div>
+            <div><h3>Recall</h3><p><span data-copy="zh">按类型、来源应用和时间找回刚刚复制过的内容</span><span data-copy="en">Find recent clips by type, source app, and time</span></p></div>
           </div>
           <div class="step" style="--step-color: var(--green);">
             <span class="step-index">2</span>
-            <div><h3>Pinboard</h3><p><span data-copy="zh">把产品资料、客户信息和常用片段固定到 Pinboard</span><span data-copy="en">Pin product notes, customer material, and reusable snippets</span></p></div>
+            <div><h3>Pinboard</h3><p><span data-copy="zh">把产品资料、客户信息和常用片段固定在手边</span><span data-copy="en">Pin product notes, customer material, and reusable snippets</span></p></div>
           </div>
           <div class="step" style="--step-color: var(--orange);">
             <span class="step-index">3</span>
-            <div><h3>Paste</h3><p><span data-copy="zh">预览确认后直接粘贴回当前应用，少切窗口，少打断</span><span data-copy="en">Preview, confirm, and paste back into the app you are already using</span></p></div>
+            <div><h3>Paste</h3><p><span data-copy="zh">预览确认后直接粘回当前应用，少切窗口，少打断</span><span data-copy="en">Preview, confirm, and paste back into the app you are already using</span></p></div>
           </div>
         </div>
       </div>
@@ -1516,8 +1517,8 @@
           <span data-copy="en">Less hunting. More reusing</span>
         </h2>
         <p class="feature-note">
-          <span data-copy="zh">围绕真实复制路径组织信息：最近的先找回，常用的固定住，链接和图片先预览，键盘完成高频操作，敏感内容留在本地</span>
-          <span data-copy="en">Built around the real clipboard loop: recover what is recent, pin what matters, preview links and images, drive frequent actions from the keyboard, and keep private material local</span>
+          <span data-copy="zh">围绕真实复制路径组织信息：最近的先找回，常用的固定住，链接和图片先确认；需要跨设备时，再进入自托管同步空间</span>
+          <span data-copy="en">Built around the real clipboard loop: recover what is recent, pin what matters, preview links and images, drive frequent actions from the keyboard, and move into a self-hosted sync space only when you need multiple devices</span>
         </p>
       </div>
 
@@ -1540,7 +1541,43 @@
         <article class="feature-card" style="--card-accent: var(--violet);">
           <span class="feature-symbol">L</span>
           <h3>Local-first</h3>
-          <p><span data-copy="zh">剪贴板内容保存在本地。隐私不靠口号，而是默认方式</span><span data-copy="en">Clipboard content stays on your Mac. Privacy is the default, not a pitch</span></p>
+          <p><span data-copy="zh">剪贴板历史默认留在本机。同步需要你主动配置，不强迫注册账号</span><span data-copy="en">Clipboard history starts on your device. Sync is explicit configuration, not a forced account</span></p>
+        </article>
+      </div>
+    </section>
+
+    <section id="sync" class="section feature-band">
+      <div class="feature-head reveal">
+        <h2 class="section-title">
+          <span data-copy="zh">多设备用同步，大内容走 P2P</span>
+          <span data-copy="en">Sync spaces connect devices. P2P moves real payloads</span>
+        </h2>
+        <p class="feature-note">
+          <span data-copy="zh">ClipDock 新增自托管同步服务和 P2P 协调能力。服务端负责配对、认证、事件和小型预览；完整图片、文件由设备之间按需传输</span>
+          <span data-copy="en">ClipDock now includes a self-hosted sync server and P2P coordination layer. The server handles pairing, auth, events, and small preview assets; full images and files are downloaded on demand from available peers</span>
+        </p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card" style="--card-accent: var(--accent);">
+          <span class="feature-symbol">S</span>
+          <h3><span data-copy="zh">自托管同步</span><span data-copy="en">Self-hosted sync</span></h3>
+          <p><span data-copy="zh">运行自己的 ClipDock Sync Server，创建同步空间，把设备、事件和资产按空间隔开</span><span data-copy="en">Run your own ClipDock Sync Server and isolate devices, events, and assets by sync space</span></p>
+        </article>
+        <article class="feature-card" style="--card-accent: var(--green);">
+          <span class="feature-symbol">5</span>
+          <h3><span data-copy="zh">配对码加入</span><span data-copy="en">Pairing codes</span></h3>
+          <p><span data-copy="zh">新设备用一次性 5 位配对码加入，之后通过设备凭证访问同步空间</span><span data-copy="en">Join a new device with a one-time 5-character code, then use a device token for access</span></p>
+        </article>
+        <article class="feature-card" style="--card-accent: var(--cyan);">
+          <span class="feature-symbol">P</span>
+          <h3>P2P</h3>
+          <p><span data-copy="zh">完整图片和文件通过 iroh-blobs 从可用设备下载，服务端只记录连接信息和提供方</span><span data-copy="en">Transfer full images and files through iroh-blobs; the server stores endpoint and provider metadata only</span></p>
+        </article>
+        <article class="feature-card" style="--card-accent: var(--orange);">
+          <span class="feature-symbol">A</span>
+          <h3>Android</h3>
+          <p><span data-copy="zh">Android 端可以加入同步空间、拉取最近历史，并按需下载远端图片和文件</span><span data-copy="en">The Android client can join a sync space, pull recent history, and download remote images and files on demand</span></p>
         </article>
       </div>
     </section>
@@ -1552,7 +1589,7 @@
           <span data-copy="en">Keep repeat material within reach</span>
         </h2>
         <p class="section-sub">
-          <span data-copy="zh">产品资料、设计参考、发布说明、客户资料和团队知识库，都可以固定到 Pinboard。临时内容继续轻快流动，长期资料保持清楚有序</span>
+          <span data-copy="zh">产品资料、设计参考、发布说明、客户资料和团队知识库，都可以固定到 Pinboard。临时内容继续流动，长期资料留得清楚有序</span>
           <span data-copy="en">Pin product notes, design references, release copy, customer material, and team knowledge. Temporary clips can keep moving while durable material stays organized</span>
         </p>
       </div>
@@ -1568,15 +1605,15 @@
           <span data-copy="en">Your clipboard is yours. It stays on this Mac by default</span>
         </h2>
         <p class="section-sub">
-          <span data-copy="zh">ClipDock 以本地体验为核心。历史内容保存在本地，忽略规则、权限和清理入口都保持清晰可见</span>
-          <span data-copy="en">ClipDock is built around a local macOS experience. History stays on this Mac, with ignore rules, permissions, and cleanup controls kept visible</span>
+          <span data-copy="zh">ClipDock 以本地体验为核心。历史内容默认保存在本机；只有你明确启用同步并配置服务端后，记录才会发送到对应同步空间</span>
+          <span data-copy="en">ClipDock is built around a local macOS experience. History starts on this Mac; a client sends events only after you enable sync and configure a server for the target sync space</span>
         </p>
       </div>
       <div class="privacy-window reveal">
         <img src="assets/clipdock-launch-20260517/privacy.png" alt="ClipDock privacy preferences">
         <div class="privacy-badge">
-          <strong><span data-copy="zh">本地体验优先</span><span data-copy="en">Local by default</span></strong>
-          <span><span data-copy="zh">保存、忽略、清理，都从本地开始</span><span data-copy="en">Save, ignore, and clean up from the Mac you are using</span></span>
+          <strong><span data-copy="zh">本地优先，可选同步</span><span data-copy="en">Local first, optional sync</span></strong>
+          <span><span data-copy="zh">同步空间隔离设备与资产；P2P 来源只在同空间可见</span><span data-copy="en">Sync spaces isolate devices and assets; P2P records stay scoped to that space</span></span>
         </div>
       </div>
     </section>
@@ -1585,7 +1622,7 @@
       <div class="download-inner">
         <div>
           <h2><span data-copy="zh">把 ClipDock 放进日常工作流</span><span data-copy="en">Bring ClipDock into your daily flow</span></h2>
-          <p><span data-copy="zh">下载最新版本，拖入“应用程序”，使用 Command + Shift + X 唤出。用键盘找回、预览和复用，让复制过的内容留得住、找得到、用得上</span><span data-copy="en">Download the latest release, move it to Applications, open it with Command + Shift + X, and use the keyboard to recover, preview, and reuse copied material</span></p>
+          <p><span data-copy="zh">下载最新版本，拖入“应用程序”，按 Command + Shift + X 唤出。先从本机剪贴板开始，需要多设备时再配置自托管同步与 P2P 下载</span><span data-copy="en">Download the latest release, move it to Applications, and open it with Command + Shift + X. Start with the local shelf, then configure self-hosted sync and P2P downloads when you need more devices</span></p>
           <div class="hero-actions">
             <a class="button" href="https://github.com/appdev/ClipDock/releases"><span data-copy="zh">立即下载</span><span data-copy="en">Download free</span></a>
             <a class="button secondary" href="https://github.com/appdev/ClipDock/releases"><span data-copy="zh">查看发行说明</span><span data-copy="en">Release notes</span></a>
@@ -1595,7 +1632,7 @@
         <div class="release-list" aria-label="Release details">
           <div class="release-item"><strong><span data-copy="zh">通用版本</span><span data-copy="en">Universal build</span></strong><span><span data-copy="zh">支持 Apple Silicon 和 Intel Mac</span><span data-copy="en">Apple Silicon and Intel Mac</span></span></div>
           <div class="release-item"><strong><span data-copy="zh">全键盘操作</span><span data-copy="en">Keyboard first</span></strong><span><span data-copy="zh">快捷键唤出，搜索、预览、复制和删除都能键盘完成</span><span data-copy="en">Shortcut to open, then search, preview, copy, and delete without reaching for the pointer</span></span></div>
-          <div class="release-item"><strong>Pinboard</strong><span><span data-copy="zh">高频片段固定保存，不需要复杂配置</span><span data-copy="en">Reusable clips without a heavy setup</span></span></div>
+          <div class="release-item"><strong><span data-copy="zh">同步与 P2P</span><span data-copy="en">Sync and P2P</span></strong><span><span data-copy="zh">自托管同步空间，完整图片和文件按需走 P2P</span><span data-copy="en">Self-hosted sync spaces with P2P downloads for full images and files</span></span></div>
         </div>
       </div>
     </section>
