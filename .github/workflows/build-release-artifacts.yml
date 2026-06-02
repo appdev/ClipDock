@@ -4,13 +4,18 @@ name: Build release artifacts
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag. Defaults to v<version>."
+        description: "Release tag. Defaults to v<macOS app version>."
         required: false
         type: string
+      publish_release:
+        description: "Create or update the GitHub Release"
+        required: true
+        default: false
+        type: boolean
       draft:
         description: "Create the GitHub Release as a draft"
         required: true
-        default: false
+        default: true
         type: boolean
       prerelease:
         description: "Mark the GitHub Release as a prerelease"
@@ -26,16 +31,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build macOS release artifacts
-    runs-on: macos-15
-    timeout-minutes: 60
+  metadata:
+    name: Resolve release metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
-    env:
-      APP_BUNDLE_NAME: ClipDock
-      APP_EXECUTABLE_NAME: ClipDock
-      BUNDLE_IDENTIFIER: com.apkdv.clipdock
-      APP_ARCHS: arm64 x86_64
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      build: ${{ steps.release.outputs.build }}
+      tag: ${{ steps.release.outputs.tag }}
+      artifact_root: ${{ steps.release.outputs.artifact_root }}
 
     steps:
       - name: Checkout
@@ -43,28 +48,37 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Print toolchain
-        run: |
-          sw_vers
-          xcodebuild -version
-          swift --version
-          cargo --version
-
-      - name: Resolve release metadata
+      - name: Resolve macOS app version
         id: release
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
-          source scripts/app-metadata.sh
+          version="$(python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
 
-          version="$(read_app_info_value CFBundleShortVersionString 0.1.0)"
-          build="$(read_app_info_value CFBundleVersion 1)"
+          with Path("macOS/Sources/ClipDock/Resources/AppInfo.plist").open("rb") as handle:
+              info = plistlib.load(handle)
+          print(info.get("CFBundleShortVersionString", "0.1.0"))
+          PY
+          )"
+
+          build="$(python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+
+          with Path("macOS/Sources/ClipDock/Resources/AppInfo.plist").open("rb") as handle:
+              info = plistlib.load(handle)
+          print(info.get("CFBundleVersion", "1"))
+          PY
+          )"
+
           tag="$INPUT_TAG"
 
           if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
-            echo "version must be numeric, such as 0.1.0" >&2
+            echo "version must be numeric, such as 0.1.7" >&2
             exit 1
           fi
 
@@ -82,29 +96,158 @@ jobs:
             exit 1
           fi
 
-          artifact_dir="$GITHUB_WORKSPACE/.codex/artifacts/release/$version"
+          artifact_root="$GITHUB_WORKSPACE/.codex/artifacts/release/$version"
 
           {
             echo "version=$version"
             echo "build=$build"
             echo "tag=$tag"
-            echo "artifact_dir=$artifact_dir"
-            echo "dmgs=$artifact_dir/ClipDock-$version-*.dmg"
-            echo "checksums=$artifact_dir/SHA256SUMS"
-            echo "manifest=$artifact_dir/ClipDock-release-manifest.txt"
-            echo "release_notes=$artifact_dir/ClipDock-release-notes.md"
+            echo "artifact_root=$artifact_root"
           } >> "$GITHUB_OUTPUT"
+
+  build-macos-app:
+    name: Build macOS app DMGs
+    runs-on: macos-15
+    needs: metadata
+    timeout-minutes: 75
+
+    env:
+      APP_BUNDLE_NAME: ClipDock
+      APP_EXECUTABLE_NAME: ClipDock
+      BUNDLE_IDENTIFIER: com.apkdv.clipdock
+      APP_ARCHS: arm64 x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Print toolchain
+        working-directory: macOS
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          cargo --version
+
+      - name: Build release bundle
+        working-directory: macOS
+        env:
+          APP_VERSION: ${{ needs.metadata.outputs.version }}
+          APP_BUILD: ${{ needs.metadata.outputs.build }}
+          RELEASE_DIR: ${{ needs.metadata.outputs.artifact_root }}/macos
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY || '-' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: scripts/release-macos.sh
+
+      - name: Upload macOS workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ClipDock-${{ needs.metadata.outputs.version }}-macos
+          path: |
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/ClipDock-${{ needs.metadata.outputs.version }}-*.dmg
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/SHA256SUMS
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/ClipDock-release-manifest.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  build-server:
+    name: Build server ${{ matrix.artifact_label }}
+    needs: metadata
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - artifact_label: linux-x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - artifact_label: linux-arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - artifact_label: macos-x86_64
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - artifact_label: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - artifact_label: windows-x86_64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          - artifact_label: windows-arm64
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Print Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a || true
+          rustc -vV
+          cargo --version
+
+      - name: Add Rust target
+        shell: bash
+        run: rustup target add "${{ matrix.target }}"
+
+      - name: Build and package server
+        shell: bash
+        run: |
+          set -euo pipefail
+          Server/scripts/package-server.sh \
+            --target "${{ matrix.target }}" \
+            --version "${{ needs.metadata.outputs.version }}" \
+            --output-dir "${{ needs.metadata.outputs.artifact_root }}/server/${{ matrix.artifact_label }}"
+
+      - name: Upload server workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ClipDock-Server-${{ needs.metadata.outputs.version }}-${{ matrix.artifact_label }}
+          path: |
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish GitHub Release
+    if: ${{ inputs.publish_release }}
+    needs:
+      - metadata
+      - build-macos-app
+      - build-server
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-artifacts
 
       - name: Generate release notes from commits
         env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          RELEASE_BUILD: ${{ steps.release.outputs.build }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_NOTES: ${{ steps.release.outputs.release_notes }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_NOTES: release-notes.md
         run: |
           set -euo pipefail
-
-          mkdir -p "$(dirname "$RELEASE_NOTES")"
 
           target_commit="$GITHUB_SHA"
           if git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
@@ -142,38 +285,20 @@ jobs:
 
           cat "$RELEASE_NOTES"
 
-      - name: Build release bundle
-        env:
-          RELEASE_DIR: ${{ steps.release.outputs.artifact_dir }}
-          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY || '-' }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: scripts/release-macos.sh
-
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ClipDock-${{ steps.release.outputs.version }}-macos
-          path: |
-            ${{ steps.release.outputs.dmgs }}
-            ${{ steps.release.outputs.checksums }}
-            ${{ steps.release.outputs.manifest }}
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.release.outputs.tag }}
+          tag_name: ${{ needs.metadata.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: ClipDock ${{ steps.release.outputs.version }}
-          body_path: ${{ steps.release.outputs.release_notes }}
+          name: ClipDock ${{ needs.metadata.outputs.version }}
+          body_path: release-notes.md
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
           fail_on_unmatched_files: true
           overwrite_files: true
           files: |
-            ${{ steps.release.outputs.dmgs }}
-            ${{ steps.release.outputs.checksums }}
-            ${{ steps.release.outputs.manifest }}
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.tar.gz
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.sha256
+            release-artifacts/**/*manifest.txt

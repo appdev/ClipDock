@@ -1,17 +1,35 @@
-.build/
-.swiftpm/
-DerivedData/
+.DS_Store
+.codex/
+.playwright-mcp/
+verification.md
+
+# Swift and Xcode local outputs
+**/.build/
+**/.swiftpm/
+**/DerivedData/
 *.xcuserstate
 *.dSYM/
 *.xcarchive/
-rust/target/
-Generated/ClipboardCoreBridge/RustXcframework.xcframework/
-.DS_Store
+*.xcresult/
+*.xccovreport/
+*.xccovarchive/
+
+# Rust local outputs
+**/target/
+Server/data/
+
+# Android local outputs
+**/build/
+**/.gradle/
+local.properties
 
 # Local secrets and app data
 .env
 .env.*
 !.env.example
+**/.env
+**/.env.*
+!**/.env.example
 *.pem
 *.key
 *.p12
@@ -23,17 +41,8 @@ Generated/ClipboardCoreBridge/RustXcframework.xcframework/
 *.db
 *.db-*
 
-# Local Codex run outputs
-.codex/
-.playwright-mcp/
-verification.md
-
-# Local verification and test artifacts
+# Local verification artifacts
 *.log
-*.xcactivitylog
-*.xcresult
-*.xccovreport
-*.xccovarchive
 test-results/
 screenshots/
 Screenshots/
@@ -42,6 +51,3 @@ Screenshot*.png
 SCR-*.png
 *.app/
 *.dmg
-*.md
-!README.md
-!README.en.md

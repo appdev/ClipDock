@@ -2,30 +2,32 @@
 
 ## Project Structure & Module Organization
 
-This repository is ClipDock, a macOS clipboard shelf built from a Swift Package with a Rust storage core. Swift UI and app logic live in `Sources/ClipboardPanelApp`, while the executable entry point is `Sources/ClipDock/main.swift`. Swift tests are in `Tests/ClipboardPanelAppTests`. Rust workspace code lives under `rust/crates`, with `clipboard_core` for domain/storage logic and `clipboard_core_ffi` for Swift bridge bindings. Generated Swift bridge and XCFramework artifacts are kept in `Generated/ClipboardCoreBridge`; regenerate them with the provided script instead of editing them by hand.
+`ClipDock/` is a workspace containing separate subprojects. `macOS/` is the main ClipDock app: Swift sources live in `macOS/Sources/ClipboardPanelApp`, the executable target is `macOS/Sources/ClipDock`, tests are in `macOS/Tests/ClipboardPanelAppTests`, resources are under each target's `Resources`, and the Rust storage/FFI core lives in `macOS/rust`. Generated Swift bridge artifacts are in `macOS/Generated/ClipboardCoreBridge` and should be regenerated, not edited. `Server/` is the Rust sync server subproject with `src/`, `tests/`, and `docs/protocol-v1.md`. `Android/` contains the Android client project and design docs.
 
 ## Build, Test, and Development Commands
 
-- `scripts/build-rust-core.sh`: builds the Rust FFI library and refreshes `Generated/ClipboardCoreBridge`.
-- `swift run ClipDock`: runs the macOS app after the bridge is built.
-- `swift build`: builds the Swift package.
-- `swift test`: runs Swift Testing suites and writes the visual regression fixture to `.codex/artifacts/panel-visual-regression.png`.
-- `cargo test --manifest-path rust/Cargo.toml`: runs Rust workspace tests.
-- `scripts/package-macos-app.sh`: creates a local signed `.app` bundle in `.codex/artifacts`.
-- `scripts/release-macos.sh`: produces the local release bundle, checksums, zip, and DMG.
+- `cd macOS && scripts/build-rust-core.sh`: build the Rust FFI library and refresh generated bridge files.
+- `cd macOS && swift run ClipDock`: run the local macOS app.
+- `cd macOS && swift build`: compile the Swift package.
+- `cd macOS && swift test`: run Swift app tests.
+- `cd macOS && cargo test --manifest-path rust/Cargo.toml`: run macOS Rust workspace tests.
+- `cd Server && CLIPDOCK_SETUP_TOKEN='replace-me' cargo run`: start the sync server locally.
+- `cd Server && cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings`: verify formatting, tests, and linting.
 
 ## Coding Style & Naming Conventions
 
-Use 4-space indentation in Swift and follow existing AppKit-oriented naming: types in `UpperCamelCase`, methods and properties in `lowerCamelCase`, and test files named after the unit under test, such as `PanelRegressionPlannerTests.swift`. Rust code should follow `rustfmt` defaults, `snake_case` modules/functions, and focused modules like `storage.rs` or `migrations.rs`. Keep generated bridge files mechanically produced by `scripts/build-rust-core.sh`.
+Use 4-space indentation for Swift, `UpperCamelCase` for types, and `lowerCamelCase` for methods and properties. Keep Swift tests named after the unit under test, for example `PanelListViewStateTests.swift`. Rust code follows `rustfmt`, `snake_case` modules/functions, and focused module files such as `storage.rs` or `migrations.rs`.
 
 ## Testing Guidelines
 
-Add Swift tests with the `Testing` framework and `@Test` functions in `Tests/ClipboardPanelAppTests`. Prefer planner/evaluator tests for deterministic UI behavior and Rust core tests for persistence, migrations, and domain rules. Run `cargo test --manifest-path rust/Cargo.toml`, then `scripts/build-rust-core.sh`, then `swift test` when bridge-facing behavior changes.
+Swift tests use the Swift Testing framework with `@Test` functions in `macOS/Tests/ClipboardPanelAppTests`. Rust integration tests belong in `Server/tests` or the relevant `macOS/rust` crate. No coverage threshold is configured; add targeted tests for behavior changes and run the commands above before submitting.
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short, imperative, sentence-case subjects, for example `Focus panel after hotkey show` or `Prefetch clipboard pages while scrolling`. Keep commits scoped to one behavior. Pull requests should describe the user-visible change, list verification commands run, link related issues or docs, and include screenshots or `.codex/artifacts` references for UI changes.
+The macOS history uses short, imperative, sentence-case subjects such as `Sharpen website icons` and `Delay focus restore after copy hide`. Use that style across subprojects and keep each commit focused. Pull requests should include the user-visible change, verification commands, linked issues or docs, and screenshots or `.codex/artifacts` references for UI changes.
 
 ## Security & Configuration Tips
 
-The app stores local data at `~/Library/Application Support/ClipDock/clipboard.sqlite`. Avoid committing private clipboard data, local databases, screenshots with sensitive content, or ad-hoc release artifacts outside the documented `.codex/artifacts` workflow.
+Do not commit local clipboard databases, setup tokens, device tokens, screenshots with private data, or generated release artifacts. Server secrets are supplied through `CLIPDOCK_*` environment variables or CLI flags; keep real values outside the repo.
+
+Updated on 2026-06-01 by Codex.

@@ -1,0 +1,47 @@
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+*.dSYM/
+*.xcarchive/
+rust/target/
+Generated/ClipboardCoreBridge/RustXcframework.xcframework/
+.DS_Store
+
+# Local secrets and app data
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# Local Codex run outputs
+.codex/
+.playwright-mcp/
+verification.md
+
+# Local verification and test artifacts
+*.log
+*.xcactivitylog
+*.xcresult
+*.xccovreport
+*.xccovarchive
+test-results/
+screenshots/
+Screenshots/
+Screen Shot*.png
+Screenshot*.png
+SCR-*.png
+*.app/
+*.dmg
+*.md
+!README.md
+!README.en.md

@@ -1,0 +1,64 @@
+package com.apkdv.clipdock.data
+
+import junit.framework.TestCase.assertEquals
+import junit.framework.TestCase.assertFalse
+import junit.framework.TestCase.assertTrue
+import org.junit.Test
+
+class ClipHistoryItemTest {
+  @Test
+  fun compactText_usesImagePlaceholder() {
+    val item = sampleItem(type = ClipItemType.Image, title = "[图片]", localUri = null)
+
+    assertEquals("[图片]", item.compactText)
+    assertTrue(item.needsRemotePayload)
+  }
+
+  @Test
+  fun compactText_usesFilenameForFile() {
+    val item = sampleItem(type = ClipItemType.File, title = "meeting_notes_20250528.pdf", localUri = "content://local/file")
+
+    assertEquals("meeting_notes_20250528.pdf", item.compactText)
+    assertFalse(item.needsRemotePayload)
+  }
+
+  @Test
+  fun clipType_mapsKnownAndUnknownWireNames() {
+    assertEquals(ClipItemType.RichText, clipType("rich_text"))
+    assertEquals(ClipItemType.Unknown, clipType("anything_else"))
+  }
+
+  @Test
+  fun preservingDownloadedPayload_keepsLocalUriAfterRemoteRefresh() {
+    val remote = sampleItem(type = ClipItemType.File, title = "e2e-file.txt", localUri = null)
+    val downloaded =
+      remote.copy(
+        localUri = "content://com.apkdv.clipdock.files/p2p-payloads/e2e-file.txt",
+        payloadState = PayloadState.Ready,
+        transferState = TransferState.Ready,
+      )
+
+    val merged = remote.preservingDownloadedPayload(downloaded)
+
+    assertEquals(downloaded.localUri, merged.localUri)
+    assertEquals(PayloadState.Ready, merged.payloadState)
+    assertEquals(TransferState.Ready, merged.transferState)
+  }
+}
+
+private fun sampleItem(type: ClipItemType, title: String, localUri: String?): ClipHistoryItem =
+  ClipHistoryItem(
+    stableId = "stable",
+    contentHash = "sha256:test",
+    type = type,
+    title = title,
+    body = "",
+    detail = "",
+    sourceName = null,
+    assetId = null,
+    localUri = localUri,
+    payloadState = if (localUri == null && (type == ClipItemType.Image || type == ClipItemType.File)) PayloadState.RemoteOnly else PayloadState.Ready,
+    transferState = TransferState.Idle,
+    copiedAtMillis = 1,
+    copyCount = 1,
+  )

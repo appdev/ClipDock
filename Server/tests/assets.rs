@@ -1,0 +1,221 @@
+mod common;
+
+use axum::http::{header, Method, StatusCode};
+
+use common::{asset_digest, TestServer};
+
+#[tokio::test]
+async fn asset_upload_download_and_duplicate_upload() {
+    let server = TestServer::new().await;
+    let device = server.register().await;
+    let bytes = b"fake png bytes".to_vec();
+    let digest = asset_digest(&bytes);
+    let uri = format!("/v1/assets/{digest}");
+
+    let upload = server
+        .raw(
+            Method::PUT,
+            &uri,
+            Some(&device.token),
+            bytes.clone(),
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(upload.status, StatusCode::OK, "{:?}", upload.body);
+
+    let duplicate = server
+        .raw(
+            Method::PUT,
+            &uri,
+            Some(&device.token),
+            bytes.clone(),
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(duplicate.status, StatusCode::OK, "{:?}", duplicate.body);
+    let duplicate_body: serde_json::Value =
+        serde_json::from_slice(&duplicate.body).expect("duplicate json");
+    assert_eq!(duplicate_body["data"]["already_exists"], true);
+
+    let download = server
+        .raw(Method::GET, &uri, Some(&device.token), Vec::new(), &[])
+        .await;
+    assert_eq!(download.status, StatusCode::OK);
+    assert_eq!(download.body, bytes);
+    assert_eq!(
+        download.headers.get(header::CONTENT_TYPE).unwrap(),
+        "image/png"
+    );
+}
+
+#[tokio::test]
+async fn asset_download_is_scoped_to_the_authenticated_sync_space() {
+    let server = TestServer::new().await;
+    let first = server.create_sync().await;
+    let second = server.create_sync().await;
+    let bytes = b"same digest but private to first sync".to_vec();
+    let digest = asset_digest(&bytes);
+    let uri = format!("/v1/assets/{digest}");
+
+    let upload = server
+        .raw(
+            Method::PUT,
+            &uri,
+            Some(&first.device.token),
+            bytes,
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(upload.status, StatusCode::OK);
+
+    let download_from_other_space = server
+        .raw(
+            Method::GET,
+            &uri,
+            Some(&second.device.token),
+            Vec::new(),
+            &[],
+        )
+        .await;
+    assert_eq!(download_from_other_space.status, StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = serde_json::from_slice(&download_from_other_space.body).unwrap();
+    assert_eq!(body["error"]["code"], "asset_not_found");
+}
+
+#[tokio::test]
+async fn asset_auth_runs_before_existence_reveal() {
+    let server = TestServer::new().await;
+    let digest = asset_digest(b"not uploaded");
+    let uri = format!("/v1/assets/{digest}");
+    let response = server.raw(Method::GET, &uri, None, Vec::new(), &[]).await;
+    assert_eq!(response.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
+    let server = TestServer::new().await;
+    let device = server.register().await;
+
+    let bad_digest = server
+        .raw(
+            Method::PUT,
+            "/v1/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Some(&device.token),
+            b"not matching".to_vec(),
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(bad_digest.status, StatusCode::BAD_REQUEST);
+    let bad_body: serde_json::Value = serde_json::from_slice(&bad_digest.body).unwrap();
+    assert_eq!(bad_body["error"]["code"], "bad_digest");
+
+    let oversized_bytes = vec![7_u8; 2 * 1024 * 1024 + 1];
+    let oversized_digest = asset_digest(&oversized_bytes);
+    let oversized_uri = format!("/v1/assets/{oversized_digest}");
+    let oversized = server
+        .raw(
+            Method::PUT,
+            &oversized_uri,
+            Some(&device.token),
+            oversized_bytes,
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(oversized.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    let unsupported_mime = server
+        .raw(
+            Method::PUT,
+            &format!("/v1/assets/{}", asset_digest(b"x")),
+            Some(&device.token),
+            b"x".to_vec(),
+            &[
+                ("content-type", "application/octet-stream"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(unsupported_mime.status, StatusCode::BAD_REQUEST);
+
+    let unsupported_kind = server
+        .raw(
+            Method::PUT,
+            &format!("/v1/assets/{}", asset_digest(b"y")),
+            Some(&device.token),
+            b"y".to_vec(),
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "avatar"),
+            ],
+        )
+        .await;
+    assert_eq!(unsupported_kind.status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn asset_upload_rejects_traversal_malformed_digest_and_metadata_conflict() {
+    let server = TestServer::new().await;
+    let device = server.register().await;
+
+    let malformed = server
+        .raw(
+            Method::PUT,
+            "/v1/assets/..%2Fsecret",
+            Some(&device.token),
+            b"x".to_vec(),
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+
+    let bytes = b"conflict".to_vec();
+    let digest = asset_digest(&bytes);
+    let uri = format!("/v1/assets/{digest}");
+    let ok = server
+        .raw(
+            Method::PUT,
+            &uri,
+            Some(&device.token),
+            bytes.clone(),
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(ok.status, StatusCode::OK);
+
+    let conflict = server
+        .raw(
+            Method::PUT,
+            &uri,
+            Some(&device.token),
+            bytes,
+            &[
+                ("content-type", "image/jpeg"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(conflict.status, StatusCode::CONFLICT);
+    let body: serde_json::Value = serde_json::from_slice(&conflict.body).unwrap();
+    assert_eq!(body["error"]["code"], "metadata_conflict");
+}
