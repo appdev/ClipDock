@@ -21,7 +21,7 @@
   <a href="https://clip.run.ci/">Official Website</a>
 </p>
 
-![ClipDock current shelf](assets/marketing/clipdock-panel-overview-screen-real.webp)
+![ClipDock current shelf](docs/assets/marketing/clipdock-panel-overview-screen-real.webp)
 
 > The ClipDock screenshots in this README are captured from a real running macOS app window with sample clipboard content on a clean desktop background.
 
@@ -78,9 +78,9 @@ The shelf combines search, Pinboard shortcuts, and typed content cards in one ho
 
 Preview is part of the core interaction. Text stays readable, images show the real image, files expose a document preview, colors render as swatches, and links can show page metadata. The GitHub card in the screenshot is backed by a ready Open Graph preview for `https://github.com/`.
 
-![ClipDock preview popover](assets/marketing/clipdock-preview-screen-real.webp)
+![ClipDock preview popover](docs/assets/marketing/clipdock-preview-screen-real.webp)
 
-![ClipDock pinboard filter](assets/marketing/clipdock-panel-pinboard-screen-real.webp)
+![ClipDock pinboard filter](docs/assets/marketing/clipdock-panel-pinboard-screen-real.webp)
 
 Pinboards separate durable material from short-lived history. Product notes, design references, release text, customer documents, and team knowledge can stay one click away.
 
@@ -124,7 +124,7 @@ ClipDock is open source because clipboard tools are personal infrastructure. You
 - `macOS/`: the main macOS app. Swift UI and AppKit runtime live in `macOS/Sources/ClipDock`, reusable panel logic lives in `macOS/Sources/ClipboardPanelApp`, and the Rust FFI core lives in `macOS/rust`.
 - `Server/`: the self-hosted sync server. Protocol documentation lives in `Server/docs/protocol-v1.md`.
 - `Android/`: the Android client, including sync-space setup, snapshot/event pull, P2P downloads, and the floating overlay.
-- `index.html`, `assets/`, `open-clipdock.html`: product website and first-open help, now served from the repository root.
+- `docs/`: the GitHub Pages website directory, including the product homepage, first-open help, site manifest, CNAME, and page assets.
 
 ### Requirements
 

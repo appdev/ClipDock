@@ -16,8 +16,8 @@ android {
         applicationId = "com.apkdv.clipdock"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.7"
+        versionCode = 2
+        versionName = "0.1.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
           abiFilters += listOf("arm64-v8a", "x86_64")
