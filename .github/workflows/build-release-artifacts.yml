@@ -10,7 +10,7 @@ name: Build release artifacts
       publish_release:
         description: "Create or update the GitHub Release"
         required: true
-        default: false
+        default: true
         type: boolean
       draft:
         description: "Create the GitHub Release as a draft"
@@ -221,7 +221,7 @@ jobs:
 
       - name: Add Rust Android targets
         shell: bash
-        run: rustup target add aarch64-linux-android x86_64-linux-android
+        run: rustup target add aarch64-linux-android
 
       - name: Prepare Android signing key
         shell: bash

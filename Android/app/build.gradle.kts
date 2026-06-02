@@ -85,7 +85,7 @@ android {
         versionName = releaseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-          abiFilters += listOf("arm64-v8a", "x86_64")
+          abiFilters += listOf("arm64-v8a")
         }
     }
 
@@ -188,7 +188,6 @@ data class RustAndroidTarget(
 val rustAndroidTargets =
   listOf(
     RustAndroidTarget("Arm64", "aarch64-linux-android", "arm64-v8a", "aarch64-linux-android"),
-    RustAndroidTarget("X86_64", "x86_64-linux-android", "x86_64", "x86_64-linux-android"),
   )
 
 val androidSdkDir =
