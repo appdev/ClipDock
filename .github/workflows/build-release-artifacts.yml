@@ -40,7 +40,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       build: ${{ steps.release.outputs.build }}
       tag: ${{ steps.release.outputs.tag }}
-      artifact_root: ${{ steps.release.outputs.artifact_root }}
+      artifact_path: ${{ steps.release.outputs.artifact_path }}
 
     steps:
       - name: Checkout
@@ -96,13 +96,13 @@ jobs:
             exit 1
           fi
 
-          artifact_root="$GITHUB_WORKSPACE/.codex/artifacts/release/$version"
+          artifact_path=".codex/artifacts/release/$version"
 
           {
             echo "version=$version"
             echo "build=$build"
             echo "tag=$tag"
-            echo "artifact_root=$artifact_root"
+            echo "artifact_path=$artifact_path"
           } >> "$GITHUB_OUTPUT"
 
   build-macos-app:
@@ -136,7 +136,7 @@ jobs:
         env:
           APP_VERSION: ${{ needs.metadata.outputs.version }}
           APP_BUILD: ${{ needs.metadata.outputs.build }}
-          RELEASE_DIR: ${{ needs.metadata.outputs.artifact_root }}/macos
+          RELEASE_DIR: ${{ github.workspace }}/${{ needs.metadata.outputs.artifact_path }}/macos
           CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY || '-' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -208,7 +208,7 @@ jobs:
           Server/scripts/package-server.sh \
             --target "${{ matrix.target }}" \
             --version "${{ needs.metadata.outputs.version }}" \
-            --output-dir "${{ needs.metadata.outputs.artifact_root }}/server/${{ matrix.artifact_label }}"
+            --output-dir "${{ github.workspace }}/${{ needs.metadata.outputs.artifact_path }}/server/${{ matrix.artifact_label }}"
 
       - name: Upload server workflow artifact
         uses: actions/upload-artifact@v7
