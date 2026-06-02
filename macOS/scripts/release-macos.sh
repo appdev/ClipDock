@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 
 source scripts/app-metadata.sh
 
-version="${APP_VERSION:-$(read_app_info_value CFBundleShortVersionString 0.1.0)}"
-build="${APP_BUILD:-$(read_app_info_value CFBundleVersion 1)}"
+version="${APP_VERSION:-$(read_release_version "$(read_app_info_value CFBundleShortVersionString 0.1.0)")}"
+build="${APP_BUILD:-$(read_release_build "$(read_app_info_value CFBundleVersion 1)")}"
 app_bundle_name="${APP_BUNDLE_NAME:-ClipDock}"
 bundle_executable_name="${APP_EXECUTABLE_NAME:-ClipDock}"
 app_archs="${APP_ARCHS:-arm64 x86_64}"

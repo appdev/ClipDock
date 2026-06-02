@@ -56,9 +56,8 @@ See [docs/protocol-v1.md](docs/protocol-v1.md).
 
 ## Package
 
-Server release archives use the macOS app version from
-`../macOS/Sources/ClipDock/Resources/AppInfo.plist` unless `--version` is
-provided explicitly.
+Server release archives use the repository release version from
+`../version.properties` unless `--version` is provided explicitly.
 
 Package the current host target:
 
@@ -71,8 +70,8 @@ Package a specific target:
 ```bash
 scripts/package-server.sh \
   --target x86_64-unknown-linux-gnu \
-  --version 0.1.7 \
-  --output-dir ../.codex/artifacts/server/0.1.7
+  --version 0.1.8 \
+  --output-dir ../.codex/artifacts/server/0.1.8
 ```
 
 Supported release targets:

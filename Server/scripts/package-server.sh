@@ -16,7 +16,7 @@ Usage: scripts/package-server.sh [options]
 
 Options:
   --target <rust-target>    Rust target triple. Defaults to the host target.
-  --version <version>      Release version. Defaults to macOS AppInfo.plist.
+  --version <version>      Release version. Defaults to root version.properties.
   --output-dir <dir>       Output directory. Defaults to .codex/artifacts/server/<version>.
   --profile <profile>      Cargo profile to build. Defaults to release.
   --skip-build             Package an already-built binary.
@@ -88,17 +88,23 @@ fi
 
 if [[ -z "$version" ]]; then
     version="$("$python_bin" - <<'PY'
-import plistlib
 from pathlib import Path
 
-plist_path = Path("../macOS/Sources/ClipDock/Resources/AppInfo.plist")
+metadata_path = Path("../version.properties")
 fallback = "0.1.0"
-if not plist_path.exists():
+if not metadata_path.exists():
     print(fallback)
     raise SystemExit
-with plist_path.open("rb") as handle:
-    info = plistlib.load(handle)
-print(info.get("CFBundleShortVersionString") or fallback)
+
+properties = {}
+for raw_line in metadata_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    key, value = line.split("=", 1)
+    properties[key.strip()] = value.strip()
+
+print(properties.get("VERSION_NAME") or fallback)
 PY
 )"
 fi

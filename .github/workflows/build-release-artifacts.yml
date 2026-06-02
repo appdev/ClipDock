@@ -4,7 +4,7 @@ name: Build release artifacts
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag. Defaults to v<macOS app version>."
+        description: "Release tag. Defaults to v<release version>."
         required: false
         type: string
       publish_release:
@@ -48,62 +48,76 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve macOS app version
+      - name: Resolve release metadata
         id: release
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
-          version="$(python3 - <<'PY'
+          python3 - <<'PY'
+          import os
           import plistlib
+          import re
+          import sys
+          import tomllib
           from pathlib import Path
 
+          def read_properties(path):
+              values = {}
+              for raw_line in path.read_text(encoding="utf-8").splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  key, value = line.split("=", 1)
+                  values[key.strip()] = value.strip()
+              return values
+
+          errors = []
+          release = read_properties(Path("version.properties"))
+          version = release.get("VERSION_NAME", "")
+          build = release.get("VERSION_CODE", "")
+
           with Path("macOS/Sources/ClipDock/Resources/AppInfo.plist").open("rb") as handle:
-              info = plistlib.load(handle)
-          print(info.get("CFBundleShortVersionString", "0.1.0"))
+              macos_info = plistlib.load(handle)
+
+          with Path("Server/Cargo.toml").open("rb") as handle:
+              server_manifest = tomllib.load(handle)
+
+          if not re.fullmatch(r"[0-9]+(\.[0-9]+){1,2}", version):
+              errors.append("VERSION_NAME must be numeric, such as 0.1.8")
+          if not re.fullmatch(r"[1-9][0-9]*", build):
+              errors.append("VERSION_CODE must be a positive integer")
+
+          macos_version = str(macos_info.get("CFBundleShortVersionString", ""))
+          macos_build = str(macos_info.get("CFBundleVersion", ""))
+          server_version = str(server_manifest.get("package", {}).get("version", ""))
+
+          if macos_version != version:
+              errors.append(f"macOS CFBundleShortVersionString {macos_version!r} does not match VERSION_NAME {version!r}")
+          if macos_build != build:
+              errors.append(f"macOS CFBundleVersion {macos_build!r} does not match VERSION_CODE {build!r}")
+          if server_version != version:
+              errors.append(f"Server Cargo.toml version {server_version!r} does not match VERSION_NAME {version!r}")
+
+          tag = os.environ.get("INPUT_TAG", "").strip() or f"v{version}"
+
+          if not re.fullmatch(r"[A-Za-z0-9._/-]+", tag):
+              errors.append("tag may only contain letters, numbers, dot, underscore, slash, or dash")
+
+          if errors:
+              for error in errors:
+                  print(error, file=sys.stderr)
+              raise SystemExit(1)
+
+          artifact_path = f".codex/artifacts/release/{version}"
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+              output.write(f"build={build}\n")
+              output.write(f"tag={tag}\n")
+              output.write(f"artifact_path={artifact_path}\n")
           PY
-          )"
-
-          build="$(python3 - <<'PY'
-          import plistlib
-          from pathlib import Path
-
-          with Path("macOS/Sources/ClipDock/Resources/AppInfo.plist").open("rb") as handle:
-              info = plistlib.load(handle)
-          print(info.get("CFBundleVersion", "1"))
-          PY
-          )"
-
-          tag="$INPUT_TAG"
-
-          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
-            echo "version must be numeric, such as 0.1.7" >&2
-            exit 1
-          fi
-
-          if [[ ! "$build" =~ ^[0-9]+$ ]]; then
-            echo "build must be a positive integer" >&2
-            exit 1
-          fi
-
-          if [[ -z "$tag" ]]; then
-            tag="v$version"
-          fi
-
-          if [[ ! "$tag" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-            echo "tag may only contain letters, numbers, dot, underscore, slash, or dash" >&2
-            exit 1
-          fi
-
-          artifact_path=".codex/artifacts/release/$version"
-
-          {
-            echo "version=$version"
-            echo "build=$build"
-            echo "tag=$tag"
-            echo "artifact_path=$artifact_path"
-          } >> "$GITHUB_OUTPUT"
 
   build-macos-app:
     name: Build macOS app DMGs
@@ -151,6 +165,163 @@ jobs:
             .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/ClipDock-${{ needs.metadata.outputs.version }}-*.dmg
             .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/SHA256SUMS
             .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/ClipDock-release-manifest.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  build-android-app:
+    name: Build Android app APK/AAB
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${ANDROID_HOME:-}" ]]; then
+            echo "ANDROID_HOME is not set" >&2
+            exit 1
+          fi
+
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$sdkmanager" ]]; then
+            echo "sdkmanager not found: $sdkmanager" >&2
+            exit 1
+          fi
+
+          yes | "$sdkmanager" --licenses >/dev/null || true
+          "$sdkmanager" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.3.13750724"
+
+      - name: Print Android toolchain
+        working-directory: Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          ./gradlew --version
+          rustc -vV
+          cargo --version
+
+      - name: Add Rust Android targets
+        shell: bash
+        run: rustup target add aarch64-linux-android x86_64-linux-android
+
+      - name: Prepare Android signing key
+        shell: bash
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          ANDROID_RELEASE_KEYSTORE: ${{ runner.temp }}/clipdock-release.jks
+        run: |
+          set -euo pipefail
+
+          : "${ANDROID_RELEASE_KEYSTORE_BASE64:?ANDROID_RELEASE_KEYSTORE_BASE64 secret is required}"
+          : "${ANDROID_RELEASE_KEYSTORE_PASSWORD:?ANDROID_RELEASE_KEYSTORE_PASSWORD secret is required}"
+          : "${ANDROID_RELEASE_KEY_ALIAS:?ANDROID_RELEASE_KEY_ALIAS secret is required}"
+          : "${ANDROID_RELEASE_KEY_PASSWORD:?ANDROID_RELEASE_KEY_PASSWORD secret is required}"
+
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_RELEASE_KEYSTORE"
+          chmod 600 "$ANDROID_RELEASE_KEYSTORE"
+          keytool -list \
+            -keystore "$ANDROID_RELEASE_KEYSTORE" \
+            -storepass "$ANDROID_RELEASE_KEYSTORE_PASSWORD" \
+            -alias "$ANDROID_RELEASE_KEY_ALIAS" >/dev/null
+
+      - name: Build Android release package
+        working-directory: Android
+        env:
+          ANDROID_RELEASE_KEYSTORE: ${{ runner.temp }}/clipdock-release.jks
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          CLIPDOCK_RUST_PROFILE: release
+        run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
+
+      - name: Collect Android release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ needs.metadata.outputs.version }}"
+          build="${{ needs.metadata.outputs.build }}"
+          artifact_root="$PWD/${{ needs.metadata.outputs.artifact_path }}/android"
+
+          mkdir -p "$artifact_root"
+          rm -f "$artifact_root"/*.apk "$artifact_root"/*.aab "$artifact_root"/SHA256SUMS "$artifact_root"/ClipDock-Android-release-manifest.txt
+
+          apk_sources=()
+          while IFS= read -r artifact; do
+            apk_sources+=("$artifact")
+          done < <(find Android/app/build/outputs/apk/release -maxdepth 1 -type f -name "*.apk" | sort)
+
+          aab_sources=()
+          while IFS= read -r artifact; do
+            aab_sources+=("$artifact")
+          done < <(find Android/app/build/outputs/bundle/release -maxdepth 1 -type f -name "*.aab" | sort)
+
+          if [[ "${#apk_sources[@]}" -ne 1 ]]; then
+            echo "expected exactly one release APK, found ${#apk_sources[@]}" >&2
+            exit 1
+          fi
+          if [[ "${#aab_sources[@]}" -ne 1 ]]; then
+            echo "expected exactly one release AAB, found ${#aab_sources[@]}" >&2
+            exit 1
+          fi
+
+          apk_path="$artifact_root/ClipDock-$version-$build-android-release-signed.apk"
+          aab_path="$artifact_root/ClipDock-$version-$build-android-release-signed.aab"
+          checksums_path="$artifact_root/SHA256SUMS"
+          manifest_path="$artifact_root/ClipDock-Android-release-manifest.txt"
+
+          cp "${apk_sources[0]}" "$apk_path"
+          cp "${aab_sources[0]}" "$aab_path"
+
+          : > "$checksums_path"
+          for artifact in "$apk_path" "$aab_path"; do
+            if command -v sha256sum >/dev/null 2>&1; then
+              (cd "$artifact_root" && sha256sum "$(basename "$artifact")") >> "$checksums_path"
+            else
+              (cd "$artifact_root" && shasum -a 256 "$(basename "$artifact")") >> "$checksums_path"
+            fi
+          done
+
+          {
+            printf 'name=ClipDock\n'
+            printf 'platform=android\n'
+            printf 'application_id=com.apkdv.clipdock\n'
+            printf 'version=%s\n' "$version"
+            printf 'version_code=%s\n' "$build"
+            printf 'artifact_format=apk,aab\n'
+            printf 'signed=true\n'
+            printf 'apk=%s\n' "$apk_path"
+            printf 'aab=%s\n' "$aab_path"
+          } > "$manifest_path"
+
+      - name: Upload Android workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ClipDock-${{ needs.metadata.outputs.version }}-android
+          path: |
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/android/*
           if-no-files-found: error
           retention-days: 30
 
@@ -225,6 +396,7 @@ jobs:
     if: ${{ inputs.publish_release }}
     needs:
       - metadata
+      - build-android-app
       - build-macos-app
       - build-server
     runs-on: ubuntu-24.04
@@ -298,6 +470,8 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: true
           files: |
+            release-artifacts/**/*.apk
+            release-artifacts/**/*.aab
             release-artifacts/**/*.dmg
             release-artifacts/**/*.tar.gz
             release-artifacts/**/*.zip

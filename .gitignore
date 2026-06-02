@@ -32,6 +32,9 @@ local.properties
 !**/.env.example
 *.pem
 *.key
+*.jks
+*.keystore
+*keystore*.base64
 *.p12
 *.cer
 *.mobileprovision

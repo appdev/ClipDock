@@ -1,12 +1,77 @@
+import java.io.File
 import java.util.Locale
+import java.util.Properties
+import org.gradle.api.DefaultTask
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.TaskAction
+
+abstract class ValidateReleaseSigningTask : DefaultTask() {
+  @get:Input abstract val signingConfigured: Property<Boolean>
+  @get:Input abstract val keystorePath: Property<String>
+
+  @TaskAction
+  fun validate() {
+    if (!signingConfigured.get()) {
+      error(
+        "Release signing is required. Set ANDROID_RELEASE_KEYSTORE, " +
+          "ANDROID_RELEASE_KEYSTORE_PASSWORD, ANDROID_RELEASE_KEY_ALIAS, and " +
+          "ANDROID_RELEASE_KEY_PASSWORD, or pass the matching clipdock.release* Gradle properties."
+      )
+    }
+
+    val keystoreFile = File(keystorePath.get())
+    if (!keystoreFile.isFile) {
+      error("Release keystore not found: ${keystoreFile.absolutePath}")
+    }
+  }
+}
 
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
 }
+
+val releaseMetadataFile = rootProject.file("../version.properties")
+val releaseProperties =
+  Properties().apply {
+    if (!releaseMetadataFile.isFile) {
+      error("Release metadata not found: ${releaseMetadataFile.absolutePath}")
+    }
+    releaseMetadataFile.inputStream().use(::load)
+  }
+
+fun releaseProperty(key: String): String =
+  releaseProperties.getProperty(key)?.trim()?.takeIf { it.isNotEmpty() }
+    ?: error("Missing $key in ${releaseMetadataFile.absolutePath}")
+
+val releaseVersionName = releaseProperty("VERSION_NAME")
+val releaseVersionCode =
+  releaseProperty("VERSION_CODE").toIntOrNull()
+    ?: error("VERSION_CODE must be an integer in ${releaseMetadataFile.absolutePath}")
+
+fun releaseSigningValue(propertyName: String, environmentName: String): String? =
+  providers.gradleProperty(propertyName)
+    .orElse(providers.environmentVariable(environmentName))
+    .orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+
+val releaseKeystorePath =
+  releaseSigningValue("clipdock.releaseKeystore", "ANDROID_RELEASE_KEYSTORE")
+val releaseKeystorePassword =
+  releaseSigningValue("clipdock.releaseKeystorePassword", "ANDROID_RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias =
+  releaseSigningValue("clipdock.releaseKeyAlias", "ANDROID_RELEASE_KEY_ALIAS")
+val releaseKeyPassword =
+  releaseSigningValue("clipdock.releaseKeyPassword", "ANDROID_RELEASE_KEY_PASSWORD")
+val releaseSigningConfigured =
+  listOf(releaseKeystorePath, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword)
+    .all { !it.isNullOrEmpty() }
+val releaseKeystoreAbsolutePath = releaseKeystorePath?.let { file(it).absolutePath }
 
 android {
     namespace = "com.apkdv.clipdock"
@@ -16,17 +81,31 @@ android {
         applicationId = "com.apkdv.clipdock"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.8"
+        versionCode = releaseVersionCode
+        versionName = releaseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
           abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 
+    signingConfigs {
+      if (releaseSigningConfigured) {
+        create("release") {
+          storeFile = file(releaseKeystorePath!!)
+          storePassword = releaseKeystorePassword
+          keyAlias = releaseKeyAlias
+          keyPassword = releaseKeyPassword
+        }
+      }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseSigningConfigured) {
+              signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -115,8 +194,28 @@ val rustAndroidTargets =
 val androidSdkDir =
   providers.environmentVariable("ANDROID_HOME").orElse("${System.getProperty("user.home")}/Library/Android/sdk")
 val rustCrateDir = rootProject.file("rust/clipdock_p2p_jni")
+val rustCargoProfile =
+  providers.gradleProperty("clipdock.rustProfile")
+    .orElse(providers.environmentVariable("CLIPDOCK_RUST_PROFILE"))
+    .orElse("debug")
+    .get()
+val rustCargoProfileDir =
+  when (rustCargoProfile) {
+    "debug" -> "debug"
+    "release" -> "release"
+    else -> error("Unsupported Rust cargo profile for Android JNI: $rustCargoProfile")
+  }
+val ndkHostTag =
+  System.getProperty("os.name").lowercase(Locale.US).let { osName ->
+    when {
+      osName.contains("mac") -> "darwin-x86_64"
+      osName.contains("linux") -> "linux-x86_64"
+      osName.contains("windows") -> "windows-x86_64"
+      else -> error("Unsupported NDK host OS: $osName")
+    }
+  }
 val ndkToolchainDir =
-  androidSdkDir.map { "$it/ndk/27.3.13750724/toolchains/llvm/prebuilt/darwin-x86_64/bin" }
+  androidSdkDir.map { "$it/ndk/27.3.13750724/toolchains/llvm/prebuilt/$ndkHostTag/bin" }
 
 val copyRustJniTasks =
   rustAndroidTargets.map { target ->
@@ -126,7 +225,7 @@ val copyRustJniTasks =
         inputs.file(rustCrateDir.resolve("Cargo.toml"))
         inputs.file(rustCrateDir.resolve("Cargo.lock"))
         inputs.dir(rustCrateDir.resolve("src"))
-        outputs.file(rustCrateDir.resolve("target/${target.triple}/debug/libclipdock_p2p_jni.so"))
+        outputs.file(rustCrateDir.resolve("target/${target.triple}/$rustCargoProfileDir/libclipdock_p2p_jni.so"))
         val upperTargetKey = target.triple.uppercase(Locale.US).replace("-", "_")
         val lowerTargetKey = target.triple.replace("-", "_")
         val clang = "${ndkToolchainDir.get()}/${target.clangPrefix}26-clang"
@@ -136,16 +235,32 @@ val copyRustJniTasks =
         environment("CC_$lowerTargetKey", clang)
         environment("AR_$lowerTargetKey", ar)
         environment("CARGO_TARGET_${upperTargetKey}_LINKER", clang)
-        commandLine("cargo", "build", "--target", target.triple)
+        val cargoBuildArgs = mutableListOf("build", "--target", target.triple)
+        if (rustCargoProfile == "release") {
+          cargoBuildArgs += "--release"
+        }
+        commandLine("cargo", *cargoBuildArgs.toTypedArray())
       }
 
     tasks.register<Copy>("copyP2pJni${target.suffix}") {
       dependsOn(cargoBuild)
-      from(rustCrateDir.resolve("target/${target.triple}/debug/libclipdock_p2p_jni.so"))
+      from(rustCrateDir.resolve("target/${target.triple}/$rustCargoProfileDir/libclipdock_p2p_jni.so"))
       into(layout.buildDirectory.dir("generated/rustJniLibs/${target.abi}"))
     }
   }
 
 tasks.named("preBuild") {
   dependsOn(copyRustJniTasks)
+}
+
+val validateReleaseSigning =
+  tasks.register<ValidateReleaseSigningTask>("validateReleaseSigning") {
+    signingConfigured.set(releaseSigningConfigured)
+    keystorePath.set(releaseKeystoreAbsolutePath ?: "")
+  }
+
+tasks.configureEach {
+  if (name in setOf("assembleRelease", "bundleRelease", "packageRelease", "packageReleaseBundle", "signReleaseBundle")) {
+    dependsOn(validateReleaseSigning)
+  }
 }
