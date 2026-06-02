@@ -205,10 +205,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          artifact_root="$PWD/${{ needs.metadata.outputs.artifact_path }}"
           Server/scripts/package-server.sh \
             --target "${{ matrix.target }}" \
             --version "${{ needs.metadata.outputs.version }}" \
-            --output-dir "${{ github.workspace }}/${{ needs.metadata.outputs.artifact_path }}/server/${{ matrix.artifact_label }}"
+            --output-dir "$artifact_root/server/${{ matrix.artifact_label }}"
 
       - name: Upload server workflow artifact
         uses: actions/upload-artifact@v7

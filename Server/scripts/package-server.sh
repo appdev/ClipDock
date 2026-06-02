@@ -146,7 +146,7 @@ if [[ -z "$output_dir" ]]; then
 fi
 
 case "$output_dir" in
-    /*) ;;
+    /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;;
     *) output_dir="$(pwd)/$output_dir" ;;
 esac
 
