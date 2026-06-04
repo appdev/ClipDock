@@ -32,6 +32,22 @@ struct SyncEventOutboxTests {
     }
 
     @Test
+    func clientNormalizerMatchesSharedContractFixture() throws {
+        let fixture = try sharedSyncContractFixture()
+        let ids = try #require(fixture["ids"] as? [String: Any])
+        let contentHash = try #require(ids["content_hash"] as? [String: Any])
+        let entries = try #require(contentHash["client_normalize"] as? [[String: String]])
+
+        for entry in entries {
+            let input = try #require(entry["input"])
+            let expected = try #require(entry["expected"])
+
+            #expect(SyncOutboxEvent.normalizedServerContentHash(input) == expected)
+            #expect(SyncOutboxEvent.localContentHashKey(input) == String(expected.dropFirst("blake3:".count)))
+        }
+    }
+
+    @Test
     func persistsEventsAndRestoresSendingEventsAsDuePendingWork() async throws {
         let fileURL = try temporaryOutboxURL()
         let outbox = SyncEventOutbox(fileURL: fileURL)
@@ -133,5 +149,25 @@ struct SyncEventOutboxTests {
             .appendingPathComponent("clipdock-sync-outbox-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("sync-outbox.json", isDirectory: false)
+    }
+
+    private func sharedSyncContractFixture() throws -> [String: Any] {
+        var directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        while true {
+            let candidate = directory.appendingPathComponent("shared/fixtures/sync_contract/protocol_fixtures.json")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                let data = try Data(contentsOf: candidate)
+                return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            }
+            let parent = directory.deletingLastPathComponent()
+            if parent.path == directory.path {
+                throw NSError(
+                    domain: "SyncEventOutboxTests",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "shared sync contract fixture not found"]
+                )
+            }
+            directory = parent
+        }
     }
 }

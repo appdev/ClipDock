@@ -11,4 +11,4 @@ pub mod migrations;
 pub mod p2p;
 pub mod realtime;
 
-pub const PROTOCOL_VERSION: u8 = 2;
+pub use clipdock_sync_contract::PROTOCOL_VERSION;

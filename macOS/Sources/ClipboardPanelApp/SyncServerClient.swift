@@ -82,6 +82,16 @@ public struct SyncP2PDeleteProviderResult: Equatable, Sendable {
     public let removed: Bool
 }
 
+public struct SyncUploadedAssetResult: Equatable, Sendable {
+    public let digest: String
+    public let kind: String
+    public let mimeType: String
+    public let sizeBytes: Int64
+    public let width: Int64
+    public let height: Int64
+    public let alreadyExists: Bool
+}
+
 public struct SyncPushEvent: Equatable, Encodable, Sendable {
     public let clientEventId: String
     public let eventType: String
@@ -432,6 +442,54 @@ public struct SyncServerClient: Sendable {
         return SyncP2PAssetProvidersResult(
             assetID: response.data.assetID,
             providers: response.data.providers.map { $0.asResult() }
+        )
+    }
+
+    public func uploadAsset(
+        serverURL: String,
+        token: String,
+        digest: String,
+        kind: String,
+        mimeType: String,
+        width: Int,
+        height: Int,
+        bytes: Data
+    ) async throws -> SyncUploadedAssetResult {
+        let baseURL = try normalizedBaseURL(serverURL)
+        let pathURL = baseURL.appendingPathComponent("v2/assets/\(digest)")
+        var request = URLRequest(url: pathURL)
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 30
+        request.httpBody = bytes
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("ClipDock macOS Sync", forHTTPHeaderField: "User-Agent")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+        request.setValue(kind, forHTTPHeaderField: "X-ClipDock-Asset-Kind")
+        request.setValue("\(width)", forHTTPHeaderField: "X-ClipDock-Asset-Width")
+        request.setValue("\(height)", forHTTPHeaderField: "X-ClipDock-Asset-Height")
+
+        let (data, response) = try await httpClient.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SyncServerClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let decoder = JSONDecoder()
+            let error = try? decoder.decode(ErrorEnvelope.self, from: data)
+            throw SyncServerClientError.httpStatus(
+                httpResponse.statusCode,
+                error?.error.code ?? "http_error"
+            )
+        }
+        let responseEnvelope = try JSONDecoder().decode(SuccessEnvelope<UploadAssetResponse>.self, from: data)
+        return SyncUploadedAssetResult(
+            digest: responseEnvelope.data.digest,
+            kind: responseEnvelope.data.kind,
+            mimeType: responseEnvelope.data.mimeType,
+            sizeBytes: responseEnvelope.data.sizeBytes,
+            width: responseEnvelope.data.width,
+            height: responseEnvelope.data.height,
+            alreadyExists: responseEnvelope.data.alreadyExists
         )
     }
 
@@ -817,6 +875,26 @@ private struct ListAssetProvidersResponse: Decodable {
     private enum CodingKeys: String, CodingKey {
         case assetID = "asset_id"
         case providers
+    }
+}
+
+private struct UploadAssetResponse: Decodable {
+    let digest: String
+    let kind: String
+    let mimeType: String
+    let sizeBytes: Int64
+    let width: Int64
+    let height: Int64
+    let alreadyExists: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case digest
+        case kind
+        case mimeType = "mime_type"
+        case sizeBytes = "size_bytes"
+        case width = "width_px"
+        case height = "height_px"
+        case alreadyExists = "already_exists"
     }
 }
 

@@ -360,6 +360,10 @@ final class ClipboardMonitor: ClipboardMonitoring {
         trimIgnoredMarkers()
     }
 
+    func pollNowForTesting() {
+        pollPasteboard()
+    }
+
     private func pollPasteboard() {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }

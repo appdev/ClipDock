@@ -1,0 +1,10 @@
+[package]
+name = "clipdock_thumbnail_codec"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clipdock_sync_contract = { path = "../clipdock_sync_contract" }
+fast-ssim2 = { version = "=0.8.1", features = ["imgref"] }
+imgref = "1.11"
+zenwebp = "=0.4.4"

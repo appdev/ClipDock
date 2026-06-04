@@ -102,6 +102,11 @@ data class ClipHistoryItem(
   val sourceName: String?,
   val assetId: String?,
   val thumbnailUri: String?,
+  val thumbnailDigest: String?,
+  val thumbnailMimeType: String?,
+  val thumbnailByteCount: Long?,
+  val thumbnailWidth: Int?,
+  val thumbnailHeight: Int?,
   val localUri: String?,
   val payloadState: PayloadState,
   val transferState: TransferState,
@@ -130,6 +135,11 @@ data class ClipHistoryItem(
       .put("sourceName", sourceName)
       .put("assetId", assetId)
       .put("thumbnailUri", thumbnailUri)
+      .put("thumbnailDigest", thumbnailDigest)
+      .put("thumbnailMimeType", thumbnailMimeType)
+      .put("thumbnailByteCount", thumbnailByteCount)
+      .put("thumbnailWidth", thumbnailWidth)
+      .put("thumbnailHeight", thumbnailHeight)
       .put("localUri", localUri)
       .put("payloadState", payloadState.name)
       .put("transferState", transferState.name)
@@ -154,6 +164,11 @@ data class ClipHistoryItem(
         sourceName = json.optNullableString("sourceName"),
         assetId = json.optNullableString("assetId"),
         thumbnailUri = json.optNullableString("thumbnailUri"),
+        thumbnailDigest = json.optNullableString("thumbnailDigest"),
+        thumbnailMimeType = json.optNullableString("thumbnailMimeType"),
+        thumbnailByteCount = json.optNullableLong("thumbnailByteCount"),
+        thumbnailWidth = json.optNullableInt("thumbnailWidth"),
+        thumbnailHeight = json.optNullableInt("thumbnailHeight"),
         localUri = json.optNullableString("localUri"),
         payloadState = payloadState,
         transferState = transferState,
@@ -258,6 +273,11 @@ data class ClipHistoryItem(
         sourceName = sourceName,
         assetId = assetId,
         thumbnailUri = thumbnailUri,
+        thumbnailDigest = payload.optNullableString("thumbnail_digest"),
+        thumbnailMimeType = payload.optNullableString("thumbnail_mime_type"),
+        thumbnailByteCount = payload.optNullableLong("thumbnail_byte_count"),
+        thumbnailWidth = payload.optNullableInt("thumbnail_width"),
+        thumbnailHeight = payload.optNullableInt("thumbnail_height"),
         localUri = localUri,
         payloadState = payloadState,
         transferState = TransferState.Idle,
@@ -337,6 +357,12 @@ private fun JSONArray?.stringList(): List<String> {
 
 private fun JSONObject.optNullableString(name: String): String? =
   if (has(name) && !isNull(name)) optString(name).takeIf { it.isNotBlank() } else null
+
+private fun JSONObject.optNullableLong(name: String): Long? =
+  if (has(name) && !isNull(name)) optLong(name).takeIf { it > 0 } else null
+
+private fun JSONObject.optNullableInt(name: String): Int? =
+  if (has(name) && !isNull(name)) optInt(name).takeIf { it > 0 } else null
 
 private fun JSONObject.firstText(vararg names: String): String =
   names.firstNotNullOfOrNull { name ->

@@ -53,6 +53,28 @@ public struct SyncOutboxAssetRegistration: Codable, Equatable, Sendable {
     }
 }
 
+public struct SyncOutboxThumbnailUpload: Codable, Equatable, Sendable {
+    public let filePath: String
+    public let mimeType: String
+    public let byteCount: Int
+    public let width: Int
+    public let height: Int
+
+    public init(
+        filePath: String,
+        mimeType: String,
+        byteCount: Int,
+        width: Int,
+        height: Int
+    ) {
+        self.filePath = filePath
+        self.mimeType = mimeType
+        self.byteCount = byteCount
+        self.width = width
+        self.height = height
+    }
+}
+
 public struct SyncOutboxEvent: Codable, Equatable, Sendable {
     public let clientEventId: String
     public let type: String
@@ -65,6 +87,7 @@ public struct SyncOutboxEvent: Codable, Equatable, Sendable {
     public var nextAttemptAt: Int64
     public var status: SyncOutboxEventStatus
     public let assetRegistration: SyncOutboxAssetRegistration?
+    public let thumbnailUpload: SyncOutboxThumbnailUpload?
 
     public init(
         clientEventId: String = "macos-\(UUID().uuidString.lowercased())",
@@ -77,7 +100,8 @@ public struct SyncOutboxEvent: Codable, Equatable, Sendable {
         attemptCount: Int = 0,
         nextAttemptAt: Int64,
         status: SyncOutboxEventStatus = .pending,
-        assetRegistration: SyncOutboxAssetRegistration? = nil
+        assetRegistration: SyncOutboxAssetRegistration? = nil,
+        thumbnailUpload: SyncOutboxThumbnailUpload? = nil
     ) {
         self.clientEventId = clientEventId
         self.type = type
@@ -90,6 +114,7 @@ public struct SyncOutboxEvent: Codable, Equatable, Sendable {
         self.nextAttemptAt = nextAttemptAt
         self.status = status
         self.assetRegistration = assetRegistration
+        self.thumbnailUpload = thumbnailUpload
     }
 
     public static func normalizedServerContentHash(_ contentHash: String) -> String {
@@ -104,6 +129,16 @@ public struct SyncOutboxEvent: Codable, Equatable, Sendable {
         let normalized = normalizedServerContentHash(contentHash)
         return normalized.removingPrefix("blake3:") ?? normalized
     }
+}
+
+public struct SyncOutboxSendUnit: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        case normalBatch
+        case payloadAssetUpdate
+    }
+
+    public let kind: Kind
+    public let events: [SyncOutboxEvent]
 }
 
 public enum SyncOutboxTiming {
@@ -192,6 +227,36 @@ public actor SyncEventOutbox {
         return events.filter { dueIDSet.contains($0.clientEventId) }
     }
 
+    public func nextDueSendUnit(nowMs: Int64, maxNormalBatchSize: Int = 50) -> SyncOutboxSendUnit? {
+        let dueEvents = events
+            .filter { event in
+                event.status != .sending && event.nextAttemptAt <= nowMs
+            }
+        guard let firstEvent = dueEvents.first else {
+            return nil
+        }
+
+        let selectedEvents: [SyncOutboxEvent]
+        let kind: SyncOutboxSendUnit.Kind
+        if firstEvent.type == "item_payload_asset_update" {
+            selectedEvents = [firstEvent]
+            kind = .payloadAssetUpdate
+        } else {
+            selectedEvents = Array(dueEvents
+                .prefix(max(1, maxNormalBatchSize))
+                .prefix { $0.type != "item_payload_asset_update" })
+            kind = .normalBatch
+        }
+        let selectedIDs = Set(selectedEvents.map(\.clientEventId))
+        guard !selectedIDs.isEmpty else { return nil }
+
+        for index in events.indices where selectedIDs.contains(events[index].clientEventId) {
+            events[index].status = .sending
+        }
+        persist()
+        return SyncOutboxSendUnit(kind: kind, events: selectedEvents)
+    }
+
     public func updatePayload(clientEventId: String, payload: [String: SyncEventPayloadValue]) {
         guard let index = events.firstIndex(where: { $0.clientEventId == clientEventId }) else {
             return
@@ -204,6 +269,28 @@ public actor SyncEventOutbox {
         guard !clientEventIds.isEmpty else { return }
         events.removeAll { clientEventIds.contains($0.clientEventId) }
         persist()
+    }
+
+    @discardableResult
+    public func completeAndEnqueueAtomically(
+        clientEventIds: Set<String>,
+        followUpEvents: [SyncOutboxEvent]
+    ) throws -> [SyncOutboxEvent] {
+        guard !clientEventIds.isEmpty || !followUpEvents.isEmpty else {
+            return events
+        }
+        var nextEvents = events.filter { !clientEventIds.contains($0.clientEventId) }
+        nextEvents.append(contentsOf: followUpEvents)
+        nextEvents.sort { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt {
+                lhs.clientEventId < rhs.clientEventId
+            } else {
+                lhs.createdAt < rhs.createdAt
+            }
+        }
+        try writeSnapshot(nextEvents)
+        events = nextEvents
+        return events
     }
 
     public func fail(
@@ -278,17 +365,21 @@ public actor SyncEventOutbox {
 
     private func persist() {
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(Snapshot(events: events))
-            try data.write(to: fileURL, options: .atomic)
+            try writeSnapshot(events)
         } catch {
             // The in-memory queue remains authoritative for this app run.
         }
+    }
+
+    private func writeSnapshot(_ snapshotEvents: [SyncOutboxEvent]) throws {
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(Snapshot(events: snapshotEvents))
+        try data.write(to: fileURL, options: .atomic)
     }
 
     private func setItemStatus(

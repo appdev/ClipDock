@@ -19,6 +19,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONObject
 
 class ClipDockApiException(val code: String, message: String = code) : Exception(message)
 
@@ -39,10 +40,65 @@ interface ClipDockRealtimeSocketConnector {
   ): WebSocket
 }
 
+data class DownloadedSyncAsset(
+  val bytes: ByteArray,
+  val contentType: String?,
+  val byteCount: Long,
+  val kind: String?,
+  val width: Int?,
+  val height: Int?,
+) {
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is DownloadedSyncAsset) return false
+    return bytes.contentEquals(other.bytes) &&
+      contentType == other.contentType &&
+      byteCount == other.byteCount &&
+      kind == other.kind &&
+      width == other.width &&
+      height == other.height
+  }
+
+  override fun hashCode(): Int {
+    var result = bytes.contentHashCode()
+    result = 31 * result + (contentType?.hashCode() ?: 0)
+    result = 31 * result + byteCount.hashCode()
+    result = 31 * result + (kind?.hashCode() ?: 0)
+    result = 31 * result + (width ?: 0)
+    result = 31 * result + (height ?: 0)
+    return result
+  }
+}
+
+data class UploadedSyncAsset(
+  val digest: String,
+  val kind: String,
+  val mimeType: String,
+  val byteCount: Long,
+  val width: Int,
+  val height: Int,
+  val alreadyExists: Boolean,
+)
+
+interface ClipDockRawAssetApi {
+  suspend fun downloadAsset(serverUrl: String, token: String, digest: String): DownloadedSyncAsset
+
+  suspend fun uploadAsset(
+    serverUrl: String,
+    token: String,
+    digest: String,
+    kind: String,
+    mimeType: String,
+    width: Int,
+    height: Int,
+    bytes: ByteArray,
+  ): UploadedSyncAsset
+}
+
 class ClipDockApiClient(
   private val client: OkHttpClient = defaultClient,
   private val json: Json = defaultJson,
-) : ClipDockSyncApi, ClipDockRealtimeSocketConnector {
+) : ClipDockSyncApi, ClipDockRealtimeSocketConnector, ClipDockRawAssetApi {
   suspend fun health(serverUrl: String): JsonObject = request(serverUrl, "/health", Method.Get, token = null)
 
   suspend fun info(serverUrl: String, token: String): JsonObject = request(serverUrl, "/v2/info", Method.Get, token)
@@ -157,6 +213,70 @@ class ClipDockApiClient(
       token,
     )
 
+  override suspend fun downloadAsset(serverUrl: String, token: String, digest: String): DownloadedSyncAsset {
+    val request =
+      Request.Builder()
+        .url(serverUrl.trimEnd('/') + "/v2/assets/${digest.encodePathSegment()}")
+        .header("Accept", "image/webp,image/png,image/jpeg")
+        .header("Authorization", "Bearer $token")
+        .build()
+    val response = client.newCall(request).awaitBytes()
+    if (!response.isSuccessful) {
+      throw ClipDockApiException("http_${response.code}")
+    }
+    return DownloadedSyncAsset(
+      bytes = response.bytes,
+      contentType = response.headers["content-type"]?.substringBefore(';')?.trim(),
+      byteCount = response.headers["content-length"]?.toLongOrNull() ?: response.bytes.size.toLong(),
+      kind = response.headers["x-clipdock-asset-kind"],
+      width = response.headers["x-clipdock-asset-width"]?.toIntOrNull(),
+      height = response.headers["x-clipdock-asset-height"]?.toIntOrNull(),
+    )
+  }
+
+  override suspend fun uploadAsset(
+    serverUrl: String,
+    token: String,
+    digest: String,
+    kind: String,
+    mimeType: String,
+    width: Int,
+    height: Int,
+    bytes: ByteArray,
+  ): UploadedSyncAsset {
+    val request =
+      Request.Builder()
+        .url(serverUrl.trimEnd('/') + "/v2/assets/${digest.encodePathSegment()}")
+        .header("Accept", "application/json")
+        .header("Authorization", "Bearer $token")
+        .header("Content-Type", mimeType)
+        .header("X-ClipDock-Asset-Kind", kind)
+        .header("X-ClipDock-Asset-Width", width.toString())
+        .header("X-ClipDock-Asset-Height", height.toString())
+        .put(bytes.toRequestBody(mimeType.toMediaType()))
+        .build()
+    val response = client.newCall(request).awaitBody()
+    val responseText = response.bodyText
+    if (responseText.isBlank()) {
+      throw ClipDockApiException("http_${response.code}")
+    }
+    val envelope = json.decodeFromString<ApiEnvelope>(responseText)
+    if (!response.isSuccessful || envelope.error != null) {
+      val error = envelope.error
+      throw ClipDockApiException(error?.code.orEmpty().ifBlank { "http_${response.code}" }, error?.message.orEmpty())
+    }
+    val data = JSONObject(envelope.data?.toString() ?: "{}")
+    return UploadedSyncAsset(
+      digest = data.optString("digest"),
+      kind = data.optString("kind"),
+      mimeType = data.optString("mime_type"),
+      byteCount = data.optLong("size_bytes"),
+      width = data.optInt("width_px"),
+      height = data.optInt("height_px"),
+      alreadyExists = data.optBoolean("already_exists"),
+    )
+  }
+
   private suspend inline fun <reified T> request(
     serverUrl: String,
     path: String,
@@ -221,6 +341,13 @@ private data class NetworkResponse(
   val bodyText: String,
 )
 
+private data class NetworkBytesResponse(
+  val code: Int,
+  val isSuccessful: Boolean,
+  val headers: Map<String, String>,
+  val bytes: ByteArray,
+)
+
 private suspend fun Call.awaitBody(): NetworkResponse =
   suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation { cancel() }
@@ -236,6 +363,38 @@ private suspend fun Call.awaitBody(): NetworkResponse =
               val bodyText = it.body.string()
               if (!continuation.isCancelled) {
                 continuation.resume(NetworkResponse(it.code, it.isSuccessful, bodyText))
+              }
+            } catch (throwable: Throwable) {
+              if (!continuation.isCancelled) continuation.resumeWithException(throwable)
+            }
+          }
+        }
+      },
+    )
+  }
+
+private suspend fun Call.awaitBytes(): NetworkBytesResponse =
+  suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    enqueue(
+      object : Callback {
+        override fun onFailure(call: Call, e: IOException) {
+          if (!continuation.isCancelled) continuation.resumeWithException(e)
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+          response.use {
+            try {
+              val bytes = it.body.bytes()
+              if (!continuation.isCancelled) {
+                continuation.resume(
+                  NetworkBytesResponse(
+                    code = it.code,
+                    isSuccessful = it.isSuccessful,
+                    headers = it.headers.toMap().mapKeys { header -> header.key.lowercase() },
+                    bytes = bytes,
+                  ),
+                )
               }
             } catch (throwable: Throwable) {
               if (!continuation.isCancelled) continuation.resumeWithException(throwable)

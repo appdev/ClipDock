@@ -1,0 +1,181 @@
+{
+  "info": {
+    "protocol_version": 2,
+    "event_types": [
+      "item_upsert",
+      "item_delete",
+      "item_payload_asset_update"
+    ],
+    "asset_kinds": [
+      "thumbnail",
+      "source_icon",
+      "link_preview"
+    ],
+    "asset_mime_types": [
+      "image/png",
+      "image/jpeg",
+      "image/webp"
+    ],
+    "content_hash_algorithms": [
+      "blake3"
+    ],
+    "asset_digest_algorithms": [
+      "blake3"
+    ],
+    "thumbnail_normal_target_bytes": 262144,
+    "thumbnail_detail_target_bytes": 393216,
+    "thumbnail_max_bytes": 786432,
+    "asset_max_dimension_px": 8192,
+    "asset_max_pixels": 16777216,
+    "p2p_provider_kinds": [
+      "image_payload",
+      "file_payload",
+      "thumbnail"
+    ]
+  },
+  "ids": {
+    "content_hash": {
+      "valid_strict": [
+        "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "invalid_strict": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "blake3:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "blake3:aaaa"
+      ],
+      "client_normalize": [
+        {
+          "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expected": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "input": " BLAKE3:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ",
+          "expected": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    "asset_digest": {
+      "valid_strict": [
+        "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ],
+      "invalid_strict": [
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "blake3:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "blake3:bbbb"
+      ]
+    },
+    "p2p_asset_id": {
+      "valid_strict": [
+        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "blake3:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst"
+      ],
+      "invalid_strict": [
+        "sha256:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "sha512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopq",
+        "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopq0"
+      ]
+    }
+  },
+  "events": {
+    "text_upsert": {
+      "type": "item_upsert",
+      "content_hash": "blake3:1111111111111111111111111111111111111111111111111111111111111111",
+      "item_type": "text",
+      "payload": {
+        "text": "hello",
+        "summary": "hello",
+        "source_platform": "android"
+      },
+      "copy_count_delta": 1
+    },
+    "image_upsert_with_thumbnail": {
+      "type": "item_upsert",
+      "content_hash": "blake3:2222222222222222222222222222222222222222222222222222222222222222",
+      "item_type": "image",
+      "payload": {
+        "file_name": "screen.webp",
+        "mime_type": "image/png",
+        "payload_asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst",
+        "asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst",
+        "thumbnail_digest": "blake3:3333333333333333333333333333333333333333333333333333333333333333",
+        "thumbnail_mime_type": "image/webp",
+        "thumbnail_byte_count": 184320,
+        "thumbnail_width": 384,
+        "thumbnail_height": 216
+      },
+      "copy_count_delta": 1
+    },
+    "image_upsert_without_thumbnail": {
+      "type": "item_upsert",
+      "content_hash": "blake3:4444444444444444444444444444444444444444444444444444444444444444",
+      "item_type": "image",
+      "payload": {
+        "file_name": "screen.webp",
+        "mime_type": "image/png",
+        "payload_asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst",
+        "asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst"
+      },
+      "copy_count_delta": 1
+    },
+    "invalid_partial_thumbnail": {
+      "type": "item_upsert",
+      "content_hash": "blake3:5555555555555555555555555555555555555555555555555555555555555555",
+      "item_type": "image",
+      "payload": {
+        "thumbnail_digest": "blake3:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "expected_error": "invalid_thumbnail_payload"
+    },
+    "invalid_non_image_thumbnail": {
+      "type": "item_upsert",
+      "content_hash": "blake3:6666666666666666666666666666666666666666666666666666666666666666",
+      "item_type": "text",
+      "payload": {
+        "text": "hello",
+        "thumbnail_digest": "blake3:3333333333333333333333333333333333333333333333333333333333333333",
+        "thumbnail_mime_type": "image/webp",
+        "thumbnail_byte_count": 184320,
+        "thumbnail_width": 384,
+        "thumbnail_height": 216
+      },
+      "expected_error": "invalid_thumbnail_payload"
+    },
+    "payload_asset_update": {
+      "type": "item_payload_asset_update",
+      "content_hash": "blake3:2222222222222222222222222222222222222222222222222222222222222222",
+      "item_type": "image",
+      "payload": {
+        "payload_asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst",
+        "asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst"
+      }
+    },
+    "invalid_payload_asset_update_extra": {
+      "type": "item_payload_asset_update",
+      "content_hash": "blake3:2222222222222222222222222222222222222222222222222222222222222222",
+      "item_type": "image",
+      "payload": {
+        "payload_asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst",
+        "unexpected": "value"
+      },
+      "expected_error": "invalid_payload_asset_update_payload"
+    },
+    "invalid_payload_asset_update_mismatch": {
+      "type": "item_payload_asset_update",
+      "content_hash": "blake3:2222222222222222222222222222222222222222222222222222222222222222",
+      "item_type": "image",
+      "payload": {
+        "payload_asset_id": "blake3:abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst",
+        "asset_id": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "expected_error": "invalid_payload_asset_update_payload"
+    },
+    "delete": {
+      "type": "item_delete",
+      "content_hash": "blake3:7777777777777777777777777777777777777777777777777777777777777777"
+    }
+  }
+}

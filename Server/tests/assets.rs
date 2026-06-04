@@ -2,13 +2,22 @@ mod common;
 
 use axum::http::{header, Method, StatusCode};
 
-use common::{asset_digest, TestServer};
+use common::{asset_digest, png_1x1, TestServer};
+
+fn thumbnail_headers(mime_type: &'static str) -> [(&'static str, &'static str); 4] {
+    [
+        ("content-type", mime_type),
+        ("x-clipdock-asset-kind", "thumbnail"),
+        ("x-clipdock-asset-width", "1"),
+        ("x-clipdock-asset-height", "1"),
+    ]
+}
 
 #[tokio::test]
 async fn asset_upload_download_and_duplicate_upload() {
     let server = TestServer::new().await;
     let device = server.register().await;
-    let bytes = b"fake png bytes".to_vec();
+    let bytes = png_1x1();
     let digest = asset_digest(&bytes);
     let uri = format!("/v2/assets/{digest}");
 
@@ -18,10 +27,7 @@ async fn asset_upload_download_and_duplicate_upload() {
             &uri,
             Some(&device.token),
             bytes.clone(),
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(upload.status, StatusCode::OK, "{:?}", upload.body);
@@ -32,10 +38,7 @@ async fn asset_upload_download_and_duplicate_upload() {
             &uri,
             Some(&device.token),
             bytes.clone(),
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(duplicate.status, StatusCode::OK, "{:?}", duplicate.body);
@@ -52,6 +55,11 @@ async fn asset_upload_download_and_duplicate_upload() {
         download.headers.get(header::CONTENT_TYPE).unwrap(),
         "image/png"
     );
+    assert_eq!(download.headers.get("x-clipdock-asset-width").unwrap(), "1");
+    assert_eq!(
+        download.headers.get("x-clipdock-asset-height").unwrap(),
+        "1"
+    );
 }
 
 #[tokio::test]
@@ -59,7 +67,7 @@ async fn asset_download_is_scoped_to_the_authenticated_sync_space() {
     let server = TestServer::new().await;
     let first = server.create_sync().await;
     let second = server.create_sync().await;
-    let bytes = b"same digest but private to first sync".to_vec();
+    let bytes = png_1x1();
     let digest = asset_digest(&bytes);
     let uri = format!("/v2/assets/{digest}");
 
@@ -69,10 +77,7 @@ async fn asset_download_is_scoped_to_the_authenticated_sync_space() {
             &uri,
             Some(&first.device.token),
             bytes,
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(upload.status, StatusCode::OK);
@@ -111,10 +116,7 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
             "/v2/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             Some(&device.token),
             b"not matching".to_vec(),
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(sha256_digest.status, StatusCode::BAD_REQUEST);
@@ -127,10 +129,7 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
             &format!("/v2/assets/{}", "blake3:".to_string() + &"a".repeat(64)),
             Some(&device.token),
             b"not matching".to_vec(),
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(bad_digest.status, StatusCode::BAD_REQUEST);
@@ -146,10 +145,7 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
             &oversized_uri,
             Some(&device.token),
             oversized_bytes,
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(oversized.status, StatusCode::PAYLOAD_TOO_LARGE);
@@ -163,6 +159,8 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
             &[
                 ("content-type", "application/octet-stream"),
                 ("x-clipdock-asset-kind", "thumbnail"),
+                ("x-clipdock-asset-width", "1"),
+                ("x-clipdock-asset-height", "1"),
             ],
         )
         .await;
@@ -177,6 +175,8 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
             &[
                 ("content-type", "image/png"),
                 ("x-clipdock-asset-kind", "avatar"),
+                ("x-clipdock-asset-width", "1"),
+                ("x-clipdock-asset-height", "1"),
             ],
         )
         .await;
@@ -194,15 +194,12 @@ async fn asset_upload_rejects_traversal_malformed_digest_and_metadata_conflict()
             "/v2/assets/..%2Fsecret",
             Some(&device.token),
             b"x".to_vec(),
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
 
-    let bytes = b"conflict".to_vec();
+    let bytes = png_1x1();
     let digest = asset_digest(&bytes);
     let uri = format!("/v2/assets/{digest}");
     let ok = server
@@ -211,10 +208,7 @@ async fn asset_upload_rejects_traversal_malformed_digest_and_metadata_conflict()
             &uri,
             Some(&device.token),
             bytes.clone(),
-            &[
-                ("content-type", "image/png"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/png"),
         )
         .await;
     assert_eq!(ok.status, StatusCode::OK);
@@ -225,10 +219,7 @@ async fn asset_upload_rejects_traversal_malformed_digest_and_metadata_conflict()
             &uri,
             Some(&device.token),
             bytes,
-            &[
-                ("content-type", "image/jpeg"),
-                ("x-clipdock-asset-kind", "thumbnail"),
-            ],
+            &thumbnail_headers("image/jpeg"),
         )
         .await;
     assert_eq!(conflict.status, StatusCode::CONFLICT);

@@ -265,6 +265,15 @@ pub fn asset_digest(bytes: &[u8]) -> String {
     format!("blake3:{}", blake3::hash(bytes).to_hex())
 }
 
+pub fn png_1x1() -> Vec<u8> {
+    let image = image::RgbaImage::from_pixel(1, 1, image::Rgba([32, 64, 128, 255]));
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .expect("encode png");
+    cursor.into_inner()
+}
+
 pub fn upsert_event(client_event_id: &str, content_hash: &str, delta: i64) -> Value {
     json!({
         "events": [{

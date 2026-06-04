@@ -197,6 +197,8 @@ val rustAndroidTargets =
 val androidSdkDir =
   providers.environmentVariable("ANDROID_HOME").orElse("${System.getProperty("user.home")}/Library/Android/sdk")
 val rustCrateDir = rootProject.file("rust/clipdock_p2p_jni")
+val sharedSyncContractDir = rootProject.file("../shared/rust/clipdock_sync_contract")
+val sharedThumbnailCodecDir = rootProject.file("../shared/rust/clipdock_thumbnail_codec")
 val rustCargoProfile =
   providers.gradleProperty("clipdock.rustProfile")
     .orElse(providers.environmentVariable("CLIPDOCK_RUST_PROFILE"))
@@ -228,6 +230,10 @@ val copyRustJniTasks =
         inputs.file(rustCrateDir.resolve("Cargo.toml"))
         inputs.file(rustCrateDir.resolve("Cargo.lock"))
         inputs.dir(rustCrateDir.resolve("src"))
+        inputs.file(sharedSyncContractDir.resolve("Cargo.toml"))
+        inputs.dir(sharedSyncContractDir.resolve("src"))
+        inputs.file(sharedThumbnailCodecDir.resolve("Cargo.toml"))
+        inputs.dir(sharedThumbnailCodecDir.resolve("src"))
         outputs.file(rustCrateDir.resolve("target/${target.triple}/$rustCargoProfileDir/libclipdock_p2p_jni.so"))
         val upperTargetKey = target.triple.uppercase(Locale.US).replace("-", "_")
         val lowerTargetKey = target.triple.replace("-", "_")

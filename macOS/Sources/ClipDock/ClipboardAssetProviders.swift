@@ -681,6 +681,13 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
     private let fileStemFactory: PlatformAssetFileStemFactory
     private let encoder: ClipboardWebPEncoding
 
+    private enum SyncThumbnailPolicy {
+        static let normalTargetBytes = 262_144
+        static let detailTargetBytes = 393_216
+        static let maxBytes = 786_432
+        static let mimeType = "image/webp"
+    }
+
     init(
         appSupportURL: URL,
         fileManager: FileManager = .default,
@@ -960,6 +967,70 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         }
     }
 
+    func syncThumbnailUpload(for pendingImage: ClipboardPendingImageAsset) -> SyncOutboxThumbnailUpload? {
+        guard pendingImage.thumbnailWidth > 0,
+              pendingImage.thumbnailHeight > 0,
+              pendingImage.thumbnailByteCount > 0,
+              pendingImage.thumbnailByteCount <= SyncThumbnailPolicy.maxBytes else {
+            return nil
+        }
+
+        if pendingImage.thumbnailByteCount <= SyncThumbnailPolicy.normalTargetBytes {
+            return SyncOutboxThumbnailUpload(
+                filePath: pendingImage.thumbnailRelativePath,
+                mimeType: SyncThumbnailPolicy.mimeType,
+                byteCount: pendingImage.thumbnailByteCount,
+                width: pendingImage.thumbnailWidth,
+                height: pendingImage.thumbnailHeight
+            )
+        }
+
+        let thumbnailURL = directories.appSupportURL
+            .appendingPathComponent(pendingImage.thumbnailRelativePath, isDirectory: false)
+        let fileStem = URL(fileURLWithPath: pendingImage.thumbnailRelativePath)
+            .deletingPathExtension()
+            .lastPathComponent
+        let syncDirectoryURL = directories.imageThumbnailDirectoryURL
+            .appendingPathComponent("sync-upload", isDirectory: true)
+        let stagingDirectoryURL = directories.appSupportURL
+            .appendingPathComponent(".staging", isDirectory: true)
+            .appendingPathComponent("sync-thumbnails", isDirectory: true)
+        let relativePath = "thumbnails/sync-upload/\(fileStem).webp"
+        let destinationURL = syncDirectoryURL.appendingPathComponent("\(fileStem).webp")
+        let stagingURL = stagingDirectoryURL.appendingPathComponent("\(fileStem).webp")
+
+        do {
+            let rgba = try renderRGBA(fromAssetURL: thumbnailURL)
+            guard let encoded = encoder.encodeAdaptiveThumbnailWebP(
+                rgba.data,
+                width: rgba.width,
+                height: rgba.height,
+                normalTargetBytes: SyncThumbnailPolicy.normalTargetBytes,
+                detailTargetBytes: SyncThumbnailPolicy.detailTargetBytes,
+                maxBytes: SyncThumbnailPolicy.maxBytes
+            ), !encoded.data.isEmpty else {
+                return nil
+            }
+            try fileManager.createDirectory(at: syncDirectoryURL, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: stagingDirectoryURL, withIntermediateDirectories: true)
+            try encoded.data.write(to: stagingURL, options: .atomic)
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+            try fileManager.moveItem(at: stagingURL, to: destinationURL)
+            return SyncOutboxThumbnailUpload(
+                filePath: relativePath,
+                mimeType: SyncThumbnailPolicy.mimeType,
+                byteCount: encoded.data.count,
+                width: encoded.width,
+                height: encoded.height
+            )
+        } catch {
+            removeFileIfExists(stagingURL)
+            return nil
+        }
+    }
+
     func removePreparedImage(_ preparedImage: PreparedImageAsset) {
         removeFileIfExists(preparedImage.payloadURL)
         removeFileIfExists(preparedImage.thumbnailURL)
@@ -1035,6 +1106,17 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
             }
             return (snapshot.image.width, snapshot.image.height)
         }
+    }
+
+    private func renderRGBA(fromAssetURL url: URL) throws -> RenderedClipboardRGBAImage {
+        let sourceOptions = [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, sourceOptions),
+              let image = CGImageSourceCreateImageAtIndex(imageSource, 0, sourceOptions) else {
+            throw FinalizationError.imageDecodeFailed
+        }
+        return try Self.renderRGBA(from: image)
     }
 
     private func transformedImage(
@@ -1167,6 +1249,14 @@ fileprivate struct ClipboardImageRepresentation {
 
 protocol ClipboardWebPEncoding: Sendable {
     func encodeLosslessRGBA(_ rgbaData: Data, width: Int, height: Int) -> Data?
+    func encodeAdaptiveThumbnailWebP(
+        _ rgbaData: Data,
+        width: Int,
+        height: Int,
+        normalTargetBytes: Int,
+        detailTargetBytes: Int,
+        maxBytes: Int
+    ) -> RustAdaptiveWebPEncodeResult?
 }
 
 struct RustClipboardWebPEncoder: ClipboardWebPEncoding {
@@ -1176,6 +1266,30 @@ struct RustClipboardWebPEncoder: ClipboardWebPEncoding {
         switch client.encodeLosslessWebP(rgbaData: rgbaData, width: width, height: height) {
         case .success(let data):
             return data
+
+        case .failure:
+            return nil
+        }
+    }
+
+    func encodeAdaptiveThumbnailWebP(
+        _ rgbaData: Data,
+        width: Int,
+        height: Int,
+        normalTargetBytes: Int,
+        detailTargetBytes: Int,
+        maxBytes: Int
+    ) -> RustAdaptiveWebPEncodeResult? {
+        switch client.encodeAdaptiveThumbnailWebP(
+            rgbaData: rgbaData,
+            width: width,
+            height: height,
+            normalTargetBytes: normalTargetBytes,
+            detailTargetBytes: detailTargetBytes,
+            maxBytes: maxBytes
+        ) {
+        case .success(let result):
+            return result
 
         case .failure:
             return nil

@@ -4,7 +4,7 @@ use std::path::Path;
 
 use axum::http::{Method, StatusCode};
 use clipdock_sync_server::lifecycle::{self, EMPTY_SPACE_RETENTION_MS};
-use common::{asset_digest, content_hash, upsert_event, TestServer};
+use common::{asset_digest, content_hash, png_1x1, upsert_event, TestServer};
 use sqlx::{Row, SqlitePool};
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn cleanup_deletes_expired_empty_space_database_rows_and_assets() {
     let server = TestServer::new().await;
     let sync = server.create_sync().await;
     let content_hash = content_hash("expired-space-item");
-    let asset_bytes = b"expired space thumbnail".to_vec();
+    let asset_bytes = png_1x1();
     let digest = asset_digest(&asset_bytes);
 
     let push = server
@@ -95,6 +95,8 @@ async fn cleanup_deletes_expired_empty_space_database_rows_and_assets() {
             &[
                 ("content-type", "image/png"),
                 ("x-clipdock-asset-kind", "thumbnail"),
+                ("x-clipdock-asset-width", "1"),
+                ("x-clipdock-asset-height", "1"),
             ],
         )
         .await;

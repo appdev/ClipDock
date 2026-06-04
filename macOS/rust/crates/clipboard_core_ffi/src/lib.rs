@@ -122,6 +122,19 @@ mod ffi {
     }
 
     #[swift_bridge(swift_repr = "struct")]
+    struct CoreAdaptiveWebPEncodeResult {
+        ok: bool,
+        bytes: Vec<u8>,
+        width: i64,
+        height: i64,
+        quality: i64,
+        score: f64,
+        selected_tier: String,
+        error_code: String,
+        message_key: String,
+    }
+
+    #[swift_bridge(swift_repr = "struct")]
     struct CoreSvgRasterizeResult {
         ok: bool,
         bytes: Vec<u8>,
@@ -195,7 +208,16 @@ mod ffi {
     extern "Rust" {
         fn open_core(app_support_dir: String) -> CoreOpenResult;
         fn active_source_icon_header_color_cache_version() -> i64;
+        fn blake3_digest(bytes: &[u8]) -> String;
         fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> CoreWebPEncodeResult;
+        fn encode_adaptive_thumbnail_webp_rgba(
+            rgba: &[u8],
+            width: i64,
+            height: i64,
+            normal_target_bytes: i64,
+            detail_target_bytes: i64,
+            max_bytes: i64,
+        ) -> CoreAdaptiveWebPEncodeResult;
         fn rasterize_svg_to_png(
             svg: &[u8],
             max_width: i64,
@@ -933,6 +955,10 @@ fn active_source_icon_header_color_cache_version() -> i64 {
     ClipboardCore::active_source_icon_header_color_cache_version()
 }
 
+fn blake3_digest(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
+}
+
 fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> ffi::CoreWebPEncodeResult {
     let width = match u32::try_from(width) {
         Ok(width) if width > 0 => width,
@@ -968,10 +994,87 @@ fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> ffi::CoreW
     }
 }
 
+fn encode_adaptive_thumbnail_webp_rgba(
+    rgba: &[u8],
+    width: i64,
+    height: i64,
+    normal_target_bytes: i64,
+    detail_target_bytes: i64,
+    max_bytes: i64,
+) -> ffi::CoreAdaptiveWebPEncodeResult {
+    let width = match u32::try_from(width) {
+        Ok(width) if width > 0 => width,
+        _ => return adaptive_webp_encode_error("invalid_input"),
+    };
+    let height = match u32::try_from(height) {
+        Ok(height) if height > 0 => height,
+        _ => return adaptive_webp_encode_error("invalid_input"),
+    };
+    let normal_target = match usize::try_from(normal_target_bytes) {
+        Ok(value) if value > 0 => value,
+        _ => return adaptive_webp_encode_error("invalid_input"),
+    };
+    let detail_target = match usize::try_from(detail_target_bytes) {
+        Ok(value) if value >= normal_target => value,
+        _ => return adaptive_webp_encode_error("invalid_input"),
+    };
+    let max_bytes = match usize::try_from(max_bytes) {
+        Ok(value) if value >= detail_target => value,
+        _ => return adaptive_webp_encode_error("invalid_input"),
+    };
+    let expected_len = match (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixel_count| pixel_count.checked_mul(4))
+    {
+        Some(expected_len) => expected_len,
+        None => return adaptive_webp_encode_error("invalid_input"),
+    };
+    if rgba.len() != expected_len {
+        return adaptive_webp_encode_error("invalid_input");
+    }
+
+    match clipdock_thumbnail_codec::encode_adaptive_thumbnail_webp_rgba(
+        rgba,
+        width,
+        height,
+        normal_target,
+        detail_target,
+        max_bytes,
+    ) {
+        Ok(Some(candidate)) => ffi::CoreAdaptiveWebPEncodeResult {
+            ok: true,
+            bytes: candidate.bytes,
+            width: candidate.width as i64,
+            height: candidate.height as i64,
+            quality: i64::from(candidate.quality),
+            score: candidate.score,
+            selected_tier: candidate.tier,
+            error_code: String::new(),
+            message_key: String::new(),
+        },
+        Ok(None) => adaptive_webp_encode_error("no_candidate"),
+        Err(code) => adaptive_webp_encode_error(code),
+    }
+}
+
 fn webp_encode_error(code: &str) -> ffi::CoreWebPEncodeResult {
     ffi::CoreWebPEncodeResult {
         ok: false,
         bytes: Vec::new(),
+        error_code: code.to_string(),
+        message_key: "clipboard.error.image_encoding_failed".to_string(),
+    }
+}
+
+fn adaptive_webp_encode_error(code: &str) -> ffi::CoreAdaptiveWebPEncodeResult {
+    ffi::CoreAdaptiveWebPEncodeResult {
+        ok: false,
+        bytes: Vec::new(),
+        width: 0,
+        height: 0,
+        quality: 0,
+        score: 0.0,
+        selected_tier: String::new(),
         error_code: code.to_string(),
         message_key: "clipboard.error.image_encoding_failed".to_string(),
     }
@@ -1646,6 +1749,9 @@ mod tests {
             .list_items(ItemQuery::default(), PageRequest::default())
             .unwrap();
         assert_eq!(page.total_count, 1);
-        assert_eq!(page.items[0].primary_text.as_deref(), Some("remote bridge text"));
+        assert_eq!(
+            page.items[0].primary_text.as_deref(),
+            Some("remote bridge text")
+        );
     }
 }

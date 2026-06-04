@@ -65,6 +65,145 @@ class SyncEngineTest {
   }
 
   @Test
+  fun payloadAssetUpdateMergesImageAssetWithoutChangingOrderOrCopyCount() = runTest {
+    val contentHash = hash("image-follow-up")
+    val store = FakeStore(SyncProgress(emptyList(), cursor = 5, snapshotSeq = 5))
+    val api =
+      FakeApi(
+        events =
+          restEventsJson(
+            nextCursor = 8,
+            events =
+              listOf(
+                upsertEvent(6, contentHash, itemType = "image", text = "screen.webp", copyDelta = 1),
+                payloadAssetUpdateEvent(8, contentHash, "blake3:${"a".repeat(64)}"),
+              ),
+          ),
+      )
+    val engine = SyncEngine(store, api)
+
+    val result = engine.syncFromStoredCursor("http://server", "token")
+
+    val item = result.items.single()
+    assertEquals(contentHash, item.contentHash)
+    assertEquals(ClipItemType.Image, item.type)
+    assertEquals("blake3:${"a".repeat(64)}", item.assetId)
+    assertEquals(1L, item.copyCount)
+    assertEquals(6L, item.copiedAtMillis)
+    assertEquals(8L, result.cursor)
+  }
+
+  @Test
+  fun invalidPayloadAssetUpdateFallsBackToSnapshot() = runTest {
+    val contentHash = hash("image-follow-up-invalid")
+    val store = FakeStore(SyncProgress(emptyList(), cursor = 5, snapshotSeq = 5))
+    val api =
+      FakeApi(
+        events =
+          restEventsJson(
+            nextCursor = 8,
+            events =
+              listOf(
+                upsertEvent(6, contentHash, itemType = "image", text = "screen.webp", copyDelta = 1),
+                payloadAssetUpdateEvent(8, contentHash, "blake3:invalid"),
+              ),
+          ),
+        snapshot = snapshotJson(seq = 9, contentHash = hash("corrected-after-invalid-payload-update")),
+      )
+    val engine = SyncEngine(store, api)
+
+    val result = engine.syncFromStoredCursor("http://server", "token")
+
+    assertTrue(result.usedSnapshot)
+    assertEquals("invalid_payload_asset_update_payload", result.recoveryReason)
+    assertEquals(hash("corrected-after-invalid-payload-update"), result.items.single().contentHash)
+  }
+
+  @Test
+  fun payloadAssetUpdateWithNonImageEventTypeFallsBackToSnapshot() = runTest {
+    val contentHash = hash("image-follow-up-wrong-event-type")
+    val store = FakeStore(SyncProgress(emptyList(), cursor = 5, snapshotSeq = 5))
+    val invalidUpdate =
+      payloadAssetUpdateEvent(8, contentHash, "blake3:${"a".repeat(64)}")
+        .put("item_type", "text")
+    val api =
+      FakeApi(
+        events =
+          restEventsJson(
+            nextCursor = 8,
+            events =
+              listOf(
+                upsertEvent(6, contentHash, itemType = "image", text = "screen.webp", copyDelta = 1),
+                invalidUpdate,
+              ),
+          ),
+        snapshot = snapshotJson(seq = 9, contentHash = hash("corrected-after-invalid-event-type")),
+      )
+    val engine = SyncEngine(store, api)
+
+    val result = engine.syncFromStoredCursor("http://server", "token")
+
+    assertTrue(result.usedSnapshot)
+    assertEquals("payload_asset_update_invalid_item_type", result.recoveryReason)
+    assertEquals(hash("corrected-after-invalid-event-type"), result.items.single().contentHash)
+  }
+
+  @Test
+  fun invalidThumbnailUpsertFallsBackToSnapshot() = runTest {
+    val contentHash = hash("image-invalid-thumbnail")
+    val invalidUpsert = upsertEvent(6, contentHash, itemType = "image", text = "screen.webp")
+    invalidUpsert.getJSONObject("payload")
+      .put("thumbnail_digest", "blake3:${"1".repeat(64)}")
+    val store = FakeStore(SyncProgress(emptyList(), cursor = 5, snapshotSeq = 5))
+    val api =
+      FakeApi(
+        events = restEventsJson(nextCursor = 6, events = listOf(invalidUpsert)),
+        snapshot = snapshotJson(seq = 9, contentHash = hash("corrected-after-invalid-thumbnail")),
+      )
+    val engine = SyncEngine(store, api)
+
+    val result = engine.syncFromStoredCursor("http://server", "token")
+
+    assertTrue(result.usedSnapshot)
+    assertEquals("invalid_thumbnail_payload", result.recoveryReason)
+    assertEquals(hash("corrected-after-invalid-thumbnail"), result.items.single().contentHash)
+  }
+
+  @Test
+  fun invalidThumbnailSnapshotIsRejectedWithoutPersisting() = runTest {
+    val contentHash = hash("snapshot-invalid-thumbnail")
+    val snapshotItem =
+      JSONObject()
+        .put("content_hash", contentHash)
+        .put("item_type", "text")
+        .put(
+          "payload",
+          JSONObject()
+            .put("text", "bad snapshot")
+            .put("thumbnail_digest", "blake3:${"1".repeat(64)}")
+            .put("thumbnail_mime_type", "image/webp")
+            .put("thumbnail_byte_count", 24000)
+            .put("thumbnail_width", 320)
+            .put("thumbnail_height", 180),
+        )
+        .put("copy_count", 1)
+        .put("updated_at_ms", 8)
+        .put("last_server_seq", 8)
+    val store = FakeStore(SyncProgress(emptyList(), cursor = 0, snapshotSeq = 0))
+    val api = FakeApi(snapshot = snapshotJson(seq = 8, items = listOf(snapshotItem)))
+    val engine = SyncEngine(store, api)
+
+    try {
+      engine.syncFromStoredCursor("http://server", "token")
+      error("Expected invalid thumbnail snapshot rejection")
+    } catch (recovery: SyncRecoveryRequired) {
+      assertEquals("invalid_thumbnail_payload", recovery.reason)
+    }
+    assertEquals(0L, store.progress.cursor)
+    assertTrue(store.progress.items.isEmpty())
+  }
+
+  @Test
   fun invalidCursorFallsBackToSnapshot() = runTest {
     val store = FakeStore(SyncProgress(listOf(item(hash("old"))), cursor = 30, snapshotSeq = 20))
     val api =
@@ -309,6 +448,11 @@ private fun item(contentHash: String): ClipHistoryItem =
     sourceName = null,
     assetId = null,
     thumbnailUri = null,
+    thumbnailDigest = null,
+    thumbnailMimeType = null,
+    thumbnailByteCount = null,
+    thumbnailWidth = null,
+    thumbnailHeight = null,
     localUri = null,
     payloadState = PayloadState.Ready,
     transferState = TransferState.Idle,
@@ -334,6 +478,15 @@ private fun snapshotJson(seq: Long, contentHash: String): JsonObject =
         "tombstones": []
       }
     """.trimIndent(),
+  )
+
+private fun snapshotJson(seq: Long, items: List<JSONObject>): JsonObject =
+  jsonObject(
+    JSONObject()
+      .put("snapshot_seq", seq)
+      .put("items", org.json.JSONArray(items))
+      .put("tombstones", org.json.JSONArray())
+      .toString(),
   )
 
 private fun restEventsJson(nextCursor: Long, events: List<JSONObject>): JsonObject =
@@ -376,6 +529,17 @@ private fun deleteEvent(serverSeq: Long, contentHash: String): JSONObject =
     .put("client_event_id", "delete-$serverSeq")
     .put("type", "item_delete")
     .put("content_hash", contentHash)
+    .put("created_at_ms", serverSeq)
+
+private fun payloadAssetUpdateEvent(serverSeq: Long, contentHash: String, assetId: String): JSONObject =
+  JSONObject()
+    .put("server_seq", serverSeq)
+    .put("device_id", "dev")
+    .put("client_event_id", "asset-update-$serverSeq")
+    .put("type", "item_payload_asset_update")
+    .put("content_hash", contentHash)
+    .put("item_type", "image")
+    .put("payload", JSONObject().put("payload_asset_id", assetId).put("asset_id", assetId))
     .put("created_at_ms", serverSeq)
 
 private fun jsonObject(value: String): JsonObject = Json.parseToJsonElement(value) as JsonObject

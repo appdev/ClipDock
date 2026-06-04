@@ -5,6 +5,11 @@ use crate::domain::{
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
+use clipdock_sync_contract::{
+    ContentHash, PayloadAssetUpdate, ThumbnailMetadata, ASSET_ID_FIELD, EVENT_TYPE_ITEM_DELETE,
+    EVENT_TYPE_ITEM_PAYLOAD_ASSET_UPDATE, EVENT_TYPE_ITEM_UPSERT, ITEM_TYPE_IMAGE,
+    PAYLOAD_ASSET_ID_FIELD,
+};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
@@ -208,11 +213,20 @@ impl ClipboardCore {
             }
 
             match event.event_type.as_str() {
-                "item_upsert" => {
+                EVENT_TYPE_ITEM_UPSERT => {
                     let item_id = apply_upsert_event(&transaction, &sync_id, event, &content_hash)?;
                     changed_item_ids.insert(item_id);
                 }
-                "item_delete" => {
+                EVENT_TYPE_ITEM_PAYLOAD_ASSET_UPDATE => {
+                    let item_id = apply_payload_asset_update_event(
+                        &transaction,
+                        &sync_id,
+                        event,
+                        &content_hash,
+                    )?;
+                    changed_item_ids.insert(item_id);
+                }
+                EVENT_TYPE_ITEM_DELETE => {
                     if let Some(item_id) =
                         apply_delete_event(&transaction, &sync_id, event, &content_hash)?
                     {
@@ -377,7 +391,7 @@ fn apply_own_event(
     event: &SyncEventRecord,
     content_hash: &str,
 ) -> Result<()> {
-    let provenance = if event.event_type == "item_delete" {
+    let provenance = if event.event_type == EVENT_TYPE_ITEM_DELETE {
         "remote_deleted"
     } else {
         "synced_local"
@@ -412,7 +426,7 @@ fn apply_own_event(
             sync_id,
             content_hash,
             provenance,
-            if event.event_type == "item_delete" {
+            if event.event_type == EVENT_TYPE_ITEM_DELETE {
                 "deleted"
             } else {
                 "uploaded"
@@ -453,6 +467,96 @@ fn apply_upsert_event(
             copy_count_delta: event.copy_count_delta.unwrap_or(1).max(1),
         },
     )
+}
+
+fn apply_payload_asset_update_event(
+    transaction: &Transaction<'_>,
+    sync_id: &str,
+    event: &SyncEventRecord,
+    content_hash: &str,
+) -> Result<String> {
+    if event.item_type.as_deref() != Some(ITEM_TYPE_IMAGE) || event.copy_count_delta.is_some() {
+        return Err(sync_error(
+            CoreErrorCode::SyncInvalidEvent,
+            "invalid payload asset update event",
+        ));
+    }
+    let payload = event.payload.as_ref().ok_or_else(|| {
+        sync_error(
+            CoreErrorCode::SyncInvalidEvent,
+            "payload asset update event is missing payload",
+        )
+    })?;
+    let object = payload.as_object().ok_or_else(|| {
+        sync_error(
+            CoreErrorCode::SyncInvalidEvent,
+            "payload asset update payload must be an object",
+        )
+    })?;
+    let asset_id = PayloadAssetUpdate::parse_shape_strict(object)
+        .map_err(|_| {
+            sync_error(
+                CoreErrorCode::SyncInvalidEvent,
+                "invalid payload asset update payload",
+            )
+        })?
+        .asset_id;
+
+    let item: Option<(String, String, String)> = transaction
+        .query_row(
+            r#"
+            SELECT id, type, payload_state
+            FROM clipboard_items
+            WHERE content_hash = ?1 AND deleted_at_ms IS NULL
+            "#,
+            params![content_hash],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((item_id, item_type, payload_state)) = item else {
+        return Err(sync_error(
+            CoreErrorCode::SyncInvalidEvent,
+            "payload asset update is missing prior item",
+        ));
+    };
+    if ClipboardItemType::from_storage(&item_type) != ClipboardItemType::Image {
+        return Err(sync_error(
+            CoreErrorCode::SyncInvalidEvent,
+            "payload asset update prior item is not image",
+        ));
+    }
+
+    let source_payload_json = serde_json::to_string(object).unwrap_or_else(|_| "{}".to_string());
+    upsert_remote_asset(
+        transaction,
+        sync_id,
+        content_hash,
+        &RemoteAssetMapping {
+            asset_id,
+            kind: "payload".to_string(),
+            mime_type: None,
+            byte_count: None,
+            file_name: None,
+            source_payload_json,
+        },
+        event.created_at_ms,
+    )?;
+    if payload_state != "ready" {
+        transaction.execute(
+            "UPDATE clipboard_items SET payload_state = 'remote_only' WHERE id = ?1",
+            params![item_id],
+        )?;
+    }
+    upsert_synced_remote_state(
+        transaction,
+        sync_id,
+        content_hash,
+        &item_id,
+        Some(&event.device_id),
+        Some(&event.client_event_id),
+        event.server_seq,
+    )?;
+    Ok(item_id)
 }
 
 fn apply_upsert_snapshot(
@@ -496,6 +600,8 @@ fn upsert_remote_item(
             "sync item payload must be an object",
         )
     })?;
+    ThumbnailMetadata::parse_shape_strict(Some(raw_item_type), object)
+        .map_err(|error| sync_error(CoreErrorCode::SyncInvalidEvent, error.code()))?;
     let mapping = map_remote_item(raw_item_type, object)?;
     let source_app_id = upsert_source_app(
         transaction,
@@ -820,7 +926,7 @@ fn map_remote_item(raw_item_type: &str, object: &Map<String, Value>) -> Result<R
     let item_type = ClipboardItemType::from_storage(raw_item_type);
     let (source_app_name, source_bundle_id) = remote_source_identity(object);
     let source_payload_json = serde_json::to_string(object).unwrap_or_else(|_| "{}".to_string());
-    let asset_id = payload_string(object, &["payload_asset_id", "asset_id"]);
+    let asset_id = payload_string(object, &[PAYLOAD_ASSET_ID_FIELD, ASSET_ID_FIELD]);
     let byte_count = payload_i64(object, &["byte_count", "size_bytes"]).filter(|value| *value >= 0);
     let mime_type = payload_string(object, &["mime_type", "content_type"]);
     let file_name = payload_string(object, &["file_name", "filename", "title"]);
@@ -1232,9 +1338,9 @@ fn upsert_remote_asset(
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
         ON CONFLICT(sync_id, content_hash, kind) DO UPDATE SET
             asset_id = excluded.asset_id,
-            mime_type = excluded.mime_type,
-            byte_count = excluded.byte_count,
-            file_name = excluded.file_name,
+            mime_type = COALESCE(excluded.mime_type, sync_remote_assets.mime_type),
+            byte_count = COALESCE(excluded.byte_count, sync_remote_assets.byte_count),
+            file_name = COALESCE(excluded.file_name, sync_remote_assets.file_name),
             source_payload_json = excluded.source_payload_json,
             updated_at_ms = excluded.updated_at_ms
         "#,
@@ -1307,25 +1413,14 @@ fn any_item_for_hash(
 }
 
 fn normalize_content_hash(value: &str) -> Result<String> {
-    let value = value.trim();
-    let Some(hash) = value.strip_prefix("blake3:") else {
-        return Err(sync_error(
-            CoreErrorCode::SyncInvalidEvent,
-            "content_hash must be blake3 lowercase hex",
-        ));
-    };
-    if hash.len() == 64
-        && hash
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        Ok(hash.to_string())
-    } else {
-        Err(sync_error(
-            CoreErrorCode::SyncInvalidEvent,
-            "content_hash must be blake3 lowercase hex",
-        ))
-    }
+    ContentHash::parse_strict(value)
+        .map(|hash| hash.local_key().to_string())
+        .map_err(|_| {
+            sync_error(
+                CoreErrorCode::SyncInvalidEvent,
+                "content_hash must be blake3 lowercase hex",
+            )
+        })
 }
 
 fn normalize_non_empty(value: &str, field: &str) -> Result<String> {

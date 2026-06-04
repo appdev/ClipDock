@@ -138,6 +138,52 @@ class ClipDockApiClientTest {
     assertEquals("dev_mac", data["devices"].toString().substringAfter("\"device_id\":\"").substringBefore("\""))
   }
 
+  @Test
+  fun uploadAsset_putsThumbnailBytesWithRequiredMetadataHeaders() = runTest {
+    val captured = AtomicReference<CapturedRequest>()
+    val api =
+      ClipDockApiClient(
+        client =
+          respondingClient(captured) {
+            jsonResponse(
+              code = 200,
+              body =
+                """{"protocol_version":2,"data":{"digest":"blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","kind":"thumbnail","mime_type":"image/webp","size_bytes":4,"width_px":2,"height_px":2,"already_exists":false}}""",
+            )
+          },
+      )
+
+    val uploaded =
+      api.uploadAsset(
+        "http://clipdock.test",
+        "cds_secret",
+        "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        kind = "thumbnail",
+        mimeType = "image/webp",
+        width = 2,
+        height = 2,
+        bytes = "webp".toByteArray(),
+      )
+
+    val request = captured.get()
+    assertNotNull(request)
+    assertEquals("PUT", request.method)
+    assertEquals(
+      "http://clipdock.test/v2/assets/blake3%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      request.url,
+    )
+    assertEquals("Bearer cds_secret", request.authorization)
+    assertEquals("image/webp", request.contentType)
+    assertEquals("thumbnail", request.assetKind)
+    assertEquals("2", request.assetWidth)
+    assertEquals("2", request.assetHeight)
+    assertEquals("webp", request.body)
+    assertEquals("thumbnail", uploaded.kind)
+    assertEquals(4L, uploaded.byteCount)
+    assertEquals(2, uploaded.width)
+    assertEquals(2, uploaded.height)
+  }
+
 
   @Test
   fun errorEnvelopeThrowsClipDockApiException() = runTest {
@@ -208,6 +254,10 @@ class ClipDockApiClientTest {
       method = method,
       url = url.toString(),
       authorization = header("Authorization"),
+      contentType = header("Content-Type"),
+      assetKind = header("X-ClipDock-Asset-Kind"),
+      assetWidth = header("X-ClipDock-Asset-Width"),
+      assetHeight = header("X-ClipDock-Asset-Height"),
       body = buffer.readUtf8(),
     )
   }
@@ -252,6 +302,10 @@ class ClipDockApiClientTest {
     val method: String,
     val url: String,
     val authorization: String?,
+    val contentType: String?,
+    val assetKind: String?,
+    val assetWidth: String?,
+    val assetHeight: String?,
     val body: String,
   )
 }

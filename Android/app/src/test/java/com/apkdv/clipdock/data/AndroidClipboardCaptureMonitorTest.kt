@@ -1,5 +1,6 @@
 package com.apkdv.clipdock.data
 
+import java.io.File
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNotNull
 import junit.framework.TestCase.assertTrue
@@ -35,5 +36,59 @@ class AndroidClipboardCaptureMonitorTest {
     assertNotNull(color)
     assertEquals(ClipItemType.Color, color!!.type)
     assertEquals(null, localClipboardTextItem("   ", copiedAtMillis = 1234))
+  }
+
+  @Test
+  fun preparedLocalImageBuildsImageUploadEventWithThumbnailFields() {
+    val prepared =
+      AndroidPreparedLocalImage(
+        item =
+          ClipHistoryItem(
+            stableId = "blake3:${"a".repeat(64)}",
+            contentHash = "blake3:${"a".repeat(64)}",
+            type = ClipItemType.Image,
+            title = "screen.webp",
+            body = "image/png",
+            detail = "16 bytes",
+            sourceName = "Android",
+            assetId = null,
+            thumbnailUri = "file:///thumb.webp",
+            thumbnailDigest = "blake3:${"b".repeat(64)}",
+            thumbnailMimeType = "image/webp",
+            thumbnailByteCount = 8,
+            thumbnailWidth = 2,
+            thumbnailHeight = 2,
+            localUri = "content://payload",
+            payloadState = PayloadState.Ready,
+            transferState = TransferState.Ready,
+            copiedAtMillis = 1234,
+            copyCount = 1,
+          ),
+        payloadFile = File("/tmp/payload.png"),
+        payloadMimeType = "image/png",
+        payloadByteCount = 16,
+        width = 4,
+        height = 4,
+        thumbnail =
+          AndroidPreparedSyncThumbnail(
+            bytes = byteArrayOf(1, 2, 3),
+            digest = "blake3:${"b".repeat(64)}",
+            mimeType = "image/webp",
+            byteCount = 8,
+            width = 2,
+            height = 2,
+            localUri = "file:///thumb.webp",
+          ),
+      )
+
+    val event = prepared.toImageSyncPushEventRequest("dev_android", "blake3:${"c".repeat(64)}")
+
+    assertEquals("item_upsert", event.type)
+    assertEquals("image", event.itemType)
+    assertEquals(prepared.item.contentHash, event.contentHash)
+    assertEquals("android", event.payload?.get("source_platform")?.jsonPrimitive?.content)
+    assertEquals("blake3:${"c".repeat(64)}", event.payload?.get("payload_asset_id")?.jsonPrimitive?.content)
+    assertEquals("blake3:${"b".repeat(64)}", event.payload?.get("thumbnail_digest")?.jsonPrimitive?.content)
+    assertEquals("image/webp", event.payload?.get("thumbnail_mime_type")?.jsonPrimitive?.content)
   }
 }

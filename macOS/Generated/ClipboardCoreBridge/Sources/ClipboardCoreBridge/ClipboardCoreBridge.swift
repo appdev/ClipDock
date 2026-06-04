@@ -5,8 +5,14 @@ public func open_core<GenericIntoRustString: IntoRustString>(_ app_support_dir: 
 public func active_source_icon_header_color_cache_version() -> Int64 {
     __swift_bridge__$active_source_icon_header_color_cache_version()
 }
+public func blake3_digest(_ bytes: UnsafeBufferPointer<UInt8>) -> RustString {
+    RustString(ptr: __swift_bridge__$blake3_digest(bytes.toFfiSlice()))
+}
 public func encode_webp_lossless_rgba(_ rgba: UnsafeBufferPointer<UInt8>, _ width: Int64, _ height: Int64) -> CoreWebPEncodeResult {
     __swift_bridge__$encode_webp_lossless_rgba(rgba.toFfiSlice(), width, height).intoSwiftRepr()
+}
+public func encode_adaptive_thumbnail_webp_rgba(_ rgba: UnsafeBufferPointer<UInt8>, _ width: Int64, _ height: Int64, _ normal_target_bytes: Int64, _ detail_target_bytes: Int64, _ max_bytes: Int64) -> CoreAdaptiveWebPEncodeResult {
+    __swift_bridge__$encode_adaptive_thumbnail_webp_rgba(rgba.toFfiSlice(), width, height, normal_target_bytes, detail_target_bytes, max_bytes).intoSwiftRepr()
 }
 public func rasterize_svg_to_png(_ svg: UnsafeBufferPointer<UInt8>, _ max_width: Int64, _ max_height: Int64) -> CoreSvgRasterizeResult {
     __swift_bridge__$rasterize_svg_to_png(svg.toFfiSlice(), max_width, max_height).intoSwiftRepr()
@@ -624,6 +630,59 @@ extension __swift_bridge__$Option$CoreWebPEncodeResult {
             return __swift_bridge__$Option$CoreWebPEncodeResult(is_some: true, val: v.intoFfiRepr())
         } else {
             return __swift_bridge__$Option$CoreWebPEncodeResult(is_some: false, val: __swift_bridge__$CoreWebPEncodeResult())
+        }
+    }
+}
+public struct CoreAdaptiveWebPEncodeResult {
+    public var ok: Bool
+    public var bytes: RustVec<UInt8>
+    public var width: Int64
+    public var height: Int64
+    public var quality: Int64
+    public var score: Double
+    public var selected_tier: RustString
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,bytes: RustVec<UInt8>,width: Int64,height: Int64,quality: Int64,score: Double,selected_tier: RustString,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.bytes = bytes
+        self.width = width
+        self.height = height
+        self.quality = quality
+        self.score = score
+        self.selected_tier = selected_tier
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreAdaptiveWebPEncodeResult {
+        { let val = self; return __swift_bridge__$CoreAdaptiveWebPEncodeResult(ok: val.ok, bytes: { let val = val.bytes; val.isOwned = false; return val.ptr }(), width: val.width, height: val.height, quality: val.quality, score: val.score, selected_tier: { let rustString = val.selected_tier.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreAdaptiveWebPEncodeResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreAdaptiveWebPEncodeResult {
+        { let val = self; return CoreAdaptiveWebPEncodeResult(ok: val.ok, bytes: RustVec(ptr: val.bytes), width: val.width, height: val.height, quality: val.quality, score: val.score, selected_tier: RustString(ptr: val.selected_tier), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreAdaptiveWebPEncodeResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreAdaptiveWebPEncodeResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreAdaptiveWebPEncodeResult>) -> __swift_bridge__$Option$CoreAdaptiveWebPEncodeResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreAdaptiveWebPEncodeResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreAdaptiveWebPEncodeResult(is_some: false, val: __swift_bridge__$CoreAdaptiveWebPEncodeResult())
         }
     }
 }

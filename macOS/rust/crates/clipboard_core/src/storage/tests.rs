@@ -12,8 +12,9 @@ use crate::{
     SyncSnapshotTombstoneRecord, ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION,
     CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
 };
+use clipdock_sync_contract::{ContentHash, PayloadAssetUpdate, ThumbnailMetadata};
 use rusqlite::{params, Connection};
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
 use tempfile::TempDir;
@@ -22,6 +23,13 @@ fn open_temp_core() -> (TempDir, ClipboardCore) {
     let temp_dir = TempDir::new().expect("temp dir");
     let core = ClipboardCore::open(temp_dir.path()).expect("open core");
     (temp_dir, core)
+}
+
+fn shared_sync_contract_fixture() -> Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../shared/fixtures/sync_contract/protocol_fixtures.json");
+    let text = fs::read_to_string(path).expect("shared sync contract fixture");
+    serde_json::from_str(&text).expect("parse shared sync contract fixture")
 }
 
 fn capture_pending_link(core: &mut ClipboardCore, text: &str, url: &str) -> CaptureResult {
@@ -310,6 +318,117 @@ fn sync_apply_android_platform_source_uses_android_source_identity() {
 }
 
 #[test]
+fn sync_apply_payload_asset_update_merges_image_asset_without_reordering() {
+    let (_, mut core) = open_temp_core();
+    let content_hash = sync_hash_for_test('7');
+    let item_id = format!("item_{}", &content_hash[..24]);
+
+    let outcome = core
+        .apply_sync_events(SyncApplyEventsRequest {
+            sync_id: "sync_main".to_string(),
+            device_id: "dev_mac".to_string(),
+            events: vec![
+                SyncEventRecord {
+                    server_seq: 1,
+                    device_id: "dev_android".to_string(),
+                    client_event_id: "android-image-1".to_string(),
+                    event_type: "item_upsert".to_string(),
+                    content_hash: format!("blake3:{content_hash}"),
+                    item_type: Some("image".to_string()),
+                    payload: Some(json!({
+                        "file_name": "screen.webp",
+                        "summary": "screen.webp",
+                        "mime_type": "image/webp",
+                        "byte_count": 144000,
+                        "width": 640,
+                        "height": 360,
+                        "thumbnail_digest": "blake3:1111111111111111111111111111111111111111111111111111111111111111",
+                        "thumbnail_mime_type": "image/webp",
+                        "thumbnail_byte_count": 24000,
+                        "thumbnail_width": 320,
+                        "thumbnail_height": 180
+                    })),
+                    copy_count_delta: Some(1),
+                    created_at_ms: 1000,
+                },
+                SyncEventRecord {
+                    server_seq: 2,
+                    device_id: "dev_android".to_string(),
+                    client_event_id: "android-image-asset-1".to_string(),
+                    event_type: "item_payload_asset_update".to_string(),
+                    content_hash: format!("blake3:{content_hash}"),
+                    item_type: Some("image".to_string()),
+                    payload: Some(json!({
+                        "payload_asset_id": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "asset_id": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    })),
+                    copy_count_delta: None,
+                    created_at_ms: 2000,
+                },
+            ],
+            next_cursor: 2,
+        })
+        .unwrap();
+
+    assert_eq!(outcome.cursor, 2);
+    assert_eq!(outcome.changed_item_ids, vec![item_id.clone()]);
+    let (copy_count, updated_at_ms, payload_state): (i64, i64, String) = core
+        .connection
+        .query_row(
+            "SELECT copy_count, updated_at_ms, payload_state FROM clipboard_items WHERE id = ?1",
+            params![item_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(copy_count, 1);
+    assert_eq!(updated_at_ms, 1000);
+    assert_eq!(payload_state, "remote_only");
+    let (asset_id, kind): (String, String) = core
+        .connection
+        .query_row(
+            "SELECT asset_id, kind FROM sync_remote_assets WHERE sync_id = 'sync_main' AND content_hash = ?1",
+            params![content_hash],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        asset_id,
+        "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert_eq!(kind, "payload");
+}
+
+#[test]
+fn sync_contract_fixtures_match_macos_strict_apply_boundary() {
+    let fixture = shared_sync_contract_fixture();
+    for value in fixture["ids"]["content_hash"]["valid_strict"]
+        .as_array()
+        .expect("valid content hash fixtures")
+    {
+        let hash = ContentHash::parse_strict(value.as_str().unwrap()).unwrap();
+        assert_eq!(hash.local_key().len(), 64);
+    }
+    for value in fixture["ids"]["content_hash"]["invalid_strict"]
+        .as_array()
+        .expect("invalid content hash fixtures")
+    {
+        assert!(ContentHash::parse_strict(value.as_str().unwrap()).is_err());
+    }
+
+    let events = fixture["events"].as_object().expect("events");
+    let image = events["image_upsert_with_thumbnail"]["payload"]
+        .as_object()
+        .expect("image payload");
+    assert!(ThumbnailMetadata::parse_shape_strict(Some("image"), image)
+        .unwrap()
+        .is_some());
+    let payload_update = events["payload_asset_update"]["payload"]
+        .as_object()
+        .expect("payload asset update");
+    assert!(PayloadAssetUpdate::parse_shape_strict(payload_update).is_ok());
+}
+
+#[test]
 fn sync_apply_events_rejects_legacy_or_noncanonical_content_hash() {
     let (_, mut core) = open_temp_core();
     let content_hash = sync_hash_for_test('a');
@@ -340,6 +459,109 @@ fn sync_apply_events_rejects_legacy_or_noncanonical_content_hash() {
 
         assert_eq!(error.code, CoreErrorCode::SyncInvalidEvent);
     }
+}
+
+#[test]
+fn sync_apply_events_rejects_invalid_thumbnail_payload_shape() {
+    for (index, (item_type, payload)) in [
+        (
+            "image",
+            json!({
+                "file_name": "partial-thumbnail.webp",
+                "thumbnail_digest": "blake3:1111111111111111111111111111111111111111111111111111111111111111"
+            }),
+        ),
+        (
+            "text",
+            json!({
+                "text": "text item cannot carry thumbnail",
+                "thumbnail_digest": "blake3:1111111111111111111111111111111111111111111111111111111111111111",
+                "thumbnail_mime_type": "image/webp",
+                "thumbnail_byte_count": 24000,
+                "thumbnail_width": 320,
+                "thumbnail_height": 180
+            }),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (_, mut core) = open_temp_core();
+        let content_hash = sync_hash_for_test(char::from(b'b' + index as u8));
+        let error = core
+            .apply_sync_events(SyncApplyEventsRequest {
+                sync_id: "sync_main".to_string(),
+                device_id: "dev_mac".to_string(),
+                events: vec![SyncEventRecord {
+                    server_seq: 1,
+                    device_id: "dev_android".to_string(),
+                    client_event_id: format!("android-invalid-thumbnail-{index}"),
+                    event_type: "item_upsert".to_string(),
+                    content_hash: format!("blake3:{content_hash}"),
+                    item_type: Some(item_type.to_string()),
+                    payload: Some(payload),
+                    copy_count_delta: Some(1),
+                    created_at_ms: 1000,
+                }],
+                next_cursor: 1,
+            })
+            .unwrap_err();
+        let progress = core.get_sync_progress("sync_main", "dev_mac").unwrap();
+        let active_count: i64 = core
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_items WHERE deleted_at_ms IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(error.code, CoreErrorCode::SyncInvalidEvent);
+        assert_eq!(progress.cursor, 0);
+        assert_eq!(active_count, 0);
+    }
+}
+
+#[test]
+fn sync_apply_snapshot_rejects_invalid_thumbnail_payload_shape() {
+    let (_, mut core) = open_temp_core();
+    let content_hash = sync_hash_for_test('d');
+    let error = core
+        .apply_sync_snapshot(SyncApplySnapshotRequest {
+            sync_id: "sync_main".to_string(),
+            device_id: "dev_mac".to_string(),
+            snapshot_seq: 2,
+            items: vec![SyncSnapshotItemRecord {
+                content_hash: format!("blake3:{content_hash}"),
+                item_type: "text".to_string(),
+                payload: json!({
+                    "text": "bad snapshot thumbnail",
+                    "thumbnail_digest": "blake3:1111111111111111111111111111111111111111111111111111111111111111",
+                    "thumbnail_mime_type": "image/webp",
+                    "thumbnail_byte_count": 24000,
+                    "thumbnail_width": 320,
+                    "thumbnail_height": 180
+                }),
+                copy_count: 1,
+                updated_at_ms: 2000,
+                last_server_seq: 2,
+            }],
+            tombstones: vec![],
+        })
+        .unwrap_err();
+    let progress = core.get_sync_progress("sync_main", "dev_mac").unwrap();
+    let active_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_items WHERE deleted_at_ms IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(error.code, CoreErrorCode::SyncInvalidEvent);
+    assert_eq!(progress.cursor, 0);
+    assert_eq!(active_count, 0);
 }
 
 #[test]
@@ -520,7 +742,7 @@ fn sync_snapshot_applies_remote_only_image_and_tombstones_missing_rows() {
                 item_type: "image".to_string(),
                 payload: json!({
                     "file_name": "remote.png",
-                    "payload_asset_id": "asset_remote_png",
+                    "payload_asset_id": "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                     "byte_count": 1234,
                     "mime_type": "image/png"
                 }),

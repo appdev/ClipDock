@@ -7,6 +7,38 @@ import Testing
 struct ClipboardMonitoringTests {
     @Test
     @MainActor
+    func clipboardMonitorIgnoresMarkedSelfWrites() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        let monitor = ClipboardMonitor(pasteboard: pasteboard, pollInterval: 0.01)
+        var capturedTexts: [String] = []
+        monitor.onTextCaptured = { text, _, _ in
+            capturedTexts.append(text)
+        }
+
+        let token = UUID().uuidString
+        let expectedStartChangeCount = pasteboard.changeCount + 1
+        pasteboard.clearContents()
+        pasteboard.setString(token, forType: ClipboardMonitor.selfWriteTokenPasteboardType)
+        pasteboard.setString("remote item copied by ClipDock", forType: .string)
+        monitor.markSelfWrite(
+            token: token,
+            from: expectedStartChangeCount,
+            through: pasteboard.changeCount
+        )
+        monitor.pollNowForTesting()
+
+        #expect(capturedTexts.isEmpty)
+
+        pasteboard.clearContents()
+        pasteboard.setString("manual clipboard text", forType: .string)
+        monitor.pollNowForTesting()
+
+        #expect(capturedTexts == ["manual clipboard text"])
+    }
+
+    @Test
+    @MainActor
     func imageFileURLIsCapturedAsFileSnapshotInsteadOfImagePayload() async throws {
         let imageURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -706,6 +738,24 @@ private final class CountingWebPEncoder: ClipboardWebPEncoding, @unchecked Senda
         let shouldSucceed = calls <= successfulCallLimit
         lock.unlock()
         return shouldSucceed ? Data("RIFFxxxxWEBPstub".utf8) : nil
+    }
+
+    func encodeAdaptiveThumbnailWebP(
+        _ rgbaData: Data,
+        width: Int,
+        height: Int,
+        normalTargetBytes: Int,
+        detailTargetBytes: Int,
+        maxBytes: Int
+    ) -> RustAdaptiveWebPEncodeResult? {
+        RustAdaptiveWebPEncodeResult(
+            data: Data("RIFFxxxxWEBPadaptive".utf8),
+            width: width,
+            height: height,
+            quality: 80,
+            score: 100,
+            selectedTier: "normal"
+        )
     }
 }
 

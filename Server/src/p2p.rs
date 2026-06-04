@@ -1,3 +1,7 @@
+use clipdock_sync_contract::{
+    is_p2p_availability, is_p2p_provider_kind, P2pAssetId, AVAILABILITY_ONLINE, BLAKE3_PREFIX,
+    P2P_PROVIDER_KINDS, SHA256_PREFIX,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{Row, SqlitePool};
@@ -11,8 +15,6 @@ const MAX_TTL_MS: i64 = 30 * 60 * 1000;
 const MAX_TEXT_BYTES: usize = 1024;
 const MAX_JSON_BYTES: usize = 4096;
 const MAX_DIRECT_ADDRESSES: usize = 16;
-const PROVIDER_KINDS: &[&str] = &["image_payload", "file_payload", "thumbnail"];
-const AVAILABILITY_VALUES: &[&str] = &["online", "last_seen", "offline"];
 
 #[derive(Serialize)]
 pub struct P2pCapabilities {
@@ -122,8 +124,8 @@ pub fn capabilities() -> P2pCapabilities {
         transport: "iroh-blobs",
         endpoint_ttl_ms: P2P_ENDPOINT_TTL_MS,
         provider_ttl_ms: P2P_PROVIDER_TTL_MS,
-        asset_id_prefixes: vec!["sha256:", "blake3:"],
-        provider_kinds: PROVIDER_KINDS.to_vec(),
+        asset_id_prefixes: vec![SHA256_PREFIX, BLAKE3_PREFIX],
+        provider_kinds: P2P_PROVIDER_KINDS.to_vec(),
         quality_reports: true,
     }
 }
@@ -346,37 +348,14 @@ pub async fn list_asset_providers(
 }
 
 fn validate_asset_id(value: &str) -> Result<(), AppError> {
-    if let Some(hex) = value.strip_prefix("sha256:") {
-        if is_lower_hex(hex, 64) {
-            return Ok(());
-        }
-    } else if let Some(hash) = value.strip_prefix("blake3:") {
-        if is_lower_hex(hash, 64) || is_iroh_base32_hash(hash) {
-            return Ok(());
-        }
-    } else {
-        return Err(AppError::BadRequest("invalid_asset_id"));
-    };
-    Err(AppError::BadRequest("invalid_asset_id"))
-}
-
-fn is_lower_hex(value: &str, expected_len: usize) -> bool {
-    value.len() == expected_len
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn is_iroh_base32_hash(value: &str) -> bool {
-    value.len() == 52
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || (b'2'..=b'7').contains(&byte))
+    P2pAssetId::parse_strict(value)
+        .map(|_| ())
+        .map_err(|error| AppError::BadRequest(error.code()))
 }
 
 fn validate_provider_kind(value: String) -> Result<String, AppError> {
     let value = value.trim().to_string();
-    if PROVIDER_KINDS.contains(&value.as_str()) {
+    if is_p2p_provider_kind(&value) {
         Ok(value)
     } else {
         Err(AppError::BadRequest("unsupported_provider_kind"))
@@ -384,9 +363,9 @@ fn validate_provider_kind(value: String) -> Result<String, AppError> {
 }
 
 fn validate_availability(value: Option<String>) -> Result<String, AppError> {
-    let value = value.unwrap_or_else(|| "online".to_string());
+    let value = value.unwrap_or_else(|| AVAILABILITY_ONLINE.to_string());
     let value = value.trim().to_string();
-    if AVAILABILITY_VALUES.contains(&value.as_str()) {
+    if is_p2p_availability(&value) {
         Ok(value)
     } else {
         Err(AppError::BadRequest("invalid_availability"))

@@ -2,25 +2,21 @@ use std::fmt;
 
 use crate::errors::AppError;
 
-const BLAKE3_PREFIX: &str = "blake3:";
-const HEX_LEN: usize = 64;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentHash {
-    value: String,
+    inner: clipdock_sync_contract::ContentHash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssetDigest {
-    value: String,
-    hex: String,
+    inner: clipdock_sync_contract::AssetDigest,
 }
 
 impl ContentHash {
     pub fn parse(value: &str) -> Result<Self, AppError> {
-        validate_blake3_prefixed(value).map(|hex| Self {
-            value: format!("{BLAKE3_PREFIX}{hex}"),
-        })
+        clipdock_sync_contract::ContentHash::parse_strict(value)
+            .map(|inner| Self { inner })
+            .map_err(|error| AppError::BadRequest(error.code()))
     }
 
     pub fn is_valid(value: &str) -> bool {
@@ -30,51 +26,32 @@ impl ContentHash {
 
 impl AssetDigest {
     pub fn parse(value: &str) -> Result<Self, AppError> {
-        validate_blake3_prefixed(value).map(|hex| Self {
-            value: format!("{BLAKE3_PREFIX}{hex}"),
-            hex: hex.to_string(),
-        })
+        clipdock_sync_contract::AssetDigest::parse_strict(value)
+            .map(|inner| Self { inner })
+            .map_err(|error| AppError::BadRequest(error.code()))
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        let hex = blake3::hash(bytes).to_hex().to_string();
         Self {
-            value: format!("{BLAKE3_PREFIX}{hex}"),
-            hex,
+            inner: clipdock_sync_contract::AssetDigest::from_bytes(bytes),
         }
     }
 
     pub fn algorithm(&self) -> &'static str {
-        "blake3"
+        self.inner.algorithm()
     }
 
     pub fn hex(&self) -> &str {
-        &self.hex
+        self.inner.hex()
     }
 
     pub fn as_str(&self) -> &str {
-        &self.value
+        self.inner.as_str()
     }
 }
 
 impl fmt::Display for AssetDigest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.value)
+        formatter.write_str(self.as_str())
     }
-}
-
-fn validate_blake3_prefixed(value: &str) -> Result<&str, AppError> {
-    let Some(hex) = value.strip_prefix(BLAKE3_PREFIX) else {
-        return Err(AppError::BadRequest("invalid_digest_algorithm"));
-    };
-    if hex.len() != HEX_LEN {
-        return Err(AppError::BadRequest("invalid_digest"));
-    }
-    if !hex
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(AppError::BadRequest("invalid_digest"));
-    }
-    Ok(hex)
 }

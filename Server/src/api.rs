@@ -1,10 +1,14 @@
 use async_trait::async_trait;
 use axum::{
-    body::Bytes,
+    body::{to_bytes, Body},
     extract::{rejection::JsonRejection, FromRequest, Path, Request, State},
     http::{HeaderMap, StatusCode, Uri},
     routing::{any, get, post, put},
     Json, Router,
+};
+use clipdock_sync_contract::{
+    ASSET_DIGEST_ALGORITHM_BLAKE3, ASSET_KINDS, ASSET_KIND_LINK_PREVIEW, ASSET_KIND_SOURCE_ICON,
+    ASSET_KIND_THUMBNAIL, CONTENT_HASH_ALGORITHM_BLAKE3, EVENT_TYPES, IMAGE_ASSET_MIME_TYPES,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -12,7 +16,7 @@ use sqlx::SqlitePool;
 use tower::ServiceBuilder;
 
 use crate::{
-    assets::{AssetStore, UploadAssetResponse},
+    assets::{AssetStore, UploadAssetResponse, DEFAULT_IMAGE_ASSET_MAX_BYTES, THUMBNAIL_MAX_BYTES},
     auth::{self, CreateSyncRequest, JoinSyncRequest},
     config::Config,
     errors::{ok, AppError, SuccessEnvelope},
@@ -112,6 +116,12 @@ struct InfoResponse {
     content_hash_algorithms: Vec<&'static str>,
     asset_digest_algorithms: Vec<&'static str>,
     max_asset_bytes: usize,
+    thumbnail_max_bytes: usize,
+    thumbnail_normal_target_bytes: usize,
+    thumbnail_detail_target_bytes: usize,
+    asset_max_dimension_px: u32,
+    asset_max_pixels: u64,
+    per_kind_asset_max_bytes: serde_json::Value,
     p2p: p2p::P2pCapabilities,
 }
 
@@ -125,14 +135,37 @@ async fn info(
         sync_id: auth.sync_group_id,
         device_id: auth.device_id,
         device_name: auth.device_name,
-        event_types: vec!["item_upsert", "item_delete"],
-        asset_kinds: vec!["thumbnail", "source_icon", "link_preview"],
-        asset_mime_types: vec!["image/png", "image/jpeg", "image/webp"],
-        content_hash_algorithms: vec!["blake3"],
-        asset_digest_algorithms: vec!["blake3"],
+        event_types: EVENT_TYPES.to_vec(),
+        asset_kinds: ASSET_KINDS.to_vec(),
+        asset_mime_types: IMAGE_ASSET_MIME_TYPES.to_vec(),
+        content_hash_algorithms: vec![CONTENT_HASH_ALGORITHM_BLAKE3],
+        asset_digest_algorithms: vec![ASSET_DIGEST_ALGORITHM_BLAKE3],
         max_asset_bytes: state.config.max_asset_bytes,
+        thumbnail_max_bytes: crate::assets::THUMBNAIL_MAX_BYTES,
+        thumbnail_normal_target_bytes: crate::assets::THUMBNAIL_NORMAL_TARGET_BYTES,
+        thumbnail_detail_target_bytes: crate::assets::THUMBNAIL_DETAIL_TARGET_BYTES,
+        asset_max_dimension_px: crate::assets::ASSET_MAX_DIMENSION_PX,
+        asset_max_pixels: crate::assets::ASSET_MAX_PIXELS,
+        per_kind_asset_max_bytes: per_kind_asset_max_bytes(&state.assets),
         p2p: p2p::capabilities(),
     }))
+}
+
+fn per_kind_asset_max_bytes(assets: &AssetStore) -> serde_json::Value {
+    let mut values = serde_json::Map::new();
+    values.insert(
+        ASSET_KIND_THUMBNAIL.to_string(),
+        serde_json::json!(assets.max_bytes_for_kind(ASSET_KIND_THUMBNAIL)),
+    );
+    values.insert(
+        ASSET_KIND_SOURCE_ICON.to_string(),
+        serde_json::json!(assets.max_bytes_for_kind(ASSET_KIND_SOURCE_ICON)),
+    );
+    values.insert(
+        ASSET_KIND_LINK_PREVIEW.to_string(),
+        serde_json::json!(assets.max_bytes_for_kind(ASSET_KIND_LINK_PREVIEW)),
+    );
+    serde_json::Value::Object(values)
 }
 
 async fn create_sync(
@@ -199,12 +232,31 @@ async fn upload_asset(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(digest): Path<String>,
-    body: Bytes,
+    body: Body,
 ) -> Result<(StatusCode, Json<SuccessEnvelope<UploadAssetResponse>>), AppError> {
     let auth = auth::require_device(&state.pool, &headers).await?;
+    let kind = headers
+        .get("x-clipdock-asset-kind")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .ok_or(AppError::BadRequest("missing_asset_metadata"))?;
+    let cap = match kind {
+        ASSET_KIND_THUMBNAIL => state.config.max_asset_bytes.min(THUMBNAIL_MAX_BYTES),
+        ASSET_KIND_SOURCE_ICON | ASSET_KIND_LINK_PREVIEW => state
+            .config
+            .max_asset_bytes
+            .min(DEFAULT_IMAGE_ASSET_MAX_BYTES),
+        _ => return Err(AppError::BadRequest("unsupported_asset_kind")),
+    };
+    let bytes = to_bytes(body, cap + 1)
+        .await
+        .map_err(|_| AppError::PayloadTooLarge("asset_too_large"))?;
+    if bytes.len() > cap {
+        return Err(AppError::PayloadTooLarge("asset_too_large"));
+    }
     let response = state
         .assets
-        .upload(&state.pool, auth, digest, &headers, body)
+        .upload(&state.pool, auth, digest, &headers, bytes)
         .await?;
     Ok((StatusCode::OK, ok(response)))
 }

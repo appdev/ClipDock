@@ -1,5 +1,10 @@
+use clipdock_sync_contract::{
+    PayloadAssetUpdate as PayloadAssetUpdateShape, ThumbnailMetadata, EVENT_TYPE_ITEM_DELETE,
+    EVENT_TYPE_ITEM_PAYLOAD_ASSET_UPDATE, EVENT_TYPE_ITEM_UPSERT, ITEM_TYPE_IMAGE,
+    P2P_PROVIDER_KIND_IMAGE_PAYLOAD,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use sqlx::{Row, SqlitePool};
 
 use crate::{auth::DeviceAuth, db, errors::AppError, hashes::ContentHash, realtime::EventHub};
@@ -93,6 +98,16 @@ pub async fn push_events(
     if request.events.is_empty() {
         return Err(AppError::BadRequest("empty_batch"));
     }
+    if request
+        .events
+        .iter()
+        .any(|event| event.event_type == EVENT_TYPE_ITEM_PAYLOAD_ASSET_UPDATE)
+        && request.events.len() != 1
+    {
+        return Err(AppError::BadRequest(
+            "payload_asset_update_must_be_single_event",
+        ));
+    }
 
     let mut tx = pool.begin().await?;
     let mut pushed = Vec::with_capacity(request.events.len());
@@ -124,8 +139,10 @@ pub async fn push_events(
             .map(serde_json::to_string)
             .transpose()
             .map_err(|error| AppError::Internal(error.to_string()))?;
+        let thumbnail = validate_thumbnail_payload(&mut tx, &auth, &event).await?;
+        let payload_update = validate_payload_asset_update(&mut tx, &auth, &event).await?;
         let normalized_copy_count_delta = match event.event_type.as_str() {
-            "item_upsert" => Some(event.copy_count_delta.unwrap_or(1)),
+            EVENT_TYPE_ITEM_UPSERT => Some(event.copy_count_delta.unwrap_or(1)),
             _ => None,
         };
         let now = db::now_ms().await;
@@ -170,7 +187,7 @@ pub async fn push_events(
             .get::<i64, _>("id");
 
         match event.event_type.as_str() {
-            "item_upsert" => {
+            EVENT_TYPE_ITEM_UPSERT => {
                 let item_type = event.item_type.as_deref().expect("validated item_type");
                 let payload_json = payload_json.as_deref().expect("validated payload");
                 let delta = normalized_copy_count_delta.expect("validated copy_count_delta");
@@ -206,8 +223,14 @@ pub async fn push_events(
                     .execute(&mut *tx)
                     .await?;
                 }
+                if let Some(thumbnail) = thumbnail {
+                    replace_thumbnail_link(&mut tx, &auth, &event.content_hash, &thumbnail.digest)
+                        .await?;
+                } else {
+                    clear_thumbnail_link(&mut tx, &auth, &event.content_hash).await?;
+                }
             }
-            "item_delete" => {
+            EVENT_TYPE_ITEM_DELETE => {
                 let update = sqlx::query(
                     "UPDATE sync_items
                      SET deleted_at_ms = COALESCE(deleted_at_ms, ?),
@@ -235,6 +258,48 @@ pub async fn push_events(
                     .execute(&mut *tx)
                     .await?;
                 }
+                clear_thumbnail_link(&mut tx, &auth, &event.content_hash).await?;
+            }
+            EVENT_TYPE_ITEM_PAYLOAD_ASSET_UPDATE => {
+                let update = payload_update.expect("validated payload update");
+                let row = sqlx::query(
+                    "SELECT payload_json
+                     FROM sync_items
+                     WHERE sync_group_id = ? AND content_hash = ?",
+                )
+                .bind(&auth.sync_group_id)
+                .bind(&event.content_hash)
+                .fetch_one(&mut *tx)
+                .await?;
+                let payload_json_value: Option<String> = row.try_get("payload_json")?;
+                let mut payload = payload_json_value
+                    .as_deref()
+                    .map(serde_json::from_str::<Value>)
+                    .transpose()
+                    .map_err(|error| AppError::Internal(error.to_string()))?
+                    .and_then(|value| match value {
+                        Value::Object(map) => Some(map),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                payload.insert(
+                    "payload_asset_id".to_string(),
+                    Value::String(update.asset_id.clone()),
+                );
+                payload.insert("asset_id".to_string(), Value::String(update.asset_id));
+                let merged_payload_json = serde_json::to_string(&Value::Object(payload))
+                    .map_err(|error| AppError::Internal(error.to_string()))?;
+                sqlx::query(
+                    "UPDATE sync_items
+                     SET payload_json = ?, last_server_seq = ?
+                     WHERE sync_group_id = ? AND content_hash = ?",
+                )
+                .bind(&merged_payload_json)
+                .bind(server_seq)
+                .bind(&auth.sync_group_id)
+                .bind(&event.content_hash)
+                .execute(&mut *tx)
+                .await?;
             }
             _ => return Err(AppError::BadRequest("invalid_event_type")),
         }
@@ -480,7 +545,7 @@ fn validate_incoming(event: &IncomingEvent) -> Result<(), AppError> {
         return Err(AppError::BadRequest("invalid_content_hash"));
     }
     match event.event_type.as_str() {
-        "item_upsert" => {
+        EVENT_TYPE_ITEM_UPSERT => {
             let delta = event.copy_count_delta.unwrap_or(1);
             if !(1..=100).contains(&delta) {
                 return Err(AppError::BadRequest("invalid_copy_count_delta"));
@@ -498,8 +563,201 @@ fn validate_incoming(event: &IncomingEvent) -> Result<(), AppError> {
                 return Err(AppError::BadRequest("invalid_payload"));
             }
         }
-        "item_delete" => {}
+        EVENT_TYPE_ITEM_DELETE => {}
+        EVENT_TYPE_ITEM_PAYLOAD_ASSET_UPDATE => {
+            if event.copy_count_delta.is_some() {
+                return Err(AppError::BadRequest(
+                    "payload_asset_update_copy_count_delta_not_allowed",
+                ));
+            }
+            if event.item_type.as_deref() != Some(ITEM_TYPE_IMAGE) {
+                return Err(AppError::BadRequest(
+                    "payload_asset_update_invalid_item_type",
+                ));
+            }
+            if event.payload.is_none() {
+                return Err(AppError::BadRequest("invalid_payload_asset_update_payload"));
+            }
+        }
         _ => return Err(AppError::BadRequest("invalid_event_type")),
     }
+    Ok(())
+}
+
+#[derive(Debug)]
+struct ThumbnailReference {
+    digest: String,
+}
+
+#[derive(Debug)]
+struct PayloadAssetUpdate {
+    asset_id: String,
+}
+
+async fn validate_thumbnail_payload(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    auth: &DeviceAuth,
+    event: &IncomingEvent,
+) -> Result<Option<ThumbnailReference>, AppError> {
+    if event.event_type != EVENT_TYPE_ITEM_UPSERT {
+        return Ok(None);
+    }
+    let payload = event
+        .payload
+        .as_ref()
+        .and_then(Value::as_object)
+        .ok_or(AppError::BadRequest("invalid_payload"))?;
+    let Some(metadata) = ThumbnailMetadata::parse_shape_strict(event.item_type.as_deref(), payload)
+        .map_err(|error| AppError::BadRequest(error.code()))?
+    else {
+        return Ok(None);
+    };
+    let digest = metadata.digest.as_str();
+    crate::assets::validate_digest(digest)?;
+    let mime_type = metadata.mime_type.as_str();
+    let byte_count = metadata.byte_count;
+    let width = metadata.width;
+    let height = metadata.height;
+
+    let row = sqlx::query(
+        "SELECT kind, mime_type, size_bytes, width_px, height_px
+         FROM sync_assets
+         WHERE sync_group_id = ? AND digest = ?",
+    )
+    .bind(&auth.sync_group_id)
+    .bind(digest)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(AppError::BadRequest("thumbnail_asset_not_found"))?;
+
+    let kind: String = row.try_get("kind")?;
+    let stored_mime: String = row.try_get("mime_type")?;
+    let stored_size: i64 = row.try_get("size_bytes")?;
+    let stored_width: Option<i64> = row.try_get("width_px")?;
+    let stored_height: Option<i64> = row.try_get("height_px")?;
+    if stored_width.is_none() || stored_height.is_none() {
+        return Err(AppError::BadRequest("thumbnail_asset_dimensions_missing"));
+    }
+    if kind != "thumbnail"
+        || stored_mime != mime_type
+        || stored_size != byte_count
+        || stored_width != Some(width)
+        || stored_height != Some(height)
+    {
+        return Err(AppError::BadRequest("thumbnail_asset_metadata_mismatch"));
+    }
+    Ok(Some(ThumbnailReference {
+        digest: digest.to_string(),
+    }))
+}
+
+async fn validate_payload_asset_update(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    auth: &DeviceAuth,
+    event: &IncomingEvent,
+) -> Result<Option<PayloadAssetUpdate>, AppError> {
+    if event.event_type != EVENT_TYPE_ITEM_PAYLOAD_ASSET_UPDATE {
+        return Ok(None);
+    }
+    let payload = event
+        .payload
+        .as_ref()
+        .and_then(Value::as_object)
+        .ok_or(AppError::BadRequest("invalid_payload_asset_update_payload"))?;
+    let asset_update = validate_payload_asset_update_payload(payload)?;
+    let asset_id = asset_update.asset_id;
+
+    let item_row = sqlx::query(
+        "SELECT item_type, deleted_at_ms
+         FROM sync_items
+         WHERE sync_group_id = ? AND content_hash = ?",
+    )
+    .bind(&auth.sync_group_id)
+    .bind(&event.content_hash)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(AppError::Conflict("payload_asset_update_item_missing"))?;
+    let deleted_at: Option<i64> = item_row.try_get("deleted_at_ms")?;
+    if deleted_at.is_some() {
+        return Err(AppError::Conflict("payload_asset_update_item_deleted"));
+    }
+    let item_type: Option<String> = item_row.try_get("item_type")?;
+    if item_type.as_deref() != Some(ITEM_TYPE_IMAGE) {
+        return Err(AppError::Conflict(
+            "payload_asset_update_item_type_mismatch",
+        ));
+    }
+
+    let provider_rows = sqlx::query(
+        "SELECT device_id, kind
+         FROM asset_providers
+         WHERE sync_group_id = ? AND asset_id = ?",
+    )
+    .bind(&auth.sync_group_id)
+    .bind(&asset_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    if provider_rows.is_empty() {
+        return Err(AppError::Conflict(
+            "payload_asset_update_provider_not_found",
+        ));
+    }
+    let same_device = provider_rows
+        .iter()
+        .find(|row| row.get::<String, _>("device_id") == auth.device_id);
+    let Some(provider_row) = same_device else {
+        return Err(AppError::Conflict(
+            "payload_asset_update_provider_wrong_device",
+        ));
+    };
+    let provider_kind: String = provider_row.try_get("kind")?;
+    if provider_kind != P2P_PROVIDER_KIND_IMAGE_PAYLOAD {
+        return Err(AppError::Conflict(
+            "payload_asset_update_provider_wrong_kind",
+        ));
+    }
+
+    Ok(Some(PayloadAssetUpdate { asset_id }))
+}
+
+fn validate_payload_asset_update_payload(
+    payload: &Map<String, Value>,
+) -> Result<PayloadAssetUpdateShape, AppError> {
+    PayloadAssetUpdateShape::parse_shape_strict(payload)
+        .map_err(|error| AppError::BadRequest(error.code()))
+}
+
+async fn replace_thumbnail_link(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    auth: &DeviceAuth,
+    content_hash: &str,
+    digest: &str,
+) -> Result<(), AppError> {
+    clear_thumbnail_link(tx, auth, content_hash).await?;
+    sqlx::query(
+        "INSERT INTO sync_item_assets(sync_group_id, content_hash, asset_digest, role)
+         VALUES (?, ?, ?, 'thumbnail')",
+    )
+    .bind(&auth.sync_group_id)
+    .bind(content_hash)
+    .bind(digest)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn clear_thumbnail_link(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    auth: &DeviceAuth,
+    content_hash: &str,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "DELETE FROM sync_item_assets
+         WHERE sync_group_id = ? AND content_hash = ? AND role = 'thumbnail'",
+    )
+    .bind(&auth.sync_group_id)
+    .bind(content_hash)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }

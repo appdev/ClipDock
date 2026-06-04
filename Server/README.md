@@ -73,8 +73,8 @@ Package a specific target:
 ```bash
 scripts/package-server.sh \
   --target x86_64-unknown-linux-gnu \
-  --version 0.1.8 \
-  --output-dir ../.codex/artifacts/server/0.1.8
+  --version 0.1.9 \
+  --output-dir ../.codex/artifacts/server/0.1.9
 ```
 
 Supported release targets:

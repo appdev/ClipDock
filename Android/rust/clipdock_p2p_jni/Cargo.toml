@@ -9,6 +9,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1.0"
+base64 = "0.22"
+clipdock_sync_contract = { path = "../../../shared/rust/clipdock_sync_contract" }
+clipdock_thumbnail_codec = { path = "../../../shared/rust/clipdock_thumbnail_codec" }
 iroh = "0.35.0"
 iroh-blobs = "0.35.0"
 jni = "0.21"
@@ -18,8 +21,7 @@ serde_json = "1.0"
 socket2 = { version = "0.5.10", features = ["all"] }
 tokio = { version = "1.40", features = ["rt-multi-thread", "time"] }
 
-# Keep the dependency graph compatible with the Rust 1.85 toolchain used by
-# the current macOS/server workspace.
+# Keep the dependency graph pinned for repeatable Android JNI builds.
 getrandom = "=0.3.3"
 icu_collections = "=2.0.0"
 icu_locale_core = "=2.0.0"

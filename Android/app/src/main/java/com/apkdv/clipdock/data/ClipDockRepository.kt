@@ -32,19 +32,27 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 
 class ClipDockRepository(private val context: Context) {
   private val appContext = context.applicationContext
   private val preferences = appContext.getSharedPreferences("clipdock", Context.MODE_PRIVATE)
   private val api = ClipDockApiClient()
+  private val p2pTransport = NativeP2pTransport(appContext)
+  private val localImagePreparer = AndroidLocalImagePreparer(appContext, p2pTransport)
   private val syncStore = SharedPreferencesSyncStore(preferences)
-  private val syncEngine = SyncEngine(syncStore, api)
+  private val syncEngine = SyncEngine(
+    syncStore,
+    api,
+    AndroidSyncThumbnailCache(api, appContext.filesDir),
+  )
   private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val clipboardCaptureMonitor =
     AndroidClipboardCaptureMonitor(
       context = appContext,
       scope = syncScope,
-      upload = { item -> uploadLocalItem(item) },
+      upload = { clip, copiedAtMillis -> uploadLocalClipboardClip(clip, copiedAtMillis) },
     )
   private var fallbackPollJob: Job? = null
   private var realtimeReconnectJob: Job? = null
@@ -75,7 +83,6 @@ class ClipDockRepository(private val context: Context) {
       },
       logger = AndroidSyncEventLogger,
     )
-  private val p2pTransport = NativeP2pTransport(appContext)
   private val setupMutex = Mutex()
   private val _state = MutableStateFlow(loadState())
 
@@ -289,6 +296,64 @@ class ClipDockRepository(private val context: Context) {
       pushResult
     }
 
+  private suspend fun uploadLocalClipboardClip(
+    clip: ClipData,
+    copiedAtMillis: Long,
+  ): LocalSyncPushResult? {
+    clip.toLocalClipboardHistoryItem(copiedAtMillis)?.let { item ->
+      return uploadLocalItem(item)
+    }
+    val preparedImage = localImagePreparer.prepare(clip, copiedAtMillis) ?: return null
+    return uploadLocalImage(preparedImage)
+  }
+
+  private suspend fun uploadLocalImage(preparedImage: AndroidPreparedLocalImage): LocalSyncPushResult =
+    runNetwork("上传本地图片失败") {
+      val token = requireToken()
+      val deviceId = current.deviceId?.takeIf(String::isNotBlank) ?: throw ClipDockApiException("missing_device_id", "缺少本机同步设备 ID")
+      val imported = registerLocalPayloadProvider(preparedImage.payloadFile, preparedImage.payloadMimeType, kind = "image_payload")
+      preparedImage.thumbnail?.let { thumbnail ->
+        val uploaded =
+          api.uploadAsset(
+            current.serverUrl,
+            token,
+            thumbnail.digest,
+            kind = "thumbnail",
+            mimeType = thumbnail.mimeType,
+            width = thumbnail.width,
+            height = thumbnail.height,
+            bytes = thumbnail.bytes,
+          )
+        if (uploaded.digest != thumbnail.digest ||
+          uploaded.kind != "thumbnail" ||
+          uploaded.mimeType != thumbnail.mimeType ||
+          uploaded.byteCount != thumbnail.byteCount ||
+          uploaded.width != thumbnail.width ||
+          uploaded.height != thumbnail.height
+        ) {
+          throw ClipDockApiException("thumbnail_metadata_mismatch", "缩略图上传元数据不匹配")
+        }
+      }
+
+      val event = preparedImage.toImageSyncPushEventRequest(deviceId, imported.assetId)
+      val data = api.pushEvents(current.serverUrl, token, listOf(event)).toJSONObject()
+      val pushedEvent =
+        data
+          .optJSONArray("events")
+          ?.let { events -> (0 until events.length()).mapNotNull { events.optJSONObject(it) } }
+          ?.firstOrNull { it.optString("client_event_id") == event.clientEventId }
+      val reconcileResult = syncEngine.syncFromStoredCursor(current.serverUrl, token)
+      applySyncResult(reconcileResult, isSyncing = false, connectionStatus = "已加入")
+      preserveLocalImagePayload(preparedImage.item.copy(assetId = imported.assetId))
+      LocalSyncPushResult(
+        contentHash = event.contentHash,
+        clientEventId = event.clientEventId,
+        nextCursor = data.optLong("next_cursor"),
+        serverSeq = pushedEvent?.optLong("server_seq"),
+        duplicate = pushedEvent?.optBoolean("duplicate") ?: false,
+      )
+    }
+
   suspend fun uploadLocalText(
     text: String,
     type: ClipItemType = ClipItemType.Text,
@@ -306,6 +371,11 @@ class ClipDockRepository(private val context: Context) {
         sourceName = "Android",
         assetId = null,
         thumbnailUri = null,
+        thumbnailDigest = null,
+        thumbnailMimeType = null,
+        thumbnailByteCount = null,
+        thumbnailWidth = null,
+        thumbnailHeight = null,
         localUri = null,
         payloadState = PayloadState.Ready,
         transferState = TransferState.Ready,
@@ -491,6 +561,28 @@ class ClipDockRepository(private val context: Context) {
 
   private fun replaceItem(item: ClipHistoryItem) {
     val merged = current.items.map { existing -> if (existing.stableId == item.stableId) item else existing }
+    persistItems(merged)
+    _state.update { it.copy(items = merged) }
+  }
+
+  private fun preserveLocalImagePayload(localItem: ClipHistoryItem) {
+    var found = false
+    val mergedItems =
+      current.items.map { existing ->
+        if (existing.contentHash == localItem.contentHash && existing.type == ClipItemType.Image) {
+          found = true
+          existing.copy(
+            assetId = existing.assetId ?: localItem.assetId,
+            thumbnailUri = existing.thumbnailUri ?: localItem.thumbnailUri,
+            localUri = localItem.localUri,
+            payloadState = PayloadState.Ready,
+            transferState = TransferState.Ready,
+          )
+        } else {
+          existing
+        }
+      }
+    val merged = if (found) mergedItems else (mergedItems + localItem).sortedByDescending { it.copiedAtMillis }
     persistItems(merged)
     _state.update { it.copy(items = merged) }
   }
@@ -743,14 +835,59 @@ private fun ClipHistoryItem.payloadExtension(candidate: P2pProviderCandidate): S
   }
 }
 
+internal fun AndroidPreparedLocalImage.toImageSyncPushEventRequest(
+  deviceId: String,
+  payloadAssetId: String,
+): SyncPushEventRequest {
+  val contentHash =
+    item.contentHash
+      .takeIf(::isCanonicalBlake3Digest)
+      ?: throw ClipDockApiException("invalid_content_hash", "本地图片缺少 BLAKE3 内容标识")
+  val payload =
+    buildJsonObject {
+      put("source_platform", JsonPrimitive("android"))
+      put("source_app_name", JsonPrimitive(item.sourceName?.takeIf(String::isNotBlank) ?: "Android"))
+      put("file_name", JsonPrimitive(item.title.ifBlank { "image" }))
+      put("summary", JsonPrimitive(item.title.ifBlank { "image" }))
+      put("mime_type", JsonPrimitive(payloadMimeType))
+      put("byte_count", JsonPrimitive(payloadByteCount))
+      put("width", JsonPrimitive(width))
+      put("height", JsonPrimitive(height))
+      put("payload_asset_id", JsonPrimitive(payloadAssetId))
+      put("asset_id", JsonPrimitive(payloadAssetId))
+      thumbnail?.let { thumbnail ->
+        put("thumbnail_digest", JsonPrimitive(thumbnail.digest))
+        put("thumbnail_mime_type", JsonPrimitive(thumbnail.mimeType))
+        put("thumbnail_byte_count", JsonPrimitive(thumbnail.byteCount))
+        put("thumbnail_width", JsonPrimitive(thumbnail.width))
+        put("thumbnail_height", JsonPrimitive(thumbnail.height))
+      }
+    }
+  return SyncPushEventRequest(
+    clientEventId = stableAndroidClientEventId(deviceId, contentHash, item.copiedAtMillis),
+    type = "item_upsert",
+    contentHash = contentHash,
+    itemType = ClipItemType.Image.wireName,
+    payload = payload,
+    copyCountDelta = item.copyCount.coerceIn(1, 100),
+  )
+}
+
 internal fun ClipHistoryItem.preservingDownloadedPayload(previous: ClipHistoryItem?): ClipHistoryItem {
   if (previous == null) return this
   if (contentHash != previous.contentHash || type != previous.type) return this
   if (type != ClipItemType.Image && type != ClipItemType.File) return this
-  if (!localUri.isNullOrBlank()) return this
-  if (previous.localUri.isNullOrBlank() || previous.payloadState != PayloadState.Ready) return this
+  val preservedThumbnailUri =
+    thumbnailUri
+      ?: previous.thumbnailUri.takeIf {
+        thumbnailDigest != null && thumbnailDigest == previous.thumbnailDigest
+      }
+  if (!localUri.isNullOrBlank()) return copy(thumbnailUri = preservedThumbnailUri)
+  if (previous.localUri.isNullOrBlank() || previous.payloadState != PayloadState.Ready) {
+    return copy(thumbnailUri = preservedThumbnailUri)
+  }
   return copy(
-    thumbnailUri = thumbnailUri ?: previous.thumbnailUri,
+    thumbnailUri = preservedThumbnailUri,
     localUri = previous.localUri,
     payloadState = PayloadState.Ready,
     transferState = TransferState.Ready,

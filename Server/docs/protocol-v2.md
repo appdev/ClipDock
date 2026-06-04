@@ -132,7 +132,7 @@ Response data:
 
 ### POST /v2/events
 
-Authenticated batch push. Supported event types are `item_upsert` and `item_delete`.
+Authenticated batch push. Supported event types are `item_upsert`, `item_delete`, and `item_payload_asset_update`.
 
 `item_upsert`:
 
@@ -156,6 +156,20 @@ Clipboard payloads may include `source_app_name`, `source_bundle_id`, and `sourc
 `source_platform` is optional; Android-originated clipboard content should send `"source_platform": "android"`
 so macOS can render an Android platform source icon instead of treating the device as a macOS application.
 
+Image `item_upsert` events may expose a lossy server-hosted thumbnail before the full P2P image payload is available. Thumbnail visibility is canonical in payload JSON, not inferred from `sync_item_assets`. New image thumbnail payloads must include all five fields together:
+
+```json
+{
+  "thumbnail_digest": "blake3:<64 lowercase hex>",
+  "thumbnail_mime_type": "image/webp",
+  "thumbnail_byte_count": 184320,
+  "thumbnail_width": 384,
+  "thumbnail_height": 216
+}
+```
+
+Partial thumbnail fields are rejected. Non-image items cannot carry thumbnail fields. The referenced raw asset must already exist in the same sync space with `kind=thumbnail`, matching MIME type, byte count, and dimensions. Upserting an image without thumbnail fields clears the materialized thumbnail link for that item.
+
 `item_delete`:
 
 ```json
@@ -171,6 +185,27 @@ so macOS can render an Android platform source icon instead of treating the devi
 ```
 
 Deletes create tombstones within a sync space. A later `item_upsert` for the same content hash clears the tombstone and restores the item as active content.
+
+`item_payload_asset_update`:
+
+```json
+{
+  "events": [
+    {
+      "client_event_id": "local-payload-asset-uuid",
+      "type": "item_payload_asset_update",
+      "content_hash": "blake3:<64 lowercase hex>",
+      "item_type": "image",
+      "payload": {
+        "payload_asset_id": "blake3:<iroh-or-client-asset-id>",
+        "asset_id": "blake3:<same asset id>"
+      }
+    }
+  ]
+}
+```
+
+This event is only for thumbnail-first image sync. It must be the only event in the request. It cannot include `copy_count_delta`, cannot create a placeholder, and only merges `payload_asset_id` / equal `asset_id` into an existing active image item. It does not change `copy_count` or `updated_at_ms`; it only advances event state and the item's `last_server_seq`. The server requires a same-sync-space provider row from the calling device with `kind=image_payload`; provider freshness is not required. Missing/deleted/non-image items, invalid payload shape, wrong provider device, and wrong provider kind are terminal client cleanup cases. `payload_asset_update_provider_not_found` is retryable after re-registering the P2P provider.
 
 ### GET /v2/events?after_seq&limit
 
@@ -276,6 +311,8 @@ Supported headers:
 ```http
 Content-Type: image/png
 X-ClipDock-Asset-Kind: thumbnail
+X-ClipDock-Asset-Width: 384
+X-ClipDock-Asset-Height: 216
 ```
 
 Allowed kinds: `thumbnail`, `source_icon`, `link_preview`.
@@ -284,11 +321,13 @@ Allowed MIME types: `image/png`, `image/jpeg`, `image/webp`.
 
 Digest format: `blake3:<64 lowercase hex>`.
 
-The server computes BLAKE3 over the request body and rejects mismatches with `400 bad_digest`. The default max upload size is `2 MiB`. Uploads are written to staging and atomically promoted inside the authenticated sync space. Duplicate upload with the same metadata in the same sync space returns `200` with `already_exists: true`; metadata conflict returns `409 metadata_conflict`.
+The server computes BLAKE3 over the request body and rejects mismatches with `400 bad_digest`. Upload body reading is capped by kind before decoding. `thumbnail` assets have a hard cap of `786432` bytes; clients should target `262144` bytes normally and may use `393216` bytes for detail-preserving thumbnails. Other currently supported image asset kinds are capped by the server asset byte budget.
+
+All new image assets must include content type, asset kind, width, and height headers. The server decodes the image to validate MIME/container, dimensions, single-side limit `1..=8192`, and total pixel limit `16777216`. Uploads are written to staging and atomically promoted inside the authenticated sync space. Duplicate upload with the same metadata in the same sync space returns `200` with `already_exists: true`; legacy assets with null dimensions can be backfilled by a matching duplicate upload. Metadata conflict returns `409 metadata_conflict`.
 
 ### GET /v2/assets/{digest}
 
-Authenticated raw asset download from the authenticated device's sync space. Returns the stored bytes with `Content-Type` and `X-ClipDock-Asset-Kind`.
+Authenticated raw asset download from the authenticated device's sync space. Returns the stored bytes with `Content-Type`, `Content-Length`, and `X-ClipDock-Asset-Kind`. Assets with known dimensions also return `X-ClipDock-Asset-Width` and `X-ClipDock-Asset-Height`; legacy null-dimension assets remain downloadable but dimensions are not fabricated.
 
 ## P2P Coordination Metadata
 

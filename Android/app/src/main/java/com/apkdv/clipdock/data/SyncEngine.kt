@@ -40,6 +40,14 @@ data class LocalSyncPushResult(
   val duplicate: Boolean,
 )
 
+interface SyncThumbnailCache {
+  suspend fun cacheThumbnail(serverUrl: String, token: String, item: ClipHistoryItem): String?
+}
+
+object NoopSyncThumbnailCache : SyncThumbnailCache {
+  override suspend fun cacheThumbnail(serverUrl: String, token: String, item: ClipHistoryItem): String? = null
+}
+
 interface SyncStore {
   fun loadProgress(): SyncProgress
 
@@ -83,6 +91,7 @@ class SharedPreferencesSyncStore(private val preferences: SharedPreferences) : S
 class SyncEngine(
   private val store: SyncStore,
   private val api: ClipDockSyncApi,
+  private val thumbnailCache: SyncThumbnailCache = NoopSyncThumbnailCache,
 ) {
   private val writerMutex = Mutex()
   private val deltaFailuresByCursor = mutableMapOf<Long, Int>()
@@ -137,7 +146,7 @@ class SyncEngine(
         return@withLock SyncResult(progress.items, progress.cursor, progress.snapshotSeq, usedSnapshot = false)
       }
       val nextCursor = applicable.maxOf { it.optLong("server_seq") }
-      val merged = applyEvents(progress.items, applicable)
+      val merged = applyEvents(progress.items, applicable, serverUrl, token)
       requirePersist(store.persistProgress(merged, nextCursor, progress.snapshotSeq))
       SyncResult(merged, nextCursor, progress.snapshotSeq, usedSnapshot = false)
     }
@@ -174,7 +183,7 @@ class SyncEngine(
     }
     val events = data.optJSONArray("events").eventObjects()
     validateEventOrder(events)
-    val merged = applyEvents(progress.items, events.filter { it.optLong("server_seq", -1) > progress.cursor })
+    val merged = applyEvents(progress.items, events.filter { it.optLong("server_seq", -1) > progress.cursor }, serverUrl, token)
     requirePersist(store.persistProgress(merged, nextCursor, progress.snapshotSeq))
     deltaFailuresByCursor.remove(progress.cursor)
     return SyncResult(merged, nextCursor, progress.snapshotSeq, usedSnapshot = false)
@@ -195,6 +204,7 @@ class SyncEngine(
       snapshotItems
         .filterNot { tombstones.contains(it.contentHash) }
         .distinctBy { it.contentHash }
+        .map { item -> item.withCachedThumbnail(serverUrl, token) }
         .map { item -> item.preservingDownloadedPayload(previousItemsByHash[item.contentHash]) }
         .sortedByDescending { it.copiedAtMillis }
     requirePersist(store.persistProgress(merged, snapshotSeq, snapshotSeq))
@@ -202,7 +212,12 @@ class SyncEngine(
     return SyncResult(merged, snapshotSeq, snapshotSeq, usedSnapshot = true, recoveryReason = reason)
   }
 
-  private fun applyEvents(previousItems: List<ClipHistoryItem>, events: List<JSONObject>): List<ClipHistoryItem> {
+  private suspend fun applyEvents(
+    previousItems: List<ClipHistoryItem>,
+    events: List<JSONObject>,
+    serverUrl: String?,
+    token: String?,
+  ): List<ClipHistoryItem> {
     val itemsByHash = previousItems.associateBy { it.contentHash }.toMutableMap()
     for (event in events) {
       val serverSeq = event.optLong("server_seq", -1)
@@ -212,18 +227,47 @@ class SyncEngine(
         "item_upsert" -> {
           val payload = event.optJSONObject("payload") ?: throw SyncRecoveryRequired("missing_payload")
           if (payload.length() == 0) throw SyncRecoveryRequired("missing_payload")
+          if (!payload.hasValidThumbnailShapeForItemType(event.optString("item_type"))) {
+            throw SyncRecoveryRequired("invalid_thumbnail_payload")
+          }
           val incoming = ClipHistoryItem.fromServerEvent(event) ?: throw SyncRecoveryRequired("malformed_payload")
           val previous = itemsByHash[incoming.contentHash]
           val merged =
             incoming
+              .withCachedThumbnail(serverUrl, token)
               .copy(copyCount = (previous?.copyCount ?: 0) + incoming.copyCount)
               .preservingDownloadedPayload(previous)
           itemsByHash[incoming.contentHash] = merged
+        }
+        "item_payload_asset_update" -> {
+          if (event.optString("item_type") != "image") {
+            throw SyncRecoveryRequired("payload_asset_update_invalid_item_type")
+          }
+          val contentHash = event.optString("content_hash").takeIf(String::isNotBlank)
+            ?: throw SyncRecoveryRequired("missing_content_hash")
+          val previous = itemsByHash[contentHash] ?: throw SyncRecoveryRequired("missing_prior_item")
+          if (previous.type != ClipItemType.Image) throw SyncRecoveryRequired("payload_update_type_mismatch")
+          if (!event.isNull("copy_count_delta")) throw SyncRecoveryRequired("payload_update_copy_count_delta")
+          val payload = event.optJSONObject("payload") ?: throw SyncRecoveryRequired("missing_payload")
+          val assetId = payload.payloadAssetUpdateAssetId()
+          itemsByHash[contentHash] =
+            previous.copy(
+              assetId = assetId,
+              payloadState = if (previous.localUri.isNullOrBlank()) PayloadState.RemoteOnly else PayloadState.Ready,
+              transferState = if (previous.localUri.isNullOrBlank()) previous.transferState else TransferState.Ready,
+            )
         }
         else -> throw SyncRecoveryRequired("unknown_event_type")
       }
     }
     return itemsByHash.values.sortedByDescending { it.copiedAtMillis }
+  }
+
+  private suspend fun ClipHistoryItem.withCachedThumbnail(serverUrl: String?, token: String?): ClipHistoryItem {
+    if (serverUrl.isNullOrBlank() || token.isNullOrBlank()) return this
+    if (thumbnailDigest.isNullOrBlank() || thumbnailUri != null) return this
+    val cachedUri = thumbnailCache.cacheThumbnail(serverUrl, token, this) ?: return this
+    return copy(thumbnailUri = cachedUri)
   }
 
   private fun validateEventOrder(events: List<JSONObject>) {
@@ -244,7 +288,19 @@ class SyncEngine(
 internal fun JsonObject.toJSONObject(): JSONObject = JSONObject(toString())
 
 internal fun JSONArray?.toSnapshotItems(): List<ClipHistoryItem> =
-  if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it)?.let(ClipHistoryItem::fromServerSnapshot) }
+  if (this == null) {
+    emptyList()
+  } else {
+    (0 until length()).mapNotNull { index ->
+      optJSONObject(index)?.let { item ->
+        val payload = item.optJSONObject("payload") ?: JSONObject()
+        if (!payload.hasValidThumbnailShapeForItemType(item.optString("item_type"))) {
+          throw SyncRecoveryRequired("invalid_thumbnail_payload")
+        }
+        ClipHistoryItem.fromServerSnapshot(item)
+      }
+    }
+  }
 
 internal fun JSONArray?.contentHashes(): Set<String> {
   if (this == null) return emptySet()
@@ -255,6 +311,9 @@ private fun JSONArray?.eventObjects(): List<JSONObject> {
   if (this == null) return emptyList()
   return (0 until length()).mapNotNull { optJSONObject(it) }
 }
+
+private fun JSONObject.optNullableString(name: String): String? =
+  if (has(name) && !isNull(name)) optString(name).takeIf { it.isNotBlank() } else null
 
 internal fun ClipHistoryItem.toSyncPushEventRequest(deviceId: String): SyncPushEventRequest {
   val itemType =
@@ -317,7 +376,7 @@ private fun ClipHistoryItem.syncPushPayload(itemType: ClipItemType): JsonObject 
   }
 }
 
-private fun stableAndroidClientEventId(deviceId: String, contentHash: String, copiedAtMillis: Long): String {
+internal fun stableAndroidClientEventId(deviceId: String, contentHash: String, copiedAtMillis: Long): String {
   val digest = blake3Hex("$deviceId|$contentHash|$copiedAtMillis")
   return "android-upsert-${digest.take(32)}"
 }
@@ -329,9 +388,80 @@ private fun blake3Hex(value: String): String =
     .hash(value.toByteArray(Charsets.UTF_8))
     .joinToString("") { byte -> "%02x".format(Locale.US, byte.toInt() and 0xff) }
 
-private fun isCanonicalBlake3ContentHash(value: String): Boolean {
+internal fun isCanonicalBlake3ContentHash(value: String): Boolean {
   val hex = value.removePrefix("blake3:")
   return value.startsWith("blake3:") &&
     hex.length == 64 &&
     hex.all { character -> character in '0'..'9' || character in 'a'..'f' }
 }
+
+internal fun JSONObject.payloadAssetUpdateAssetId(): String {
+  val keys = keys().asSequence().toSet()
+  if (keys.any { it != "payload_asset_id" && it != "asset_id" }) {
+    throw SyncRecoveryRequired("invalid_payload_asset_update_payload")
+  }
+  val assetId =
+    requiredPayloadAssetUpdateString("payload_asset_id")
+      ?: throw SyncRecoveryRequired("invalid_payload_asset_update_payload")
+  if (!isStrictP2pAssetId(assetId)) throw SyncRecoveryRequired("invalid_payload_asset_update_payload")
+  if (has("asset_id")) {
+    val alias =
+      requiredPayloadAssetUpdateString("asset_id")
+        ?: throw SyncRecoveryRequired("invalid_payload_asset_update_payload")
+    if (alias != assetId) {
+      throw SyncRecoveryRequired("invalid_payload_asset_update_payload")
+    }
+  }
+  return assetId
+}
+
+private fun JSONObject.requiredPayloadAssetUpdateString(name: String): String? {
+  if (!has(name) || isNull(name)) return null
+  return optString(name).trim().takeIf(String::isNotEmpty)
+}
+
+internal fun JSONObject.hasValidThumbnailShapeForItemType(itemType: String?): Boolean {
+  val thumbnailKeys =
+    listOf(
+      "thumbnail_digest",
+      "thumbnail_mime_type",
+      "thumbnail_byte_count",
+      "thumbnail_width",
+      "thumbnail_height",
+    )
+  val presentCount = thumbnailKeys.count { has(it) }
+  if (presentCount == 0) return true
+  if (itemType != "image" || presentCount != thumbnailKeys.size) return false
+  return isCanonicalBlake3Digest(optString("thumbnail_digest")) &&
+    optNullableString("thumbnail_mime_type") != null &&
+    hasStrictPositiveInteger("thumbnail_byte_count") &&
+    hasStrictPositiveInteger("thumbnail_width") &&
+    hasStrictPositiveInteger("thumbnail_height")
+}
+
+private fun JSONObject.hasStrictPositiveInteger(name: String): Boolean {
+  val value = opt(name)
+  return when (value) {
+    is Byte -> value.toLong() > 0
+    is Short -> value.toLong() > 0
+    is Int -> value.toLong() > 0
+    is Long -> value > 0
+    else -> false
+  }
+}
+
+internal fun isStrictP2pAssetId(value: String): Boolean {
+  val sha256Hex = value.removePrefix("sha256:")
+  if (value.startsWith("sha256:")) return isLowerHex(sha256Hex, 64)
+  val blake3 = value.removePrefix("blake3:")
+  if (!value.startsWith("blake3:")) return false
+  return isLowerHex(blake3, 64) || isIrohBlake3Base32(blake3)
+}
+
+private fun isLowerHex(value: String, expectedLength: Int): Boolean =
+  value.length == expectedLength &&
+    value.all { character -> character in '0'..'9' || character in 'a'..'f' }
+
+private fun isIrohBlake3Base32(value: String): Boolean =
+  value.length == 52 &&
+    value.all { character -> character in 'a'..'z' || character in '2'..'7' }

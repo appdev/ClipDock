@@ -14,7 +14,7 @@ internal const val CLIPDOCK_CLIP_SOURCE = "clipdock"
 internal class AndroidClipboardCaptureMonitor(
   context: Context,
   private val scope: CoroutineScope,
-  private val upload: suspend (ClipHistoryItem) -> LocalSyncPushResult,
+  private val upload: suspend (ClipData, Long) -> LocalSyncPushResult?,
   private val logger: SyncEventLogger = AndroidSyncEventLogger,
 ) {
   private val clipboard = context.applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -45,16 +45,16 @@ internal class AndroidClipboardCaptureMonitor(
       logger.log("local_clipboard_capture_ignored reason=self_copy")
       return
     }
-    val item = clip.toLocalClipboardHistoryItem(System.currentTimeMillis())
-    if (item == null) {
-      logger.log("local_clipboard_capture_ignored reason=unsupported_clip")
-      return
-    }
-    logger.log("local_clipboard_capture_upload_start type=${item.type.wireName}")
+    val copiedAtMillis = System.currentTimeMillis()
+    logger.log("local_clipboard_capture_upload_start")
     scope.launch {
-      runCatching { upload(item) }
+      runCatching { upload(clip, copiedAtMillis) }
         .onSuccess { result ->
-          logger.log("local_clipboard_capture_upload_success content_hash=${result.contentHash}")
+          if (result == null) {
+            logger.log("local_clipboard_capture_ignored reason=unsupported_clip")
+          } else {
+            logger.log("local_clipboard_capture_upload_success content_hash=${result.contentHash}")
+          }
         }
         .onFailure { throwable ->
           logger.log("local_clipboard_capture_upload_failed error=${throwable.toSyncLogErrorLabel()}")
@@ -87,6 +87,11 @@ internal fun localClipboardTextItem(rawText: String?, copiedAtMillis: Long): Cli
     sourceName = "Android",
     assetId = null,
     thumbnailUri = null,
+    thumbnailDigest = null,
+    thumbnailMimeType = null,
+    thumbnailByteCount = null,
+    thumbnailWidth = null,
+    thumbnailHeight = null,
     localUri = null,
     payloadState = PayloadState.Ready,
     transferState = TransferState.Ready,

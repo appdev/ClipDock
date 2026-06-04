@@ -4,10 +4,11 @@ use sqlx::{Row, SqlitePool};
 
 use crate::db;
 
-pub const MIGRATION_VERSION: i64 = 3;
+pub const MIGRATION_VERSION: i64 = 4;
 const V1_MIGRATION_VERSION: i64 = 1;
 const V2_MIGRATION_VERSION: i64 = 2;
 const V3_MIGRATION_VERSION: i64 = 3;
+const V4_MIGRATION_VERSION: i64 = 4;
 
 const MIGRATION_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS sync_groups (
@@ -221,6 +222,15 @@ const MIGRATION_V3_SQL: &[&str] = &[
        END"#,
 ];
 
+const MIGRATION_V4_SQL: &[&str] = &[
+    r#"ALTER TABLE sync_assets ADD COLUMN width_px INTEGER"#,
+    r#"ALTER TABLE sync_assets ADD COLUMN height_px INTEGER"#,
+    r#"DELETE FROM sync_item_assets WHERE role = 'thumbnail'"#,
+    r#"CREATE UNIQUE INDEX IF NOT EXISTS ux_sync_item_assets_one_thumbnail_per_item
+       ON sync_item_assets(sync_group_id, content_hash)
+       WHERE role = 'thumbnail'"#,
+];
+
 pub fn migration_checksum() -> String {
     let digest = Sha256::digest(MIGRATION_SQL.as_bytes());
     hex::encode(digest)
@@ -233,6 +243,11 @@ fn migration_v2_checksum() -> String {
 
 fn migration_v3_checksum() -> String {
     let digest = Sha256::digest(MIGRATION_V3_SQL.join("\n").as_bytes());
+    hex::encode(digest)
+}
+
+fn migration_v4_checksum() -> String {
+    let digest = Sha256::digest(MIGRATION_V4_SQL.join("\n").as_bytes());
     hex::encode(digest)
 }
 
@@ -303,6 +318,26 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
             V3_MIGRATION_VERSION,
             MIGRATION_V3_SQL,
             migration_v3_checksum(),
+        )
+        .await?;
+    }
+
+    if let Some(row) = sqlx::query("SELECT checksum FROM sync_schema_migrations WHERE version = ?")
+        .bind(V4_MIGRATION_VERSION)
+        .fetch_optional(pool)
+        .await?
+    {
+        let stored: String = row.try_get("checksum")?;
+        let expected = migration_v4_checksum();
+        if stored != expected {
+            return Err(anyhow!("migration checksum mismatch for version 4"));
+        }
+    } else {
+        apply_migration_steps(
+            pool,
+            V4_MIGRATION_VERSION,
+            MIGRATION_V4_SQL,
+            migration_v4_checksum(),
         )
         .await?;
     }

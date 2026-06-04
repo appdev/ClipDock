@@ -89,7 +89,9 @@ class LiveSyncE2EInstrumentedTest {
           .put("source_app_name", "macOS E2E"),
     )
 
-    val fileCopy = repository.quickSyncAndCopy(timeoutMillis = 30_000)
+    items = repository.syncNow()
+    val remoteFile = items.first { it.contentHash == fileHash }
+    val fileCopy = repository.useItem(remoteFile, timeoutMillis = 30_000)
     assertTrue(fileCopy is QuickCopyResult.Copied)
     val fileItem = (fileCopy as QuickCopyResult.Copied).item
     assertEquals(fileHash, fileItem.contentHash)
@@ -113,7 +115,9 @@ class LiveSyncE2EInstrumentedTest {
           .put("source_app_name", "macOS E2E"),
     )
 
-    val imageCopy = repository.quickSyncAndCopy(timeoutMillis = 30_000)
+    items = repository.syncNow()
+    val remoteImage = items.first { it.contentHash == imageHash }
+    val imageCopy = repository.useItem(remoteImage, timeoutMillis = 30_000)
     assertTrue(imageCopy is QuickCopyResult.Copied)
     val imageItem = (imageCopy as QuickCopyResult.Copied).item
     assertEquals(imageHash, imageItem.contentHash)

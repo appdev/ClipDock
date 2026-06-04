@@ -1,6 +1,6 @@
 [package]
 name = "clipdock-sync-server"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 publish = false
 
@@ -11,6 +11,8 @@ axum = { version = "0.7", features = ["ws"] }
 base64 = "0.22"
 blake3 = "1"
 bytes = "1"
+clipdock_sync_contract = { path = "../shared/rust/clipdock_sync_contract" }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 hex = "0.4"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }

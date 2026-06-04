@@ -492,6 +492,9 @@ public final class SyncInboundCoordinator {
             rustError.code == "ordering_regression" ||
             rustError.code == "invalid_sync_event" ||
             rustError.code == "sync_identity_mismatch" {
+            if rustError.code == "invalid_sync_event" {
+                return true
+            }
             let cursor = (try? readProgress(configuration: configuration).cursor) ?? -1
             let failures = (deltaFailuresByCursor[cursor] ?? 0) + 1
             deltaFailuresByCursor[cursor] = failures

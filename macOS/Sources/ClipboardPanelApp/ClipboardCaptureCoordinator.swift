@@ -279,6 +279,7 @@ public struct ClipboardSyncCandidate: Equatable, Sendable {
     public let payload: [String: SyncEventPayloadValue]
     public let copyCountDelta: Int64
     public let assetRegistration: SyncOutboxAssetRegistration?
+    public let thumbnailUpload: SyncOutboxThumbnailUpload?
 
     public init(
         itemId: String,
@@ -286,7 +287,8 @@ public struct ClipboardSyncCandidate: Equatable, Sendable {
         itemType: String,
         payload: [String: SyncEventPayloadValue],
         copyCountDelta: Int64 = 1,
-        assetRegistration: SyncOutboxAssetRegistration? = nil
+        assetRegistration: SyncOutboxAssetRegistration? = nil,
+        thumbnailUpload: SyncOutboxThumbnailUpload? = nil
     ) {
         self.itemId = itemId
         self.contentHash = contentHash
@@ -294,6 +296,7 @@ public struct ClipboardSyncCandidate: Equatable, Sendable {
         self.payload = payload
         self.copyCountDelta = copyCountDelta
         self.assetRegistration = assetRegistration
+        self.thumbnailUpload = thumbnailUpload
     }
 }
 

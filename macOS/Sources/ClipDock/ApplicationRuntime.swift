@@ -87,6 +87,13 @@ private struct RuntimeSyncPushConfiguration: Sendable {
 
 private enum RuntimeSyncOutboxError: Error, Equatable {
     case invalidAssetKind(String)
+    case assetFileUnavailable(String)
+    case assetMetadataMismatch(String)
+}
+
+private struct RuntimePreparedSyncPushEvent: Sendable {
+    let pushEvent: SyncPushEvent
+    let followUpEvent: SyncOutboxEvent?
 }
 
 enum StatusItemClickActionPlanner {
@@ -708,7 +715,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             copyCountDelta: candidate.copyCountDelta,
             createdAt: nowMs,
             nextAttemptAt: nowMs + SyncOutboxTiming.initialAttemptDelayMs,
-            assetRegistration: candidate.assetRegistration
+            assetRegistration: candidate.assetRegistration,
+            thumbnailUpload: candidate.thumbnailUpload
         )
 
         Task { @MainActor [weak self] in
@@ -811,20 +819,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let dueEvents = await outbox.dueBatch(nowMs: SyncOutboxClock.nowMs(), maxBatchSize: 50)
-        await refreshSyncCardStatusesFromOutbox()
-        guard !dueEvents.isEmpty else {
+        guard let sendUnit = await outbox.nextDueSendUnit(nowMs: SyncOutboxClock.nowMs(), maxNormalBatchSize: 50) else {
+            await refreshSyncCardStatusesFromOutbox()
             await scheduleNextSyncOutboxDrainIfNeeded()
             return
         }
+        await refreshSyncCardStatusesFromOutbox()
 
         let minimumSpinnerUntilMs = SyncOutboxClock.nowMs() + 300
         var pushEvents: [SyncPushEvent] = []
+        var followUpEvents: [SyncOutboxEvent] = []
         var providerFailedEventIDs = Set<String>()
 
-        for event in dueEvents {
+        for event in sendUnit.events {
             do {
-                pushEvents.append(try await preparedPushEvent(from: event, configuration: configuration))
+                let prepared = try await preparedPushEvent(from: event, configuration: configuration)
+                pushEvents.append(prepared.pushEvent)
+                if let followUpEvent = prepared.followUpEvent {
+                    followUpEvents.append(followUpEvent)
+                }
             } catch {
                 providerFailedEventIDs.insert(event.clientEventId)
                 ClipDockPerformanceLog.event(
@@ -854,17 +867,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 events: pushEvents
             )
             await waitForMinimumSpinnerDisplay(untilMs: minimumSpinnerUntilMs)
-            await outbox.complete(clientEventIds: Set(pushEvents.map(\.clientEventId)))
+            let completedIDs = Set(pushEvents.map(\.clientEventId))
+            if followUpEvents.isEmpty {
+                await outbox.complete(clientEventIds: completedIDs)
+            } else {
+                do {
+                    try await outbox.completeAndEnqueueAtomically(
+                        clientEventIds: completedIDs,
+                        followUpEvents: followUpEvents
+                    )
+                } catch {
+                    await outbox.fail(
+                        clientEventIds: completedIDs,
+                        nowMs: SyncOutboxClock.nowMs()
+                    )
+                    ClipDockPerformanceLog.event(
+                        "sync.outbox.completeAndEnqueueFailed",
+                        detail: "events=\(completedIDs.count) followUps=\(followUpEvents.count) error=\(syncErrorSummary(error))"
+                    )
+                }
+            }
             await refreshSyncCardStatusesFromOutbox()
         } catch {
             await waitForMinimumSpinnerDisplay(untilMs: minimumSpinnerUntilMs)
             let failedIDs = Set(pushEvents.map(\.clientEventId))
-            let retryOverride = retryDelayOverrideMs(forSyncPushError: error)
-            await outbox.fail(
-                clientEventIds: failedIDs,
-                nowMs: SyncOutboxClock.nowMs(),
-                retryDelayOverrideMs: retryOverride
-            )
+            if sendUnit.kind == .payloadAssetUpdate,
+               syncPayloadAssetUpdateErrorIsTerminal(error) {
+                await outbox.complete(clientEventIds: failedIDs)
+            } else {
+                let retryOverride = retryDelayOverrideMs(forSyncPushError: error)
+                await outbox.fail(
+                    clientEventIds: failedIDs,
+                    nowMs: SyncOutboxClock.nowMs(),
+                    retryDelayOverrideMs: retryOverride
+                )
+            }
             if syncPushErrorRequiresAuthPause(error) {
                 syncOutboxPausedForAuthFailure = true
             }
@@ -881,42 +918,167 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func preparedPushEvent(
         from event: SyncOutboxEvent,
         configuration: RuntimeSyncPushConfiguration
-    ) async throws -> SyncPushEvent {
+    ) async throws -> RuntimePreparedSyncPushEvent {
         var payload = event.payload
-        if event.type == "item_upsert",
-           let assetRegistration = event.assetRegistration,
-           payload?["payload_asset_id"] == nil {
-            let kind = try syncP2PAssetKind(from: assetRegistration.kind)
-            let fileURL = syncAssetFileURL(
-                from: assetRegistration.filePath,
-                appSupportURL: configuration.appSupportURL
+        if event.type == "item_upsert" {
+            payload = try await payloadWithUploadedThumbnail(
+                event: event,
+                payload: payload,
+                configuration: configuration
             )
-            let registration = try await registerSyncP2PProvider(
-                fileURL: fileURL,
-                kind: kind,
-                mimeType: assetRegistration.mimeType,
-                preferences: configuration.preferences
-            )
-            var resolvedPayload = payload ?? [:]
-            resolvedPayload["payload_asset_id"] = .string(registration.provided.assetID)
-            resolvedPayload["asset_id"] = .string(registration.provided.assetID)
-            if resolvedPayload["byte_count"] == nil {
-                resolvedPayload["byte_count"] = .int(registration.provided.byteCount)
+            let hasThumbnail = payload?["thumbnail_digest"] != nil
+            if event.assetRegistration != nil,
+               payload?["payload_asset_id"] == nil {
+                do {
+                    payload = try await payloadWithRegisteredAsset(
+                        event: event,
+                        payload: payload,
+                        configuration: configuration
+                    )
+                } catch {
+                    guard event.itemType == "image", hasThumbnail else {
+                        throw error
+                    }
+                    return RuntimePreparedSyncPushEvent(
+                        pushEvent: pushEvent(from: event, payload: payload),
+                        followUpEvent: payloadAssetFollowUpEvent(from: event)
+                    )
+                }
             }
-            payload = resolvedPayload
-            await syncEventOutbox?.updatePayload(
-                clientEventId: event.clientEventId,
-                payload: resolvedPayload
+        } else if event.type == "item_payload_asset_update" {
+            payload = try await payloadWithRegisteredAsset(
+                event: event,
+                payload: payload,
+                configuration: configuration,
+                forceRegistration: true
             )
         }
 
-        return SyncPushEvent(
+        return RuntimePreparedSyncPushEvent(
+            pushEvent: pushEvent(from: event, payload: payload),
+            followUpEvent: nil
+        )
+    }
+
+    private func pushEvent(
+        from event: SyncOutboxEvent,
+        payload: [String: SyncEventPayloadValue]?
+    ) -> SyncPushEvent {
+        SyncPushEvent(
             clientEventId: event.clientEventId,
             eventType: event.type,
             contentHash: event.contentHash,
             itemType: event.itemType,
             payload: payload,
             copyCountDelta: event.copyCountDelta
+        )
+    }
+
+    private func payloadWithUploadedThumbnail(
+        event: SyncOutboxEvent,
+        payload: [String: SyncEventPayloadValue]?,
+        configuration: RuntimeSyncPushConfiguration
+    ) async throws -> [String: SyncEventPayloadValue]? {
+        guard event.itemType == "image",
+              payload?["thumbnail_digest"] == nil,
+              let thumbnailUpload = event.thumbnailUpload else {
+            return payload
+        }
+
+        let fileURL = syncAssetFileURL(
+            from: thumbnailUpload.filePath,
+            appSupportURL: configuration.appSupportURL
+        )
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            throw RuntimeSyncOutboxError.assetFileUnavailable(thumbnailUpload.filePath)
+        }
+        guard data.count == thumbnailUpload.byteCount else {
+            throw RuntimeSyncOutboxError.assetMetadataMismatch(thumbnailUpload.filePath)
+        }
+        let digest = "blake3:\(rustCoreClient.blake3Digest(bytes: data))"
+        let uploaded = try await syncServerClient.uploadAsset(
+            serverURL: configuration.serverURL,
+            token: configuration.token,
+            digest: digest,
+            kind: "thumbnail",
+            mimeType: thumbnailUpload.mimeType,
+            width: thumbnailUpload.width,
+            height: thumbnailUpload.height,
+            bytes: data
+        )
+        guard uploaded.digest == digest,
+              uploaded.kind == "thumbnail",
+              uploaded.mimeType == thumbnailUpload.mimeType,
+              uploaded.sizeBytes == Int64(thumbnailUpload.byteCount),
+              uploaded.width == Int64(thumbnailUpload.width),
+              uploaded.height == Int64(thumbnailUpload.height) else {
+            throw RuntimeSyncOutboxError.assetMetadataMismatch(thumbnailUpload.filePath)
+        }
+
+        var resolvedPayload = payload ?? [:]
+        resolvedPayload["thumbnail_digest"] = .string(digest)
+        resolvedPayload["thumbnail_mime_type"] = .string(thumbnailUpload.mimeType)
+        resolvedPayload["thumbnail_byte_count"] = .int(Int64(thumbnailUpload.byteCount))
+        resolvedPayload["thumbnail_width"] = .int(Int64(thumbnailUpload.width))
+        resolvedPayload["thumbnail_height"] = .int(Int64(thumbnailUpload.height))
+        await syncEventOutbox?.updatePayload(
+            clientEventId: event.clientEventId,
+            payload: resolvedPayload
+        )
+        return resolvedPayload
+    }
+
+    private func payloadWithRegisteredAsset(
+        event: SyncOutboxEvent,
+        payload: [String: SyncEventPayloadValue]?,
+        configuration: RuntimeSyncPushConfiguration,
+        forceRegistration: Bool = false
+    ) async throws -> [String: SyncEventPayloadValue]? {
+        guard let assetRegistration = event.assetRegistration else {
+            return payload
+        }
+        if !forceRegistration, payload?["payload_asset_id"] != nil {
+            return payload
+        }
+
+        let kind = try syncP2PAssetKind(from: assetRegistration.kind)
+        let fileURL = syncAssetFileURL(
+            from: assetRegistration.filePath,
+            appSupportURL: configuration.appSupportURL
+        )
+        let registration = try await registerSyncP2PProvider(
+            fileURL: fileURL,
+            kind: kind,
+            mimeType: assetRegistration.mimeType,
+            preferences: configuration.preferences
+        )
+        var resolvedPayload = payload ?? [:]
+        resolvedPayload["payload_asset_id"] = .string(registration.provided.assetID)
+        resolvedPayload["asset_id"] = .string(registration.provided.assetID)
+        if event.type == "item_upsert", resolvedPayload["byte_count"] == nil {
+            resolvedPayload["byte_count"] = .int(registration.provided.byteCount)
+        }
+        await syncEventOutbox?.updatePayload(
+            clientEventId: event.clientEventId,
+            payload: resolvedPayload
+        )
+        return resolvedPayload
+    }
+
+    private func payloadAssetFollowUpEvent(from event: SyncOutboxEvent) -> SyncOutboxEvent {
+        let nowMs = SyncOutboxClock.nowMs()
+        return SyncOutboxEvent(
+            type: "item_payload_asset_update",
+            contentHash: event.contentHash,
+            itemType: "image",
+            payload: nil,
+            copyCountDelta: nil,
+            createdAt: nowMs,
+            nextAttemptAt: nowMs,
+            assetRegistration: event.assetRegistration
         )
     }
 
@@ -982,6 +1144,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         return SyncOutboxTiming.retryAfterItemDeletedConflictMs
+    }
+
+    private func syncPayloadAssetUpdateErrorIsTerminal(_ error: Error) -> Bool {
+        guard let clientError = error as? SyncServerClientError,
+              case .httpStatus(_, let code) = clientError else {
+            return false
+        }
+        return [
+            "payload_asset_update_must_be_single_event",
+            "payload_asset_update_copy_count_delta_not_allowed",
+            "payload_asset_update_invalid_item_type",
+            "invalid_payload_asset_update_payload",
+            "payload_asset_update_item_missing",
+            "payload_asset_update_item_deleted",
+            "payload_asset_update_item_type_mismatch",
+            "payload_asset_update_provider_wrong_device",
+            "payload_asset_update_provider_wrong_kind"
+        ].contains(code)
     }
 
     private func shouldAcceptPanelToggle() -> Bool {
@@ -2548,6 +2728,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        if let outboxError = error as? RuntimeSyncOutboxError {
+            switch outboxError {
+            case .invalidAssetKind(let kind):
+                return AppLocalization.format("sync.error.invalidAssetKind", defaultValue: "同步资产类型无效：%@", kind)
+            case .assetFileUnavailable(let path):
+                return AppLocalization.format("sync.error.assetFileUnavailable", defaultValue: "同步资产文件不可用：%@", path)
+            case .assetMetadataMismatch(let path):
+                return AppLocalization.format("sync.error.assetMetadataMismatch", defaultValue: "同步资产元数据不匹配：%@", path)
+            }
+        }
+
         if let rustError = error as? RustCoreError {
             return rustError.messageKey.isEmpty ? rustError.code : rustError.messageKey
         }
@@ -2878,11 +3069,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .success(let result):
                     self.applyCaptureResult(self.captureHandlingResult(for: result))
                     if result.status == "ready" {
+                        let thumbnailUpload = await Task.detached(priority: .utility) {
+                            imageAssetProvider.syncThumbnailUpload(for: pendingImage.pendingImage)
+                        }.value
                         self.enqueueSyncCandidateIfNeeded(self.syncCandidateForCompletedPendingImage(
                             result: result,
                             pendingCapture: pendingCapture,
                             pendingImage: pendingImage.pendingImage,
                             completedImage: payload.completedImage,
+                            thumbnailUpload: thumbnailUpload,
                             source: source
                         ))
                     }
@@ -2948,6 +3143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingCapture: RustPendingImageCaptureResult,
         pendingImage: ClipboardPendingImageAsset,
         completedImage: ClipboardCompletedPendingImageAsset,
+        thumbnailUpload: SyncOutboxThumbnailUpload?,
         source: ClipboardCaptureSource?
     ) -> ClipboardSyncCandidate? {
         let contentHash = result.contentHash?.nonEmptyString ?? pendingCapture.contentHash
@@ -2974,7 +3170,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 filePath: pendingImage.reservedPayloadRelativePath,
                 kind: SyncP2PAssetKind.imagePayload.rawValue,
                 mimeType: completedImage.mimeType
-            )
+            ),
+            thumbnailUpload: thumbnailUpload
         )
     }
 

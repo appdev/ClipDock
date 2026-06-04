@@ -2,6 +2,7 @@ package com.apkdv.clipdock.p2p
 
 import android.content.Context
 import android.os.Looper
+import android.util.Base64
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,6 +32,36 @@ data class P2pDownloadResult(
   val localBytes: Long,
   val elapsedMillis: Long,
 )
+
+data class P2pThumbnailEncodeResult(
+  val bytes: ByteArray,
+  val width: Int,
+  val height: Int,
+  val quality: Int,
+  val score: Double,
+  val selectedTier: String,
+) {
+  override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is P2pThumbnailEncodeResult) return false
+    return bytes.contentEquals(other.bytes) &&
+      width == other.width &&
+      height == other.height &&
+      quality == other.quality &&
+      score == other.score &&
+      selectedTier == other.selectedTier
+  }
+
+  override fun hashCode(): Int {
+    var result = bytes.contentHashCode()
+    result = 31 * result + width
+    result = 31 * result + height
+    result = 31 * result + quality
+    result = 31 * result + score.hashCode()
+    result = 31 * result + selectedTier.hashCode()
+    return result
+  }
+}
 
 class NativeP2pTransport(context: Context) {
   private val appContext = context.applicationContext
@@ -76,6 +107,24 @@ class NativeP2pTransport(context: Context) {
       }
     }
 
+  suspend fun encodeAdaptiveThumbnailWebp(
+    rgba: ByteArray,
+    width: Int,
+    height: Int,
+    normalTargetBytes: Int,
+    detailTargetBytes: Int,
+    maxBytes: Int,
+  ): P2pThumbnailEncodeResult =
+    withContext(Dispatchers.IO) {
+      runNativeP2pCall("nativeEncodeAdaptiveThumbnailWebp") {
+        NativeP2pBridge.ensureLoaded()
+        NativeP2pBridge
+          .nativeEncodeAdaptiveThumbnailWebp(rgba, width, height, normalTargetBytes, detailTargetBytes, maxBytes)
+          .parseNativeEnvelope()
+          .toThumbnailEncodeResult()
+      }
+    }
+
   suspend fun shutdown() =
     withContext(Dispatchers.IO) {
       runNativeP2pCall("nativeShutdown") {
@@ -107,6 +156,16 @@ object NativeP2pBridge {
   @JvmStatic external fun nativeImportBlob(path: String): String
 
   @JvmStatic external fun nativeDownloadBlob(ticket: String, outputPath: String): String
+
+  @JvmStatic
+  external fun nativeEncodeAdaptiveThumbnailWebp(
+    rgba: ByteArray,
+    width: Int,
+    height: Int,
+    normalTargetBytes: Int,
+    detailTargetBytes: Int,
+    maxBytes: Int,
+  ): String
 
   @JvmStatic external fun nativeShutdown(): String
 }
@@ -152,6 +211,16 @@ private fun JSONObject.toDownloadResult(): P2pDownloadResult =
     downloadedBytes = optLong("downloaded_bytes"),
     localBytes = optLong("local_bytes"),
     elapsedMillis = optLong("elapsed_ms"),
+  )
+
+private fun JSONObject.toThumbnailEncodeResult(): P2pThumbnailEncodeResult =
+  P2pThumbnailEncodeResult(
+    bytes = Base64.decode(optString("bytes_base64"), Base64.DEFAULT),
+    width = optInt("width"),
+    height = optInt("height"),
+    quality = optInt("quality"),
+    score = optDouble("score"),
+    selectedTier = optString("selected_tier"),
   )
 
 private fun JSONObject.optNullableString(name: String): String? =

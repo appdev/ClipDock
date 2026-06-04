@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use base64::Engine;
 use iroh::{protocol::Router, Endpoint, NodeAddr};
 use iroh_blobs::{
     net_protocol::Blobs,
@@ -15,7 +16,7 @@ use iroh_blobs::{
     util::SetTagOption,
 };
 use jni::{
-    objects::{JClass, JString},
+    objects::{JByteArray, JClass, JString},
     sys::jstring,
     JNIEnv,
 };
@@ -58,6 +59,16 @@ struct DownloadResult {
     downloaded_bytes: u64,
     local_bytes: u64,
     elapsed_ms: u128,
+}
+
+#[derive(Debug, Serialize)]
+struct ThumbnailEncodeResult {
+    bytes_base64: String,
+    width: u32,
+    height: u32,
+    quality: u8,
+    score: f64,
+    selected_tier: String,
 }
 
 struct P2pNode {
@@ -287,6 +298,41 @@ fn download_blob(ticket: &str, output_path: &str) -> Result<DownloadResult> {
         .download_blob(ticket, PathBuf::from(output_path))
 }
 
+fn encode_adaptive_thumbnail(
+    rgba: &[u8],
+    width: i32,
+    height: i32,
+    normal_target_bytes: i32,
+    detail_target_bytes: i32,
+    max_bytes: i32,
+) -> Result<ThumbnailEncodeResult> {
+    let width = u32::try_from(width).map_err(|_| anyhow!("invalid width"))?;
+    let height = u32::try_from(height).map_err(|_| anyhow!("invalid height"))?;
+    let normal_target =
+        usize::try_from(normal_target_bytes).map_err(|_| anyhow!("invalid normal target"))?;
+    let detail_target =
+        usize::try_from(detail_target_bytes).map_err(|_| anyhow!("invalid detail target"))?;
+    let max_bytes = usize::try_from(max_bytes).map_err(|_| anyhow!("invalid max bytes"))?;
+    let candidate = clipdock_thumbnail_codec::encode_adaptive_thumbnail_webp_rgba(
+        rgba,
+        width,
+        height,
+        normal_target,
+        detail_target,
+        max_bytes,
+    )
+    .map_err(|code| anyhow!(code))?
+    .ok_or_else(|| anyhow!("no_candidate"))?;
+    Ok(ThumbnailEncodeResult {
+        bytes_base64: base64::engine::general_purpose::STANDARD.encode(candidate.bytes),
+        width: candidate.width,
+        height: candidate.height,
+        quality: candidate.quality,
+        score: candidate.score,
+        selected_tier: candidate.tier,
+    })
+}
+
 fn shutdown_node() -> Result<()> {
     let node = {
         let mut guard = NODE.lock().map_err(|_| anyhow!("p2p node lock poisoned"))?;
@@ -374,6 +420,33 @@ pub extern "system" fn Java_com_apkdv_clipdock_p2p_NativeP2pBridge_nativeDownloa
         env_string(&mut env, output_path)
             .and_then(|output_path| download_blob(&ticket, &output_path))
     });
+    jni_response(&mut env, response_json(result))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_apkdv_clipdock_p2p_NativeP2pBridge_nativeEncodeAdaptiveThumbnailWebp(
+    mut env: JNIEnv,
+    _class: JClass,
+    rgba: JByteArray,
+    width: i32,
+    height: i32,
+    normal_target_bytes: i32,
+    detail_target_bytes: i32,
+    max_bytes: i32,
+) -> jstring {
+    let result = env
+        .convert_byte_array(rgba)
+        .context("failed to read RGBA bytes")
+        .and_then(|rgba| {
+            encode_adaptive_thumbnail(
+                &rgba,
+                width,
+                height,
+                normal_target_bytes,
+                detail_target_bytes,
+                max_bytes,
+            )
+        });
     jni_response(&mut env, response_json(result))
 }
 

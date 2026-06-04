@@ -1511,11 +1511,45 @@ public struct RustCoreError: Error, Equatable, Sendable {
     public let message: String
 }
 
+public struct RustAdaptiveWebPEncodeResult: Equatable, Sendable {
+    public let data: Data
+    public let width: Int
+    public let height: Int
+    public let quality: Int
+    public let score: Double
+    public let selectedTier: String
+
+    public init(
+        data: Data,
+        width: Int,
+        height: Int,
+        quality: Int,
+        score: Double,
+        selectedTier: String
+    ) {
+        self.data = data
+        self.width = width
+        self.height = height
+        self.quality = quality
+        self.score = score
+        self.selectedTier = selectedTier
+    }
+}
+
 public struct RustCoreClient: Sendable {
     public init() {}
 
     public static func activeSourceIconHeaderColorCacheVersion() -> Int64 {
         active_source_icon_header_color_cache_version()
+    }
+
+    public func blake3Digest(bytes: Data) -> String {
+        bytes.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return blake3_digest(UnsafeBufferPointer<UInt8>(start: nil, count: 0)).toString()
+            }
+            return blake3_digest(UnsafeBufferPointer(start: baseAddress, count: bytes.count)).toString()
+        }
     }
 
     public func encodeLosslessWebP(
@@ -1556,6 +1590,67 @@ public struct RustCoreClient: Sendable {
             }
 
             return .success(Data(bytes: result.bytes.as_ptr(), count: result.bytes.len()))
+        }
+    }
+
+    public func encodeAdaptiveThumbnailWebP(
+        rgbaData: Data,
+        width: Int,
+        height: Int,
+        normalTargetBytes: Int,
+        detailTargetBytes: Int,
+        maxBytes: Int
+    ) -> Result<RustAdaptiveWebPEncodeResult, RustCoreError> {
+        let expectedByteCount = width > 0 && height > 0
+            ? width.multipliedReportingOverflow(by: height)
+            : (partialValue: 0, overflow: true)
+        let expectedRGBAByteCount = expectedByteCount.overflow
+            ? (partialValue: 0, overflow: true)
+            : expectedByteCount.partialValue.multipliedReportingOverflow(by: 4)
+        guard !expectedRGBAByteCount.overflow,
+              rgbaData.count == expectedRGBAByteCount.partialValue,
+              normalTargetBytes > 0,
+              detailTargetBytes >= normalTargetBytes,
+              maxBytes >= detailTargetBytes
+        else {
+            return .failure(Self.makeError(
+                code: "invalid_input",
+                messageKey: "clipboard.error.invalid_input"
+            ))
+        }
+
+        return rgbaData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.bindMemory(to: UInt8.self).baseAddress else {
+                return .failure(Self.makeError(
+                    code: "invalid_input",
+                    messageKey: "clipboard.error.invalid_input"
+                ))
+            }
+
+            let buffer = UnsafeBufferPointer(start: baseAddress, count: rgbaData.count)
+            let result = encode_adaptive_thumbnail_webp_rgba(
+                buffer,
+                Int64(width),
+                Int64(height),
+                Int64(normalTargetBytes),
+                Int64(detailTargetBytes),
+                Int64(maxBytes)
+            )
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+
+            return .success(RustAdaptiveWebPEncodeResult(
+                data: Data(bytes: result.bytes.as_ptr(), count: result.bytes.len()),
+                width: Int(result.width),
+                height: Int(result.height),
+                quality: Int(result.quality),
+                score: result.score,
+                selectedTier: result.selected_tier.toString()
+            ))
         }
     }
 

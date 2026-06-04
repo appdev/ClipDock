@@ -8,7 +8,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 anyhow = "1.0"
+blake3 = "1"
 clipboard_core = { path = "../clipboard_core" }
+clipdock_thumbnail_codec = { path = "../../../../shared/rust/clipdock_thumbnail_codec" }
 iroh = "0.35.0"
 iroh-blobs = "0.35.0"
 rand = "0.8.5"
