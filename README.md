@@ -160,7 +160,3 @@ cd macOS && swift test
 cd macOS && cargo test --manifest-path rust/Cargo.toml
 cd Server && cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings
 ```
-
-### 文档记录
-
-Updated on 2026-06-02 by Codex.
