@@ -31,12 +31,12 @@ Image path:
 
 ## Server Contract Reflected
 
-- Create sync space: `POST /v1/sync/create`.
-- Join sync space: `POST /v1/sync/join`.
-- Generate invite: `POST /v1/sync/invites`.
-- Capabilities: `GET /v1/info`.
-- Snapshot/event sync: `GET /v1/snapshot`, `GET /v1/events`, `POST /v1/events`.
-- Preview assets: `PUT/GET /v1/assets/{digest}`.
+- Create sync space: `POST /v2/sync/create`.
+- Join sync space: `POST /v2/sync/join`.
+- Generate invite: `POST /v2/sync/invites`.
+- Capabilities: `GET /v2/info`.
+- Snapshot/event sync: `GET /v2/snapshot`, `GET /v2/events`, `POST /v2/events`.
+- Preview assets: `PUT/GET /v2/assets/{digest}`.
 - Full payload download remains an on-demand P2P path and is not represented as server-hosted full-file download.
 
 ## Screen Coverage

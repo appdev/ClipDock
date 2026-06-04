@@ -54,6 +54,20 @@ struct ClipboardCaptureCoordinatorTests {
         #expect(result == ClipboardCaptureHandlingResult(
             statusText: nil,
             shouldRefreshList: true,
+            syncCandidate: ClipboardSyncCandidate(
+                itemId: "text-1",
+                contentHash: "hash",
+                itemType: "link",
+                payload: [
+                    "url": .string("https://example.com"),
+                    "display_url": .string("example.com"),
+                    "host": .string("example.com"),
+                    "text": .string("https://example.com"),
+                    "summary": .string("https://example.com"),
+                    "source_app_name": .string("Safari"),
+                    "source_bundle_id": .string("com.apple.Safari")
+                ]
+            ),
             storageError: nil
         ))
         #expect(capturedRequest?.text == "https://example.com")
@@ -130,6 +144,15 @@ struct ClipboardCaptureCoordinatorTests {
         #expect(result == ClipboardCaptureHandlingResult(
             statusText: nil,
             shouldRefreshList: true,
+            syncCandidate: ClipboardSyncCandidate(
+                itemId: "text-1",
+                contentHash: "hash",
+                itemType: "text",
+                payload: [
+                    "text": .string("let value = 1"),
+                    "summary": .string("let value = 1")
+                ]
+            ),
             storageError: nil
         ))
         #expect(cachedRichText == displayRichText)
@@ -590,6 +613,64 @@ struct ClipboardCaptureCoordinatorTests {
         #expect(capturedRequest?.fileItems.map(\.byteCount) == [24, 40])
         #expect(capturedRequest?.fileItems.first?.contentType == "public.plain-text")
         #expect(capturedRequest?.sourceAppName == "Finder")
+    }
+
+    @Test
+    @MainActor
+    func singleFileSyncCandidateUsesServerCompatibleMIMEType() {
+        let coordinator = ClipboardCaptureCoordinator(
+            captureText: { _ in
+                .success(RustCaptureTextResult(
+                    itemId: "text-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureImage: { _ in
+                .success(RustCaptureImageResult(
+                    itemId: "image-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            captureFiles: { _ in
+                .success(RustCaptureFilesResult(
+                    itemId: "files-1",
+                    contentHash: "hash",
+                    copyCount: 1,
+                    inserted: true
+                ))
+            },
+            cacheIcon: { _ in nil },
+            cacheImageAsset: { _, _ in nil },
+            cacheFileSnapshot: { _, _ in nil }
+        )
+
+        let result = coordinator.captureFiles(
+            ClipboardCapturedFiles(
+                paths: ["/tmp/a.txt"],
+                fileItems: [
+                    ClipboardCapturedFileMetadata(
+                        path: "/tmp/a.txt",
+                        fileName: "a.txt",
+                        fileExtension: "txt",
+                        byteCount: 24,
+                        isDirectory: false,
+                        width: nil,
+                        height: nil,
+                        contentType: "public.plain-text"
+                    )
+                ]
+            ),
+            changeCount: 12,
+            preferences: RustPreferencesDocument(history: RustHistoryPreferences(recordFiles: true)),
+            source: ClipboardCaptureSource(appName: "Finder")
+        )
+
+        #expect(result.syncCandidate?.payload["mime_type"] == .string("text/plain"))
+        #expect(result.syncCandidate?.assetRegistration?.mimeType == "text/plain")
     }
 
     @Test

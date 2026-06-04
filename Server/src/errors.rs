@@ -22,6 +22,8 @@ pub enum AppError {
     #[error("{0}")]
     PayloadTooLarge(&'static str),
     #[error("{0}")]
+    UpgradeRequired(&'static str),
+    #[error("{0}")]
     Internal(String),
 }
 
@@ -33,7 +35,8 @@ impl AppError {
             | Self::Forbidden(code)
             | Self::UnsupportedMediaType(code)
             | Self::Conflict(code)
-            | Self::PayloadTooLarge(code) => code,
+            | Self::PayloadTooLarge(code)
+            | Self::UpgradeRequired(code) => code,
             Self::Internal(_) => "internal_error",
         }
     }
@@ -46,6 +49,7 @@ impl AppError {
             Self::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::UpgradeRequired(_) => StatusCode::UPGRADE_REQUIRED,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

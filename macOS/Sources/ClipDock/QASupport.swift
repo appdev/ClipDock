@@ -1583,6 +1583,106 @@ struct RealFunctionQAReport {
 }
 
 @MainActor
+enum SyncDeleteQAScenario {
+    static func run(
+        appSupportURL: URL,
+        contentHash: String,
+        timeout: TimeInterval
+    ) async throws -> SyncDeleteQAReport {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.activate(ignoringOtherApps: true)
+
+        let delegate = AppDelegate()
+        delegate.smokePrepareRealFunctionQA(appSupportURL: appSupportURL)
+        delegate.smokeLoadPreferencesForRealFunctionQA()
+
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        let normalizedHash = normalizedContentHashKey(contentHash)
+        let initialItems = try delegate.smokeStoredItems()
+        guard let item = initialItems.first(where: { normalizedContentHashKey($0.contentHash) == normalizedHash }) else {
+            throw PanelQAHarness.SmokeError(message: "未找到 content hash 对应条目: \(contentHash)")
+        }
+
+        delegate.smokeDeleteGlobalItemForRealFunctionQA(item)
+        try await waitForItemToDisappear(delegate: delegate, itemID: item.id, timeout: timeout)
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        let finalOutboxEvents = try await waitForOutboxToDrain(delegate: delegate, timeout: timeout)
+        let remainingItems = try delegate.smokeStoredItems()
+
+        return SyncDeleteQAReport(
+            appSupportDirectory: appSupportURL.path,
+            deletedContentHash: item.contentHash,
+            deletedItemID: item.id,
+            remainingCount: remainingItems.count,
+            finalOutboxCount: finalOutboxEvents.count
+        )
+    }
+
+    private static func waitForItemToDisappear(
+        delegate: AppDelegate,
+        itemID: String,
+        timeout: TimeInterval
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let items = try delegate.smokeStoredItems()
+            if !items.contains(where: { $0.id == itemID }) {
+                return
+            }
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+
+        throw PanelQAHarness.SmokeError(message: "等待本地删除完成超时: \(itemID)")
+    }
+
+    private static func waitForOutboxToDrain(
+        delegate: AppDelegate,
+        timeout: TimeInterval
+    ) async throws -> [SyncOutboxEvent] {
+        let deadline = Date().addingTimeInterval(timeout)
+        var latestEvents = await delegate.smokeSyncOutboxEventsForRealFunctionQA()
+        while Date() < deadline {
+            latestEvents = await delegate.smokeSyncOutboxEventsForRealFunctionQA()
+            if latestEvents.isEmpty {
+                return latestEvents
+            }
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        throw PanelQAHarness.SmokeError(message: "等待删除 outbox 发送完成超时，剩余 \(latestEvents.count) 个事件")
+    }
+
+    private static func normalizedContentHashKey(_ contentHash: String) -> String {
+        let trimmed = contentHash
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return trimmed.hasPrefix("blake3:")
+            ? String(trimmed.dropFirst("blake3:".count))
+            : trimmed
+    }
+}
+
+struct SyncDeleteQAReport {
+    let appSupportDirectory: String
+    let deletedContentHash: String
+    let deletedItemID: String
+    let remainingCount: Int
+    let finalOutboxCount: Int
+
+    func emit() {
+        print("syncDelete=ok")
+        print("appSupportDirectory=\(appSupportDirectory)")
+        print("deletedContentHash=\(deletedContentHash)")
+        print("deletedItemID=\(deletedItemID)")
+        print("remainingCount=\(remainingCount)")
+        print("finalOutboxCount=\(finalOutboxCount)")
+    }
+}
+
+@MainActor
 enum PanelInteractionSmokeScenario {
     static func run() throws -> PanelInteractionSmokeReport {
         let app = NSApplication.shared
@@ -2162,6 +2262,8 @@ final class PanelInteractionSmokeProbe {
                 self?.deletedItemID = item.id
             case .deleteItems(let items, _):
                 self?.deletedItemID = items.first?.id
+            case .retrySync:
+                break
             case .loadMore:
                 self?.loadMoreRequestCount += 1
             }

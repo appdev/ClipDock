@@ -75,6 +75,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "simple_tokenizer_fts",
         sql: SIMPLE_TOKENIZER_FTS_SCHEMA,
     },
+    Migration {
+        version: 14,
+        name: "bidirectional_sync_state",
+        sql: BIDIRECTIONAL_SYNC_STATE_SCHEMA,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -91,13 +96,9 @@ pub fn run_migrations(connection: &mut Connection) -> Result<()> {
         )
         .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
 
-    let transaction = connection
-        .transaction()
-        .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
-
     for migration in MIGRATIONS {
         let expected_checksum = checksum(migration.sql);
-        let stored_checksum = transaction
+        let stored_checksum = connection
             .query_row(
                 "SELECT checksum FROM schema_migrations WHERE version = ?1",
                 params![migration.version],
@@ -119,6 +120,14 @@ pub fn run_migrations(connection: &mut Connection) -> Result<()> {
             }
             Some(_) => continue,
             None => {
+                if migration.version == 14 {
+                    apply_foreign_key_rebuild_migration(connection, migration, &expected_checksum)?;
+                    continue;
+                }
+
+                let transaction = connection.transaction().map_err(|error| {
+                    CoreError::new(CoreErrorCode::MigrationFailed, error.to_string())
+                })?;
                 transaction.execute_batch(migration.sql).map_err(|error| {
                     CoreError::new(CoreErrorCode::MigrationFailed, error.to_string())
                         .with_detail("version", migration.version.to_string())
@@ -130,13 +139,69 @@ pub fn run_migrations(connection: &mut Connection) -> Result<()> {
                         params![migration.version, migration.name, expected_checksum, now_ms()],
                     )
                     .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
+                transaction.commit().map_err(|error| {
+                    CoreError::new(CoreErrorCode::MigrationFailed, error.to_string())
+                })?;
             }
         }
     }
+    Ok(())
+}
 
-    transaction
-        .commit()
+fn apply_foreign_key_rebuild_migration(
+    connection: &mut Connection,
+    migration: &Migration,
+    expected_checksum: &str,
+) -> Result<()> {
+    connection
+        .execute_batch("PRAGMA foreign_keys = OFF;")
         .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
+
+    let apply_result = (|| -> Result<()> {
+        let transaction = connection
+            .transaction()
+            .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
+        transaction.execute_batch(migration.sql).map_err(|error| {
+            CoreError::new(CoreErrorCode::MigrationFailed, error.to_string())
+                .with_detail("version", migration.version.to_string())
+                .with_detail("name", migration.name)
+        })?;
+        transaction
+            .execute(
+                "INSERT INTO schema_migrations (version, name, checksum, applied_at_ms) VALUES (?1, ?2, ?3, ?4)",
+                params![migration.version, migration.name, expected_checksum, now_ms()],
+            )
+            .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
+        transaction
+            .commit()
+            .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
+        Ok(())
+    })();
+
+    let restore_result = connection
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()));
+    apply_result?;
+    restore_result?;
+
+    let violation: Option<String> = connection
+        .query_row("PRAGMA foreign_key_check", [], |row| {
+            Ok(format!(
+                "{}:{}",
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?
+            ))
+        })
+        .optional()
+        .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
+    if let Some(violation) = violation {
+        return Err(CoreError::new(
+            CoreErrorCode::MigrationFailed,
+            "foreign key check failed after migration",
+        )
+        .with_detail("violation", violation));
+    }
+
     Ok(())
 }
 
@@ -611,4 +676,154 @@ CREATE VIRTUAL TABLE clipboard_items_fts USING fts5(
 );
 
 INSERT INTO clipboard_items_fts(clipboard_items_fts) VALUES('rebuild');
+"#;
+
+const BIDIRECTIONAL_SYNC_STATE_SCHEMA: &str = r#"
+DROP TABLE IF EXISTS clipboard_items_fts;
+
+CREATE TABLE clipboard_items_new (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK (type IN ('text', 'link', 'image', 'file', 'color', 'rich_text', 'unknown')),
+    summary TEXT NOT NULL,
+    primary_text TEXT,
+    content_hash TEXT NOT NULL,
+    source_app_id TEXT REFERENCES source_apps(id) ON DELETE SET NULL,
+    source_app_name TEXT,
+    source_confidence TEXT NOT NULL DEFAULT 'unknown'
+        CHECK (source_confidence IN ('high', 'medium', 'low', 'unknown')),
+    first_copied_at_ms INTEGER NOT NULL,
+    last_copied_at_ms INTEGER NOT NULL,
+    copy_count INTEGER NOT NULL DEFAULT 1 CHECK (copy_count >= 1),
+    is_pinned INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0, 1)),
+    size_bytes INTEGER NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
+    preview_state TEXT NOT NULL DEFAULT 'ready'
+        CHECK (preview_state IN ('ready', 'deferred', 'too_large', 'missing_source', 'failed')),
+    deleted_at_ms INTEGER,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    payload_state TEXT NOT NULL DEFAULT 'ready'
+        CHECK (payload_state IN ('pending', 'ready', 'failed', 'remote_only'))
+);
+
+INSERT INTO clipboard_items_new (
+    id,
+    type,
+    summary,
+    primary_text,
+    content_hash,
+    source_app_id,
+    source_app_name,
+    source_confidence,
+    first_copied_at_ms,
+    last_copied_at_ms,
+    copy_count,
+    is_pinned,
+    size_bytes,
+    preview_state,
+    deleted_at_ms,
+    created_at_ms,
+    updated_at_ms,
+    payload_state
+)
+SELECT
+    id,
+    type,
+    summary,
+    primary_text,
+    content_hash,
+    source_app_id,
+    source_app_name,
+    source_confidence,
+    first_copied_at_ms,
+    last_copied_at_ms,
+    copy_count,
+    is_pinned,
+    size_bytes,
+    preview_state,
+    deleted_at_ms,
+    created_at_ms,
+    updated_at_ms,
+    CASE
+        WHEN payload_state IN ('pending', 'ready', 'failed', 'remote_only') THEN payload_state
+        ELSE 'ready'
+    END
+FROM clipboard_items;
+
+DROP TABLE clipboard_items;
+ALTER TABLE clipboard_items_new RENAME TO clipboard_items;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_clipboard_items_hash_active
+    ON clipboard_items(content_hash)
+    WHERE deleted_at_ms IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_clipboard_items_type_recent
+    ON clipboard_items(type, last_copied_at_ms DESC)
+    WHERE deleted_at_ms IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_clipboard_items_recent
+    ON clipboard_items(last_copied_at_ms DESC, id DESC)
+    WHERE deleted_at_ms IS NULL;
+
+CREATE VIRTUAL TABLE clipboard_items_fts USING fts5(
+    summary,
+    primary_text,
+    source_app_name,
+    content = 'clipboard_items',
+    content_rowid = 'rowid',
+    tokenize = 'simple disable_stopword'
+);
+
+INSERT INTO clipboard_items_fts(clipboard_items_fts) VALUES('rebuild');
+
+CREATE TABLE IF NOT EXISTS sync_client_state (
+    sync_id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    cursor INTEGER NOT NULL DEFAULT 0,
+    snapshot_seq INTEGER NOT NULL DEFAULT 0,
+    updated_at_ms INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_item_state (
+    sync_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    item_id TEXT,
+    provenance TEXT NOT NULL
+        CHECK (provenance IN ('local_only', 'local_pending_upload', 'synced_local', 'synced_remote', 'remote_deleted', 'conflicted')),
+    local_status TEXT NOT NULL DEFAULT 'none'
+        CHECK (local_status IN ('none', 'pending_upload', 'uploaded', 'deleted')),
+    last_server_seq INTEGER NOT NULL DEFAULT 0,
+    last_remote_device_id TEXT,
+    last_client_event_id TEXT,
+    local_pending_event_id TEXT,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY(sync_id, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS ix_sync_item_state_item
+    ON sync_item_state(item_id);
+
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+    sync_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    server_seq INTEGER NOT NULL,
+    device_id TEXT,
+    client_event_id TEXT,
+    deleted_at_ms INTEGER NOT NULL,
+    applied_to_local INTEGER NOT NULL DEFAULT 0 CHECK (applied_to_local IN (0, 1)),
+    created_at_ms INTEGER NOT NULL,
+    PRIMARY KEY(sync_id, content_hash, server_seq)
+);
+
+CREATE TABLE IF NOT EXISTS sync_remote_assets (
+    sync_id TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    mime_type TEXT,
+    byte_count INTEGER,
+    file_name TEXT,
+    source_payload_json TEXT NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY(sync_id, content_hash, kind)
+);
 "#;

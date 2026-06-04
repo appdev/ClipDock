@@ -7,11 +7,10 @@ use axum::{
 };
 use bytes::Bytes;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use tokio::io::AsyncWriteExt;
 
-use crate::{auth::DeviceAuth, db, errors::AppError, events::validate_content_hash};
+use crate::{auth::DeviceAuth, db, errors::AppError, hashes::AssetDigest};
 
 const ALLOWED_KINDS: &[&str] = &["thumbnail", "source_icon", "link_preview"];
 const ALLOWED_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp"];
@@ -49,7 +48,8 @@ impl AssetStore {
         headers: &HeaderMap,
         bytes: Bytes,
     ) -> Result<UploadAssetResponse, AppError> {
-        validate_digest(&digest)?;
+        let parsed_digest =
+            AssetDigest::parse(&digest).map_err(|_| AppError::BadRequest("invalid_digest"))?;
         let kind = required_header(headers, "x-clipdock-asset-kind")?;
         let mime_type = required_header(headers, header::CONTENT_TYPE.as_str())?;
         if !ALLOWED_KINDS.contains(&kind.as_str()) {
@@ -62,8 +62,8 @@ impl AssetStore {
             return Err(AppError::PayloadTooLarge("asset_too_large"));
         }
 
-        let computed = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
-        if computed != digest {
+        let computed = AssetDigest::from_bytes(&bytes);
+        if computed.as_str() != digest {
             return Err(AppError::BadRequest("bad_digest"));
         }
 
@@ -95,14 +95,15 @@ impl AssetStore {
             return Err(AppError::Conflict("metadata_conflict"));
         }
 
-        let object_path = self.object_path(&auth.sync_group_id, &digest)?;
+        let object_path = self.object_path(&auth.sync_group_id, &parsed_digest)?;
         if let Some(parent) = object_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
         let staging_path = self.root.join("staging").join(format!(
-            "{}-{}.tmp",
+            "{}-{}-{}.tmp",
             auth.sync_group_id,
-            digest.trim_start_matches("sha256:")
+            parsed_digest.algorithm(),
+            parsed_digest.hex()
         ));
 
         let mut file = tokio::fs::File::create(&staging_path).await?;
@@ -142,7 +143,7 @@ impl AssetStore {
         auth: DeviceAuth,
         digest: String,
     ) -> Result<Response, AppError> {
-        validate_digest(&digest)?;
+        AssetDigest::parse(&digest).map_err(|_| AppError::BadRequest("invalid_digest"))?;
         let row = sqlx::query(
             "SELECT kind, mime_type, path
              FROM sync_assets
@@ -168,10 +169,22 @@ impl AssetStore {
         Ok(response)
     }
 
-    fn object_path(&self, sync_group_id: &str, digest: &str) -> Result<PathBuf, AppError> {
-        validate_digest(digest)?;
-        let hex = digest.trim_start_matches("sha256:");
-        Ok(self.root.join("objects").join(sync_group_id).join(hex))
+    fn object_path(&self, sync_group_id: &str, digest: &AssetDigest) -> Result<PathBuf, AppError> {
+        Ok(self
+            .root
+            .join("objects")
+            .join(sync_group_id)
+            .join(digest.algorithm())
+            .join(digest.hex()))
+    }
+
+    pub async fn delete_sync_group_objects(&self, sync_group_id: &str) -> Result<(), AppError> {
+        let path = self.root.join("objects").join(sync_group_id);
+        match tokio::fs::remove_dir_all(path).await {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 }
 
@@ -182,11 +195,9 @@ impl IntoResponse for UploadAssetResponse {
 }
 
 pub fn validate_digest(value: &str) -> Result<(), AppError> {
-    if validate_content_hash(value) {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest("invalid_digest"))
-    }
+    AssetDigest::parse(value)
+        .map(|_| ())
+        .map_err(|_| AppError::BadRequest("invalid_digest"))
 }
 
 fn required_header(headers: &HeaderMap, name: &str) -> Result<String, AppError> {

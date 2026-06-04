@@ -23,7 +23,7 @@ Local implementation references:
 - `macOS/Sources/ClipDock/PreferencesUI.swift`: grouped settings layout and permission row pattern.
 - `macOS/rust/crates/clipboard_core/src/domain.rs`: item types and item summary fields.
 - `macOS/rust/crates/clipboard_core/src/storage/queries.rs`: current summary query fields.
-- `Server/docs/protocol-v1.md`: sync event, snapshot, asset upload/download contract.
+- `Server/docs/protocol-v2.md`: sync event, snapshot, asset upload/download contract.
 - `Server/src/assets.rs`: server-side asset kinds and MIME constraints.
 
 External platform references:
@@ -45,17 +45,17 @@ The macOS Rust core exposes item summaries with:
 - file details: `file_items[]` with `path`, `file_name`, `file_extension`, `byte_count`, `is_directory`, optional dimensions and content type.
 - link metadata: canonical URL, display URL, host, title, site name, icon asset, image asset, fetch state.
 
-The server v1 currently stores generic JSON payloads for `item_upsert` and supports raw asset transfer only for `thumbnail`, `source_icon`, and `link_preview` images. Full image/file payload transfer and P2P metadata are not present in the current Rust and Server code. Android UI should therefore model payload retrieval as an on-demand transport state that can later be backed by P2P without changing the visible hierarchy.
+The server v2 stores generic JSON payloads for `item_upsert`, supports BLAKE3-addressed preview assets for `thumbnail`, `source_icon`, and `link_preview` images, and exposes P2P coordination metadata for full image/file payload transfer. Android UI should model payload retrieval as an on-demand transport state that can be backed by P2P without changing the visible hierarchy.
 
 Current server sync contract:
 
 - `GET /health` is unauthenticated.
-- `POST /v1/sync/create` creates a new sync space and returns `sync_id`, a 5-character `pairing_code`, `pairing_expires_at_ms`, `device_id`, and `token`.
-- `POST /v1/sync/join` joins an existing sync space with `pairing_code` and `device_name`, returning `sync_id`, `device_id`, and `token`.
-- `POST /v1/sync/invites` is authenticated and creates a fresh pairing code for the current sync space.
-- `GET /v1/info` is authenticated and returns `sync_id`, supported event types, asset kinds, asset MIME types, and max asset size.
-- `POST /v1/events`, `GET /v1/events`, and `GET /v1/snapshot` are authenticated and scoped to the current sync space.
-- `PUT/GET /v1/assets/{digest}` are authenticated and scoped to the current sync space.
+- `POST /v2/sync/create` creates a new sync space and returns `sync_id`, a 5-character `pairing_code`, `pairing_expires_at_ms`, `device_id`, and `token`.
+- `POST /v2/sync/join` joins an existing sync space with `pairing_code` and `device_name`, returning `sync_id`, `device_id`, and `token`.
+- `POST /v2/sync/invites` is authenticated and creates a fresh pairing code for the current sync space.
+- `GET /v2/info` is authenticated and returns `sync_id`, supported event types, asset kinds, asset MIME types, and max asset size.
+- `POST /v2/events`, `GET /v2/events`, and `GET /v2/snapshot` are authenticated and scoped to the current sync space.
+- `PUT/GET /v2/assets/{digest}` are authenticated and scoped to the current sync space.
 - Device tokens use the `cds_` prefix and are never shown again after create/join except as a local secure-storage state.
 - Pairing codes are single-use, short-lived, uppercase alphanumeric invitations; invalid, expired, or consumed codes surface as `invalid_pairing_code`.
 
@@ -142,9 +142,9 @@ Color:
 Image:
 
 - If `preview_state=ready` and a thumbnail is present, show the thumbnail.
-- If no thumbnail is present, show an image placeholder with `[图片]`.
+- If no thumbnail is present, show an image icon or loading/skeleton tile; do not use a Chinese text placeholder such as `[图片]` in the main history list.
 - Do not show the original full image in the list.
-- Tap starts on-demand payload retrieval. During transfer show inline progress/state, then copy/share after ready.
+- Show an explicit row action for remote payloads: `下载` or `取回`. Tapping the row or this action starts on-demand payload retrieval. During transfer show inline progress/state, then copy/share after ready.
 
 File:
 
@@ -152,7 +152,7 @@ File:
 - Secondary line shows count, extension, size, or directory indicator.
 - Trailing block shows file thumbnail if a synced thumbnail exists; otherwise file/folder icon.
 - For compact text-only surfaces, show the filename only; truncate middle for long names.
-- Tap starts on-demand payload retrieval through P2P when needed.
+- Show an explicit `下载` or `取回` row action when the full payload is remote-only. Tap starts on-demand payload retrieval through P2P when needed.
 
 Unknown:
 
@@ -182,10 +182,10 @@ Rows:
 - `同步空间`: shows current `sync_id` after authentication.
 - `本机设备`: editable `device_name`; after pairing also shows local `device_id`.
 - `连接状态`: `未设置`, `可连接`, `已加入`, `令牌失效`, `设备已撤销`, `服务器不可达`.
-- `创建同步空间`: calls `/v1/sync/create`; show returned 5-character pairing code and expiration countdown for inviting another device.
-- `加入同步空间`: 5-character pairing code field plus device name; calls `/v1/sync/join`.
-- `生成配对码`: authenticated action using `/v1/sync/invites`.
-- `服务器能力`: after `/v1/info`, show protocol version, asset kinds, MIME types, and max asset size.
+- `创建同步空间`: calls `/v2/sync/create`; show returned 5-character pairing code and expiration countdown for inviting another device.
+- `加入同步空间`: 5-character pairing code field plus device name; calls `/v2/sync/join`.
+- `生成配对码`: authenticated action using `/v2/sync/invites`.
+- `服务器能力`: after `/v2/info`, show protocol version, asset kinds, MIME types, and max asset size.
 - `立即同步`: fetch snapshot, then pull events from current cursor.
 
 The setup-token concept should not appear in Android UI because the current server does not expose a setup-token registration endpoint.
@@ -195,8 +195,8 @@ The setup-token concept should not appear in Android UI because the current serv
 Rows:
 
 - `事件游标`: shows current `after_seq` / `next_cursor`.
-- `快照同步`: action for `/v1/snapshot`.
-- `增量同步`: action for `/v1/events?after_seq&limit`.
+- `快照同步`: action for `/v2/snapshot`.
+- `增量同步`: action for `/v2/events?after_seq&limit`.
 - `最后错误`: maps protocol errors such as `unauthorized`, `revoked_device`, `invalid_pairing_code`, `invalid_cursor`, and `item_deleted`.
 
 ### Download And P2P
@@ -213,8 +213,9 @@ Rows:
 UI contract:
 
 - Server assets are preview assets only, with allowed MIME types `image/png`, `image/jpeg`, and `image/webp`.
-- Server-reported max asset size should be displayed from `/v1/info`, currently defaulting to 2 MiB in the server.
+- Server-reported max asset size should be displayed from `/v2/info`, currently defaulting to 2 MiB in the server.
 - P2P is an implementation detail until it fails.
+- Remote image/file rows must expose a visible action entry, not just a passive state chip. The primary label may be `下载`, `取回`, or `下载并复制` depending on space.
 - On item use, show `查找设备`, `下载中`, `已就绪`, or `下载失败`.
 - If a server fallback is later added, expose it as secondary text, not as a separate primary action.
 

@@ -18,6 +18,20 @@ struct SourceAppIconHeaderColorWriteRequest: Hashable, Sendable {
 typealias SourceAppIconHeaderColorWriter =
     @Sendable (SourceAppIconHeaderColorWriteRequest) async -> Void
 
+private enum PlatformSourceApp {
+    static let androidName = "Android"
+    static let androidLegacyDeviceName = "Android Phone"
+
+    static func isAndroid(_ request: PanelCardAssetRequest) -> Bool {
+        guard let sourceAppName = request.sourceAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sourceAppName.isEmpty else {
+            return false
+        }
+        return sourceAppName.caseInsensitiveCompare(androidName) == .orderedSame
+            || sourceAppName.caseInsensitiveCompare(androidLegacyDeviceName) == .orderedSame
+    }
+}
+
 private struct SourceColorWriteKey: Hashable {
     let sourceAppID: String
     let sourceAppIconPath: String
@@ -173,6 +187,10 @@ final class PanelCardAssetResolver {
     }
 
     func sourceIconImage(for request: PanelCardAssetRequest) -> NSImage? {
+        if PlatformSourceApp.isAndroid(request) {
+            return Self.androidPlatformIcon()
+        }
+
         guard let path = request.sourceAppIconPath else { return nil }
         guard loadSourceIconsSynchronously else {
             return Self.cachedImageInMemory(path: path)
@@ -508,6 +526,73 @@ final class PanelCardAssetResolver {
         }
 
         return image
+    }
+
+    private static func androidPlatformIcon() -> NSImage {
+        let size = NSSize(width: 48, height: 48)
+        return NSImage(size: size, flipped: false) { rect in
+            let scale = rect.width / size.width
+            func scaledRect(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> NSRect {
+                NSRect(
+                    x: rect.minX + x * scale,
+                    y: rect.minY + y * scale,
+                    width: width * scale,
+                    height: height * scale
+                )
+            }
+
+            let green = NSColor(srgbRed: 0.18, green: 0.72, blue: 0.42, alpha: 1)
+            let lightGreen = NSColor(srgbRed: 0.62, green: 0.94, blue: 0.72, alpha: 1)
+            green.setFill()
+            green.setStroke()
+
+            let antennaStroke = NSBezierPath()
+            antennaStroke.lineWidth = 2.6 * scale
+            antennaStroke.lineCapStyle = .round
+            antennaStroke.move(to: NSPoint(x: rect.minX + 16 * scale, y: rect.minY + 35 * scale))
+            antennaStroke.line(to: NSPoint(x: rect.minX + 11 * scale, y: rect.minY + 41 * scale))
+            antennaStroke.move(to: NSPoint(x: rect.minX + 32 * scale, y: rect.minY + 35 * scale))
+            antennaStroke.line(to: NSPoint(x: rect.minX + 37 * scale, y: rect.minY + 41 * scale))
+            antennaStroke.stroke()
+
+            NSBezierPath(
+                roundedRect: scaledRect(x: 10, y: 22, width: 28, height: 15),
+                xRadius: 7 * scale,
+                yRadius: 7 * scale
+            ).fill()
+
+            NSBezierPath(
+                roundedRect: scaledRect(x: 10, y: 9, width: 28, height: 21),
+                xRadius: 4 * scale,
+                yRadius: 4 * scale
+            ).fill()
+
+            NSBezierPath(
+                roundedRect: scaledRect(x: 5.5, y: 13, width: 4, height: 16),
+                xRadius: 2 * scale,
+                yRadius: 2 * scale
+            ).fill()
+            NSBezierPath(
+                roundedRect: scaledRect(x: 38.5, y: 13, width: 4, height: 16),
+                xRadius: 2 * scale,
+                yRadius: 2 * scale
+            ).fill()
+            NSBezierPath(
+                roundedRect: scaledRect(x: 15, y: 4.5, width: 4.5, height: 8),
+                xRadius: 2 * scale,
+                yRadius: 2 * scale
+            ).fill()
+            NSBezierPath(
+                roundedRect: scaledRect(x: 28.5, y: 4.5, width: 4.5, height: 8),
+                xRadius: 2 * scale,
+                yRadius: 2 * scale
+            ).fill()
+
+            lightGreen.setFill()
+            NSBezierPath(ovalIn: scaledRect(x: 17, y: 29, width: 3.5, height: 3.5)).fill()
+            NSBezierPath(ovalIn: scaledRect(x: 27.5, y: 29, width: 3.5, height: 3.5)).fill()
+            return true
+        }
     }
 
     private static func multipleFilesIcon() -> NSImage? {

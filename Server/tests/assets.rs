@@ -10,7 +10,7 @@ async fn asset_upload_download_and_duplicate_upload() {
     let device = server.register().await;
     let bytes = b"fake png bytes".to_vec();
     let digest = asset_digest(&bytes);
-    let uri = format!("/v1/assets/{digest}");
+    let uri = format!("/v2/assets/{digest}");
 
     let upload = server
         .raw(
@@ -61,7 +61,7 @@ async fn asset_download_is_scoped_to_the_authenticated_sync_space() {
     let second = server.create_sync().await;
     let bytes = b"same digest but private to first sync".to_vec();
     let digest = asset_digest(&bytes);
-    let uri = format!("/v1/assets/{digest}");
+    let uri = format!("/v2/assets/{digest}");
 
     let upload = server
         .raw(
@@ -95,7 +95,7 @@ async fn asset_download_is_scoped_to_the_authenticated_sync_space() {
 async fn asset_auth_runs_before_existence_reveal() {
     let server = TestServer::new().await;
     let digest = asset_digest(b"not uploaded");
-    let uri = format!("/v1/assets/{digest}");
+    let uri = format!("/v2/assets/{digest}");
     let response = server.raw(Method::GET, &uri, None, Vec::new(), &[]).await;
     assert_eq!(response.status, StatusCode::UNAUTHORIZED);
 }
@@ -105,10 +105,26 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
     let server = TestServer::new().await;
     let device = server.register().await;
 
+    let sha256_digest = server
+        .raw(
+            Method::PUT,
+            "/v2/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Some(&device.token),
+            b"not matching".to_vec(),
+            &[
+                ("content-type", "image/png"),
+                ("x-clipdock-asset-kind", "thumbnail"),
+            ],
+        )
+        .await;
+    assert_eq!(sha256_digest.status, StatusCode::BAD_REQUEST);
+    let sha_body: serde_json::Value = serde_json::from_slice(&sha256_digest.body).unwrap();
+    assert_eq!(sha_body["error"]["code"], "invalid_digest");
+
     let bad_digest = server
         .raw(
             Method::PUT,
-            "/v1/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            &format!("/v2/assets/{}", "blake3:".to_string() + &"a".repeat(64)),
             Some(&device.token),
             b"not matching".to_vec(),
             &[
@@ -123,7 +139,7 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
 
     let oversized_bytes = vec![7_u8; 2 * 1024 * 1024 + 1];
     let oversized_digest = asset_digest(&oversized_bytes);
-    let oversized_uri = format!("/v1/assets/{oversized_digest}");
+    let oversized_uri = format!("/v2/assets/{oversized_digest}");
     let oversized = server
         .raw(
             Method::PUT,
@@ -141,7 +157,7 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
     let unsupported_mime = server
         .raw(
             Method::PUT,
-            &format!("/v1/assets/{}", asset_digest(b"x")),
+            &format!("/v2/assets/{}", asset_digest(b"x")),
             Some(&device.token),
             b"x".to_vec(),
             &[
@@ -155,7 +171,7 @@ async fn asset_upload_rejects_bad_digest_oversized_and_unsupported_metadata() {
     let unsupported_kind = server
         .raw(
             Method::PUT,
-            &format!("/v1/assets/{}", asset_digest(b"y")),
+            &format!("/v2/assets/{}", asset_digest(b"y")),
             Some(&device.token),
             b"y".to_vec(),
             &[
@@ -175,7 +191,7 @@ async fn asset_upload_rejects_traversal_malformed_digest_and_metadata_conflict()
     let malformed = server
         .raw(
             Method::PUT,
-            "/v1/assets/..%2Fsecret",
+            "/v2/assets/..%2Fsecret",
             Some(&device.token),
             b"x".to_vec(),
             &[
@@ -188,7 +204,7 @@ async fn asset_upload_rejects_traversal_malformed_digest_and_metadata_conflict()
 
     let bytes = b"conflict".to_vec();
     let digest = asset_digest(&bytes);
-    let uri = format!("/v1/assets/{digest}");
+    let uri = format!("/v2/assets/{digest}");
     let ok = server
         .raw(
             Method::PUT,

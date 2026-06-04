@@ -3,7 +3,7 @@ use axum::{
     body::Bytes,
     extract::{rejection::JsonRejection, FromRequest, Path, Request, State},
     http::{HeaderMap, StatusCode, Uri},
-    routing::{get, post, put},
+    routing::{any, get, post, put},
     Json, Router,
 };
 use serde::de::DeserializeOwned;
@@ -18,6 +18,7 @@ use crate::{
     errors::{ok, AppError, SuccessEnvelope},
     events::{self, PushEventsRequest},
     p2p::{self, ReportEndpointRequest, UpsertAssetProviderRequest},
+    realtime::{self, EventHub},
     PROTOCOL_VERSION,
 };
 
@@ -56,26 +57,30 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub config: Config,
     pub assets: AssetStore,
+    pub realtime: EventHub,
 }
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
-        .route("/v1/info", get(info))
-        .route("/v1/sync/create", post(create_sync))
-        .route("/v1/sync/join", post(join_sync))
-        .route("/v1/sync/invites", post(create_invite))
-        .route("/v1/events", post(push_events).get(pull_events))
-        .route("/v1/snapshot", get(snapshot))
-        .route("/v1/assets/:digest", put(upload_asset).get(download_asset))
-        .route("/v1/p2p/endpoint", put(report_p2p_endpoint))
-        .route("/v1/p2p/devices", get(list_p2p_devices))
+        .route("/v1", any(protocol_v1_retired))
+        .route("/v1/*path", any(protocol_v1_retired))
+        .route("/v2/info", get(info))
+        .route("/v2/sync/create", post(create_sync))
+        .route("/v2/sync/join", post(join_sync))
+        .route("/v2/sync/invites", post(create_invite))
+        .route("/v2/events", post(push_events).get(pull_events))
+        .route("/v2/ws", get(realtime::ws_handler))
+        .route("/v2/snapshot", get(snapshot))
+        .route("/v2/assets/:digest", put(upload_asset).get(download_asset))
+        .route("/v2/p2p/endpoint", put(report_p2p_endpoint))
+        .route("/v2/p2p/devices", get(list_p2p_devices))
         .route(
-            "/v1/p2p/assets/:asset_id/providers",
+            "/v2/p2p/assets/:asset_id/providers",
             get(list_p2p_asset_providers),
         )
         .route(
-            "/v1/p2p/assets/:asset_id/providers/me",
+            "/v2/p2p/assets/:asset_id/providers/me",
             put(upsert_p2p_asset_provider).delete(delete_p2p_asset_provider),
         )
         .with_state(state)
@@ -91,6 +96,10 @@ async fn health() -> Json<SuccessEnvelope<HealthResponse>> {
     ok(HealthResponse { status: "ok" })
 }
 
+async fn protocol_v1_retired() -> AppError {
+    AppError::UpgradeRequired("protocol_v1_retired")
+}
+
 #[derive(Serialize)]
 struct InfoResponse {
     protocol_version: u8,
@@ -100,6 +109,8 @@ struct InfoResponse {
     event_types: Vec<&'static str>,
     asset_kinds: Vec<&'static str>,
     asset_mime_types: Vec<&'static str>,
+    content_hash_algorithms: Vec<&'static str>,
+    asset_digest_algorithms: Vec<&'static str>,
     max_asset_bytes: usize,
     p2p: p2p::P2pCapabilities,
 }
@@ -117,6 +128,8 @@ async fn info(
         event_types: vec!["item_upsert", "item_delete"],
         asset_kinds: vec!["thumbnail", "source_icon", "link_preview"],
         asset_mime_types: vec!["image/png", "image/jpeg", "image/webp"],
+        content_hash_algorithms: vec!["blake3"],
+        asset_digest_algorithms: vec!["blake3"],
         max_asset_bytes: state.config.max_asset_bytes,
         p2p: p2p::capabilities(),
     }))
@@ -153,7 +166,13 @@ async fn push_events(
     ApiJson(request): ApiJson<PushEventsRequest>,
 ) -> Result<Json<SuccessEnvelope<events::PushEventsResponse>>, AppError> {
     let auth = auth::require_device(&state.pool, &headers).await?;
-    Ok(ok(events::push_events(&state.pool, auth, request).await?))
+    Ok(ok(events::push_events(
+        &state.pool,
+        &state.realtime,
+        auth,
+        request,
+    )
+    .await?))
 }
 
 async fn pull_events(

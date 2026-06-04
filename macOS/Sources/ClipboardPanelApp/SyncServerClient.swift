@@ -31,6 +31,12 @@ public struct SyncJoinResult: Equatable, Sendable {
     public let token: String
 }
 
+public struct SyncInviteResult: Equatable, Sendable {
+    public let syncID: String
+    public let pairingCode: String
+    public let pairingExpiresAtMs: Int64
+}
+
 public struct SyncInfoResult: Equatable, Sendable {
     public let syncID: String
     public let deviceID: String
@@ -76,6 +82,149 @@ public struct SyncP2PDeleteProviderResult: Equatable, Sendable {
     public let removed: Bool
 }
 
+public struct SyncPushEvent: Equatable, Encodable, Sendable {
+    public let clientEventId: String
+    public let eventType: String
+    public let contentHash: String
+    public let itemType: String?
+    public let payload: [String: SyncEventPayloadValue]?
+    public let copyCountDelta: Int64?
+
+    public init(
+        clientEventId: String,
+        eventType: String,
+        contentHash: String,
+        itemType: String?,
+        payload: [String: SyncEventPayloadValue]?,
+        copyCountDelta: Int64?
+    ) {
+        self.clientEventId = clientEventId
+        self.eventType = eventType
+        self.contentHash = contentHash
+        self.itemType = itemType
+        self.payload = payload
+        self.copyCountDelta = copyCountDelta
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case clientEventId = "client_event_id"
+        case eventType = "type"
+        case contentHash = "content_hash"
+        case itemType = "item_type"
+        case payload
+        case copyCountDelta = "copy_count_delta"
+    }
+}
+
+public struct SyncPushedEventResult: Equatable, Sendable {
+    public let clientEventId: String
+    public let serverSeq: Int64
+    public let duplicate: Bool
+}
+
+public struct SyncPushEventsResult: Equatable, Sendable {
+    public let events: [SyncPushedEventResult]
+    public let nextCursor: Int64
+}
+
+public struct SyncPulledEventRecord: Equatable, Decodable, Sendable {
+    public let serverSeq: Int64
+    public let deviceID: String
+    public let clientEventID: String
+    public let eventType: String
+    public let contentHash: String
+    public let itemType: String?
+    public let payload: [String: SyncEventPayloadValue]?
+    public let copyCountDelta: Int64?
+    public let createdAtMs: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case serverSeq = "server_seq"
+        case deviceID = "device_id"
+        case clientEventID = "client_event_id"
+        case eventType = "type"
+        case contentHash = "content_hash"
+        case itemType = "item_type"
+        case payload
+        case copyCountDelta = "copy_count_delta"
+        case createdAtMs = "created_at_ms"
+    }
+
+    public func rustRecord() -> RustSyncEventRecord {
+        RustSyncEventRecord(
+            serverSeq: serverSeq,
+            deviceID: deviceID,
+            clientEventID: clientEventID,
+            eventType: eventType,
+            contentHash: contentHash,
+            itemType: itemType,
+            payload: payload,
+            copyCountDelta: copyCountDelta,
+            createdAtMs: createdAtMs
+        )
+    }
+}
+
+public struct SyncPullEventsResult: Equatable, Sendable {
+    public let events: [SyncPulledEventRecord]
+    public let nextCursor: Int64
+}
+
+public struct SyncSnapshotItemRecord: Equatable, Decodable, Sendable {
+    public let contentHash: String
+    public let itemType: String
+    public let payload: [String: SyncEventPayloadValue]
+    public let copyCount: Int64
+    public let updatedAtMs: Int64
+    public let lastServerSeq: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case contentHash = "content_hash"
+        case itemType = "item_type"
+        case payload
+        case copyCount = "copy_count"
+        case updatedAtMs = "updated_at_ms"
+        case lastServerSeq = "last_server_seq"
+    }
+
+    public func rustRecord() -> RustSyncSnapshotItemRecord {
+        RustSyncSnapshotItemRecord(
+            contentHash: contentHash,
+            itemType: itemType,
+            payload: payload,
+            copyCount: copyCount,
+            updatedAtMs: updatedAtMs,
+            lastServerSeq: lastServerSeq
+        )
+    }
+}
+
+public struct SyncSnapshotTombstoneRecord: Equatable, Decodable, Sendable {
+    public let contentHash: String
+    public let deletedAtMs: Int64
+    public let lastServerSeq: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case contentHash = "content_hash"
+        case deletedAtMs = "deleted_at_ms"
+        case lastServerSeq = "last_server_seq"
+    }
+
+    public func rustRecord() -> RustSyncSnapshotTombstoneRecord {
+        RustSyncSnapshotTombstoneRecord(
+            contentHash: contentHash,
+            deletedAtMs: deletedAtMs,
+            lastServerSeq: lastServerSeq
+        )
+    }
+}
+
+public struct SyncSnapshotResult: Equatable, Sendable {
+    public let snapshotSeq: Int64
+    public let items: [SyncSnapshotItemRecord]
+    public let tombstones: [SyncSnapshotTombstoneRecord]
+}
+
 public struct SyncServerClient: Sendable {
     private let httpClient: SyncServerHTTPClient
 
@@ -89,7 +238,7 @@ public struct SyncServerClient: Sendable {
     ) async throws -> SyncCreateResult {
         let response: SuccessEnvelope<CreateSyncResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/sync/create",
+            path: "/v2/sync/create",
             method: "POST",
             token: nil,
             body: DeviceNameRequest(deviceName: deviceName)
@@ -110,7 +259,7 @@ public struct SyncServerClient: Sendable {
     ) async throws -> SyncJoinResult {
         let response: SuccessEnvelope<JoinSyncResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/sync/join",
+            path: "/v2/sync/join",
             method: "POST",
             token: nil,
             body: JoinSyncRequest(pairingCode: pairingCode, deviceName: deviceName)
@@ -122,13 +271,31 @@ public struct SyncServerClient: Sendable {
         )
     }
 
+    public func createInvite(
+        serverURL: String,
+        token: String
+    ) async throws -> SyncInviteResult {
+        let response: SuccessEnvelope<CreateInviteResponse> = try await sendJSON(
+            serverURL: serverURL,
+            path: "/v2/sync/invites",
+            method: "POST",
+            token: token,
+            body: EmptyBody?.none
+        )
+        return SyncInviteResult(
+            syncID: response.data.syncID,
+            pairingCode: response.data.pairingCode,
+            pairingExpiresAtMs: response.data.pairingExpiresAtMs
+        )
+    }
+
     public func info(
         serverURL: String,
         token: String
     ) async throws -> SyncInfoResult {
         let response: SuccessEnvelope<InfoResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/info",
+            path: "/v2/info",
             method: "GET",
             token: token,
             body: EmptyBody?.none
@@ -159,7 +326,7 @@ public struct SyncServerClient: Sendable {
         }
         let response: SuccessEnvelope<EndpointReportResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/p2p/endpoint",
+            path: "/v2/p2p/endpoint",
             method: "PUT",
             token: token,
             body: EndpointReportRequest(
@@ -187,7 +354,7 @@ public struct SyncServerClient: Sendable {
     ) async throws -> [SyncP2PDeviceResult] {
         let response: SuccessEnvelope<ListDevicesResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/p2p/devices",
+            path: "/v2/p2p/devices",
             method: "GET",
             token: token,
             body: EmptyBody?.none
@@ -215,7 +382,7 @@ public struct SyncServerClient: Sendable {
     ) async throws -> SyncP2PAssetProviderResult {
         let response: SuccessEnvelope<UpsertAssetProviderResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/p2p/assets/\(assetID)/providers/me",
+            path: "/v2/p2p/assets/\(assetID)/providers/me",
             method: "PUT",
             token: token,
             body: UpsertAssetProviderRequest(
@@ -239,7 +406,7 @@ public struct SyncServerClient: Sendable {
     ) async throws -> SyncP2PDeleteProviderResult {
         let response: SuccessEnvelope<DeleteAssetProviderResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/p2p/assets/\(assetID)/providers/me",
+            path: "/v2/p2p/assets/\(assetID)/providers/me",
             method: "DELETE",
             token: token,
             body: EmptyBody?.none
@@ -257,7 +424,7 @@ public struct SyncServerClient: Sendable {
     ) async throws -> SyncP2PAssetProvidersResult {
         let response: SuccessEnvelope<ListAssetProvidersResponse> = try await sendJSON(
             serverURL: serverURL,
-            path: "/v1/p2p/assets/\(assetID)/providers",
+            path: "/v2/p2p/assets/\(assetID)/providers",
             method: "GET",
             token: token,
             body: EmptyBody?.none
@@ -268,17 +435,123 @@ public struct SyncServerClient: Sendable {
         )
     }
 
+    public func pushEvents(
+        serverURL: String,
+        token: String,
+        events: [SyncPushEvent]
+    ) async throws -> SyncPushEventsResult {
+        let response: SuccessEnvelope<PushEventsResponse> = try await sendJSON(
+            serverURL: serverURL,
+            path: "/v2/events",
+            method: "POST",
+            token: token,
+            body: PushEventsRequest(events: events),
+            timeoutInterval: 12
+        )
+        return SyncPushEventsResult(
+            events: response.data.events.map {
+                SyncPushedEventResult(
+                    clientEventId: $0.clientEventId,
+                    serverSeq: $0.serverSeq,
+                    duplicate: $0.duplicate
+                )
+            },
+            nextCursor: response.data.nextCursor
+        )
+    }
+
+    public func pullEvents(
+        serverURL: String,
+        token: String,
+        afterSeq: Int64,
+        limit: Int64 = 500
+    ) async throws -> SyncPullEventsResult {
+        let response: SuccessEnvelope<PullEventsResponse> = try await sendJSON(
+            serverURL: serverURL,
+            path: "/v2/events",
+            method: "GET",
+            token: token,
+            body: EmptyBody?.none,
+            queryItems: [
+                URLQueryItem(name: "after_seq", value: "\(afterSeq)"),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ],
+            timeoutInterval: 12
+        )
+        return SyncPullEventsResult(
+            events: response.data.events,
+            nextCursor: response.data.nextCursor
+        )
+    }
+
+    public func snapshot(
+        serverURL: String,
+        token: String
+    ) async throws -> SyncSnapshotResult {
+        let response: SuccessEnvelope<SnapshotResponse> = try await sendJSON(
+            serverURL: serverURL,
+            path: "/v2/snapshot",
+            method: "GET",
+            token: token,
+            body: EmptyBody?.none,
+            timeoutInterval: 20
+        )
+        return SyncSnapshotResult(
+            snapshotSeq: response.data.snapshotSeq,
+            items: response.data.items,
+            tombstones: response.data.tombstones
+        )
+    }
+
+    public func webSocketURL(serverURL: String, cursor: Int64) throws -> URL {
+        let baseURL = try normalizedBaseURL(serverURL)
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("v2/ws"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.scheme = switch baseURL.scheme?.lowercased() {
+        case "https":
+            "wss"
+        default:
+            "ws"
+        }
+        components?.queryItems = [
+            URLQueryItem(name: "cursor", value: "\(cursor)"),
+            URLQueryItem(name: "protocol_version", value: "2")
+        ]
+        guard let url = components?.url else {
+            throw SyncServerClientError.invalidBaseURL
+        }
+        return url
+    }
+
     private func sendJSON<RequestBody: Encodable, ResponseBody: Decodable>(
         serverURL: String,
         path: String,
         method: String,
         token: String?,
-        body: RequestBody?
+        body: RequestBody?,
+        queryItems: [URLQueryItem] = [],
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> ResponseBody {
         let baseURL = try normalizedBaseURL(serverURL)
-        let url = baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+        let pathURL = baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+        let url: URL
+        if queryItems.isEmpty {
+            url = pathURL
+        } else {
+            var components = URLComponents(url: pathURL, resolvingAgainstBaseURL: false)
+            components?.queryItems = queryItems
+            guard let queryURL = components?.url else {
+                throw SyncServerClientError.invalidBaseURL
+            }
+            url = queryURL
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if let timeoutInterval {
+            request.timeoutInterval = timeoutInterval
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("ClipDock macOS Sync", forHTTPHeaderField: "User-Agent")
         if let token {
@@ -389,6 +662,18 @@ private struct JoinSyncResponse: Decodable {
         case syncID = "sync_id"
         case deviceID = "device_id"
         case token
+    }
+}
+
+private struct CreateInviteResponse: Decodable {
+    let syncID: String
+    let pairingCode: String
+    let pairingExpiresAtMs: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case syncID = "sync_id"
+        case pairingCode = "pairing_code"
+        case pairingExpiresAtMs = "pairing_expires_at_ms"
     }
 }
 
@@ -532,6 +817,54 @@ private struct ListAssetProvidersResponse: Decodable {
     private enum CodingKeys: String, CodingKey {
         case assetID = "asset_id"
         case providers
+    }
+}
+
+private struct PushEventsRequest: Encodable {
+    let events: [SyncPushEvent]
+}
+
+private struct PushEventsResponse: Decodable {
+    let events: [PushedEventResponse]
+    let nextCursor: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case events
+        case nextCursor = "next_cursor"
+    }
+}
+
+private struct PushedEventResponse: Decodable {
+    let clientEventId: String
+    let serverSeq: Int64
+    let duplicate: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case clientEventId = "client_event_id"
+        case serverSeq = "server_seq"
+        case duplicate
+    }
+}
+
+private struct PullEventsResponse: Decodable {
+    let events: [SyncPulledEventRecord]
+    let nextCursor: Int64
+
+    private enum CodingKeys: String, CodingKey {
+        case events
+        case nextCursor = "next_cursor"
+    }
+}
+
+private struct SnapshotResponse: Decodable {
+    let snapshotSeq: Int64
+    let items: [SyncSnapshotItemRecord]
+    let tombstones: [SyncSnapshotTombstoneRecord]
+
+    private enum CodingKeys: String, CodingKey {
+        case snapshotSeq = "snapshot_seq"
+        case items
+        case tombstones
     }
 }
 

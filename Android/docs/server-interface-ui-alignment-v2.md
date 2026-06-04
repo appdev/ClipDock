@@ -9,15 +9,15 @@ Status: Design input
 Current server routes read from `server/src/api.rs`:
 
 - `GET /health`
-- `GET /v1/info`
-- `POST /v1/sync/create`
-- `POST /v1/sync/join`
-- `POST /v1/sync/invites`
-- `POST /v1/events`
-- `GET /v1/events?after_seq&limit`
-- `GET /v1/snapshot`
-- `PUT /v1/assets/{digest}`
-- `GET /v1/assets/{digest}`
+- `GET /v2/info`
+- `POST /v2/sync/create`
+- `POST /v2/sync/join`
+- `POST /v2/sync/invites`
+- `POST /v2/events`
+- `GET /v2/events?after_seq&limit`
+- `GET /v2/snapshot`
+- `PUT /v2/assets/{digest}`
+- `GET /v2/assets/{digest}`
 
 ## Authentication And Pairing
 
@@ -42,9 +42,9 @@ Important error states:
 
 The UI should show sync as a space-scoped event log:
 
-- Initial sync: `GET /v1/snapshot`.
-- Incremental sync: `GET /v1/events?after_seq&limit`.
-- Push local changes: `POST /v1/events`.
+- Initial sync: `GET /v2/snapshot`.
+- Incremental sync: `GET /v2/events?after_seq&limit`.
+- Push local changes: `POST /v2/events`.
 - Cursor state: `next_cursor`.
 - Conflict/tombstone state: `item_deleted`.
 

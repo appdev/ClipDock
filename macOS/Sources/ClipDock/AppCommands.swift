@@ -1047,6 +1047,35 @@ enum RealFunctionQACommand {
     }
 }
 
+enum SyncDeleteQACommand {
+    private static let flag = "--exercise-sync-delete"
+    private static let contentHashFlag = "--sync-delete-content-hash"
+    private static let timeoutFlag = "--sync-delete-timeout"
+
+    static func shouldRun(arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
+
+    @MainActor
+    static func run(arguments: [String]) async throws {
+        guard let appSupportPath = CommandLineArgumentReader.value(after: "--app-support-dir", in: arguments) else {
+            throw CommandLineQAError(message: "--exercise-sync-delete requires --app-support-dir")
+        }
+        guard let contentHash = CommandLineArgumentReader.value(after: contentHashFlag, in: arguments) else {
+            throw CommandLineQAError(message: "--exercise-sync-delete requires \(contentHashFlag)")
+        }
+
+        let timeout = CommandLineArgumentReader.value(after: timeoutFlag, in: arguments)
+            .flatMap(TimeInterval.init) ?? 8
+        let report = try await SyncDeleteQAScenario.run(
+            appSupportURL: URL(fileURLWithPath: (appSupportPath as NSString).expandingTildeInPath),
+            contentHash: contentHash,
+            timeout: timeout
+        )
+        report.emit()
+    }
+}
+
 enum ContextMenuRealQACommand {
     private static let flag = "--show-context-menu"
 

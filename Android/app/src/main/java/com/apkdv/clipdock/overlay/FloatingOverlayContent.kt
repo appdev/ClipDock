@@ -33,17 +33,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apkdv.clipdock.data.ClipHistoryItem
 import com.apkdv.clipdock.data.ClipItemType
+import com.apkdv.clipdock.theme.LocalClipDockTokens
+import com.apkdv.clipdock.ui.components.ClipDockIconKind
+import com.apkdv.clipdock.ui.components.ClipDockSymbol
 
 @Composable
 fun FloatingOverlayContent(
@@ -57,6 +63,9 @@ fun FloatingOverlayContent(
   onCopyItem: (ClipHistoryItem) -> Unit,
 ) {
   Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(4.dp)) {
+    if (state.edge == FloatingOverlayEdge.Left) {
+      FloatingBall(state.loading, state.edge, state.sizeDp, state.idleOpacityPercent, onBallClick, onDrag, onDragEnd)
+    }
     if (state.panel !is FloatingPanelState.Hidden) {
       FloatingResultPanel(
         panel = state.panel,
@@ -67,17 +76,23 @@ fun FloatingOverlayContent(
         onCopyItem = onCopyItem,
       )
     }
-    FloatingBall(state.loading, onBallClick, onDrag, onDragEnd)
+    if (state.edge == FloatingOverlayEdge.Right) {
+      FloatingBall(state.loading, state.edge, state.sizeDp, state.idleOpacityPercent, onBallClick, onDrag, onDragEnd)
+    }
   }
 }
 
 @Composable
 private fun FloatingBall(
   loading: Boolean,
+  edge: FloatingOverlayEdge,
+  sizeDp: Int,
+  idleOpacityPercent: Int,
   onBallClick: () -> Unit,
   onDrag: (Float, Float) -> Unit,
   onDragEnd: () -> Unit,
 ) {
+  val tokens = LocalClipDockTokens.current
   val transition = rememberInfiniteTransition(label = "floating-loading")
   val progress by
     transition.animateFloat(
@@ -86,10 +101,18 @@ private fun FloatingBall(
       animationSpec = infiniteRepeatable(animation = tween(900), repeatMode = RepeatMode.Restart),
       label = "loading-angle",
     )
+  val shape =
+    if (edge == FloatingOverlayEdge.Right) {
+      RoundedCornerShape(topStart = 34.dp, bottomStart = 34.dp, topEnd = 0.dp, bottomEnd = 0.dp)
+    } else {
+      RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 34.dp, bottomEnd = 34.dp)
+    }
 
   Box(
     modifier =
-      Modifier.size(64.dp)
+      Modifier.width(sizeDp.dp)
+        .height((sizeDp + 6).dp)
+        .graphicsLayer(alpha = if (loading) 1f else idleOpacityPercent.coerceIn(45, 100) / 100f)
         .pointerInput(Unit) {
           detectDragGestures(
             onDragEnd = onDragEnd,
@@ -99,15 +122,16 @@ private fun FloatingBall(
             },
           )
         }
-        .clip(CircleShape)
-        .background(MaterialTheme.colorScheme.surface)
+        .clip(shape)
+        .background(tokens.colors.overlayBall)
+        .semantics { contentDescription = "同步并复制最新内容" }
         .clickable(enabled = !loading, onClick = onBallClick),
     contentAlignment = Alignment.Center,
   ) {
     if (loading) {
-      Canvas(Modifier.size(60.dp)) {
+      Canvas(Modifier.size(58.dp)) {
         drawArc(
-          color = Color(0xFF0B63CE),
+          color = tokens.colors.accent2,
           startAngle = progress,
           sweepAngle = 96f,
           useCenter = false,
@@ -117,9 +141,26 @@ private fun FloatingBall(
         )
       }
     }
-    Text("C", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-    Box(Modifier.align(Alignment.BottomEnd).padding(8.dp).size(10.dp).clip(CircleShape).background(Color(0xFF16A34A)))
+    ClipboardGlyph(loading = loading)
+    val dotAlignment = if (edge == FloatingOverlayEdge.Right) Alignment.BottomEnd else Alignment.BottomStart
+    Box(
+      Modifier.align(dotAlignment)
+        .padding(horizontal = 9.dp, vertical = 12.dp)
+        .size(12.dp)
+        .clip(CircleShape)
+        .background(tokens.colors.accent),
+    )
   }
+}
+
+@Composable
+private fun ClipboardGlyph(loading: Boolean) {
+  val tokens = LocalClipDockTokens.current
+  ClipDockSymbol(
+    icon = ClipDockIconKind.Copy,
+    modifier = Modifier.size(30.dp),
+    color = if (loading) tokens.colors.accent2 else tokens.colors.overlayGlyph,
+  )
 }
 
 @Composable
@@ -222,21 +263,27 @@ private fun panelSubtitle(panel: FloatingPanelState): String =
     FloatingPanelState.Hidden -> ""
   }
 
-private fun panelColor(panel: FloatingPanelState): Color =
-  when (panel) {
-    is FloatingPanelState.Copied -> Color(0xFF15803D)
-    is FloatingPanelState.Timeout -> Color(0xFFD97706)
-    is FloatingPanelState.Failed -> Color(0xFFDC2626)
+@Composable
+private fun panelColor(panel: FloatingPanelState): Color {
+  val colors = LocalClipDockTokens.current.colors
+  return when (panel) {
+    is FloatingPanelState.Copied -> colors.overlayPanelSuccess
+    is FloatingPanelState.Timeout -> colors.overlayPanelWarn
+    is FloatingPanelState.Failed -> colors.overlayPanelDanger
     FloatingPanelState.Hidden -> Color.Unspecified
   }
+}
 
-private fun typeColor(type: ClipItemType): Color =
-  when (type) {
-    ClipItemType.Link -> Color(0xFF2563EB)
-    ClipItemType.Image -> Color(0xFF0F766E)
-    ClipItemType.File -> Color(0xFFD97706)
-    ClipItemType.Color -> Color(0xFFFFB300)
-    ClipItemType.RichText -> Color(0xFF16A34A)
-    ClipItemType.Text -> Color(0xFF475569)
-    ClipItemType.Unknown -> Color(0xFF64748B)
+@Composable
+private fun typeColor(type: ClipItemType): Color {
+  val colors = LocalClipDockTokens.current.colors
+  return when (type) {
+    ClipItemType.Link -> colors.typeLink
+    ClipItemType.Image -> colors.typeImage
+    ClipItemType.File -> colors.typeFile
+    ClipItemType.Color -> colors.typeColor
+    ClipItemType.RichText -> colors.typeRichText
+    ClipItemType.Text -> colors.typeText
+    ClipItemType.Unknown -> colors.typeUnknown
   }
+}

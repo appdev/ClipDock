@@ -1,76 +1,131 @@
 package com.apkdv.clipdock.data
 
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
-import org.json.JSONArray
-import org.json.JSONObject
+import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 
 class ClipDockApiException(val code: String, message: String = code) : Exception(message)
 
-class ClipDockApiClient {
-  fun health(serverUrl: String): JSONObject = request(serverUrl, "/health", Method.Get, token = null)
+interface ClipDockSyncApi {
+  suspend fun snapshot(serverUrl: String, token: String): JsonObject
 
-  fun info(serverUrl: String, token: String): JSONObject = request(serverUrl, "/v1/info", Method.Get, token)
+  suspend fun events(serverUrl: String, token: String, afterSeq: Long, limit: Int = 500): JsonObject
 
-  fun createSync(serverUrl: String, deviceName: String): JSONObject =
+  suspend fun pushEvents(serverUrl: String, token: String, events: List<SyncPushEventRequest>): JsonObject
+}
+
+interface ClipDockRealtimeSocketConnector {
+  fun openRealtimeSocket(
+    serverUrl: String,
+    token: String,
+    cursor: Long,
+    listener: WebSocketListener,
+  ): WebSocket
+}
+
+class ClipDockApiClient(
+  private val client: OkHttpClient = defaultClient,
+  private val json: Json = defaultJson,
+) : ClipDockSyncApi, ClipDockRealtimeSocketConnector {
+  suspend fun health(serverUrl: String): JsonObject = request(serverUrl, "/health", Method.Get, token = null)
+
+  suspend fun info(serverUrl: String, token: String): JsonObject = request(serverUrl, "/v2/info", Method.Get, token)
+
+  suspend fun createSync(serverUrl: String, deviceName: String): JsonObject =
     request(
       serverUrl,
-      "/v1/sync/create",
+      "/v2/sync/create",
       Method.Post,
       token = null,
-      body = JSONObject().put("device_name", deviceName),
+      body = DeviceNameRequest(deviceName),
     )
 
-  fun joinSync(serverUrl: String, pairingCode: String, deviceName: String): JSONObject =
+  suspend fun joinSync(serverUrl: String, pairingCode: String, deviceName: String): JsonObject =
     request(
       serverUrl,
-      "/v1/sync/join",
+      "/v2/sync/join",
       Method.Post,
       token = null,
-      body = JSONObject().put("pairing_code", pairingCode).put("device_name", deviceName),
+      body = JoinSyncRequest(pairingCode, deviceName),
     )
 
-  fun createInvite(serverUrl: String, token: String): JSONObject =
-    request(serverUrl, "/v1/sync/invites", Method.Post, token)
+  suspend fun createInvite(serverUrl: String, token: String): JsonObject =
+    request(serverUrl, "/v2/sync/invites", Method.Post, token)
 
-  fun snapshot(serverUrl: String, token: String): JSONObject = request(serverUrl, "/v1/snapshot", Method.Get, token)
+  override suspend fun snapshot(serverUrl: String, token: String): JsonObject = request(serverUrl, "/v2/snapshot", Method.Get, token)
 
-  fun events(serverUrl: String, token: String, afterSeq: Long, limit: Int = 500): JSONObject =
-    request(serverUrl, "/v1/events?after_seq=$afterSeq&limit=$limit", Method.Get, token)
+  override suspend fun events(serverUrl: String, token: String, afterSeq: Long, limit: Int): JsonObject =
+    request(serverUrl, "/v2/events?after_seq=$afterSeq&limit=$limit", Method.Get, token)
 
-  fun p2pProviders(serverUrl: String, token: String, assetId: String): JSONObject =
-    request(serverUrl, "/v1/p2p/assets/${assetId.encodePathSegment()}/providers", Method.Get, token)
+  override suspend fun pushEvents(serverUrl: String, token: String, events: List<SyncPushEventRequest>): JsonObject =
+    request(
+      serverUrl,
+      "/v2/events",
+      Method.Post,
+      token,
+      body = PushEventsRequest(events),
+    )
 
-  fun reportP2pEndpoint(
+  override fun openRealtimeSocket(
+    serverUrl: String,
+    token: String,
+    cursor: Long,
+    listener: WebSocketListener,
+  ): WebSocket {
+    val wsUrl = serverUrl.toRealtimeUrl(cursor)
+    val request =
+      Request.Builder()
+        .url(wsUrl)
+        .header("Authorization", "Bearer $token")
+        .build()
+    return client.newWebSocket(request, listener)
+  }
+
+  suspend fun p2pProviders(serverUrl: String, token: String, assetId: String): JsonObject =
+    request(serverUrl, "/v2/p2p/assets/${assetId.encodePathSegment()}/providers", Method.Get, token)
+
+  suspend fun p2pDevices(serverUrl: String, token: String): JsonObject =
+    request(serverUrl, "/v2/p2p/devices", Method.Get, token)
+
+  suspend fun reportP2pEndpoint(
     serverUrl: String,
     token: String,
     endpointId: String,
     relayUrl: String?,
     directAddresses: List<String>,
-  ): JSONObject =
+  ): JsonObject =
     request(
       serverUrl,
-      "/v1/p2p/endpoint",
+      "/v2/p2p/endpoint",
       Method.Put,
       token,
       body =
-        JSONObject()
-          .put("endpoint_id", endpointId)
-          .put("relay_url", relayUrl ?: JSONObject.NULL)
-          .put("direct_addresses", JSONArray(directAddresses))
-          .put(
-            "capabilities",
-            JSONObject()
-              .put("transport", "iroh-blobs")
-              .put("blob_transfer", true)
-              .put("android_client", true),
-          )
-          .put("quality", JSONObject().put("path_type", "unknown")),
+        ReportP2pEndpointRequest(
+          endpointId = endpointId,
+          relayUrl = relayUrl,
+          directAddresses = directAddresses,
+          capabilities = P2pEndpointCapabilities(),
+          quality = P2pEndpointQuality(),
+        ),
     )
 
-  fun upsertP2pProvider(
+  suspend fun upsertP2pProvider(
     serverUrl: String,
     token: String,
     assetId: String,
@@ -78,80 +133,211 @@ class ClipDockApiClient {
     byteCount: Long,
     mimeType: String?,
     ticket: String,
-  ): JSONObject =
+  ): JsonObject =
     request(
       serverUrl,
-      "/v1/p2p/assets/${assetId.encodePathSegment()}/providers/me",
+      "/v2/p2p/assets/${assetId.encodePathSegment()}/providers/me",
       Method.Put,
       token,
       body =
-        JSONObject()
-          .put("kind", kind)
-          .put("byte_count", byteCount)
-          .put("mime_type", mimeType ?: JSONObject.NULL)
-          .put("availability", "online")
-          .put(
-            "quality",
-            JSONObject()
-              .put("transport", "iroh-blobs")
-              .put("blob_ticket", ticket),
-          ),
+        UpsertP2pProviderRequest(
+          kind = kind,
+          byteCount = byteCount,
+          mimeType = mimeType,
+          availability = "online",
+          quality = P2pProviderQuality(ticket),
+        ),
     )
 
-  fun deleteP2pProvider(serverUrl: String, token: String, assetId: String): JSONObject =
+  suspend fun deleteP2pProvider(serverUrl: String, token: String, assetId: String): JsonObject =
     request(
       serverUrl,
-      "/v1/p2p/assets/${assetId.encodePathSegment()}/providers/me",
+      "/v2/p2p/assets/${assetId.encodePathSegment()}/providers/me",
       Method.Delete,
       token,
     )
 
-  private fun request(
+  private suspend inline fun <reified T> request(
     serverUrl: String,
     path: String,
     method: Method,
     token: String?,
-    body: JSONObject? = null,
-  ): JSONObject {
-    val connection = URL(serverUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
-    connection.requestMethod = method.value
-    connection.connectTimeout = 5_000
-    connection.readTimeout = 12_000
-    connection.setRequestProperty("Accept", "application/json")
-    token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-    if (body != null) {
-      val bytes = body.toString().toByteArray(Charsets.UTF_8)
-      connection.doOutput = true
-      connection.setRequestProperty("Content-Type", "application/json")
-      connection.setRequestProperty("Content-Length", bytes.size.toString())
-      connection.outputStream.use { it.write(bytes) }
-    }
+    body: T,
+  ): JsonObject =
+    request(serverUrl, path, method, token, json.encodeToString(body))
 
-    val status = connection.responseCode
-    val responseText =
-      (if (status in 200..299) connection.inputStream else connection.errorStream)
-        ?.use { stream -> BufferedReader(InputStreamReader(stream)).readText() }
-        .orEmpty()
+  private suspend fun request(
+    serverUrl: String,
+    path: String,
+    method: Method,
+    token: String?,
+    bodyJson: String? = null,
+  ): JsonObject {
+    val requestBody =
+      when {
+        bodyJson != null -> bodyJson.toRequestBody(JSON_MEDIA_TYPE)
+        method.requiresRequestBody -> ByteArray(0).toRequestBody()
+        else -> null
+      }
+    val request =
+      Request.Builder()
+        .url(serverUrl.trimEnd('/') + path)
+        .header("Accept", "application/json")
+        .apply {
+          token?.let { header("Authorization", "Bearer $it") }
+          method(method.value, requestBody)
+        }
+        .build()
+
+    val response = client.newCall(request).awaitBody()
+    val responseText = response.bodyText
     if (responseText.isBlank()) {
-      if (status in 200..299) return JSONObject()
-      throw ClipDockApiException("http_$status")
+      if (response.isSuccessful) return buildJsonObject {}
+      throw ClipDockApiException("http_${response.code}")
     }
 
-    val envelope = JSONObject(responseText)
-    if (status !in 200..299 || envelope.has("error")) {
-      val error = envelope.optJSONObject("error")
-      throw ClipDockApiException(error?.optString("code").orEmpty().ifBlank { "http_$status" }, error?.optString("message").orEmpty())
+    val envelope = json.decodeFromString<ApiEnvelope>(responseText)
+    if (!response.isSuccessful || envelope.error != null) {
+      val error = envelope.error
+      throw ClipDockApiException(error?.code.orEmpty().ifBlank { "http_${response.code}" }, error?.message.orEmpty())
     }
-    return envelope.optJSONObject("data") ?: JSONObject()
+    return envelope.data ?: buildJsonObject {}
+  }
+
+  private companion object {
+    val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+    val defaultClient: OkHttpClient =
+      OkHttpClient.Builder()
+        .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+    val defaultJson: Json = Json { ignoreUnknownKeys = true }
   }
 }
 
-private enum class Method(val value: String) {
+private data class NetworkResponse(
+  val code: Int,
+  val isSuccessful: Boolean,
+  val bodyText: String,
+)
+
+private suspend fun Call.awaitBody(): NetworkResponse =
+  suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    enqueue(
+      object : Callback {
+        override fun onFailure(call: Call, e: IOException) {
+          if (!continuation.isCancelled) continuation.resumeWithException(e)
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+          response.use {
+            try {
+              val bodyText = it.body.string()
+              if (!continuation.isCancelled) {
+                continuation.resume(NetworkResponse(it.code, it.isSuccessful, bodyText))
+              }
+            } catch (throwable: Throwable) {
+              if (!continuation.isCancelled) continuation.resumeWithException(throwable)
+            }
+          }
+        }
+      },
+    )
+  }
+
+@Serializable
+private data class ApiEnvelope(
+  @SerialName("protocol_version") val protocolVersion: Int = 0,
+  val data: JsonObject? = null,
+  val error: ApiError? = null,
+)
+
+@Serializable
+private data class ApiError(
+  val code: String = "",
+  val message: String = "",
+)
+
+@Serializable
+private data class DeviceNameRequest(
+  @SerialName("device_name") val deviceName: String,
+)
+
+@Serializable
+private data class JoinSyncRequest(
+  @SerialName("pairing_code") val pairingCode: String,
+  @SerialName("device_name") val deviceName: String,
+)
+
+@Serializable
+data class SyncPushEventRequest(
+  @SerialName("client_event_id") val clientEventId: String,
+  @SerialName("type") val type: String,
+  @SerialName("content_hash") val contentHash: String,
+  @SerialName("item_type") val itemType: String? = null,
+  val payload: JsonObject? = null,
+  @SerialName("copy_count_delta") val copyCountDelta: Long? = null,
+)
+
+@Serializable
+private data class PushEventsRequest(
+  val events: List<SyncPushEventRequest>,
+)
+
+@Serializable
+private data class ReportP2pEndpointRequest(
+  @SerialName("endpoint_id") val endpointId: String,
+  @SerialName("relay_url") val relayUrl: String?,
+  @SerialName("direct_addresses") val directAddresses: List<String>,
+  val capabilities: P2pEndpointCapabilities,
+  val quality: P2pEndpointQuality,
+)
+
+@Serializable
+private data class P2pEndpointCapabilities(
+  val transport: String = "iroh-blobs",
+  @SerialName("blob_transfer") val blobTransfer: Boolean = true,
+  @SerialName("android_client") val androidClient: Boolean = true,
+)
+
+@Serializable
+private data class P2pEndpointQuality(
+  @SerialName("path_type") val pathType: String = "unknown",
+)
+
+@Serializable
+private data class UpsertP2pProviderRequest(
+  val kind: String,
+  @SerialName("byte_count") val byteCount: Long,
+  @SerialName("mime_type") val mimeType: String?,
+  val availability: String,
+  val quality: P2pProviderQuality,
+)
+
+@Serializable
+private data class P2pProviderQuality(
+  @SerialName("blob_ticket") val blobTicket: String,
+  val transport: String = "iroh-blobs",
+)
+
+private enum class Method(val value: String, val requiresRequestBody: Boolean = false) {
   Get("GET"),
-  Post("POST"),
-  Put("PUT"),
+  Post("POST", requiresRequestBody = true),
+  Put("PUT", requiresRequestBody = true),
   Delete("DELETE")
 }
 
 private fun String.encodePathSegment(): String =
   replace(":", "%3A").replace("/", "%2F").replace(" ", "%20")
+
+private fun String.toRealtimeUrl(cursor: Long): String {
+  val trimmed = trimEnd('/')
+  val base =
+    when {
+      trimmed.startsWith("https://") -> "wss://" + trimmed.removePrefix("https://")
+      trimmed.startsWith("http://") -> "ws://" + trimmed.removePrefix("http://")
+      else -> trimmed
+    }
+  return "$base/v2/ws?cursor=$cursor&protocol_version=2"
+}

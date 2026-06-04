@@ -62,6 +62,17 @@ public struct RustItemManagementResult: Equatable, Sendable {
     public let affectedCount: Int64
 }
 
+public struct RustSyncProgressResult: Equatable, Sendable {
+    public let cursor: Int64
+    public let snapshotSeq: Int64
+}
+
+public struct RustSyncApplyResult: Equatable, Sendable {
+    public let cursor: Int64
+    public let snapshotSeq: Int64
+    public let changedItemIds: [String]
+}
+
 public struct RustP2PNodeResult: Equatable, Sendable {
     public let endpointID: String
     public let relayURL: String?
@@ -302,6 +313,7 @@ public struct RustSyncPreferences: Equatable, Codable, Sendable {
     public var serverURL: String
     public var syncID: String?
     public var deviceID: String?
+    public var deviceToken: String?
     public var deviceName: String
     public var p2pEnabled: Bool
     public var downloadPathMode: String
@@ -312,6 +324,7 @@ public struct RustSyncPreferences: Equatable, Codable, Sendable {
         serverURL: String = "",
         syncID: String? = nil,
         deviceID: String? = nil,
+        deviceToken: String? = nil,
         deviceName: String = RustSyncPreferences.defaultDeviceName(),
         p2pEnabled: Bool = true,
         downloadPathMode: String = "auto",
@@ -321,6 +334,7 @@ public struct RustSyncPreferences: Equatable, Codable, Sendable {
         self.serverURL = serverURL
         self.syncID = syncID
         self.deviceID = deviceID
+        self.deviceToken = deviceToken
         self.deviceName = deviceName
         self.p2pEnabled = p2pEnabled
         self.downloadPathMode = downloadPathMode
@@ -332,6 +346,7 @@ public struct RustSyncPreferences: Equatable, Codable, Sendable {
         case serverURL = "server_url"
         case syncID = "sync_id"
         case deviceID = "device_id"
+        case deviceToken = "device_token"
         case deviceName = "device_name"
         case p2pEnabled = "p2p_enabled"
         case downloadPathMode = "download_path_mode"
@@ -344,6 +359,7 @@ public struct RustSyncPreferences: Equatable, Codable, Sendable {
         self.serverURL = try container.decodeIfPresent(String.self, forKey: .serverURL) ?? ""
         self.syncID = try container.decodeIfPresent(String.self, forKey: .syncID)
         self.deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID)
+        self.deviceToken = try container.decodeIfPresent(String.self, forKey: .deviceToken)
         self.deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName)
             ?? RustSyncPreferences.defaultDeviceName()
         self.p2pEnabled = try container.decodeIfPresent(Bool.self, forKey: .p2pEnabled) ?? true
@@ -1318,6 +1334,176 @@ public struct RustCaptureFilesRequest: Equatable, Sendable {
 
 public typealias RustCaptureFilesResult = RustCaptureTextResult
 
+public struct RustSyncLocalPendingRequest: Equatable, Encodable, Sendable {
+    public let syncID: String
+    public let contentHash: String
+    public let itemID: String?
+    public let clientEventID: String
+
+    public init(syncID: String, contentHash: String, itemID: String?, clientEventID: String) {
+        self.syncID = syncID
+        self.contentHash = contentHash
+        self.itemID = itemID
+        self.clientEventID = clientEventID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case syncID = "sync_id"
+        case contentHash = "content_hash"
+        case itemID = "item_id"
+        case clientEventID = "client_event_id"
+    }
+}
+
+public struct RustSyncApplyEventsRequest: Equatable, Encodable, Sendable {
+    public let syncID: String
+    public let deviceID: String
+    public let events: [RustSyncEventRecord]
+    public let nextCursor: Int64
+
+    public init(syncID: String, deviceID: String, events: [RustSyncEventRecord], nextCursor: Int64) {
+        self.syncID = syncID
+        self.deviceID = deviceID
+        self.events = events
+        self.nextCursor = nextCursor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case syncID = "sync_id"
+        case deviceID = "device_id"
+        case events
+        case nextCursor = "next_cursor"
+    }
+}
+
+public struct RustSyncEventRecord: Equatable, Encodable, Sendable {
+    public let serverSeq: Int64
+    public let deviceID: String
+    public let clientEventID: String
+    public let eventType: String
+    public let contentHash: String
+    public let itemType: String?
+    public let payload: [String: SyncEventPayloadValue]?
+    public let copyCountDelta: Int64?
+    public let createdAtMs: Int64
+
+    public init(
+        serverSeq: Int64,
+        deviceID: String,
+        clientEventID: String,
+        eventType: String,
+        contentHash: String,
+        itemType: String?,
+        payload: [String: SyncEventPayloadValue]?,
+        copyCountDelta: Int64?,
+        createdAtMs: Int64
+    ) {
+        self.serverSeq = serverSeq
+        self.deviceID = deviceID
+        self.clientEventID = clientEventID
+        self.eventType = eventType
+        self.contentHash = contentHash
+        self.itemType = itemType
+        self.payload = payload
+        self.copyCountDelta = copyCountDelta
+        self.createdAtMs = createdAtMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case serverSeq = "server_seq"
+        case deviceID = "device_id"
+        case clientEventID = "client_event_id"
+        case eventType = "type"
+        case contentHash = "content_hash"
+        case itemType = "item_type"
+        case payload
+        case copyCountDelta = "copy_count_delta"
+        case createdAtMs = "created_at_ms"
+    }
+}
+
+public struct RustSyncApplySnapshotRequest: Equatable, Encodable, Sendable {
+    public let syncID: String
+    public let deviceID: String
+    public let snapshotSeq: Int64
+    public let items: [RustSyncSnapshotItemRecord]
+    public let tombstones: [RustSyncSnapshotTombstoneRecord]
+
+    public init(
+        syncID: String,
+        deviceID: String,
+        snapshotSeq: Int64,
+        items: [RustSyncSnapshotItemRecord],
+        tombstones: [RustSyncSnapshotTombstoneRecord]
+    ) {
+        self.syncID = syncID
+        self.deviceID = deviceID
+        self.snapshotSeq = snapshotSeq
+        self.items = items
+        self.tombstones = tombstones
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case syncID = "sync_id"
+        case deviceID = "device_id"
+        case snapshotSeq = "snapshot_seq"
+        case items
+        case tombstones
+    }
+}
+
+public struct RustSyncSnapshotItemRecord: Equatable, Encodable, Sendable {
+    public let contentHash: String
+    public let itemType: String
+    public let payload: [String: SyncEventPayloadValue]
+    public let copyCount: Int64
+    public let updatedAtMs: Int64
+    public let lastServerSeq: Int64
+
+    public init(
+        contentHash: String,
+        itemType: String,
+        payload: [String: SyncEventPayloadValue],
+        copyCount: Int64,
+        updatedAtMs: Int64,
+        lastServerSeq: Int64
+    ) {
+        self.contentHash = contentHash
+        self.itemType = itemType
+        self.payload = payload
+        self.copyCount = copyCount
+        self.updatedAtMs = updatedAtMs
+        self.lastServerSeq = lastServerSeq
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case contentHash = "content_hash"
+        case itemType = "item_type"
+        case payload
+        case copyCount = "copy_count"
+        case updatedAtMs = "updated_at_ms"
+        case lastServerSeq = "last_server_seq"
+    }
+}
+
+public struct RustSyncSnapshotTombstoneRecord: Equatable, Encodable, Sendable {
+    public let contentHash: String
+    public let deletedAtMs: Int64
+    public let lastServerSeq: Int64
+
+    public init(contentHash: String, deletedAtMs: Int64, lastServerSeq: Int64) {
+        self.contentHash = contentHash
+        self.deletedAtMs = deletedAtMs
+        self.lastServerSeq = lastServerSeq
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case contentHash = "content_hash"
+        case deletedAtMs = "deleted_at_ms"
+        case lastServerSeq = "last_server_seq"
+    }
+}
+
 public struct RustCoreError: Error, Equatable, Sendable {
     public let code: String
     public let messageKey: String
@@ -1657,6 +1843,69 @@ public struct RustCoreClient: Sendable {
         }
     }
 
+    public func getSyncProgress(
+        appSupportDirectory: URL,
+        syncID: String,
+        deviceID: String
+    ) -> Result<RustSyncProgressResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            let result = get_sync_progress(appSupportPath, syncID, deviceID)
+            guard result.ok else {
+                return .failure(Self.makeError(
+                    code: result.error_code.toString(),
+                    messageKey: result.message_key.toString()
+                ))
+            }
+            return .success(RustSyncProgressResult(
+                cursor: result.cursor,
+                snapshotSeq: result.snapshot_seq
+            ))
+        }
+    }
+
+    public func markSyncLocalPending(
+        appSupportDirectory: URL,
+        request: RustSyncLocalPendingRequest
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                let result = mark_sync_local_pending(appSupportPath, json)
+                return decodeItemManagementResult(result)
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    public func applySyncEvents(
+        appSupportDirectory: URL,
+        request: RustSyncApplyEventsRequest
+    ) -> Result<RustSyncApplyResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                return decodeSyncApplyResult(apply_sync_events(appSupportPath, json))
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
+    public func applySyncSnapshot(
+        appSupportDirectory: URL,
+        request: RustSyncApplySnapshotRequest
+    ) -> Result<RustSyncApplyResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
+            switch Self.encodeBridgeJSON(request) {
+            case .success(let json):
+                return decodeSyncApplyResult(apply_sync_snapshot(appSupportPath, json))
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+    }
+
     public func claimLinkMetadataFetchBatch(
         appSupportDirectory: URL,
         limit: Int64 = 3,
@@ -1873,6 +2122,27 @@ public struct RustCoreClient: Sendable {
             relayURL: relayURL.isEmpty ? nil : relayURL,
             directAddresses: directAddresses
         ))
+    }
+
+    private func decodeSyncApplyResult(
+        _ result: CoreSyncApplyResult
+    ) -> Result<RustSyncApplyResult, RustCoreError> {
+        guard result.ok else {
+            return .failure(Self.makeError(
+                code: result.error_code.toString(),
+                messageKey: result.message_key.toString()
+            ))
+        }
+        switch Self.decodeBridgeJSON(result.changed_item_ids_json.toString(), as: [String].self) {
+        case .success(let changedItemIds):
+            return .success(RustSyncApplyResult(
+                cursor: result.cursor,
+                snapshotSeq: result.snapshot_seq,
+                changedItemIds: changedItemIds
+            ))
+        case .failure(let error):
+            return .failure(error)
+        }
     }
 
     private static func makeError(code: String, messageKey: String) -> RustCoreError {

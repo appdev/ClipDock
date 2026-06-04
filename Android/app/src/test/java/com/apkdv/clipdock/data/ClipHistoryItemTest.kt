@@ -3,6 +3,8 @@ package com.apkdv.clipdock.data
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Test
 
 class ClipHistoryItemTest {
@@ -44,18 +46,56 @@ class ClipHistoryItemTest {
     assertEquals(PayloadState.Ready, merged.payloadState)
     assertEquals(TransferState.Ready, merged.transferState)
   }
+
+  @Test
+  fun eventItems_removeTombstoneWhenLaterUpsertRestoresContent() {
+    val contentHash = "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    val tombstones = mutableSetOf(contentHash)
+    val events =
+      JSONArray()
+        .put(JSONObject().put("type", "item_delete").put("content_hash", contentHash))
+        .put(
+          JSONObject()
+            .put("type", "item_upsert")
+            .put("content_hash", contentHash)
+            .put("item_type", "text")
+            .put("copy_count_delta", 1L)
+            .put("created_at_ms", 123L)
+            .put("payload", JSONObject().put("text", "restored").put("summary", "restored")),
+        )
+
+    val items = events.toEventItems(tombstones)
+
+    assertTrue(tombstones.isEmpty())
+    assertEquals(1, items.size)
+    assertEquals(contentHash, items[0].contentHash)
+    assertEquals("restored", items[0].title)
+  }
+
+  @Test
+  fun fromJson_resetsInFlightTransferStateAfterProcessRestart() {
+    val item =
+      sampleItem(type = ClipItemType.File, title = "remote.txt", localUri = null)
+        .copy(transferState = TransferState.Downloading)
+
+    val restored = ClipHistoryItem.fromJson(item.toJson())
+
+    assertEquals(PayloadState.RemoteOnly, restored.payloadState)
+    assertEquals(TransferState.Failed, restored.transferState)
+  }
 }
 
 private fun sampleItem(type: ClipItemType, title: String, localUri: String?): ClipHistoryItem =
   ClipHistoryItem(
     stableId = "stable",
-    contentHash = "sha256:test",
+    contentHash = "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     type = type,
     title = title,
     body = "",
     detail = "",
     sourceName = null,
     assetId = null,
+    thumbnailUri = null,
     localUri = localUri,
     payloadState = if (localUri == null && (type == ClipItemType.Image || type == ClipItemType.File)) PayloadState.RemoteOnly else PayloadState.Ready,
     transferState = TransferState.Idle,

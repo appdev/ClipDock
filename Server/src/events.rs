@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Row, SqlitePool};
 
-use crate::{auth::DeviceAuth, db, errors::AppError};
+use crate::{auth::DeviceAuth, db, errors::AppError, hashes::ContentHash, realtime::EventHub};
 
 #[derive(Deserialize)]
 pub struct PushEventsRequest {
@@ -42,7 +42,7 @@ pub struct PullEventsResponse {
     pub next_cursor: i64,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EventOut {
     pub server_seq: i64,
     pub device_id: String,
@@ -81,17 +81,12 @@ pub struct SnapshotTombstone {
 }
 
 pub fn validate_content_hash(value: &str) -> bool {
-    let Some(hex) = value.strip_prefix("sha256:") else {
-        return false;
-    };
-    hex.len() == 64
-        && hex
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    ContentHash::is_valid(value)
 }
 
 pub async fn push_events(
     pool: &SqlitePool,
+    realtime: &EventHub,
     auth: DeviceAuth,
     request: PushEventsRequest,
 ) -> Result<PushEventsResponse, AppError> {
@@ -101,6 +96,7 @@ pub async fn push_events(
 
     let mut tx = pool.begin().await?;
     let mut pushed = Vec::with_capacity(request.events.len());
+    let mut inserted_server_seqs = Vec::new();
 
     for event in request.events {
         validate_incoming(&event)?;
@@ -120,24 +116,6 @@ pub async fn push_events(
                 duplicate: true,
             });
             continue;
-        }
-
-        if event.event_type == "item_upsert" {
-            if let Some(row) = sqlx::query(
-                "SELECT deleted_at_ms
-                     FROM sync_items
-                     WHERE sync_group_id = ? AND content_hash = ?",
-            )
-            .bind(&auth.sync_group_id)
-            .bind(&event.content_hash)
-            .fetch_optional(&mut *tx)
-            .await?
-            {
-                let deleted_at_ms: Option<i64> = row.try_get("deleted_at_ms")?;
-                if deleted_at_ms.is_some() {
-                    return Err(AppError::Conflict("item_deleted"));
-                }
-            }
         }
 
         let payload_json = event
@@ -199,8 +177,8 @@ pub async fn push_events(
                 let update = sqlx::query(
                     "UPDATE sync_items
                      SET item_type = ?, payload_json = ?, copy_count = copy_count + ?,
-                         updated_at_ms = ?, last_server_seq = ?
-                     WHERE sync_group_id = ? AND content_hash = ? AND deleted_at_ms IS NULL",
+                         deleted_at_ms = NULL, updated_at_ms = ?, last_server_seq = ?
+                     WHERE sync_group_id = ? AND content_hash = ?",
                 )
                 .bind(item_type)
                 .bind(payload_json)
@@ -266,10 +244,16 @@ pub async fn push_events(
             server_seq,
             duplicate: false,
         });
+        inserted_server_seqs.push(server_seq);
     }
 
     let next_cursor = latest_seq_tx(&mut tx, &auth.sync_group_id).await?;
     tx.commit().await?;
+
+    if !inserted_server_seqs.is_empty() {
+        let events = events_by_server_seq(pool, &auth.sync_group_id, &inserted_server_seqs).await?;
+        realtime.broadcast(&auth.sync_group_id, events).await;
+    }
 
     Ok(PushEventsResponse {
         events: pushed,
@@ -423,7 +407,7 @@ pub async fn snapshot(pool: &SqlitePool, auth: DeviceAuth) -> Result<SnapshotRes
     })
 }
 
-async fn latest_seq(pool: &SqlitePool, sync_group_id: &str) -> Result<i64, sqlx::Error> {
+pub async fn latest_seq(pool: &SqlitePool, sync_group_id: &str) -> Result<i64, sqlx::Error> {
     sqlx::query(
         "SELECT COALESCE(MAX(server_seq), 0) AS latest
          FROM sync_events
@@ -433,6 +417,44 @@ async fn latest_seq(pool: &SqlitePool, sync_group_id: &str) -> Result<i64, sqlx:
     .fetch_one(pool)
     .await
     .map(|row| row.get::<i64, _>("latest"))
+}
+
+pub async fn events_by_server_seq(
+    pool: &SqlitePool,
+    sync_group_id: &str,
+    server_seqs: &[i64],
+) -> Result<Vec<EventOut>, AppError> {
+    let mut events = Vec::with_capacity(server_seqs.len());
+    for server_seq in server_seqs {
+        let row = sqlx::query(
+            "SELECT server_seq, device_id, client_event_id, event_type, content_hash,
+                    item_type, payload_json, copy_count_delta, created_at_ms
+             FROM sync_events
+             WHERE sync_group_id = ? AND server_seq = ?",
+        )
+        .bind(sync_group_id)
+        .bind(server_seq)
+        .fetch_one(pool)
+        .await?;
+        let payload_json: Option<String> = row.try_get("payload_json")?;
+        let payload = payload_json
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| AppError::Internal(error.to_string()))?;
+        events.push(EventOut {
+            server_seq: row.try_get("server_seq")?,
+            device_id: row.try_get("device_id")?,
+            client_event_id: row.try_get("client_event_id")?,
+            event_type: row.try_get("event_type")?,
+            content_hash: row.try_get("content_hash")?,
+            item_type: row.try_get("item_type")?,
+            payload,
+            copy_count_delta: row.try_get("copy_count_delta")?,
+            created_at_ms: row.try_get("created_at_ms")?,
+        });
+    }
+    events.sort_by_key(|event| event.server_seq);
+    Ok(events)
 }
 
 async fn latest_seq_tx(

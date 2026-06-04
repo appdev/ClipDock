@@ -183,7 +183,7 @@ mkdir -p "$staging_dir/docs" "$output_dir"
 
 cp "$binary_path" "$staging_dir/$binary_name$exe_suffix"
 cp README.md "$staging_dir/README.md"
-cp docs/protocol-v1.md "$staging_dir/docs/protocol-v1.md"
+cp docs/protocol-v2.md "$staging_dir/docs/protocol-v2.md"
 
 cat > "$staging_dir/$package_name.manifest.txt" <<MANIFEST
 name=ClipDock Sync Server

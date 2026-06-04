@@ -3,6 +3,8 @@ package com.apkdv.clipdock.data
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.PersistableBundle
 import android.webkit.MimeTypeMap
@@ -13,14 +15,20 @@ import com.apkdv.clipdock.p2p.P2pProviderCandidate
 import com.apkdv.clipdock.p2p.P2pProviderSelector
 import java.io.File
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,8 +37,46 @@ class ClipDockRepository(private val context: Context) {
   private val appContext = context.applicationContext
   private val preferences = appContext.getSharedPreferences("clipdock", Context.MODE_PRIVATE)
   private val api = ClipDockApiClient()
+  private val syncStore = SharedPreferencesSyncStore(preferences)
+  private val syncEngine = SyncEngine(syncStore, api)
+  private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val clipboardCaptureMonitor =
+    AndroidClipboardCaptureMonitor(
+      context = appContext,
+      scope = syncScope,
+      upload = { item -> uploadLocalItem(item) },
+    )
+  private var fallbackPollJob: Job? = null
+  private var realtimeReconnectJob: Job? = null
+  private val realtimeReconnectLock = Any()
+  private val realtimeReconnectBackoff = RealtimeReconnectBackoff()
+  private val realtimeClient =
+    SyncRealtimeClient(
+      socketConnector = api,
+      engine = syncEngine,
+      scope = syncScope,
+      onState = { status ->
+        if (status == "socket_live") {
+          resetRealtimeReconnectBackoff()
+        }
+        _state.update { it.copy(connectionStatus = status) }
+      },
+      onRecoveryRequired = {
+        AndroidSyncEventLogger.log("recovery_requested enqueue_work=true")
+        ClipDockSyncScheduler.enqueueRecovery(appContext)
+        scheduleRealtimeReconnect()
+      },
+      onSyncResult = { result ->
+        applySyncResult(result)
+        AndroidSyncEventLogger.log(
+          "realtime_state_applied cursor=${result.cursor} snapshot_seq=${result.snapshotSeq} " +
+            "used_snapshot=${result.usedSnapshot} reason=${result.recoveryReason ?: "none"} items=${result.items.size}",
+        )
+      },
+      logger = AndroidSyncEventLogger,
+    )
   private val p2pTransport = NativeP2pTransport(appContext)
-  private val syncMutex = Mutex()
+  private val setupMutex = Mutex()
   private val _state = MutableStateFlow(loadState())
 
   val state: StateFlow<ClipDockUiState> = _state
@@ -64,62 +110,119 @@ class ClipDockRepository(private val context: Context) {
     _state.update { it.copy(overlayEnabled = enabled) }
   }
 
+  fun setOverlayClickAction(action: OverlayClickAction) {
+    preferences.edit().putString(KEY_OVERLAY_CLICK_ACTION, action.name).apply()
+    _state.update { it.copy(overlayClickAction = action) }
+  }
+
+  fun setOverlaySnapEdge(edge: OverlaySnapEdge) {
+    preferences.edit().putString(KEY_OVERLAY_SNAP_EDGE, edge.name).apply()
+    _state.update { it.copy(overlaySnapEdge = edge) }
+  }
+
+  fun setOverlaySizeDp(value: Int) {
+    val sanitized = sanitizeOverlaySizeDp(value)
+    preferences.edit().putInt(KEY_OVERLAY_SIZE_DP, sanitized).apply()
+    _state.update { it.copy(overlaySizeDp = sanitized) }
+  }
+
+  fun setOverlayIdleOpacityPercent(value: Int) {
+    val sanitized = sanitizeOverlayIdleOpacityPercent(value)
+    preferences.edit().putInt(KEY_OVERLAY_IDLE_OPACITY_PERCENT, sanitized).apply()
+    _state.update { it.copy(overlayIdleOpacityPercent = sanitized) }
+  }
+
+  fun setOverlayVerticalFraction(value: Float) {
+    val sanitized = sanitizeOverlayVerticalFraction(value)
+    preferences.edit().putFloat(KEY_OVERLAY_VERTICAL_FRACTION, sanitized).apply()
+    _state.update { it.copy(overlayVerticalFraction = sanitized) }
+  }
+
   fun setEncryptionEnabled(enabled: Boolean) {
     preferences.edit().putBoolean(KEY_ENCRYPTION_ENABLED, enabled).apply()
     _state.update { it.copy(encryptionEnabled = enabled) }
   }
 
+  fun startLocalClipboardCapture() {
+    clipboardCaptureMonitor.start()
+  }
+
   suspend fun checkHealth() =
     runNetwork("检查连接失败") {
-      api.health(current.serverUrl)
+      val serverUrl = current.serverUrl
+      api.health(serverUrl)
       _state.update { it.copy(connectionStatus = "可连接", diagnostics = it.diagnostics.copy(lastError = null)) }
     }
 
   suspend fun createSyncSpace() =
-    runNetwork("创建同步空间失败") {
-      val data = api.createSync(current.serverUrl, current.deviceName)
-      persistAuth(data)
-      _state.update {
-        it.copy(
-          connectionStatus = "已加入",
-          pairingCode = data.optString("pairing_code"),
-          pairingExpiresAtMillis = data.optLong("pairing_expires_at_ms"),
-          diagnostics = it.diagnostics.copy(lastError = null),
-        )
+    setupMutex.withLock {
+      if (current.hasSyncRegistration()) {
+        _state.update {
+          it.copy(
+            connectionStatus = "已加入",
+            diagnostics = it.diagnostics.copy(lastError = "已创建同步空间，请先断开当前同步"),
+          )
+        }
+        return@withLock
       }
-      refreshInfo()
-      syncNow()
+      runSyncSetup("创建同步空间失败") {
+        val serverUrl = current.serverUrl
+        val deviceName = current.deviceName
+        val data = api.createSync(serverUrl, deviceName).toJSONObject()
+        persistAuth(data)
+        _state.update {
+          it.copy(
+            connectionStatus = "已加入",
+            pairingCode = data.optString("pairing_code"),
+            pairingExpiresAtMillis = data.optLong("pairing_expires_at_ms"),
+            diagnostics = it.diagnostics.copy(lastError = null),
+          )
+        }
+        refreshInfo()
+        syncNow()
+        startRealtime()
+      }
     }
 
   suspend fun joinSyncSpace(pairingCode: String) =
-    runNetwork("加入同步空间失败") {
-      val data = api.joinSync(current.serverUrl, pairingCode.trim().uppercase(), current.deviceName)
-      persistAuth(data)
-      _state.update { it.copy(connectionStatus = "已加入", pairingCode = null, pairingExpiresAtMillis = null) }
-      refreshInfo()
-      syncNow()
+    setupMutex.withLock {
+      runSyncSetup("加入同步空间失败") {
+        val serverUrl = current.serverUrl
+        val deviceName = current.deviceName
+        val normalizedCode = pairingCode.trim().uppercase()
+        val data = api.joinSync(serverUrl, normalizedCode, deviceName).toJSONObject()
+        persistAuth(data)
+        _state.update { it.copy(connectionStatus = "已加入", pairingCode = null, pairingExpiresAtMillis = null) }
+        refreshInfo()
+        syncNow()
+        startRealtime()
+      }
     }
 
   suspend fun createInvite() =
-    runNetwork("生成配对码失败") {
-      val token = requireToken()
-      val data = api.createInvite(current.serverUrl, token)
-      _state.update {
-        it.copy(
-          pairingCode = data.optString("pairing_code"),
-          pairingExpiresAtMillis = data.optLong("pairing_expires_at_ms"),
-          diagnostics = it.diagnostics.copy(lastError = null),
-        )
+    setupMutex.withLock {
+      runSyncSetup("生成配对码失败") {
+        val token = requireToken()
+        val serverUrl = current.serverUrl
+        val data = api.createInvite(serverUrl, token).toJSONObject()
+        _state.update {
+          it.copy(
+            pairingCode = data.optString("pairing_code"),
+            pairingExpiresAtMillis = data.optLong("pairing_expires_at_ms"),
+            diagnostics = it.diagnostics.copy(lastError = null),
+          )
+        }
       }
     }
 
   suspend fun refreshInfo() =
     runNetwork("获取服务器能力失败") {
       val token = requireToken()
-      val data = api.info(current.serverUrl, token)
+      val serverUrl = current.serverUrl
+      val data = api.info(serverUrl, token).toJSONObject()
       val capabilities =
         ServerCapabilities(
-          protocolVersion = data.optInt("protocol_version", 1),
+          protocolVersion = data.optInt("protocol_version", 2),
           eventTypes = data.optJSONArray("event_types").stringList(),
           assetKinds = data.optJSONArray("asset_kinds").stringList(),
           assetMimeTypes = data.optJSONArray("asset_mime_types").stringList(),
@@ -142,49 +245,30 @@ class ClipDockRepository(private val context: Context) {
       }
       if (current.p2pEnabled) {
         runCatching { reportP2pEndpoint(token) }.onFailure { recordP2pFailure("P2P endpoint 上报失败", it) }
+        runCatching { refreshP2pDevices(token) }.onFailure { recordP2pFailure("P2P 设备刷新失败", it) }
       }
     }
 
   suspend fun syncNow(): List<ClipHistoryItem> =
-    syncMutex.withLock {
+    runNetwork("同步失败") {
       val token = requireToken()
+      val startCursor = current.diagnostics.nextCursor
+      AndroidSyncEventLogger.log("rest_sync_start cursor=$startCursor")
       _state.update { it.copy(isSyncing = true, diagnostics = it.diagnostics.copy(lastError = null)) }
       try {
         if (current.p2pEnabled) {
           runCatching { reportP2pEndpoint(token) }.onFailure { recordP2pFailure("P2P endpoint 上报失败", it) }
+          runCatching { refreshP2pDevices(token) }.onFailure { recordP2pFailure("P2P 设备刷新失败", it) }
         }
-        val snapshot = withContext(Dispatchers.IO) { api.snapshot(current.serverUrl, token) }
-        val snapshotSeq = snapshot.optLong("snapshot_seq")
-        val snapshotItems = snapshot.optJSONArray("items").toSnapshotItems()
-        val tombstones = snapshot.optJSONArray("tombstones").contentHashes().toMutableSet()
-        val events = withContext(Dispatchers.IO) { api.events(current.serverUrl, token, snapshotSeq) }
-        val eventItems = events.optJSONArray("events").toEventItems(tombstones)
-        val previousItemsByHash = current.items.associateBy { it.contentHash }
-        val merged =
-          (snapshotItems + eventItems)
-            .filterNot { tombstones.contains(it.contentHash) }
-            .distinctBy { it.contentHash }
-            .map { item -> item.preservingDownloadedPayload(previousItemsByHash[item.contentHash]) }
-            .sortedByDescending { it.copiedAtMillis }
-        val nextCursor = events.optLong("next_cursor", snapshotSeq)
-        persistItems(merged)
-        preferences.edit().putLong(KEY_CURSOR, nextCursor).putLong(KEY_SNAPSHOT_SEQ, snapshotSeq).apply()
-        _state.update {
-          it.copy(
-            items = merged,
-            isSyncing = false,
-            connectionStatus = "已加入",
-            diagnostics =
-              it.diagnostics.copy(
-                snapshotSeq = snapshotSeq,
-                nextCursor = nextCursor,
-                lastSyncAtMillis = System.currentTimeMillis(),
-                lastError = null,
-              ),
-          )
-        }
-        merged
+        val result = syncEngine.syncFromStoredCursor(current.serverUrl, token)
+        AndroidSyncEventLogger.log(
+          "rest_sync_success cursor=${result.cursor} snapshot_seq=${result.snapshotSeq} " +
+            "used_snapshot=${result.usedSnapshot} reason=${result.recoveryReason ?: "none"} items=${result.items.size}",
+        )
+        applySyncResult(result, isSyncing = false, connectionStatus = "已加入")
+        result.items
       } catch (throwable: Throwable) {
+        AndroidSyncEventLogger.log("rest_sync_failed cursor=$startCursor error=${throwable.toSyncLogErrorLabel()}")
         _state.update {
           it.copy(
             isSyncing = false,
@@ -194,6 +278,42 @@ class ClipDockRepository(private val context: Context) {
         throw throwable
       }
     }
+
+  suspend fun uploadLocalItem(item: ClipHistoryItem): LocalSyncPushResult =
+    runNetwork("上传本地剪贴板失败") {
+      val token = requireToken()
+      val deviceId = current.deviceId?.takeIf(String::isNotBlank) ?: throw ClipDockApiException("missing_device_id", "缺少本机同步设备 ID")
+      val pushResult = syncEngine.pushLocalItem(current.serverUrl, token, deviceId, item)
+      val reconcileResult = syncEngine.syncFromStoredCursor(current.serverUrl, token)
+      applySyncResult(reconcileResult, isSyncing = false, connectionStatus = "已加入")
+      pushResult
+    }
+
+  suspend fun uploadLocalText(
+    text: String,
+    type: ClipItemType = ClipItemType.Text,
+    copiedAtMillis: Long = System.currentTimeMillis(),
+  ): LocalSyncPushResult {
+    val normalizedText = text.trim()
+    val item =
+      ClipHistoryItem(
+        stableId = "local-android-$copiedAtMillis",
+        contentHash = "",
+        type = type,
+        title = normalizedText.lineSequence().firstOrNull()?.take(80).orEmpty(),
+        body = normalizedText,
+        detail = type.label,
+        sourceName = "Android",
+        assetId = null,
+        thumbnailUri = null,
+        localUri = null,
+        payloadState = PayloadState.Ready,
+        transferState = TransferState.Ready,
+        copiedAtMillis = copiedAtMillis,
+        copyCount = 1,
+      )
+    return uploadLocalItem(item)
+  }
 
   suspend fun quickSyncAndCopy(timeoutMillis: Long = 8_000): QuickCopyResult {
     return try {
@@ -221,6 +341,28 @@ class ClipDockRepository(private val context: Context) {
     }
   }
 
+  suspend fun useItem(item: ClipHistoryItem, timeoutMillis: Long = 30_000): QuickCopyResult {
+    return try {
+      withTimeout(timeoutMillis) {
+        val readyItem =
+          if (item.needsRemotePayload) {
+            downloadRemotePayload(item)
+          } else {
+            item
+          }
+        if (copyItem(readyItem)) {
+          QuickCopyResult.Copied(readyItem)
+        } else {
+          QuickCopyResult.Failed(readyItem, "该类型暂时无法写入剪贴板")
+        }
+      }
+    } catch (timeout: TimeoutCancellationException) {
+      QuickCopyResult.Timeout(item, "下载超时，剪贴板未更改")
+    } catch (throwable: Throwable) {
+      QuickCopyResult.Failed(item, throwable.userMessage())
+    }
+  }
+
   fun copyItem(item: ClipHistoryItem): Boolean {
     if (item.needsRemotePayload) return false
     val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -234,7 +376,14 @@ class ClipDockRepository(private val context: Context) {
         ClipItemType.Unknown -> null
       }
     clip ?: return false
-    clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", false) }
+    clip.description.extras =
+      PersistableBundle().apply {
+        putBoolean("android.content.extra.IS_SENSITIVE", false)
+        putString(CLIPDOCK_CLIP_EXTRA_SOURCE, CLIPDOCK_CLIP_SOURCE)
+        if (item.contentHash.isNotBlank()) {
+          putString(CLIPDOCK_CLIP_EXTRA_CONTENT_HASH, item.contentHash)
+        }
+      }
     clipboard.setPrimaryClip(clip)
     return true
   }
@@ -248,42 +397,49 @@ class ClipDockRepository(private val context: Context) {
     if (!current.p2pEnabled) throw ClipDockApiException("p2p_disabled", "P2P 下载未开启")
     reportP2pEndpoint(token)
     val imported = p2pTransport.importBlob(file)
-    withContext(Dispatchers.IO) {
-      api.upsertP2pProvider(
-        current.serverUrl,
-        token,
-        imported.assetId,
-        kind,
-        imported.byteCount,
-        mimeType,
-        imported.ticket,
-      )
-    }
+    api.upsertP2pProvider(
+      current.serverUrl,
+      token,
+      imported.assetId,
+      kind,
+      imported.byteCount,
+      mimeType,
+      imported.ticket,
+    )
     return imported
   }
 
   private suspend fun reportP2pEndpoint(token: String) {
     val endpoint = p2pTransport.startNode()
-    withContext(Dispatchers.IO) {
-      api.reportP2pEndpoint(
-        current.serverUrl,
-        token,
-        endpoint.endpointId,
-        endpoint.relayUrl,
-        endpoint.directAddresses,
-      )
-    }
+    api.reportP2pEndpoint(
+      current.serverUrl,
+      token,
+      endpoint.endpointId,
+      endpoint.relayUrl,
+      endpoint.directAddresses,
+    )
   }
 
   private suspend fun lookupP2pProviders(assetId: String): JSONObject {
     val token = requireToken()
-    return withContext(Dispatchers.IO) { api.p2pProviders(current.serverUrl, token, assetId) }
+    return api.p2pProviders(current.serverUrl, token, assetId).toJSONObject()
+  }
+
+  private suspend fun refreshP2pDevices(token: String) {
+    val data = api.p2pDevices(current.serverUrl, token).toJSONObject()
+    _state.update {
+      it.copy(
+        p2pDevices = data.optJSONArray("devices").toP2pDevices(),
+        p2pDevicesLastRefreshMillis = System.currentTimeMillis(),
+      )
+    }
   }
 
   private suspend fun downloadRemotePayload(item: ClipHistoryItem): ClipHistoryItem {
     return try {
       if (!current.p2pEnabled) throw ClipDockApiException("p2p_disabled", "P2P 下载未开启")
       val assetId = item.assetId ?: throw ClipDockApiException("missing_asset_id", "远程内容缺少 P2P asset id")
+      if (current.wifiOnly && !isWifiConnected()) throw ClipDockApiException("wifi_only_blocked", "仅 Wi-Fi 下载已开启，当前网络不可取回")
       updateTransferState(item, PayloadState.RemoteOnly, TransferState.DiscoveringPeer)
       val providers = lookupP2pProviders(assetId)
       val candidate =
@@ -345,12 +501,32 @@ class ClipDockRepository(private val context: Context) {
     }
   }
 
-  private suspend fun runNetwork(errorPrefix: String, block: suspend () -> Unit) {
+  private suspend fun <T> runNetwork(errorPrefix: String, block: suspend () -> T): T {
     try {
-      block()
+      return block()
     } catch (throwable: Throwable) {
       _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = "$errorPrefix: ${throwable.userMessage()}")) }
       throw throwable
+    }
+  }
+
+  private suspend fun runSyncSetup(errorPrefix: String, block: suspend () -> Unit) {
+    _state.update {
+      it.copy(
+        isSyncSetupInFlight = true,
+        connectionStatus = "连接中",
+        diagnostics = it.diagnostics.copy(lastError = null),
+      )
+    }
+    try {
+      runNetwork(errorPrefix, block)
+    } finally {
+      _state.update { state ->
+        state.copy(
+          isSyncSetupInFlight = false,
+          connectionStatus = if (!state.tokenPresent && state.connectionStatus == "连接中") "未设置" else state.connectionStatus,
+        )
+      }
     }
   }
 
@@ -374,14 +550,12 @@ class ClipDockRepository(private val context: Context) {
     preferences.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() } ?: throw ClipDockApiException("unauthorized", "尚未加入同步空间")
 
   private fun persistItems(items: List<ClipHistoryItem>) {
-    preferences.edit().putString(KEY_ITEMS_JSON, items.toJsonArray().toString()).apply()
+    preferences.edit().putString(KEY_ITEMS_JSON, items.toJsonArray().toString()).commit()
   }
 
   private fun loadState(): ClipDockUiState {
-    val items = JSONArray(preferences.getString(KEY_ITEMS_JSON, "[]")).toClipItems()
+    val progress = runCatching { syncStore.loadProgress() }.getOrElse { SyncProgress(emptyList(), 0, 0) }
     val token = preferences.getString(KEY_TOKEN, null)
-    val snapshotSeq = preferences.getLong(KEY_SNAPSHOT_SEQ, 0)
-    val cursor = preferences.getLong(KEY_CURSOR, 0)
     return ClipDockUiState(
       serverUrl = preferences.getString(KEY_SERVER_URL, null) ?: "http://10.0.2.2:9001",
       deviceName = preferences.getString(KEY_DEVICE_NAME, null) ?: android.os.Build.MODEL.ifBlank { "Android" },
@@ -389,13 +563,124 @@ class ClipDockRepository(private val context: Context) {
       deviceId = preferences.getString(KEY_DEVICE_ID, null),
       tokenPresent = !token.isNullOrBlank(),
       connectionStatus = if (token.isNullOrBlank()) "未设置" else "已加入",
-      diagnostics = SyncDiagnostics(snapshotSeq = snapshotSeq, nextCursor = cursor),
-      items = items.sortedByDescending { it.copiedAtMillis },
+      diagnostics = SyncDiagnostics(snapshotSeq = progress.snapshotSeq, nextCursor = progress.cursor),
+      items = progress.items.sortedByDescending { it.copiedAtMillis },
       p2pEnabled = preferences.getBoolean(KEY_P2P_ENABLED, true),
       wifiOnly = preferences.getBoolean(KEY_WIFI_ONLY, true),
       overlayEnabled = preferences.getBoolean(KEY_OVERLAY_ENABLED, true),
+      overlayClickAction = enumPreference(KEY_OVERLAY_CLICK_ACTION, OverlayClickAction.QuickSyncCopy),
+      overlaySnapEdge = enumPreference(KEY_OVERLAY_SNAP_EDGE, OverlaySnapEdge.Right),
+      overlaySizeDp = sanitizeOverlaySizeDp(preferences.getInt(KEY_OVERLAY_SIZE_DP, 64)),
+      overlayIdleOpacityPercent = sanitizeOverlayIdleOpacityPercent(preferences.getInt(KEY_OVERLAY_IDLE_OPACITY_PERCENT, 78)),
+      overlayVerticalFraction = sanitizeOverlayVerticalFraction(preferences.getFloat(KEY_OVERLAY_VERTICAL_FRACTION, 0.35f)),
       encryptionEnabled = preferences.getBoolean(KEY_ENCRYPTION_ENABLED, false),
     )
+  }
+
+  private inline fun <reified T : Enum<T>> enumPreference(key: String, default: T): T {
+    val raw = preferences.getString(key, null) ?: return default
+    return enumValues<T>().firstOrNull { it.name == raw } ?: default
+  }
+
+  private fun isWifiConnected(): Boolean {
+    val connectivityManager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = connectivityManager.activeNetwork ?: return false
+    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+  }
+
+  fun startRealtime() {
+    val token =
+      preferences.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
+        ?: run {
+          AndroidSyncEventLogger.log("realtime_start_skipped reason=no_token")
+          return
+        }
+    val cursor = current.diagnostics.nextCursor
+    AndroidSyncEventLogger.log(
+      "realtime_start server=${current.serverUrl.toSyncLogServerLabel()} cursor=$cursor " +
+        "fallback_interval_ms=$REST_FALLBACK_POLL_INTERVAL_MS",
+    )
+    realtimeClient.connect(current.serverUrl, token, cursor)
+    startFallbackPolling()
+    syncScope.launch {
+      AndroidSyncEventLogger.log("startup_rest_sync_start cursor=$cursor")
+      runCatching { syncNow() }
+        .onSuccess { AndroidSyncEventLogger.log("startup_rest_sync_success cursor=${current.diagnostics.nextCursor} items=${it.size}") }
+        .onFailure { AndroidSyncEventLogger.log("startup_rest_sync_failed error=${it.toSyncLogErrorLabel()}") }
+    }
+  }
+
+  private fun applySyncResult(
+    result: SyncResult,
+    isSyncing: Boolean? = null,
+    connectionStatus: String? = null,
+  ) {
+    _state.update {
+      it.copy(
+        items = result.items,
+        isSyncing = isSyncing ?: it.isSyncing,
+        connectionStatus = connectionStatus ?: it.connectionStatus,
+        diagnostics =
+          it.diagnostics.copy(
+            snapshotSeq = result.snapshotSeq,
+            nextCursor = result.cursor,
+            lastSyncAtMillis = System.currentTimeMillis(),
+            lastError = null,
+          ),
+      )
+    }
+  }
+
+  private fun scheduleRealtimeReconnect() {
+    synchronized(realtimeReconnectLock) {
+      if (realtimeReconnectJob?.isActive == true) {
+        AndroidSyncEventLogger.log("ws_reconnect_already_scheduled")
+        return
+      }
+      val delayMillis = realtimeReconnectBackoff.nextDelayMillis()
+      AndroidSyncEventLogger.log("ws_reconnect_scheduled delay_ms=$delayMillis")
+      realtimeReconnectJob =
+        syncScope.launch {
+          delay(delayMillis)
+          if (preferences.getString(KEY_TOKEN, null).isNullOrBlank()) {
+            AndroidSyncEventLogger.log("ws_reconnect_skipped reason=no_token")
+            return@launch
+          }
+          AndroidSyncEventLogger.log("ws_reconnect_start")
+          startRealtime()
+        }
+    }
+  }
+
+  private fun resetRealtimeReconnectBackoff() {
+    synchronized(realtimeReconnectLock) {
+      realtimeReconnectBackoff.reset()
+      AndroidSyncEventLogger.log("ws_reconnect_backoff_reset")
+      if (realtimeReconnectJob?.isActive != true) {
+        realtimeReconnectJob = null
+      }
+    }
+  }
+
+  private fun startFallbackPolling() {
+    if (fallbackPollJob?.isActive == true) {
+      AndroidSyncEventLogger.log("rest_fallback_already_running")
+      return
+    }
+    AndroidSyncEventLogger.log("rest_fallback_started interval_ms=$REST_FALLBACK_POLL_INTERVAL_MS")
+    fallbackPollJob =
+      syncScope.launch {
+        while (isActive) {
+          delay(REST_FALLBACK_POLL_INTERVAL_MS)
+          if (preferences.getString(KEY_TOKEN, null).isNullOrBlank()) return@launch
+          val cursor = current.diagnostics.nextCursor
+          AndroidSyncEventLogger.log("rest_fallback_tick cursor=$cursor")
+          runCatching { syncNow() }
+            .onSuccess { AndroidSyncEventLogger.log("rest_fallback_success cursor=${current.diagnostics.nextCursor} items=${it.size}") }
+            .onFailure { AndroidSyncEventLogger.log("rest_fallback_failed cursor=$cursor error=${it.toSyncLogErrorLabel()}") }
+        }
+      }
   }
 
   private val current: ClipDockUiState
@@ -413,9 +698,37 @@ class ClipDockRepository(private val context: Context) {
     private const val KEY_P2P_ENABLED = "p2pEnabled"
     private const val KEY_WIFI_ONLY = "wifiOnly"
     private const val KEY_OVERLAY_ENABLED = "overlayEnabled"
+    private const val KEY_OVERLAY_CLICK_ACTION = "overlayClickAction"
+    private const val KEY_OVERLAY_SNAP_EDGE = "overlaySnapEdge"
+    private const val KEY_OVERLAY_SIZE_DP = "overlaySizeDp"
+    private const val KEY_OVERLAY_IDLE_OPACITY_PERCENT = "overlayIdleOpacityPercent"
+    private const val KEY_OVERLAY_VERTICAL_FRACTION = "overlayVerticalFraction"
     private const val KEY_ENCRYPTION_ENABLED = "encryptionEnabled"
+    private const val REST_FALLBACK_POLL_INTERVAL_MS = 30_000L
   }
 }
+
+internal class RealtimeReconnectBackoff(
+  private val initialDelayMillis: Long = 5_000L,
+  private val maxDelayMillis: Long = 5 * 60 * 1_000L,
+) {
+  private var attempt = 0
+
+  fun nextDelayMillis(): Long {
+    val delay = (0 until attempt).fold(initialDelayMillis) { current, _ ->
+      (current * 2).coerceAtMost(maxDelayMillis)
+    }
+    attempt += 1
+    return delay.coerceAtMost(maxDelayMillis)
+  }
+
+  fun reset() {
+    attempt = 0
+  }
+}
+
+private fun ClipDockUiState.hasSyncRegistration(): Boolean =
+  tokenPresent || !syncId.isNullOrBlank() || !deviceId.isNullOrBlank()
 
 private fun ClipHistoryItem.payloadExtension(candidate: P2pProviderCandidate): String {
   title.substringAfterLast('.', "")
@@ -437,6 +750,7 @@ internal fun ClipHistoryItem.preservingDownloadedPayload(previous: ClipHistoryIt
   if (!localUri.isNullOrBlank()) return this
   if (previous.localUri.isNullOrBlank() || previous.payloadState != PayloadState.Ready) return this
   return copy(
+    thumbnailUri = thumbnailUri ?: previous.thumbnailUri,
     localUri = previous.localUri,
     payloadState = PayloadState.Ready,
     transferState = TransferState.Ready,
@@ -449,10 +763,7 @@ private fun String.safeFilePart(): String =
     .trim('-', '.', '_')
     .take(80)
 
-private fun JSONArray?.toSnapshotItems(): List<ClipHistoryItem> =
-  if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it)?.let(ClipHistoryItem::fromServerSnapshot) }
-
-private fun JSONArray?.toEventItems(tombstones: MutableSet<String>): List<ClipHistoryItem> {
+internal fun JSONArray?.toEventItems(tombstones: MutableSet<String>): List<ClipHistoryItem> {
   if (this == null) return emptyList()
   val items = mutableListOf<ClipHistoryItem>()
   for (index in 0 until length()) {
@@ -460,15 +771,13 @@ private fun JSONArray?.toEventItems(tombstones: MutableSet<String>): List<ClipHi
     if (event.optString("type") == "item_delete") {
       tombstones += event.optString("content_hash")
     } else {
-      ClipHistoryItem.fromServerEvent(event)?.let(items::add)
+      ClipHistoryItem.fromServerEvent(event)?.let { item ->
+        tombstones -= item.contentHash
+        items += item
+      }
     }
   }
   return items
-}
-
-private fun JSONArray?.contentHashes(): Set<String> {
-  if (this == null) return emptySet()
-  return (0 until length()).mapNotNull { optJSONObject(it)?.optString("content_hash")?.takeIf(String::isNotBlank) }.toSet()
 }
 
 private fun JSONArray?.stringList(): List<String> {
@@ -478,6 +787,17 @@ private fun JSONArray?.stringList(): List<String> {
 
 private fun Throwable.userMessage(): String =
   when (this) {
-    is ClipDockApiException -> code.ifBlank { message ?: "请求失败" }
+    is ClipDockApiException -> apiUserMessage()
+    is java.net.SocketTimeoutException -> "连接超时"
+    is java.net.UnknownHostException -> "无法解析服务器地址"
+    is java.net.ConnectException -> "无法连接服务器"
     else -> message ?: javaClass.simpleName
+  }
+
+private fun ClipDockApiException.apiUserMessage(): String =
+  when (code) {
+    "invalid_pairing_code" -> "配对码无效、已过期或已被使用"
+    "invalid_device_name" -> "设备名称不能为空"
+    "unauthorized" -> message ?: "尚未加入同步空间"
+    else -> message?.takeIf { it.isNotBlank() } ?: code.ifBlank { "请求失败" }
   }

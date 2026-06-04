@@ -2,15 +2,11 @@ mod common;
 
 use axum::http::{Method, StatusCode};
 use serde_json::json;
-use sha2::Digest;
 
 use common::TestServer;
 
 fn p2p_asset_id(label: &str) -> String {
-    format!(
-        "blake3:{:0<64}",
-        hex::encode(sha2::Sha256::digest(label.as_bytes()))
-    )
+    format!("blake3:{}", blake3::hash(label.as_bytes()).to_hex())
 }
 
 #[tokio::test]
@@ -21,7 +17,7 @@ async fn p2p_endpoint_reporting_is_visible_only_inside_the_sync_space() {
     let unrelated = server.create_sync().await;
 
     let info = server
-        .empty(Method::GET, "/v1/info", Some(&sync.device.token))
+        .empty(Method::GET, "/v2/info", Some(&sync.device.token))
         .await;
     assert_eq!(info.status, StatusCode::OK, "{:?}", info.body);
     assert_eq!(info.body["data"]["p2p"]["enabled"], true);
@@ -30,7 +26,7 @@ async fn p2p_endpoint_reporting_is_visible_only_inside_the_sync_space() {
     let report = server
         .json(
             Method::PUT,
-            "/v1/p2p/endpoint",
+            "/v2/p2p/endpoint",
             Some(&sync.device.token),
             json!({
                 "endpoint_id": "iroh-node-a",
@@ -50,7 +46,7 @@ async fn p2p_endpoint_reporting_is_visible_only_inside_the_sync_space() {
     );
 
     let joined_devices = server
-        .empty(Method::GET, "/v1/p2p/devices", Some(&joined.token))
+        .empty(Method::GET, "/v2/p2p/devices", Some(&joined.token))
         .await;
     assert_eq!(
         joined_devices.status,
@@ -66,7 +62,7 @@ async fn p2p_endpoint_reporting_is_visible_only_inside_the_sync_space() {
     let unrelated_devices = server
         .empty(
             Method::GET,
-            "/v1/p2p/devices",
+            "/v2/p2p/devices",
             Some(&unrelated.device.token),
         )
         .await;
@@ -91,7 +87,7 @@ async fn p2p_asset_providers_are_scoped_and_can_be_unregistered() {
     let endpoint = server
         .json(
             Method::PUT,
-            "/v1/p2p/endpoint",
+            "/v2/p2p/endpoint",
             Some(&sync.device.token),
             json!({
                 "endpoint_id": "iroh-node-provider",
@@ -103,7 +99,7 @@ async fn p2p_asset_providers_are_scoped_and_can_be_unregistered() {
         .await;
     assert_eq!(endpoint.status, StatusCode::OK, "{:?}", endpoint.body);
 
-    let provider_uri = format!("/v1/p2p/assets/{asset_id}/providers/me");
+    let provider_uri = format!("/v2/p2p/assets/{asset_id}/providers/me");
     let register = server
         .json(
             Method::PUT,
@@ -122,7 +118,7 @@ async fn p2p_asset_providers_are_scoped_and_can_be_unregistered() {
     assert_eq!(register.body["data"]["asset_id"], asset_id);
     assert_eq!(register.body["data"]["provider"]["availability"], "online");
 
-    let providers_uri = format!("/v1/p2p/assets/{asset_id}/providers");
+    let providers_uri = format!("/v2/p2p/assets/{asset_id}/providers");
     let joined_lookup = server
         .empty(Method::GET, &providers_uri, Some(&joined.token))
         .await;
@@ -179,7 +175,7 @@ async fn p2p_asset_providers_accept_iroh_blake3_hashes() {
     let joined = server.join_sync(&sync.pairing_code).await;
     let asset_id = "blake3:m5tc73yctukegc4csotnjt2ghx4pbrttwq7thwdqb6aqnmoa5hgq";
 
-    let provider_uri = format!("/v1/p2p/assets/{asset_id}/providers/me");
+    let provider_uri = format!("/v2/p2p/assets/{asset_id}/providers/me");
     let register = server
         .json(
             Method::PUT,
@@ -197,7 +193,7 @@ async fn p2p_asset_providers_accept_iroh_blake3_hashes() {
     assert_eq!(register.status, StatusCode::OK, "{:?}", register.body);
     assert_eq!(register.body["data"]["asset_id"], asset_id);
 
-    let providers_uri = format!("/v1/p2p/assets/{asset_id}/providers");
+    let providers_uri = format!("/v2/p2p/assets/{asset_id}/providers");
     let lookup = server
         .empty(Method::GET, &providers_uri, Some(&joined.token))
         .await;
@@ -216,7 +212,7 @@ async fn p2p_rejects_invalid_endpoint_and_provider_metadata() {
     let invalid_endpoint = server
         .json(
             Method::PUT,
-            "/v1/p2p/endpoint",
+            "/v2/p2p/endpoint",
             Some(&device.token),
             json!({"endpoint_id": "", "capabilities": []}),
             &[],
@@ -231,7 +227,7 @@ async fn p2p_rejects_invalid_endpoint_and_provider_metadata() {
     let invalid_asset = server
         .json(
             Method::PUT,
-            "/v1/p2p/assets/not-a-hash/providers/me",
+            "/v2/p2p/assets/not-a-hash/providers/me",
             Some(&device.token),
             json!({"kind": "file_payload"}),
             &[],
@@ -243,7 +239,7 @@ async fn p2p_rejects_invalid_endpoint_and_provider_metadata() {
     let unsupported_kind = server
         .json(
             Method::PUT,
-            "/v1/p2p/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/providers/me",
+            "/v2/p2p/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/providers/me",
             Some(&device.token),
             json!({"kind": "avatar"}),
             &[],
@@ -258,7 +254,7 @@ async fn p2p_rejects_invalid_endpoint_and_provider_metadata() {
     let invalid_quality = server
         .json(
             Method::PUT,
-            "/v1/p2p/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/providers/me",
+            "/v2/p2p/assets/sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/providers/me",
             Some(&device.token),
             json!({"kind": "file_payload", "quality": []}),
             &[],
@@ -278,7 +274,7 @@ async fn expired_p2p_endpoints_are_not_used_for_discovery_or_provider_lookup() {
     let endpoint = server
         .json(
             Method::PUT,
-            "/v1/p2p/endpoint",
+            "/v2/p2p/endpoint",
             Some(&sync.device.token),
             json!({"endpoint_id": "soon-stale-node"}),
             &[],
@@ -286,7 +282,7 @@ async fn expired_p2p_endpoints_are_not_used_for_discovery_or_provider_lookup() {
         .await;
     assert_eq!(endpoint.status, StatusCode::OK, "{:?}", endpoint.body);
 
-    let provider_uri = format!("/v1/p2p/assets/{asset_id}/providers/me");
+    let provider_uri = format!("/v2/p2p/assets/{asset_id}/providers/me");
     let register = server
         .json(
             Method::PUT,
@@ -305,12 +301,12 @@ async fn expired_p2p_endpoints_are_not_used_for_discovery_or_provider_lookup() {
         .expect("expire endpoint");
 
     let devices = server
-        .empty(Method::GET, "/v1/p2p/devices", Some(&joined.token))
+        .empty(Method::GET, "/v2/p2p/devices", Some(&joined.token))
         .await;
     assert_eq!(devices.status, StatusCode::OK, "{:?}", devices.body);
     assert_eq!(devices.body["data"]["devices"].as_array().unwrap().len(), 0);
 
-    let providers_uri = format!("/v1/p2p/assets/{asset_id}/providers");
+    let providers_uri = format!("/v2/p2p/assets/{asset_id}/providers");
     let lookup = server
         .empty(Method::GET, &providers_uri, Some(&joined.token))
         .await;

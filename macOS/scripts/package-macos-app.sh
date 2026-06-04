@@ -158,7 +158,7 @@ cat > "$contents_dir/Info.plist" <<PLIST
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleName</key>
-    <string>${app_name}</string>
+    <string>${display_name}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -169,6 +169,11 @@ cat > "$contents_dir/Info.plist" <<PLIST
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

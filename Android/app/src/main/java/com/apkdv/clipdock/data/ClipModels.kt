@@ -36,6 +36,62 @@ enum class HistoryFilter(val label: String) {
   Color("颜色")
 }
 
+enum class OverlayClickAction {
+  QuickSyncCopy
+}
+
+enum class OverlaySnapEdge {
+  Left,
+  Right
+}
+
+data class P2pEndpointInfo(
+  val endpointId: String,
+  val relayUrl: String?,
+  val directAddresses: List<String>,
+  val capabilities: String,
+  val updatedAtMillis: Long,
+  val expiresAtMillis: Long,
+)
+
+data class P2pDeviceInfo(
+  val deviceId: String,
+  val deviceName: String,
+  val endpoint: P2pEndpointInfo,
+) {
+  companion object {
+    fun fromJson(json: JSONObject): P2pDeviceInfo? {
+      val endpointJson = json.optJSONObject("endpoint") ?: return null
+      val endpointId = endpointJson.optString("endpoint_id").takeIf(String::isNotBlank) ?: return null
+      val deviceId = json.optString("device_id").takeIf(String::isNotBlank) ?: return null
+      return P2pDeviceInfo(
+        deviceId = deviceId,
+        deviceName = json.optString("device_name").ifBlank { "未命名设备" },
+        endpoint =
+          P2pEndpointInfo(
+            endpointId = endpointId,
+            relayUrl = endpointJson.optNullableString("relay_url"),
+            directAddresses = endpointJson.optJSONArray("direct_addresses").stringList(),
+            capabilities = endpointJson.optJSONObject("capabilities")?.toString() ?: "{}",
+            updatedAtMillis = endpointJson.optLong("updated_at_ms"),
+            expiresAtMillis = endpointJson.optLong("expires_at_ms"),
+          ),
+      )
+    }
+  }
+}
+
+fun JSONArray?.toP2pDevices(): List<P2pDeviceInfo> {
+  if (this == null) return emptyList()
+  return (0 until length()).mapNotNull { index -> optJSONObject(index)?.let(P2pDeviceInfo::fromJson) }
+}
+
+internal fun sanitizeOverlaySizeDp(value: Int): Int = value.coerceIn(52, 72)
+
+internal fun sanitizeOverlayIdleOpacityPercent(value: Int): Int = value.coerceIn(45, 100)
+
+internal fun sanitizeOverlayVerticalFraction(value: Float): Float = value.coerceIn(0f, 1f)
+
 data class ClipHistoryItem(
   val stableId: String,
   val contentHash: String,
@@ -45,6 +101,7 @@ data class ClipHistoryItem(
   val detail: String,
   val sourceName: String?,
   val assetId: String?,
+  val thumbnailUri: String?,
   val localUri: String?,
   val payloadState: PayloadState,
   val transferState: TransferState,
@@ -72,6 +129,7 @@ data class ClipHistoryItem(
       .put("detail", detail)
       .put("sourceName", sourceName)
       .put("assetId", assetId)
+      .put("thumbnailUri", thumbnailUri)
       .put("localUri", localUri)
       .put("payloadState", payloadState.name)
       .put("transferState", transferState.name)
@@ -79,8 +137,14 @@ data class ClipHistoryItem(
       .put("copyCount", copyCount)
 
   companion object {
-    fun fromJson(json: JSONObject): ClipHistoryItem =
-      ClipHistoryItem(
+    fun fromJson(json: JSONObject): ClipHistoryItem {
+      val payloadState = enumValueOrDefault(json.optString("payloadState"), PayloadState.Ready)
+      val transferState =
+        restoredTransferState(
+          enumValueOrDefault(json.optString("transferState"), TransferState.Idle),
+          payloadState,
+        )
+      return ClipHistoryItem(
         stableId = json.optString("stableId"),
         contentHash = json.optString("contentHash"),
         type = clipType(json.optString("type")),
@@ -89,12 +153,21 @@ data class ClipHistoryItem(
         detail = json.optString("detail"),
         sourceName = json.optNullableString("sourceName"),
         assetId = json.optNullableString("assetId"),
+        thumbnailUri = json.optNullableString("thumbnailUri"),
         localUri = json.optNullableString("localUri"),
-        payloadState = enumValueOrDefault(json.optString("payloadState"), PayloadState.Ready),
-        transferState = enumValueOrDefault(json.optString("transferState"), TransferState.Idle),
+        payloadState = payloadState,
+        transferState = transferState,
         copiedAtMillis = json.optLong("copiedAtMillis"),
         copyCount = json.optLong("copyCount"),
       )
+    }
+
+    private fun restoredTransferState(transferState: TransferState, payloadState: PayloadState): TransferState =
+      when (transferState) {
+        TransferState.DiscoveringPeer,
+        TransferState.Downloading -> if (payloadState == PayloadState.Ready) TransferState.Ready else TransferState.Failed
+        else -> transferState
+      }
 
     fun fromServerSnapshot(json: JSONObject): ClipHistoryItem {
       val contentHash = json.optString("content_hash")
@@ -137,13 +210,19 @@ data class ClipHistoryItem(
           ?: payload.optNullableString("p2p_asset_id")
           ?: payload.optNullableString("digest")
       val localUri = payload.optNullableString("local_uri") ?: payload.optNullableString("local_path")
+      val thumbnailUri =
+        payload.optNullableString("thumbnail_uri")
+          ?: payload.optNullableString("preview_uri")
+          ?: payload.optNullableString("preview_local_uri")
+          ?: payload.optNullableString("thumbnail_path")
+          ?: payload.optNullableString("preview_path")
       val title =
         when (itemType) {
           ClipItemType.Text -> payload.firstText("title", "text", "primary_text", "summary").linePreview()
           ClipItemType.RichText -> payload.firstText("title", "plain_text", "text", "summary").linePreview()
           ClipItemType.Link -> payload.firstText("title", "host", "url", "display_url").linePreview()
           ClipItemType.Color -> payload.firstText("hex", "color", "summary").ifBlank { "#000000" }
-          ClipItemType.Image -> "[图片]"
+          ClipItemType.Image -> payload.firstText("file_name", "filename", "name", "title", "summary").linePreview().ifBlank { "图片内容" }
           ClipItemType.File -> payload.fileName().linePreview().ifBlank { "文件" }
           ClipItemType.Unknown -> payload.firstText("title", "summary", "text").linePreview().ifBlank { "未知类型" }
         }
@@ -178,6 +257,7 @@ data class ClipHistoryItem(
         detail = detail,
         sourceName = sourceName,
         assetId = assetId,
+        thumbnailUri = thumbnailUri,
         localUri = localUri,
         payloadState = payloadState,
         transferState = TransferState.Idle,
@@ -218,10 +298,18 @@ data class ClipDockUiState(
   val selectedFilter: HistoryFilter = HistoryFilter.All,
   val items: List<ClipHistoryItem> = emptyList(),
   val isSyncing: Boolean = false,
+  val isSyncSetupInFlight: Boolean = false,
   val p2pEnabled: Boolean = true,
   val wifiOnly: Boolean = true,
   val overlayEnabled: Boolean = true,
+  val overlayClickAction: OverlayClickAction = OverlayClickAction.QuickSyncCopy,
+  val overlaySnapEdge: OverlaySnapEdge = OverlaySnapEdge.Right,
+  val overlaySizeDp: Int = 64,
+  val overlayIdleOpacityPercent: Int = 78,
+  val overlayVerticalFraction: Float = 0.35f,
   val encryptionEnabled: Boolean = false,
+  val p2pDevices: List<P2pDeviceInfo> = emptyList(),
+  val p2pDevicesLastRefreshMillis: Long = 0,
 )
 
 sealed interface QuickCopyResult {
@@ -241,6 +329,11 @@ fun JSONArray.toClipItems(): List<ClipHistoryItem> =
 
 fun clipType(value: String?): ClipItemType =
   ClipItemType.entries.firstOrNull { it.wireName == value } ?: ClipItemType.Unknown
+
+private fun JSONArray?.stringList(): List<String> {
+  if (this == null) return emptyList()
+  return (0 until length()).mapNotNull { index -> optString(index).takeIf(String::isNotBlank) }
+}
 
 private fun JSONObject.optNullableString(name: String): String? =
   if (has(name) && !isNull(name)) optString(name).takeIf { it.isNotBlank() } else null

@@ -91,7 +91,7 @@ Settings support the workflow without becoming the product surface. General beha
 ClipDock sync is self-hosted, sync-space scoped, and local-first:
 
 - **Self-hosted Sync Server**: `Server/` contains the Rust/Axum service for sync-space creation, device pairing, event logs, snapshots, and small preview assets.
-- **One-time pairing codes**: clients create a sync space with `POST /v1/sync/create`, then use short-lived 5-character codes to join new devices. Device tokens are stored as hashes on the server.
+- **One-time pairing codes**: clients create a sync space with `POST /v2/sync/create`, then use short-lived 5-character codes to join new devices. Device tokens are stored as hashes on the server.
 - **Event and snapshot sync**: clipboard items sync through `item_upsert` / `item_delete` events with cursor pulls, idempotent replay, and tombstone propagation.
 - **P2P coordination metadata**: devices report P2P endpoints and asset providers to the server so peers in the same sync space can discover available sources.
 - **Real payloads are downloaded on demand**: full images and files are fetched by clients through `iroh-blobs`. The server does not run Iroh, perform NAT traversal, or relay large payload bytes.
@@ -122,7 +122,7 @@ ClipDock is open source because clipboard tools are personal infrastructure. You
 ### Project Layout
 
 - `macOS/`: the main macOS app. Swift UI and AppKit runtime live in `macOS/Sources/ClipDock`, reusable panel logic lives in `macOS/Sources/ClipboardPanelApp`, and the Rust FFI core lives in `macOS/rust`.
-- `Server/`: the self-hosted sync server. Protocol documentation lives in `Server/docs/protocol-v1.md`.
+- `Server/`: the self-hosted sync server. Protocol documentation lives in `Server/docs/protocol-v2.md`.
 - `Android/`: the Android client, including sync-space setup, snapshot/event pull, P2P downloads, and the floating overlay.
 - `docs/`: the GitHub Pages website directory, including the product homepage, first-open help, site manifest, CNAME, and page assets.
 
@@ -151,7 +151,7 @@ cd Server
 cargo run -- --bind 127.0.0.1:8787
 ```
 
-See [Server/README.md](Server/README.md) and [Server/docs/protocol-v1.md](Server/docs/protocol-v1.md) for deployment boundaries and API details.
+See [Server/README.md](Server/README.md) and [Server/docs/protocol-v2.md](Server/docs/protocol-v2.md) for deployment boundaries and API details.
 
 ### Common Verification
 

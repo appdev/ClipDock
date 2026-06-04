@@ -145,7 +145,11 @@ dependencies {
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.activity.compose)
+  implementation(libs.kotlinx.serialization.json)
+  implementation(libs.okhttp)
+  implementation(libs.commons.codec)
 
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)

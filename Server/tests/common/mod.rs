@@ -10,9 +10,9 @@ use clipdock_sync_server::{
     assets::AssetStore,
     config::Config,
     db, migrations,
+    realtime::EventHub,
 };
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -20,6 +20,7 @@ use tower::ServiceExt;
 pub struct TestServer {
     pub app: Router,
     pub pool: SqlitePool,
+    pub assets: AssetStore,
     _temp_dir: TempDir,
 }
 
@@ -37,11 +38,13 @@ impl TestServer {
         let app = api::router(AppState {
             pool: pool.clone(),
             config,
-            assets,
+            assets: assets.clone(),
+            realtime: EventHub::new(),
         });
         Self {
             app,
             pool,
+            assets,
             _temp_dir: temp_dir,
         }
     }
@@ -54,7 +57,7 @@ impl TestServer {
         let response = self
             .json(
                 Method::POST,
-                "/v1/sync/create",
+                "/v2/sync/create",
                 None,
                 json!({"device_name": "test-device"}),
                 &[],
@@ -87,7 +90,7 @@ impl TestServer {
         let response = self
             .json(
                 Method::POST,
-                "/v1/sync/join",
+                "/v2/sync/join",
                 None,
                 json!({"pairing_code": pairing_code, "device_name": "joined-device"}),
                 &[],
@@ -192,6 +195,44 @@ impl TestServer {
         });
         TestResponse { status, body }
     }
+
+    pub async fn spawn_http(&self) -> LiveServer {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind live test server");
+        let addr = listener.local_addr().expect("live server addr");
+        let app = self.app.clone();
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("serve live test server");
+        });
+        LiveServer {
+            base_url: format!("http://{addr}"),
+            handle,
+        }
+    }
+}
+
+pub struct LiveServer {
+    pub base_url: String,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl LiveServer {
+    pub fn ws_url(&self, path: &str) -> String {
+        format!(
+            "ws://{}{}",
+            self.base_url.trim_start_matches("http://"),
+            path
+        )
+    }
+}
+
+impl Drop for LiveServer {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
 }
 
 pub struct Device {
@@ -217,11 +258,11 @@ pub struct RawResponse {
 }
 
 pub fn content_hash(label: &str) -> String {
-    format!("sha256:{}", hex::encode(Sha256::digest(label.as_bytes())))
+    format!("blake3:{}", blake3::hash(label.as_bytes()).to_hex())
 }
 
 pub fn asset_digest(bytes: &[u8]) -> String {
-    format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
+    format!("blake3:{}", blake3::hash(bytes).to_hex())
 }
 
 pub fn upsert_event(client_event_id: &str, content_hash: &str, delta: i64) -> Value {

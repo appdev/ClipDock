@@ -1,7 +1,6 @@
 use crate::domain::ClipboardItemType;
 use crate::error::{CoreError, CoreErrorCode, Result};
 use rusqlite::params;
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -171,11 +170,7 @@ pub(super) fn hash_file(path: &Path) -> Result<String> {
 }
 
 pub(super) fn stable_hash_bytes(value: &[u8]) -> String {
-    let digest = Sha256::digest(value);
-    digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
+    blake3::hash(value).to_hex().to_string()
 }
 
 pub(super) fn stable_hash(value: &str) -> String {

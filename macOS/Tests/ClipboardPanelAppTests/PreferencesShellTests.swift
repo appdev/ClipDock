@@ -140,6 +140,71 @@ struct PreferencesShellTests {
 
     @Test
     @MainActor
+    func syncCreateIsBlockedWhenAlreadyRegistered() throws {
+        let controller = PreferencesWindowController()
+        defer { controller.close() }
+        var preferences = RustPreferencesDocument()
+        preferences.sync.serverURL = "http://127.0.0.1:9001"
+        preferences.sync.deviceName = "Ying MacBook Pro"
+        preferences.sync.syncID = "sync_existing"
+        preferences.sync.deviceID = "dev_existing"
+        controller.updatePreferences(preferences)
+        controller.onCreateSyncRequested = { _ in
+            Issue.record("Create sync request should not run when a sync space already exists")
+            return SyncSettingsActionResult(preferences: nil, statusText: "unexpected", isError: true)
+        }
+
+        controller.smokeCreateSyncForQA()
+
+        let snapshot = controller.preferencesSyncSmokeSnapshot()
+        #expect(snapshot.statusText == "同步：已创建，请先断开当前同步")
+        #expect(!snapshot.statusIsError)
+        #expect(!snapshot.isActionInFlight)
+        #expect(snapshot.hasSyncRegistration)
+    }
+
+    @Test
+    @MainActor
+    func syncInviteRefreshReplacesExpiredPairingCode() async throws {
+        let controller = PreferencesWindowController()
+        defer { controller.close() }
+        var preferences = RustPreferencesDocument()
+        preferences.sync.enabled = true
+        preferences.sync.serverURL = "http://127.0.0.1:9001"
+        preferences.sync.syncID = "sync_existing"
+        preferences.sync.deviceID = "dev_existing"
+        preferences.sync.deviceName = "Ying MacBook Pro"
+        controller.updatePreferences(preferences)
+        controller.smokeApplySyncActionResultForQA(SyncSettingsActionResult(
+            preferences: nil,
+            statusText: "同步：已生成配对码",
+            pairingCode: "OLD12",
+            pairingExpiresAtMs: 1
+        ))
+        controller.onCreateSyncInviteRequested = { requestPreferences in
+            #expect(requestPreferences.sync.syncID == "sync_existing")
+            #expect(requestPreferences.sync.deviceID == "dev_existing")
+            return SyncSettingsActionResult(
+                preferences: nil,
+                statusText: "同步：已生成新的配对码",
+                pairingCode: "NEW34",
+                pairingExpiresAtMs: 1_780_320_000_000
+            )
+        }
+
+        controller.smokeRefreshPairingCodeForQA()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let snapshot = controller.preferencesSyncSmokeSnapshot()
+        #expect(snapshot.pairingCode == "NEW34")
+        #expect(snapshot.pairingExpiresAtMs == 1_780_320_000_000)
+        #expect(snapshot.statusText == "同步：已生成新的配对码")
+        #expect(!snapshot.statusIsError)
+        #expect(!snapshot.isActionInFlight)
+    }
+
+    @Test
+    @MainActor
     func syncJoinResultClearsStalePairingCode() throws {
         let controller = PreferencesWindowController()
         defer { controller.close() }

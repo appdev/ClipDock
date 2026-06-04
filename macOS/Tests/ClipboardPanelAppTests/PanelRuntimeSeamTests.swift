@@ -4534,6 +4534,32 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func androidPlatformSourceUsesBuiltInSourceIconWithoutIconPath() throws {
+        let resolver = PanelCardAssetResolver(appSupportDirectory: nil)
+        let resolved = resolver.resolvedItem(for: PanelCardAssetRequest(
+            sourceAppName: "Android",
+            sourceAppIconPath: nil
+        ))
+
+        #expect(resolved.sourceIconImage != nil)
+        #expect(resolved.sourceIconColor != nil)
+    }
+
+    @Test
+    @MainActor
+    func androidStudioSourceDoesNotUseAndroidPlatformIcon() throws {
+        let resolver = PanelCardAssetResolver(appSupportDirectory: nil)
+        let resolved = resolver.resolvedItem(for: PanelCardAssetRequest(
+            sourceAppName: "Android Studio",
+            sourceAppIconPath: nil
+        ))
+
+        #expect(resolved.sourceIconImage == nil)
+        #expect(resolved.sourceIconColor == nil)
+    }
+
+    @Test
+    @MainActor
     func sourceIconColorKeepsSmallSaturatedLogoOnPaleIcon() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

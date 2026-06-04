@@ -6,6 +6,7 @@ mod preferences;
 mod queries;
 mod source_apps;
 mod support;
+mod sync_apply;
 #[cfg(test)]
 mod tests;
 

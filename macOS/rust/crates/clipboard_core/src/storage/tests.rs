@@ -7,10 +7,13 @@ use crate::{
     CaptureResult, CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata,
     ClipboardItemType, CompleteLinkMetadataFetchRequest, CompletePendingImagePayloadRequest,
     FailPendingImagePayloadRequest, ItemQuery, LinkMetadataState, PageRequest, PreferencesDocument,
-    RecoverPendingImagesRequest, SourceConfidence, ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION,
+    RecoverPendingImagesRequest, SourceConfidence, SyncApplyEventsRequest,
+    SyncApplySnapshotRequest, SyncEventRecord, SyncLocalPendingRequest, SyncSnapshotItemRecord,
+    SyncSnapshotTombstoneRecord, ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION,
     CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME,
 };
 use rusqlite::{params, Connection};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
 use tempfile::TempDir;
@@ -126,11 +129,11 @@ fn test_webp_bytes(payload: &[u8]) -> Vec<u8> {
 }
 
 fn stable_hash_for_test(value: &str) -> String {
-    let digest = Sha256::digest(value.as_bytes());
-    digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
+    blake3::hash(value.as_bytes()).to_hex().to_string()
+}
+
+fn sync_hash_for_test(seed: char) -> String {
+    std::iter::repeat(seed).take(64).collect()
 }
 
 #[test]
@@ -164,6 +167,396 @@ fn new_database_lists_empty_history() {
     assert!(page.items.is_empty());
     assert_eq!(page.total_count, 0);
     assert!(!page.has_more);
+}
+
+#[test]
+fn v14_schema_allows_remote_only_payload_state_and_sync_tables() {
+    let (_, core) = open_temp_core();
+    let content_hash = sync_hash_for_test('a');
+    core.connection
+        .execute(
+            r#"
+            INSERT INTO clipboard_items (
+                id, type, summary, primary_text, content_hash,
+                source_confidence, first_copied_at_ms, last_copied_at_ms,
+                copy_count, is_pinned, size_bytes, preview_state,
+                payload_state, created_at_ms, updated_at_ms
+            )
+            VALUES (
+                'item_remote_only_test', 'image', 'Remote image', NULL, ?1,
+                'unknown', 1, 1, 1, 0, 10, 'missing_source',
+                'remote_only', 1, 1
+            )
+            "#,
+            params![content_hash],
+        )
+        .unwrap();
+
+    let payload_state: String = core
+        .connection
+        .query_row(
+            "SELECT payload_state FROM clipboard_items WHERE id = 'item_remote_only_test'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let sync_table_count: i64 = core
+        .connection
+        .query_row(
+            r#"
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table'
+                AND name IN ('sync_client_state', 'sync_item_state', 'sync_tombstones', 'sync_remote_assets')
+            "#,
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(payload_state, "remote_only");
+    assert_eq!(sync_table_count, 4);
+}
+
+#[test]
+fn sync_apply_events_inserts_remote_text_and_advances_cursor() {
+    let (_, mut core) = open_temp_core();
+    let content_hash = sync_hash_for_test('b');
+
+    let outcome = core
+        .apply_sync_events(SyncApplyEventsRequest {
+            sync_id: "sync_main".to_string(),
+            device_id: "dev_mac".to_string(),
+            events: vec![SyncEventRecord {
+                server_seq: 1,
+                device_id: "dev_android".to_string(),
+                client_event_id: "android-1".to_string(),
+                event_type: "item_upsert".to_string(),
+                content_hash: format!("blake3:{content_hash}"),
+                item_type: Some("text".to_string()),
+                payload: Some(json!({
+                    "text": "hello from android",
+                    "source_app_name": "Android"
+                })),
+                copy_count_delta: Some(2),
+                created_at_ms: 1000,
+            }],
+            next_cursor: 1,
+        })
+        .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let progress = core.get_sync_progress("sync_main", "dev_mac").unwrap();
+
+    assert_eq!(outcome.cursor, 1);
+    assert_eq!(
+        outcome.changed_item_ids,
+        vec![format!("item_{}", &content_hash[..24])]
+    );
+    assert_eq!(progress.cursor, 1);
+    assert_eq!(page.total_count, 1);
+    assert_eq!(page.items[0].summary, "hello from android");
+    assert_eq!(
+        page.items[0].primary_text.as_deref(),
+        Some("hello from android")
+    );
+    assert_eq!(page.items[0].payload_state.as_str(), "ready");
+}
+
+#[test]
+fn sync_apply_android_platform_source_uses_android_source_identity() {
+    let (_, mut core) = open_temp_core();
+    let content_hash = sync_hash_for_test('d');
+
+    core.apply_sync_events(SyncApplyEventsRequest {
+        sync_id: "sync_main".to_string(),
+        device_id: "dev_mac".to_string(),
+        events: vec![SyncEventRecord {
+            server_seq: 1,
+            device_id: "dev_android".to_string(),
+            client_event_id: "android-platform-1".to_string(),
+            event_type: "item_upsert".to_string(),
+            content_hash: format!("blake3:{content_hash}"),
+            item_type: Some("text".to_string()),
+            payload: Some(json!({
+                "text": "copied on android",
+                "source_app_name": "Pixel clipboard",
+                "source_platform": "android"
+            })),
+            copy_count_delta: Some(1),
+            created_at_ms: 1000,
+        }],
+        next_cursor: 1,
+    })
+    .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let item = &page.items[0];
+    assert_eq!(item.source_app_name.as_deref(), Some("Android"));
+    let source_app_id = item.source_app_id.as_deref().unwrap();
+    let bundle_id: String = core
+        .connection
+        .query_row(
+            "SELECT bundle_id FROM source_apps WHERE id = ?1",
+            params![source_app_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(bundle_id, "app.clipdock.platform.android");
+}
+
+#[test]
+fn sync_apply_events_rejects_legacy_or_noncanonical_content_hash() {
+    let (_, mut core) = open_temp_core();
+    let content_hash = sync_hash_for_test('a');
+    let invalid_hashes = [
+        format!("sha256:{content_hash}"),
+        format!("blake3:{}", content_hash.to_uppercase()),
+    ];
+
+    for (index, invalid_hash) in invalid_hashes.into_iter().enumerate() {
+        let error = core
+            .apply_sync_events(SyncApplyEventsRequest {
+                sync_id: "sync_main".to_string(),
+                device_id: "dev_mac".to_string(),
+                events: vec![SyncEventRecord {
+                    server_seq: (index + 1) as i64,
+                    device_id: "dev_android".to_string(),
+                    client_event_id: format!("android-invalid-{index}"),
+                    event_type: "item_upsert".to_string(),
+                    content_hash: invalid_hash,
+                    item_type: Some("text".to_string()),
+                    payload: Some(json!({"text": "legacy hash"})),
+                    copy_count_delta: Some(1),
+                    created_at_ms: 1000,
+                }],
+                next_cursor: (index + 1) as i64,
+            })
+            .unwrap_err();
+
+        assert_eq!(error.code, CoreErrorCode::SyncInvalidEvent);
+    }
+}
+
+#[test]
+fn sync_remote_tombstone_preserves_local_pending_upload() {
+    let (_, mut core) = open_temp_core();
+    let captured = core
+        .capture_text(text_capture_request("local pending", 44))
+        .unwrap();
+
+    core.mark_sync_local_pending(SyncLocalPendingRequest {
+        sync_id: "sync_main".to_string(),
+        content_hash: format!("blake3:{}", captured.content_hash),
+        item_id: Some(captured.item_id.clone()),
+        client_event_id: "macos-pending-1".to_string(),
+    })
+    .unwrap();
+
+    let outcome = core
+        .apply_sync_events(SyncApplyEventsRequest {
+            sync_id: "sync_main".to_string(),
+            device_id: "dev_mac".to_string(),
+            events: vec![SyncEventRecord {
+                server_seq: 7,
+                device_id: "dev_android".to_string(),
+                client_event_id: "android-delete-1".to_string(),
+                event_type: "item_delete".to_string(),
+                content_hash: format!("blake3:{}", captured.content_hash),
+                item_type: None,
+                payload: None,
+                copy_count_delta: None,
+                created_at_ms: 2000,
+            }],
+            next_cursor: 7,
+        })
+        .unwrap();
+
+    let active_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_items WHERE id = ?1 AND deleted_at_ms IS NULL",
+            params![captured.item_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let applied_to_local: i64 = core
+        .connection
+        .query_row(
+            "SELECT applied_to_local FROM sync_tombstones WHERE sync_id = 'sync_main'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert!(outcome.changed_item_ids.is_empty());
+    assert_eq!(active_count, 1);
+    assert_eq!(applied_to_local, 0);
+}
+
+#[test]
+fn sync_own_event_advances_cursor_without_mutating_local_item() {
+    let (_, mut core) = open_temp_core();
+    let captured = core
+        .capture_text(text_capture_request("original local text", 45))
+        .unwrap();
+
+    core.mark_sync_local_pending(SyncLocalPendingRequest {
+        sync_id: "sync_main".to_string(),
+        content_hash: format!("blake3:{}", captured.content_hash),
+        item_id: Some(captured.item_id.clone()),
+        client_event_id: "macos-upsert-1".to_string(),
+    })
+    .unwrap();
+
+    let outcome = core
+        .apply_sync_events(SyncApplyEventsRequest {
+            sync_id: "sync_main".to_string(),
+            device_id: "dev_mac".to_string(),
+            events: vec![SyncEventRecord {
+                server_seq: 3,
+                device_id: "dev_mac".to_string(),
+                client_event_id: "macos-upsert-1".to_string(),
+                event_type: "item_upsert".to_string(),
+                content_hash: format!("blake3:{}", captured.content_hash),
+                item_type: Some("text".to_string()),
+                payload: Some(json!({"text": "server echo should not overwrite"})),
+                copy_count_delta: Some(1),
+                created_at_ms: 3000,
+            }],
+            next_cursor: 3,
+        })
+        .unwrap();
+
+    let item = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap()
+        .items
+        .remove(0);
+    let provenance: String = core
+        .connection
+        .query_row(
+            "SELECT provenance FROM sync_item_state WHERE sync_id = 'sync_main'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert!(outcome.changed_item_ids.is_empty());
+    assert_eq!(outcome.cursor, 3);
+    assert_eq!(item.primary_text.as_deref(), Some("original local text"));
+    assert_eq!(provenance, "synced_local");
+}
+
+#[test]
+fn sync_apply_rejects_ordering_regression_without_advancing_cursor() {
+    let (_, mut core) = open_temp_core();
+    let first_hash = sync_hash_for_test('c');
+    let second_hash = sync_hash_for_test('d');
+
+    let error = core
+        .apply_sync_events(SyncApplyEventsRequest {
+            sync_id: "sync_main".to_string(),
+            device_id: "dev_mac".to_string(),
+            events: vec![
+                SyncEventRecord {
+                    server_seq: 5,
+                    device_id: "dev_android".to_string(),
+                    client_event_id: "android-5".to_string(),
+                    event_type: "item_upsert".to_string(),
+                    content_hash: format!("blake3:{first_hash}"),
+                    item_type: Some("text".to_string()),
+                    payload: Some(json!({"text": "first"})),
+                    copy_count_delta: Some(1),
+                    created_at_ms: 1000,
+                },
+                SyncEventRecord {
+                    server_seq: 5,
+                    device_id: "dev_android".to_string(),
+                    client_event_id: "android-5-duplicate".to_string(),
+                    event_type: "item_upsert".to_string(),
+                    content_hash: format!("blake3:{second_hash}"),
+                    item_type: Some("text".to_string()),
+                    payload: Some(json!({"text": "duplicate"})),
+                    copy_count_delta: Some(1),
+                    created_at_ms: 1001,
+                },
+            ],
+            next_cursor: 5,
+        })
+        .unwrap_err();
+    let progress = core.get_sync_progress("sync_main", "dev_mac").unwrap();
+    let active_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_items WHERE deleted_at_ms IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(error.code, CoreErrorCode::SyncOrderingRegression);
+    assert_eq!(progress.cursor, 0);
+    assert_eq!(active_count, 0);
+}
+
+#[test]
+fn sync_snapshot_applies_remote_only_image_and_tombstones_missing_rows() {
+    let (_, mut core) = open_temp_core();
+    let image_hash = sync_hash_for_test('e');
+    let deleted_hash = sync_hash_for_test('f');
+
+    let outcome = core
+        .apply_sync_snapshot(SyncApplySnapshotRequest {
+            sync_id: "sync_main".to_string(),
+            device_id: "dev_mac".to_string(),
+            snapshot_seq: 9,
+            items: vec![SyncSnapshotItemRecord {
+                content_hash: format!("blake3:{image_hash}"),
+                item_type: "image".to_string(),
+                payload: json!({
+                    "file_name": "remote.png",
+                    "payload_asset_id": "asset_remote_png",
+                    "byte_count": 1234,
+                    "mime_type": "image/png"
+                }),
+                copy_count: 4,
+                updated_at_ms: 4000,
+                last_server_seq: 8,
+            }],
+            tombstones: vec![SyncSnapshotTombstoneRecord {
+                content_hash: format!("blake3:{deleted_hash}"),
+                deleted_at_ms: 4100,
+                last_server_seq: 9,
+            }],
+        })
+        .unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    let remote_asset_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM sync_remote_assets", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let tombstone_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM sync_tombstones", [], |row| row.get(0))
+        .unwrap();
+
+    assert_eq!(outcome.cursor, 9);
+    assert_eq!(outcome.snapshot_seq, 9);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].item_type, ClipboardItemType::Image);
+    assert_eq!(page.items[0].payload_state.as_str(), "remote_only");
+    assert_eq!(page.items[0].preview_state.as_str(), "missing_source");
+    assert_eq!(remote_asset_count, 1);
+    assert_eq!(tombstone_count, 1);
 }
 
 #[test]
@@ -2886,6 +3279,7 @@ fn default_preferences_document_is_seeded() {
     assert!(preferences.sync.server_url.is_empty());
     assert!(preferences.sync.sync_id.is_none());
     assert!(preferences.sync.device_id.is_none());
+    assert!(preferences.sync.device_token.is_none());
     assert_eq!(preferences.sync.device_name, "Mac");
     assert!(preferences.sync.p2p_enabled);
     assert_eq!(preferences.sync.download_path_mode, "auto");
@@ -3048,6 +3442,7 @@ fn preferences_update_persists_normalized_document() {
     preferences.sync.server_url = " http://127.0.0.1:8787\n ".to_string();
     preferences.sync.sync_id = Some(" sync_local\n ".to_string());
     preferences.sync.device_id = Some(" dev_mac\t ".to_string());
+    preferences.sync.device_token = Some(" cds_token\n ".to_string());
     preferences.sync.device_name = "  Mac Studio\n ".to_string();
     preferences.sync.p2p_enabled = false;
     preferences.sync.download_path_mode = "lan_first".to_string();
@@ -3095,6 +3490,7 @@ fn preferences_update_persists_normalized_document() {
     assert_eq!(saved.sync.server_url, "http://127.0.0.1:8787");
     assert_eq!(saved.sync.sync_id.as_deref(), Some("sync_local"));
     assert_eq!(saved.sync.device_id.as_deref(), Some("dev_mac"));
+    assert_eq!(saved.sync.device_token.as_deref(), Some("cds_token"));
     assert_eq!(saved.sync.device_name, "Mac Studio");
     assert!(!saved.sync.p2p_enabled);
     assert_eq!(saved.sync.download_path_mode, "auto");
@@ -3202,6 +3598,7 @@ fn preferences_parse_keeps_backward_compatible_missing_ignore_list() {
     assert!(!preferences.sync.enabled);
     assert!(preferences.sync.server_url.is_empty());
     assert_eq!(preferences.sync.device_name, "Mac");
+    assert!(preferences.sync.device_token.is_none());
     assert!(preferences.sync.p2p_enabled);
     assert_eq!(preferences.sync.download_path_mode, "auto");
     assert!(!preferences.shortcuts.paste_directly_to_target);

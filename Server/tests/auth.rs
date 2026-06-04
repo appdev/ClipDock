@@ -5,16 +5,44 @@ use axum::http::{header, Method, StatusCode};
 use common::TestServer;
 
 #[tokio::test]
-async fn health_is_unauthenticated_but_v1_info_requires_auth() {
+async fn health_is_unauthenticated_but_v2_info_requires_auth() {
     let server = TestServer::new().await;
 
     let health = server.empty(Method::GET, "/health", None).await;
     assert_eq!(health.status, StatusCode::OK, "{:?}", health.body);
-    assert_eq!(health.body["protocol_version"], 1);
+    assert_eq!(health.body["protocol_version"], 2);
 
-    let info = server.empty(Method::GET, "/v1/info", None).await;
+    let info = server.empty(Method::GET, "/v2/info", None).await;
     assert_eq!(info.status, StatusCode::UNAUTHORIZED);
     assert_eq!(info.body["error"]["code"], "unauthorized");
+}
+
+#[tokio::test]
+async fn v1_routes_return_upgrade_required_without_auth_or_side_effects() {
+    let server = TestServer::new().await;
+
+    for (method, uri) in [
+        (Method::GET, "/v1/info"),
+        (Method::POST, "/v1/sync/create"),
+        (Method::GET, "/v1/events"),
+        (Method::GET, "/v1/ws?cursor=0&protocol_version=1"),
+    ] {
+        let response = server.empty(method, uri, None).await;
+        assert_eq!(response.status, StatusCode::UPGRADE_REQUIRED, "{uri}");
+        assert_eq!(response.body["protocol_version"], 2);
+        assert_eq!(response.body["error"]["code"], "protocol_v1_retired");
+    }
+
+    let group_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sync_groups")
+        .fetch_one(&server.pool)
+        .await
+        .expect("count sync groups");
+    let device_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM devices")
+        .fetch_one(&server.pool)
+        .await
+        .expect("count devices");
+    assert_eq!(group_count, 0);
+    assert_eq!(device_count, 0);
 }
 
 #[tokio::test]
@@ -46,7 +74,7 @@ async fn sync_create_malformed_json_returns_protocol_error_envelope() {
     let response = server
         .raw(
             Method::POST,
-            "/v1/sync/create",
+            "/v2/sync/create",
             None,
             br#"{"device_name":"broken""#.to_vec(),
             &[("content-type", "application/json")],
@@ -59,7 +87,7 @@ async fn sync_create_malformed_json_returns_protocol_error_envelope() {
         "application/json"
     );
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["protocol_version"], 1);
+    assert_eq!(body["protocol_version"], 2);
     assert_eq!(body["error"]["code"], "malformed_json");
 }
 
@@ -69,7 +97,7 @@ async fn sync_create_unsupported_json_content_type_returns_protocol_error_envelo
     let response = server
         .raw(
             Method::POST,
-            "/v1/sync/create",
+            "/v2/sync/create",
             None,
             br#"{"device_name":"test-device"}"#.to_vec(),
             &[("content-type", "text/plain")],
@@ -82,7 +110,7 @@ async fn sync_create_unsupported_json_content_type_returns_protocol_error_envelo
         "application/json"
     );
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["protocol_version"], 1);
+    assert_eq!(body["protocol_version"], 2);
     assert_eq!(body["error"]["code"], "unsupported_json_content_type");
 }
 
@@ -93,10 +121,10 @@ async fn pairing_code_join_shares_the_same_sync_space_and_is_single_use() {
     let joined = server.join_sync(&sync.pairing_code).await;
 
     let original_info = server
-        .empty(Method::GET, "/v1/info", Some(&sync.device.token))
+        .empty(Method::GET, "/v2/info", Some(&sync.device.token))
         .await;
     let joined_info = server
-        .empty(Method::GET, "/v1/info", Some(&joined.token))
+        .empty(Method::GET, "/v2/info", Some(&joined.token))
         .await;
     assert_eq!(original_info.status, StatusCode::OK);
     assert_eq!(joined_info.status, StatusCode::OK);
@@ -110,7 +138,7 @@ async fn pairing_code_join_shares_the_same_sync_space_and_is_single_use() {
     let reused = server
         .json(
             Method::POST,
-            "/v1/sync/join",
+            "/v2/sync/join",
             None,
             serde_json::json!({"pairing_code": sync.pairing_code, "device_name": "late-device"}),
             &[],
@@ -127,7 +155,7 @@ async fn authenticated_device_can_create_a_fresh_invite_for_its_sync_space() {
     let first_join = server.join_sync(&sync.pairing_code).await;
 
     let invite = server
-        .empty(Method::POST, "/v1/sync/invites", Some(&first_join.token))
+        .empty(Method::POST, "/v2/sync/invites", Some(&first_join.token))
         .await;
     assert_eq!(invite.status, StatusCode::OK, "{:?}", invite.body);
     assert_eq!(invite.body["data"]["sync_id"], sync.sync_id);
@@ -135,7 +163,7 @@ async fn authenticated_device_can_create_a_fresh_invite_for_its_sync_space() {
 
     let second_join = server.join_sync(fresh_code).await;
     let info = server
-        .empty(Method::GET, "/v1/info", Some(&second_join.token))
+        .empty(Method::GET, "/v2/info", Some(&second_join.token))
         .await;
     assert_eq!(info.body["data"]["sync_id"], sync.sync_id);
 }
@@ -151,7 +179,7 @@ async fn revoked_device_token_returns_forbidden() {
         .expect("revoke device");
 
     let response = server
-        .empty(Method::GET, "/v1/info", Some(&device.token))
+        .empty(Method::GET, "/v2/info", Some(&device.token))
         .await;
     assert_eq!(response.status, StatusCode::FORBIDDEN);
     assert_eq!(response.body["error"]["code"], "revoked_device");

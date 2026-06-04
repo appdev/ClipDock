@@ -18,12 +18,12 @@ Design image path:
 
 ## Server Contract Reflected
 
-- Create sync space: `POST /v1/sync/create`.
-- Join sync space: `POST /v1/sync/join`.
-- Generate invite: `POST /v1/sync/invites`.
-- Capabilities: `GET /v1/info`.
-- Snapshot/event sync: `GET /v1/snapshot`, `GET /v1/events`, `POST /v1/events`.
-- Preview assets: `PUT/GET /v1/assets/{digest}`.
+- Create sync space: `POST /v2/sync/create`.
+- Join sync space: `POST /v2/sync/join`.
+- Generate invite: `POST /v2/sync/invites`.
+- Capabilities: `GET /v2/info`.
+- Snapshot/event sync: `GET /v2/snapshot`, `GET /v2/events`, `POST /v2/events`.
+- Preview assets: `PUT/GET /v2/assets/{digest}`.
 
 ## Required UI Changes
 
@@ -32,7 +32,7 @@ Design image path:
 - Show current `sync_id`, local `device_id`, and token state after setup.
 - Settings must separate server preview assets from P2P full payload download.
 - Add sync diagnostics: snapshot state, event cursor, last error.
-- Show server capabilities from `/v1/info`: protocol version, asset kinds, MIME types, max asset size.
+- Show server capabilities from `/v2/info`: protocol version, asset kinds, MIME types, max asset size.
 
 ## Revised Screen Set
 

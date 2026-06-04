@@ -77,6 +77,19 @@ private func runClipDockApp() {
         return
     }
 
+    if SyncDeleteQACommand.shouldRun(arguments: CommandLine.arguments) {
+        Task { @MainActor in
+            do {
+                try await SyncDeleteQACommand.run(arguments: CommandLine.arguments)
+                Darwin.exit(0)
+            } catch {
+                FileHandle.standardError.write(Data("sync delete QA failed: \(error.localizedDescription)\n".utf8))
+                Darwin.exit(1)
+            }
+        }
+        return
+    }
+
     if ContextMenuRealQACommand.shouldRun(arguments: CommandLine.arguments) {
         do {
             try ContextMenuRealQACommand.run()

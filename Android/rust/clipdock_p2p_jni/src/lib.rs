@@ -30,6 +30,8 @@ static NODE: Lazy<Mutex<Option<P2pNode>>> = Lazy::new(|| Mutex::new(None));
 struct StartConfig {
     #[serde(default = "default_addr_timeout_ms")]
     addr_timeout_ms: u64,
+    #[serde(default = "default_download_timeout_ms")]
+    download_timeout_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -63,6 +65,7 @@ struct P2pNode {
     router: Router,
     blobs: Blobs<mem::Store>,
     addr_timeout: Duration,
+    download_timeout: Duration,
 }
 
 impl P2pNode {
@@ -90,6 +93,7 @@ impl P2pNode {
             router,
             blobs,
             addr_timeout: Duration::from_millis(config.addr_timeout_ms),
+            download_timeout: Duration::from_millis(config.download_timeout_ms),
         })
     }
 
@@ -138,28 +142,36 @@ impl P2pNode {
         ensure_parent_dir(&output_path)?;
         let ticket: BlobTicket = ticket.parse().context("failed to parse blob ticket")?;
         let started = Instant::now();
+        let download_timeout = self.download_timeout;
         self.runtime.block_on(async {
-            let outcome = self
-                .blobs
-                .client()
-                .download(ticket.hash(), ticket.node_addr().clone())
+            let download = tokio::time::timeout(
+                download_timeout,
+                self.blobs
+                    .client()
+                    .download(ticket.hash(), ticket.node_addr().clone()),
+            )
+            .await
+            .context("blob download start timed out")?
+            .context("failed to start blob download")?;
+            let outcome = tokio::time::timeout(download_timeout, download.finish())
                 .await
-                .context("failed to start blob download")?
-                .finish()
-                .await
+                .context("blob download timed out")?
                 .context("failed to finish blob download")?;
-            self.blobs
-                .client()
-                .export(
+            let export = tokio::time::timeout(
+                download_timeout,
+                self.blobs.client().export(
                     ticket.hash(),
                     output_path.clone(),
                     ExportFormat::Blob,
                     ExportMode::Copy,
-                )
+                ),
+            )
+            .await
+            .context("blob export start timed out")?
+            .context("failed to start blob export")?;
+            tokio::time::timeout(download_timeout, export.finish())
                 .await
-                .context("failed to start blob export")?
-                .finish()
-                .await
+                .context("blob export timed out")?
                 .context("failed to finish blob export")?;
             let byte_count = std::fs::metadata(&output_path)
                 .with_context(|| {
@@ -232,9 +244,14 @@ fn default_addr_timeout_ms() -> u64 {
     3_000
 }
 
+fn default_download_timeout_ms() -> u64 {
+    30_000
+}
+
 fn start_node(config_json: &str) -> Result<EndpointInfo> {
     let config = serde_json::from_str::<StartConfig>(config_json).unwrap_or(StartConfig {
         addr_timeout_ms: default_addr_timeout_ms(),
+        download_timeout_ms: default_download_timeout_ms(),
     });
     let mut guard = NODE.lock().map_err(|_| anyhow!("p2p node lock poisoned"))?;
     if guard.is_none() {
@@ -381,10 +398,12 @@ mod tests {
 
         let provider = P2pNode::start(StartConfig {
             addr_timeout_ms: 5_000,
+            download_timeout_ms: 10_000,
         })
         .expect("provider node");
         let receiver = P2pNode::start(StartConfig {
             addr_timeout_ms: 5_000,
+            download_timeout_ms: 10_000,
         })
         .expect("receiver node");
 
@@ -408,6 +427,7 @@ mod tests {
     fn rejects_relative_paths() {
         let node = P2pNode::start(StartConfig {
             addr_timeout_ms: 1_000,
+            download_timeout_ms: 1_000,
         })
         .expect("node");
         let error = node

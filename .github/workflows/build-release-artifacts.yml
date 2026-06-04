@@ -169,7 +169,7 @@ jobs:
           retention-days: 30
 
   build-android-app:
-    name: Build Android app APK/AAB
+    name: Build Android app APK
     needs: metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -254,7 +254,7 @@ jobs:
           ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
           ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
           CLIPDOCK_RUST_PROFILE: release
-        run: ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease
+        run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Collect Android release artifacts
         shell: bash
@@ -273,30 +273,19 @@ jobs:
             apk_sources+=("$artifact")
           done < <(find Android/app/build/outputs/apk/release -maxdepth 1 -type f -name "*.apk" | sort)
 
-          aab_sources=()
-          while IFS= read -r artifact; do
-            aab_sources+=("$artifact")
-          done < <(find Android/app/build/outputs/bundle/release -maxdepth 1 -type f -name "*.aab" | sort)
-
           if [[ "${#apk_sources[@]}" -ne 1 ]]; then
             echo "expected exactly one release APK, found ${#apk_sources[@]}" >&2
             exit 1
           fi
-          if [[ "${#aab_sources[@]}" -ne 1 ]]; then
-            echo "expected exactly one release AAB, found ${#aab_sources[@]}" >&2
-            exit 1
-          fi
 
           apk_path="$artifact_root/ClipDock-$version-$build-android-release-signed.apk"
-          aab_path="$artifact_root/ClipDock-$version-$build-android-release-signed.aab"
           checksums_path="$artifact_root/SHA256SUMS"
           manifest_path="$artifact_root/ClipDock-Android-release-manifest.txt"
 
           cp "${apk_sources[0]}" "$apk_path"
-          cp "${aab_sources[0]}" "$aab_path"
 
           : > "$checksums_path"
-          for artifact in "$apk_path" "$aab_path"; do
+          for artifact in "$apk_path"; do
             if command -v sha256sum >/dev/null 2>&1; then
               (cd "$artifact_root" && sha256sum "$(basename "$artifact")") >> "$checksums_path"
             else
@@ -310,10 +299,9 @@ jobs:
             printf 'application_id=com.apkdv.clipdock\n'
             printf 'version=%s\n' "$version"
             printf 'version_code=%s\n' "$build"
-            printf 'artifact_format=apk,aab\n'
+            printf 'artifact_format=apk\n'
             printf 'signed=true\n'
             printf 'apk=%s\n' "$apk_path"
-            printf 'aab=%s\n' "$aab_path"
           } > "$manifest_path"
 
       - name: Upload Android workflow artifact
@@ -471,9 +459,7 @@ jobs:
           overwrite_files: true
           files: |
             release-artifacts/**/*.apk
-            release-artifacts/**/*.aab
             release-artifacts/**/*.dmg
             release-artifacts/**/*.tar.gz
             release-artifacts/**/*.zip
             release-artifacts/**/*.sha256
-            release-artifacts/**/*manifest.txt

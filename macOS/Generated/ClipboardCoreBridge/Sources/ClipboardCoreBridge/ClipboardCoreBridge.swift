@@ -56,6 +56,18 @@ public func update_source_app_icon_header_color<GenericIntoRustString: IntoRustS
 public func clear_items<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_type: GenericIntoRustString, _ source_app_id: GenericIntoRustString, _ search_text: GenericIntoRustString) -> CoreItemManagementResult {
     __swift_bridge__$clear_items({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = search_text.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
+public func get_sync_progress<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ sync_id: GenericIntoRustString, _ device_id: GenericIntoRustString) -> CoreSyncProgressResult {
+    __swift_bridge__$get_sync_progress({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = sync_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = device_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func mark_sync_local_pending<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CoreItemManagementResult {
+    __swift_bridge__$mark_sync_local_pending({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func apply_sync_events<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CoreSyncApplyResult {
+    __swift_bridge__$apply_sync_events({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func apply_sync_snapshot<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ request_json: GenericIntoRustString) -> CoreSyncApplyResult {
+    __swift_bridge__$apply_sync_snapshot({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
 public func claim_link_metadata_fetch_batch<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ limit: Int64, _ lease_timeout_ms: Int64) -> CoreLinkMetadataFetchBatchResult {
     __swift_bridge__$claim_link_metadata_fetch_batch({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), limit, lease_timeout_ms).intoSwiftRepr()
 }
@@ -475,6 +487,100 @@ extension __swift_bridge__$Option$CoreItemManagementResult {
             return __swift_bridge__$Option$CoreItemManagementResult(is_some: true, val: v.intoFfiRepr())
         } else {
             return __swift_bridge__$Option$CoreItemManagementResult(is_some: false, val: __swift_bridge__$CoreItemManagementResult())
+        }
+    }
+}
+public struct CoreSyncProgressResult {
+    public var ok: Bool
+    public var cursor: Int64
+    public var snapshot_seq: Int64
+    public var progress_json: RustString
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,cursor: Int64,snapshot_seq: Int64,progress_json: RustString,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.cursor = cursor
+        self.snapshot_seq = snapshot_seq
+        self.progress_json = progress_json
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreSyncProgressResult {
+        { let val = self; return __swift_bridge__$CoreSyncProgressResult(ok: val.ok, cursor: val.cursor, snapshot_seq: val.snapshot_seq, progress_json: { let rustString = val.progress_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreSyncProgressResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreSyncProgressResult {
+        { let val = self; return CoreSyncProgressResult(ok: val.ok, cursor: val.cursor, snapshot_seq: val.snapshot_seq, progress_json: RustString(ptr: val.progress_json), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreSyncProgressResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreSyncProgressResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreSyncProgressResult>) -> __swift_bridge__$Option$CoreSyncProgressResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreSyncProgressResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreSyncProgressResult(is_some: false, val: __swift_bridge__$CoreSyncProgressResult())
+        }
+    }
+}
+public struct CoreSyncApplyResult {
+    public var ok: Bool
+    public var cursor: Int64
+    public var snapshot_seq: Int64
+    public var changed_item_ids_json: RustString
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,cursor: Int64,snapshot_seq: Int64,changed_item_ids_json: RustString,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.cursor = cursor
+        self.snapshot_seq = snapshot_seq
+        self.changed_item_ids_json = changed_item_ids_json
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreSyncApplyResult {
+        { let val = self; return __swift_bridge__$CoreSyncApplyResult(ok: val.ok, cursor: val.cursor, snapshot_seq: val.snapshot_seq, changed_item_ids_json: { let rustString = val.changed_item_ids_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreSyncApplyResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreSyncApplyResult {
+        { let val = self; return CoreSyncApplyResult(ok: val.ok, cursor: val.cursor, snapshot_seq: val.snapshot_seq, changed_item_ids_json: RustString(ptr: val.changed_item_ids_json), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreSyncApplyResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreSyncApplyResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreSyncApplyResult>) -> __swift_bridge__$Option$CoreSyncApplyResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreSyncApplyResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreSyncApplyResult(is_some: false, val: __swift_bridge__$CoreSyncApplyResult())
         }
     }
 }

@@ -4,7 +4,10 @@ use sqlx::{Row, SqlitePool};
 
 use crate::db;
 
-pub const MIGRATION_VERSION: i64 = 1;
+pub const MIGRATION_VERSION: i64 = 3;
+const V1_MIGRATION_VERSION: i64 = 1;
+const V2_MIGRATION_VERSION: i64 = 2;
+const V3_MIGRATION_VERSION: i64 = 3;
 
 const MIGRATION_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS sync_groups (
@@ -138,8 +141,98 @@ CREATE INDEX IF NOT EXISTS idx_asset_providers_asset_expires ON asset_providers(
 CREATE INDEX IF NOT EXISTS idx_asset_providers_device ON asset_providers(sync_group_id, device_id);
 "#;
 
+const MIGRATION_V2_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS device_sync_state (
+    sync_group_id TEXT NOT NULL REFERENCES sync_groups(id),
+    device_id TEXT NOT NULL REFERENCES devices(id),
+    last_acked_seq INTEGER NOT NULL DEFAULT 0,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY(sync_group_id, device_id)
+);
+"#;
+
+const MIGRATION_V3_SQL: &[&str] = &[
+    r#"ALTER TABLE sync_groups ADD COLUMN empty_since_ms INTEGER"#,
+    r#"CREATE INDEX IF NOT EXISTS idx_sync_groups_empty_since ON sync_groups(empty_since_ms)"#,
+    r#"UPDATE sync_groups
+       SET empty_since_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+       WHERE empty_since_ms IS NULL
+         AND NOT EXISTS (
+             SELECT 1
+             FROM devices
+             WHERE devices.sync_group_id = sync_groups.id
+               AND devices.revoked_at_ms IS NULL
+         )"#,
+    r#"CREATE TRIGGER IF NOT EXISTS sync_groups_mark_empty_after_insert
+       AFTER INSERT ON sync_groups
+       BEGIN
+           UPDATE sync_groups
+           SET empty_since_ms = COALESCE(empty_since_ms, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+           WHERE id = NEW.id
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM devices
+                 WHERE devices.sync_group_id = NEW.id
+                   AND devices.revoked_at_ms IS NULL
+             );
+       END"#,
+    r#"CREATE TRIGGER IF NOT EXISTS devices_clear_empty_after_insert
+       AFTER INSERT ON devices
+       WHEN NEW.revoked_at_ms IS NULL
+       BEGIN
+           UPDATE sync_groups
+           SET empty_since_ms = NULL
+           WHERE id = NEW.sync_group_id;
+       END"#,
+    r#"CREATE TRIGGER IF NOT EXISTS devices_mark_empty_after_delete
+       AFTER DELETE ON devices
+       BEGIN
+           UPDATE sync_groups
+           SET empty_since_ms = COALESCE(empty_since_ms, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+           WHERE id = OLD.sync_group_id
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM devices
+                 WHERE devices.sync_group_id = OLD.sync_group_id
+                   AND devices.revoked_at_ms IS NULL
+             );
+       END"#,
+    r#"CREATE TRIGGER IF NOT EXISTS devices_mark_empty_after_revoke
+       AFTER UPDATE OF revoked_at_ms ON devices
+       WHEN NEW.revoked_at_ms IS NOT NULL
+       BEGIN
+           UPDATE sync_groups
+           SET empty_since_ms = COALESCE(empty_since_ms, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+           WHERE id = NEW.sync_group_id
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM devices
+                 WHERE devices.sync_group_id = NEW.sync_group_id
+                   AND devices.revoked_at_ms IS NULL
+             );
+       END"#,
+    r#"CREATE TRIGGER IF NOT EXISTS devices_clear_empty_after_unrevoke
+       AFTER UPDATE OF revoked_at_ms ON devices
+       WHEN NEW.revoked_at_ms IS NULL
+       BEGIN
+           UPDATE sync_groups
+           SET empty_since_ms = NULL
+           WHERE id = NEW.sync_group_id;
+       END"#,
+];
+
 pub fn migration_checksum() -> String {
     let digest = Sha256::digest(MIGRATION_SQL.as_bytes());
+    hex::encode(digest)
+}
+
+fn migration_v2_checksum() -> String {
+    let digest = Sha256::digest(MIGRATION_V2_SQL.as_bytes());
+    hex::encode(digest)
+}
+
+fn migration_v3_checksum() -> String {
+    let digest = Sha256::digest(MIGRATION_V3_SQL.join("\n").as_bytes());
     hex::encode(digest)
 }
 
@@ -155,7 +248,7 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     .await?;
 
     if let Some(row) = sqlx::query("SELECT checksum FROM sync_schema_migrations WHERE version = ?")
-        .bind(MIGRATION_VERSION)
+        .bind(V1_MIGRATION_VERSION)
         .fetch_optional(pool)
         .await?
     {
@@ -164,11 +257,67 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
         if stored != expected {
             return Err(anyhow!("migration checksum mismatch for version 1"));
         }
-        return Ok(());
+    } else {
+        apply_migration(
+            pool,
+            V1_MIGRATION_VERSION,
+            MIGRATION_SQL,
+            migration_checksum(),
+        )
+        .await?;
     }
 
+    if let Some(row) = sqlx::query("SELECT checksum FROM sync_schema_migrations WHERE version = ?")
+        .bind(V2_MIGRATION_VERSION)
+        .fetch_optional(pool)
+        .await?
+    {
+        let stored: String = row.try_get("checksum")?;
+        let expected = migration_v2_checksum();
+        if stored != expected {
+            return Err(anyhow!("migration checksum mismatch for version 2"));
+        }
+    } else {
+        apply_migration(
+            pool,
+            V2_MIGRATION_VERSION,
+            MIGRATION_V2_SQL,
+            migration_v2_checksum(),
+        )
+        .await?;
+    }
+
+    if let Some(row) = sqlx::query("SELECT checksum FROM sync_schema_migrations WHERE version = ?")
+        .bind(V3_MIGRATION_VERSION)
+        .fetch_optional(pool)
+        .await?
+    {
+        let stored: String = row.try_get("checksum")?;
+        let expected = migration_v3_checksum();
+        if stored != expected {
+            return Err(anyhow!("migration checksum mismatch for version 3"));
+        }
+    } else {
+        apply_migration_steps(
+            pool,
+            V3_MIGRATION_VERSION,
+            MIGRATION_V3_SQL,
+            migration_v3_checksum(),
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn apply_migration(
+    pool: &SqlitePool,
+    version: i64,
+    sql: &str,
+    checksum: String,
+) -> Result<()> {
     let mut tx = pool.begin().await?;
-    for statement in MIGRATION_SQL.split(';') {
+    for statement in sql.split(';') {
         let trimmed = statement.trim();
         if !trimmed.is_empty() {
             sqlx::query(trimmed).execute(&mut *tx).await?;
@@ -177,8 +326,30 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     sqlx::query(
         "INSERT INTO sync_schema_migrations(version, checksum, applied_at_ms) VALUES (?, ?, ?)",
     )
-    .bind(MIGRATION_VERSION)
-    .bind(migration_checksum())
+    .bind(version)
+    .bind(checksum)
+    .bind(db::now_ms().await)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn apply_migration_steps(
+    pool: &SqlitePool,
+    version: i64,
+    statements: &[&str],
+    checksum: String,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    for statement in statements {
+        sqlx::query(statement.trim()).execute(&mut *tx).await?;
+    }
+    sqlx::query(
+        "INSERT INTO sync_schema_migrations(version, checksum, applied_at_ms) VALUES (?, ?, ?)",
+    )
+    .bind(version)
+    .bind(checksum)
     .bind(db::now_ms().await)
     .execute(&mut *tx)
     .await?;

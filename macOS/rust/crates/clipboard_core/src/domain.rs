@@ -112,6 +112,7 @@ pub enum PayloadState {
     Pending,
     Ready,
     Failed,
+    RemoteOnly,
 }
 
 impl PayloadState {
@@ -120,6 +121,7 @@ impl PayloadState {
             Self::Pending => "pending",
             Self::Ready => "ready",
             Self::Failed => "failed",
+            Self::RemoteOnly => "remote_only",
         }
     }
 
@@ -128,6 +130,7 @@ impl PayloadState {
             "pending" => Self::Pending,
             "ready" => Self::Ready,
             "failed" => Self::Failed,
+            "remote_only" => Self::RemoteOnly,
             _ => Self::Ready,
         }
     }
@@ -255,6 +258,77 @@ pub struct SourceAppPage {
     pub apps: Vec<SourceAppSummary>,
     pub total_count: i64,
     pub has_more: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncProgress {
+    pub sync_id: String,
+    pub device_id: String,
+    pub cursor: i64,
+    pub snapshot_seq: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncLocalPendingRequest {
+    pub sync_id: String,
+    pub content_hash: String,
+    pub item_id: Option<String>,
+    pub client_event_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncApplyEventsRequest {
+    pub sync_id: String,
+    pub device_id: String,
+    pub events: Vec<SyncEventRecord>,
+    pub next_cursor: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncEventRecord {
+    pub server_seq: i64,
+    pub device_id: String,
+    pub client_event_id: String,
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub content_hash: String,
+    pub item_type: Option<String>,
+    pub payload: Option<serde_json::Value>,
+    pub copy_count_delta: Option<i64>,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncApplySnapshotRequest {
+    pub sync_id: String,
+    pub device_id: String,
+    pub snapshot_seq: i64,
+    pub items: Vec<SyncSnapshotItemRecord>,
+    pub tombstones: Vec<SyncSnapshotTombstoneRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncSnapshotItemRecord {
+    pub content_hash: String,
+    pub item_type: String,
+    pub payload: serde_json::Value,
+    pub copy_count: i64,
+    pub updated_at_ms: i64,
+    pub last_server_seq: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncSnapshotTombstoneRecord {
+    pub content_hash: String,
+    pub deleted_at_ms: i64,
+    pub last_server_seq: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncApplyOutcome {
+    pub cursor: i64,
+    pub snapshot_seq: i64,
+    pub changed_item_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -549,6 +623,7 @@ impl PreferencesDocument {
         self.sync.server_url = normalize_single_line_string(self.sync.server_url, 512);
         self.sync.sync_id = normalize_optional_single_line_string(self.sync.sync_id, 256);
         self.sync.device_id = normalize_optional_single_line_string(self.sync.device_id, 256);
+        self.sync.device_token = normalize_optional_single_line_string(self.sync.device_token, 512);
         self.sync.device_name = normalize_single_line_string(self.sync.device_name, 120);
         if self.sync.device_name.is_empty() {
             self.sync.device_name = default_sync_device_name();
@@ -728,6 +803,8 @@ pub struct SyncPreferences {
     pub sync_id: Option<String>,
     #[serde(default)]
     pub device_id: Option<String>,
+    #[serde(default)]
+    pub device_token: Option<String>,
     #[serde(default = "default_sync_device_name")]
     pub device_name: String,
     #[serde(default = "default_true")]
@@ -745,6 +822,7 @@ impl Default for SyncPreferences {
             server_url: String::new(),
             sync_id: None,
             device_id: None,
+            device_token: None,
             device_name: default_sync_device_name(),
             p2p_enabled: true,
             download_path_mode: default_sync_download_path_mode(),

@@ -47,6 +47,40 @@ struct SyncP2PProviderRegistryTests {
         #expect(!FileManager.default.fileExists(atPath: registryURL.path))
     }
 
+    @Test
+    @MainActor
+    func p2pProviderMimeTypeUsesServerCompatibleMimeValues() throws {
+        let appSupportURL = try makeTemporaryAppSupportDirectory()
+        defer { try? FileManager.default.removeItem(at: appSupportURL) }
+        let delegate = AppDelegate()
+        delegate.smokePrepareRealFunctionQA(appSupportURL: appSupportURL)
+
+        let textURL = appSupportURL.appendingPathComponent("payload.txt")
+        let pngURL = appSupportURL.appendingPathComponent("payload.png")
+        let unknownURL = appSupportURL.appendingPathComponent("payload.unknown-ext")
+
+        #expect(delegate.smokeResolveSyncP2PMimeTypeForQA(
+            contentType: "public.plain-text",
+            fileURL: textURL
+        ) == "text/plain")
+        #expect(delegate.smokeResolveSyncP2PMimeTypeForQA(
+            contentType: "public.png",
+            fileURL: pngURL
+        ) == "image/png")
+        #expect(delegate.smokeResolveSyncP2PMimeTypeForQA(
+            contentType: "image/webp",
+            fileURL: pngURL
+        ) == "image/webp")
+        #expect(delegate.smokeResolveSyncP2PMimeTypeForQA(
+            contentType: nil,
+            fileURL: textURL
+        ) == "text/plain")
+        #expect(delegate.smokeResolveSyncP2PMimeTypeForQA(
+            contentType: "com.example.unknown",
+            fileURL: unknownURL
+        ) == nil)
+    }
+
     private func makeTemporaryAppSupportDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ClipDockP2PProviderRegistryTests-\(UUID().uuidString)", isDirectory: true)

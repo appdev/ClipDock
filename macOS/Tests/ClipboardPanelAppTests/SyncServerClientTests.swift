@@ -7,7 +7,7 @@ struct SyncServerClientTests {
     func createSyncPostsDeviceNameAndDecodesPairingResponse() async throws {
         let httpClient = MockSyncServerHTTPClient(responseBody: """
         {
-          "protocol_version": 1,
+          "protocol_version": 2,
           "data": {
             "sync_id": "sync_a",
             "pairing_code": "A1B2C",
@@ -32,7 +32,7 @@ struct SyncServerClientTests {
             token: "cds_token"
         ))
         let request = try #require(httpClient.requests.first)
-        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v1/sync/create")
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v2/sync/create")
         #expect(request.httpMethod == "POST")
         #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
 
@@ -44,7 +44,7 @@ struct SyncServerClientTests {
     func infoUsesBearerTokenAndDecodesAuthenticatedDeviceIdentity() async throws {
         let httpClient = MockSyncServerHTTPClient(responseBody: """
         {
-          "protocol_version": 1,
+          "protocol_version": 2,
           "data": {
             "sync_id": "sync_a",
             "device_id": "dev_a",
@@ -71,8 +71,39 @@ struct SyncServerClientTests {
             p2pTransport: "iroh-blobs"
         ))
         let request = try #require(httpClient.requests.first)
-        #expect(request.url?.absoluteString == "https://clipdock.example.com/v1/info")
+        #expect(request.url?.absoluteString == "https://clipdock.example.com/v2/info")
         #expect(request.httpMethod == "GET")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer cds_token")
+        #expect(request.httpBody == nil)
+    }
+
+    @Test
+    func createInviteUsesBearerTokenAndDecodesFreshPairingCode() async throws {
+        let httpClient = MockSyncServerHTTPClient(responseBody: """
+        {
+          "protocol_version": 2,
+          "data": {
+            "sync_id": "sync_a",
+            "pairing_code": "Z9Y8X",
+            "pairing_expires_at_ms": 67890
+          }
+        }
+        """)
+        let client = SyncServerClient(httpClient: httpClient)
+
+        let result = try await client.createInvite(
+            serverURL: "https://clipdock.example.com",
+            token: "cds_token"
+        )
+
+        #expect(result == SyncInviteResult(
+            syncID: "sync_a",
+            pairingCode: "Z9Y8X",
+            pairingExpiresAtMs: 67890
+        ))
+        let request = try #require(httpClient.requests.first)
+        #expect(request.url?.absoluteString == "https://clipdock.example.com/v2/sync/invites")
+        #expect(request.httpMethod == "POST")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer cds_token")
         #expect(request.httpBody == nil)
     }
@@ -81,7 +112,7 @@ struct SyncServerClientTests {
     func reportEndpointSendsP2PMetadata() async throws {
         let httpClient = MockSyncServerHTTPClient(responseBody: """
         {
-          "protocol_version": 1,
+          "protocol_version": 2,
           "data": {
             "device_id": "dev_a",
             "endpoint": {
@@ -109,7 +140,7 @@ struct SyncServerClientTests {
             expiresAtMs: 54321
         ))
         let request = try #require(httpClient.requests.first)
-        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v1/p2p/endpoint")
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v2/p2p/endpoint")
         #expect(request.httpMethod == "PUT")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer cds_token")
 
@@ -131,7 +162,7 @@ struct SyncServerClientTests {
         let assetID = "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let httpClient = MockSyncServerHTTPClient(responseBody: """
         {
-          "protocol_version": 1,
+          "protocol_version": 2,
           "data": {
             "asset_id": "\(assetID)",
             "provider": {
@@ -185,7 +216,7 @@ struct SyncServerClientTests {
             directAddresses: ["127.0.0.1:12345"]
         ))
         let request = try #require(httpClient.requests.first)
-        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v1/p2p/assets/\(assetID)/providers/me")
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v2/p2p/assets/\(assetID)/providers/me")
         #expect(request.httpMethod == "PUT")
         let body = try requestJSONBody(request)
         #expect(body["kind"] as? String == "file_payload")
@@ -201,7 +232,7 @@ struct SyncServerClientTests {
             statusCode: 403,
             responseBody: """
             {
-              "protocol_version": 1,
+              "protocol_version": 2,
               "error": {
                 "code": "invalid_pairing_code",
                 "message": "invalid pairing code"
@@ -218,6 +249,145 @@ struct SyncServerClientTests {
                 deviceName: "MacBook"
             )
         }
+    }
+
+    @Test
+    func pushEventsPostsBatchWithBearerTokenAndTwelveSecondTimeout() async throws {
+        let httpClient = MockSyncServerHTTPClient(responseBody: """
+        {
+          "protocol_version": 2,
+          "data": {
+            "events": [
+              {
+                "client_event_id": "macos-abc",
+                "server_seq": 42,
+                "duplicate": false
+              }
+            ],
+            "next_cursor": 42
+          }
+        }
+        """)
+        let client = SyncServerClient(httpClient: httpClient)
+
+        let result = try await client.pushEvents(
+            serverURL: "http://127.0.0.1:8787",
+            token: "cds_token",
+            events: [
+                SyncPushEvent(
+                    clientEventId: "macos-abc",
+                    eventType: "item_upsert",
+                    contentHash: "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    itemType: "text",
+                    payload: ["text": .string("hello")],
+                    copyCountDelta: 1
+                )
+            ]
+        )
+
+        #expect(result == SyncPushEventsResult(
+            events: [SyncPushedEventResult(clientEventId: "macos-abc", serverSeq: 42, duplicate: false)],
+            nextCursor: 42
+        ))
+        let request = try #require(httpClient.requests.first)
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v2/events")
+        #expect(request.httpMethod == "POST")
+        #expect(request.timeoutInterval == 12)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer cds_token")
+        let body = try requestJSONBody(request)
+        let events = try #require(body["events"] as? [[String: Any]])
+        #expect(events.count == 1)
+        #expect(events[0]["client_event_id"] as? String == "macos-abc")
+        #expect(events[0]["type"] as? String == "item_upsert")
+        #expect(events[0]["item_type"] as? String == "text")
+        #expect(events[0]["copy_count_delta"] as? Int == 1)
+        let payload = try #require(events[0]["payload"] as? [String: Any])
+        #expect(payload["text"] as? String == "hello")
+    }
+
+    @Test
+    func pullEventsUsesProtocolV2EndpointAndQuery() async throws {
+        let httpClient = MockSyncServerHTTPClient(responseBody: """
+        {
+          "protocol_version": 2,
+          "data": {
+            "events": [
+              {
+                "server_seq": 7,
+                "device_id": "dev_android",
+                "client_event_id": "android-7",
+                "type": "item_upsert",
+                "content_hash": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "item_type": "text",
+                "payload": {"text": "hello"},
+                "copy_count_delta": 1,
+                "created_at_ms": 1234
+              }
+            ],
+            "next_cursor": 7
+          }
+        }
+        """)
+        let client = SyncServerClient(httpClient: httpClient)
+
+        let result = try await client.pullEvents(
+            serverURL: "http://127.0.0.1:8787",
+            token: "cds_token",
+            afterSeq: 3,
+            limit: 25
+        )
+
+        #expect(result.nextCursor == 7)
+        #expect(result.events.first?.contentHash == "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        let request = try #require(httpClient.requests.first)
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v2/events?after_seq=3&limit=25")
+        #expect(request.httpMethod == "GET")
+        #expect(request.timeoutInterval == 12)
+    }
+
+    @Test
+    func snapshotUsesProtocolV2Endpoint() async throws {
+        let httpClient = MockSyncServerHTTPClient(responseBody: """
+        {
+          "protocol_version": 2,
+          "data": {
+            "snapshot_seq": 9,
+            "items": [
+              {
+                "content_hash": "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "item_type": "text",
+                "payload": {"text": "snapshot"},
+                "copy_count": 2,
+                "updated_at_ms": 111,
+                "last_server_seq": 8
+              }
+            ],
+            "tombstones": []
+          }
+        }
+        """)
+        let client = SyncServerClient(httpClient: httpClient)
+
+        let result = try await client.snapshot(
+            serverURL: "http://127.0.0.1:8787",
+            token: "cds_token"
+        )
+
+        #expect(result.snapshotSeq == 9)
+        #expect(result.items.first?.contentHash == "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        let request = try #require(httpClient.requests.first)
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/v2/snapshot")
+        #expect(request.httpMethod == "GET")
+        #expect(request.timeoutInterval == 20)
+    }
+
+    @Test
+    func webSocketURLUsesProtocolV2EndpointAndVersion() throws {
+        let client = SyncServerClient()
+
+        let url = try client.webSocketURL(serverURL: "https://clipdock.example.com", cursor: 42)
+
+        #expect(url.absoluteString == "wss://clipdock.example.com/v2/ws?cursor=42&protocol_version=2")
     }
 }
 

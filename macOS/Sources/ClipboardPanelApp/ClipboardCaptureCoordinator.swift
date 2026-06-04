@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 public struct ClipboardCaptureSource: Equatable, Sendable {
     public let bundleId: String?
@@ -271,21 +272,49 @@ public enum ClipboardCaptureHUDTrigger: Equatable, Sendable {
     case copyCompleted(eventID: String)
 }
 
+public struct ClipboardSyncCandidate: Equatable, Sendable {
+    public let itemId: String
+    public let contentHash: String
+    public let itemType: String
+    public let payload: [String: SyncEventPayloadValue]
+    public let copyCountDelta: Int64
+    public let assetRegistration: SyncOutboxAssetRegistration?
+
+    public init(
+        itemId: String,
+        contentHash: String,
+        itemType: String,
+        payload: [String: SyncEventPayloadValue],
+        copyCountDelta: Int64 = 1,
+        assetRegistration: SyncOutboxAssetRegistration? = nil
+    ) {
+        self.itemId = itemId
+        self.contentHash = contentHash
+        self.itemType = itemType
+        self.payload = payload
+        self.copyCountDelta = copyCountDelta
+        self.assetRegistration = assetRegistration
+    }
+}
+
 public struct ClipboardCaptureHandlingResult: Equatable, Sendable {
     public let statusText: String?
     public let shouldRefreshList: Bool
     public let hudTrigger: ClipboardCaptureHUDTrigger
+    public let syncCandidate: ClipboardSyncCandidate?
     public let storageError: RustCoreError?
 
     public init(
         statusText: String?,
         shouldRefreshList: Bool,
         hudTrigger: ClipboardCaptureHUDTrigger = .none,
+        syncCandidate: ClipboardSyncCandidate? = nil,
         storageError: RustCoreError?
     ) {
         self.statusText = statusText
         self.shouldRefreshList = shouldRefreshList
         self.hudTrigger = hudTrigger
+        self.syncCandidate = syncCandidate
         self.storageError = storageError
     }
 }
@@ -401,10 +430,16 @@ public final class ClipboardCaptureCoordinator {
         )
 
         switch captureText(request) {
-        case .success:
+        case .success(let result):
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
                 shouldRefreshList: true,
+                syncCandidate: syncCandidate(
+                    result: result,
+                    text: text,
+                    detectedLink: detectedLink,
+                    source: source
+                ),
                 storageError: nil
             )
 
@@ -451,10 +486,16 @@ public final class ClipboardCaptureCoordinator {
         )
 
         switch captureRichTextRequest(request) {
-        case .success:
+        case .success(let result):
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
                 shouldRefreshList: true,
+                syncCandidate: syncCandidate(
+                    result: result,
+                    richText: richText,
+                    storedAsset: storedAsset,
+                    source: source
+                ),
                 storageError: nil
             )
 
@@ -501,10 +542,15 @@ public final class ClipboardCaptureCoordinator {
         )
 
         switch captureImage(request) {
-        case .success:
+        case .success(let result):
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
                 shouldRefreshList: true,
+                syncCandidate: syncCandidate(
+                    result: result,
+                    storedImage: storedImage,
+                    source: source
+                ),
                 storageError: nil
             )
 
@@ -543,10 +589,15 @@ public final class ClipboardCaptureCoordinator {
         )
 
         switch captureImage(request) {
-        case .success:
+        case .success(let result):
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
                 shouldRefreshList: true,
+                syncCandidate: syncCandidate(
+                    result: result,
+                    storedImage: storedImage,
+                    source: source
+                ),
                 storageError: nil
             )
 
@@ -645,10 +696,15 @@ public final class ClipboardCaptureCoordinator {
         )
 
         switch captureFiles(request) {
-        case .success:
+        case .success(let result):
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
                 shouldRefreshList: true,
+                syncCandidate: syncCandidate(
+                    result: result,
+                    files: files,
+                    source: source
+                ),
                 storageError: nil
             )
 
@@ -719,6 +775,184 @@ public final class ClipboardCaptureCoordinator {
         }
     }
 
+    private func syncCandidate(
+        result: RustCaptureTextResult,
+        text: String,
+        detectedLink: RustDetectedLink?,
+        source: ClipboardCaptureSource?
+    ) -> ClipboardSyncCandidate {
+        if let detectedLink {
+            return ClipboardSyncCandidate(
+                itemId: result.itemId,
+                contentHash: result.contentHash,
+                itemType: "link",
+                payload: payload(
+                    [
+                        "url": .string(detectedLink.canonicalURL),
+                        "display_url": .string(detectedLink.displayURL),
+                        "host": .string(detectedLink.host),
+                        "text": .string(text),
+                        "summary": .string(text.linePreview())
+                    ],
+                    source: source
+                )
+            )
+        }
+
+        if let colorValue = ClipboardColorValue(normalizedHex: text) {
+            return ClipboardSyncCandidate(
+                itemId: result.itemId,
+                contentHash: result.contentHash,
+                itemType: "color",
+                payload: payload(
+                    [
+                        "hex": .string(colorValue.normalizedHex),
+                        "color": .string(colorValue.normalizedHex),
+                        "summary": .string(colorValue.previewMetadataText)
+                    ],
+                    source: source
+                )
+            )
+        }
+
+        return ClipboardSyncCandidate(
+            itemId: result.itemId,
+            contentHash: result.contentHash,
+            itemType: "text",
+            payload: payload(
+                [
+                    "text": .string(text),
+                    "summary": .string(text.linePreview())
+                ],
+                source: source
+            )
+        )
+    }
+
+    private func syncCandidate(
+        result: RustCaptureRichTextResult,
+        richText: ClipboardCapturedRichText,
+        storedAsset: ClipboardStoredRichTextAsset,
+        source: ClipboardCaptureSource?
+    ) -> ClipboardSyncCandidate {
+        ClipboardSyncCandidate(
+            itemId: result.itemId,
+            contentHash: result.contentHash,
+            itemType: "rich_text",
+            payload: payload(
+                [
+                    "plain_text": .string(richText.text),
+                    "text": .string(richText.text),
+                    "summary": .string(richText.text.linePreview()),
+                    "mime_type": .string(storedAsset.mimeType),
+                    "byte_count": .int(Int64(storedAsset.byteCount))
+                ],
+                source: source
+            )
+        )
+    }
+
+    private func syncCandidate(
+        result: RustCaptureImageResult,
+        storedImage: ClipboardStoredImageAsset,
+        source: ClipboardCaptureSource?
+    ) -> ClipboardSyncCandidate {
+        ClipboardSyncCandidate(
+            itemId: result.itemId,
+            contentHash: result.contentHash,
+            itemType: "image",
+            payload: payload(
+                [
+                    "file_name": .string(storedImage.payloadRelativePath.lastPathComponentFallback(defaultValue: "image")),
+                    "mime_type": .string(storedImage.mimeType),
+                    "byte_count": .int(Int64(storedImage.byteCount)),
+                    "summary": .string("image")
+                ],
+                source: source
+            ),
+            assetRegistration: SyncOutboxAssetRegistration(
+                filePath: storedImage.payloadRelativePath,
+                kind: "image_payload",
+                mimeType: storedImage.mimeType
+            )
+        )
+    }
+
+    private func syncCandidate(
+        result: RustCaptureFilesResult,
+        files: ClipboardCapturedFiles,
+        source: ClipboardCaptureSource?
+    ) -> ClipboardSyncCandidate? {
+        guard files.paths.count == 1,
+              let path = files.paths.first,
+              let file = files.fileItems.first,
+              !file.isDirectory else {
+            return nil
+        }
+
+        return ClipboardSyncCandidate(
+            itemId: result.itemId,
+            contentHash: result.contentHash,
+            itemType: "file",
+            payload: payload(filePayload(for: file, path: path), source: source),
+            assetRegistration: SyncOutboxAssetRegistration(
+                filePath: path,
+                kind: "file_payload",
+                mimeType: syncMIMEType(for: file, path: path)
+            )
+        )
+    }
+
+    private func filePayload(
+        for file: ClipboardCapturedFileMetadata,
+        path: String
+    ) -> [String: SyncEventPayloadValue] {
+        var payload: [String: SyncEventPayloadValue] = [
+            "file_name": .string(file.fileName),
+            "summary": .string(file.fileName),
+            "byte_count": .int(file.byteCount)
+        ]
+        if let mimeType = syncMIMEType(for: file, path: path) {
+            payload["mime_type"] = .string(mimeType)
+        }
+        return payload
+    }
+
+    private func syncMIMEType(
+        for file: ClipboardCapturedFileMetadata,
+        path: String
+    ) -> String? {
+        if let contentType = file.contentType?.trimmedNonEmpty {
+            if contentType.contains("/") {
+                return contentType
+            }
+            if let mimeType = UTType(contentType)?.preferredMIMEType {
+                return mimeType
+            }
+        }
+
+        let fileExtension = (path as NSString).pathExtension.trimmedNonEmpty
+        guard let fileExtension,
+              let mimeType = UTType(filenameExtension: fileExtension)?.preferredMIMEType else {
+            return nil
+        }
+        return mimeType
+    }
+
+    private func payload(
+        _ values: [String: SyncEventPayloadValue],
+        source: ClipboardCaptureSource?
+    ) -> [String: SyncEventPayloadValue] {
+        var payload = values
+        if let appName = source?.appName?.trimmedNonEmpty {
+            payload["source_app_name"] = .string(appName)
+        }
+        if let bundleId = source?.bundleId?.trimmedNonEmpty {
+            payload["source_bundle_id"] = .string(bundleId)
+        }
+        return payload
+    }
+
     public static func unavailablePendingImageError() -> RustCoreError {
         RustCoreError(
             code: "unavailable",
@@ -735,5 +969,27 @@ public final class ClipboardCaptureCoordinator {
             recoverable: true,
             message: "clipboard.error.unavailable"
         )
+    }
+}
+
+private extension String {
+    var trimmedNonEmpty: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    func linePreview(max length: Int = 120) -> String {
+        let singleLine = trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+            .joined(separator: " ")
+        guard singleLine.count > length else {
+            return singleLine
+        }
+        return String(singleLine.prefix(length))
+    }
+
+    func lastPathComponentFallback(defaultValue: String) -> String {
+        let component = (self as NSString).lastPathComponent.trimmedNonEmpty
+        return component ?? defaultValue
     }
 }

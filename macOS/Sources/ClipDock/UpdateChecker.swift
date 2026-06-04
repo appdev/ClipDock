@@ -467,6 +467,7 @@ final class AppUpdateCoordinator {
     private var settingsCheckTask: Task<Void, Never>?
     private var isStarted = false
     private var isChecking = false
+    private var isUpdatePromptPending = false
 
     var onSettingsUpdateStatusChanged: ((AppUpdateSettingsStatus) -> Void)?
 
@@ -506,6 +507,7 @@ final class AppUpdateCoordinator {
         checkTask = nil
         settingsCheckTask?.cancel()
         settingsCheckTask = nil
+        isUpdatePromptPending = false
     }
 
     func checkForSettingsUpdate() {
@@ -564,12 +566,7 @@ final class AppUpdateCoordinator {
     }
 
     func presentUpdatePrompt(for release: AppUpdateRelease) {
-        promptPresenter.presentUpdatePrompt(
-            release: release,
-            currentVersion: versionProvider.currentShortVersion()
-        ) { [weak self] action in
-            self?.handlePromptAction(action, for: release)
-        }
+        presentUpdatePromptIfNeeded(for: release)
     }
 
     private func scheduleNextCheck(from date: Date) {
@@ -611,6 +608,7 @@ final class AppUpdateCoordinator {
 
     private func checkForUpdates() async {
         guard !isChecking else { return }
+        guard !isUpdatePromptPending else { return }
         isChecking = true
         stateStore.lastCheckAttemptDate = now()
         defer { isChecking = false }
@@ -628,14 +626,24 @@ final class AppUpdateCoordinator {
             }
 
             let currentVersion = versionProvider.currentShortVersion()
-            promptPresenter.presentUpdatePrompt(
-                release: candidate,
-                currentVersion: currentVersion
-            ) { [weak self] action in
-                self?.handlePromptAction(action, for: candidate)
-            }
+            presentUpdatePromptIfNeeded(for: candidate, currentVersion: currentVersion)
         } catch {
             return
+        }
+    }
+
+    private func presentUpdatePromptIfNeeded(
+        for release: AppUpdateRelease,
+        currentVersion: String? = nil
+    ) {
+        guard !isUpdatePromptPending else { return }
+        isUpdatePromptPending = true
+        promptPresenter.presentUpdatePrompt(
+            release: release,
+            currentVersion: currentVersion ?? versionProvider.currentShortVersion()
+        ) { [weak self] action in
+            self?.isUpdatePromptPending = false
+            self?.handlePromptAction(action, for: release)
         }
     }
 

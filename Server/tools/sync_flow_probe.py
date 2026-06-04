@@ -94,7 +94,7 @@ def expect_json_status(result: HttpResult, status: int, label: str) -> dict[str,
     content_type = result.headers.get("content-type", "")
     expect("application/json" in content_type, f"{label}: expected json content-type, got {content_type!r}")
     payload = result.json()
-    expect(payload.get("protocol_version") == 1, f"{label}: missing protocol_version=1")
+    expect(payload.get("protocol_version") == 2, f"{label}: missing protocol_version=2")
     return payload
 
 
@@ -158,7 +158,19 @@ def sha256_digest(data: bytes) -> str:
 
 
 def p2p_asset_id(data: bytes) -> str:
-    return sha256_digest(data)
+    return blake3_probe_digest(data)
+
+
+def blake3_probe_digest(data: bytes) -> str:
+    fixtures = {
+        b"ClipDock sync probe asset": "904dbaddc51270e60ad53c600b922a047db84d6774d3832cfba065d674f5af98",
+        b"ClipDock sync probe item": "6c75ac7a294f19fe4a1c6f46451862aa76d44af1880cd91953f5237b5435d5b6",
+        b"ClipDock P2P probe large payload": "d15501fd5d941939eff81a89ca21736d639ec71e3f32b7f2f7cbd7c30ed21cb5",
+    }
+    try:
+        return f"blake3:{fixtures[data]}"
+    except KeyError as error:
+        raise ProbeFailure(f"missing fixed BLAKE3 fixture for {data!r}") from error
 
 
 def run_probe(base_url: str) -> dict[str, Any]:
@@ -167,10 +179,13 @@ def run_probe(base_url: str) -> dict[str, Any]:
     health = expect_json_status(request("GET", f"{base_url}/health"), 200, "health")
     expect(health["data"]["status"] == "ok", "health: unexpected status body")
 
+    retired_v1 = expect_json_status(request("GET", f"{base_url}/v1/info"), 426, "v1 retired")
+    expect(retired_v1["error"]["code"] == "protocol_v1_retired", "v1 retired: wrong error code")
+
     create_a = expect_json_status(
         request(
             "POST",
-            f"{base_url}/v1/sync/create",
+            f"{base_url}/v2/sync/create",
             json_body={"device_name": "Probe Mac A"},
         ),
         200,
@@ -186,7 +201,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     join_b = expect_json_status(
         request(
             "POST",
-            f"{base_url}/v1/sync/join",
+            f"{base_url}/v2/sync/join",
             json_body={"device_name": "Probe Android B", "pairing_code": pairing_code},
         ),
         200,
@@ -199,7 +214,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     reused = expect_json_status(
         request(
             "POST",
-            f"{base_url}/v1/sync/join",
+            f"{base_url}/v2/sync/join",
             json_body={"device_name": "Probe Reuse", "pairing_code": pairing_code},
         ),
         403,
@@ -210,7 +225,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     create_other = expect_json_status(
         request(
             "POST",
-            f"{base_url}/v1/sync/create",
+            f"{base_url}/v2/sync/create",
             json_body={"device_name": "Probe Other Space"},
         ),
         200,
@@ -219,17 +234,19 @@ def run_probe(base_url: str) -> dict[str, Any]:
     token_other = create_other["token"]
 
     info_b = expect_json_status(
-        request("GET", f"{base_url}/v1/info", token=token_b),
+        request("GET", f"{base_url}/v2/info", token=token_b),
         200,
         "info B",
     )["data"]
+    expect(info_b["content_hash_algorithms"] == ["blake3"], "info B: wrong content hash algorithms")
+    expect(info_b["asset_digest_algorithms"] == ["blake3"], "info B: wrong asset digest algorithms")
     expect(info_b["p2p"]["enabled"] is True, "info B: P2P should be enabled")
     expect(info_b["p2p"]["transport"] == "iroh-blobs", "info B: wrong P2P transport")
 
     report_endpoint = expect_json_status(
         request(
             "PUT",
-            f"{base_url}/v1/p2p/endpoint",
+            f"{base_url}/v2/p2p/endpoint",
             token=token_a,
             json_body={
                 "endpoint_id": "probe-iroh-node-a",
@@ -249,7 +266,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     expect(report_endpoint["device_id"] == create_a["device_id"], "P2P endpoint: device mismatch")
 
     p2p_devices_b = expect_json_status(
-        request("GET", f"{base_url}/v1/p2p/devices", token=token_b),
+        request("GET", f"{base_url}/v2/p2p/devices", token=token_b),
         200,
         "list B P2P devices",
     )["data"]["devices"]
@@ -261,18 +278,42 @@ def run_probe(base_url: str) -> dict[str, Any]:
     )
 
     p2p_devices_other = expect_json_status(
-        request("GET", f"{base_url}/v1/p2p/devices", token=token_other),
+        request("GET", f"{base_url}/v2/p2p/devices", token=token_other),
         200,
         "list other P2P devices",
     )["data"]["devices"]
     expect(len(p2p_devices_other) == 0, "list other P2P devices: expected isolation")
 
     item_text = "ClipDock sync probe item"
-    content_hash = sha256_digest(item_text.encode("utf-8"))
+    sha256_content_hash = sha256_digest(item_text.encode("utf-8"))
+    sha256_event = expect_json_status(
+        request(
+            "POST",
+            f"{base_url}/v2/events",
+            token=token_a,
+            json_body={
+                "events": [
+                    {
+                        "client_event_id": "probe-event-sha256-negative",
+                        "type": "item_upsert",
+                        "content_hash": sha256_content_hash,
+                        "item_type": "text",
+                        "payload": {"text": item_text},
+                        "copy_count_delta": 1,
+                    }
+                ]
+            },
+        ),
+        400,
+        "reject SHA-256 content hash",
+    )
+    expect(sha256_event["error"]["code"] == "invalid_content_hash", "SHA-256 content hash: wrong error")
+
+    content_hash = blake3_probe_digest(item_text.encode("utf-8"))
     push_event = expect_json_status(
         request(
             "POST",
-            f"{base_url}/v1/events",
+            f"{base_url}/v2/events",
             token=token_a,
             json_body={
                 "events": [
@@ -293,7 +334,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     expect(push_event["events"][0]["duplicate"] is False, "push A event: expected first push")
 
     pull_b = expect_json_status(
-        request("GET", f"{base_url}/v1/events?after_seq=0&limit=10", token=token_b),
+        request("GET", f"{base_url}/v2/events?after_seq=0&limit=10", token=token_b),
         200,
         "pull B events",
     )["data"]
@@ -301,18 +342,35 @@ def run_probe(base_url: str) -> dict[str, Any]:
     expect(pull_b["events"][0]["content_hash"] == content_hash, "pull B events: hash mismatch")
 
     pull_other = expect_json_status(
-        request("GET", f"{base_url}/v1/events?after_seq=0&limit=10", token=token_other),
+        request("GET", f"{base_url}/v2/events?after_seq=0&limit=10", token=token_other),
         200,
         "pull other events",
     )["data"]
     expect(len(pull_other["events"]) == 0, "pull other events: expected isolation")
 
     asset_bytes = b"ClipDock sync probe asset"
-    asset_digest = sha256_digest(asset_bytes)
+    sha256_asset_digest = sha256_digest(asset_bytes)
+    sha256_asset = expect_json_status(
+        request(
+            "PUT",
+            f"{base_url}/v2/assets/{sha256_asset_digest}",
+            token=token_a,
+            body=asset_bytes,
+            headers={
+                "content-type": "image/png",
+                "x-clipdock-asset-kind": "thumbnail",
+            },
+        ),
+        400,
+        "reject SHA-256 asset digest",
+    )
+    expect(sha256_asset["error"]["code"] == "invalid_digest", "SHA-256 asset digest: wrong error")
+
+    asset_digest = blake3_probe_digest(asset_bytes)
     upload = expect_json_status(
         request(
             "PUT",
-            f"{base_url}/v1/assets/{asset_digest}",
+            f"{base_url}/v2/assets/{asset_digest}",
             token=token_a,
             body=asset_bytes,
             headers={
@@ -325,12 +383,12 @@ def run_probe(base_url: str) -> dict[str, Any]:
     )["data"]
     expect(upload["already_exists"] is False, "upload asset: expected first upload")
 
-    download_b = request("GET", f"{base_url}/v1/assets/{asset_digest}", token=token_b)
+    download_b = request("GET", f"{base_url}/v2/assets/{asset_digest}", token=token_b)
     expect(download_b.status == 200, f"download B asset: expected 200, got {download_b.status}")
     expect(download_b.body == asset_bytes, "download B asset: bytes mismatch")
 
     download_other = expect_json_status(
-        request("GET", f"{base_url}/v1/assets/{asset_digest}", token=token_other),
+        request("GET", f"{base_url}/v2/assets/{asset_digest}", token=token_other),
         400,
         "download other asset",
     )
@@ -340,7 +398,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     register_provider = expect_json_status(
         request(
             "PUT",
-            f"{base_url}/v1/p2p/assets/{large_payload_asset_id}/providers/me",
+            f"{base_url}/v2/p2p/assets/{large_payload_asset_id}/providers/me",
             token=token_a,
             json_body={
                 "kind": "file_payload",
@@ -360,7 +418,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     providers_b = expect_json_status(
         request(
             "GET",
-            f"{base_url}/v1/p2p/assets/{large_payload_asset_id}/providers",
+            f"{base_url}/v2/p2p/assets/{large_payload_asset_id}/providers",
             token=token_b,
         ),
         200,
@@ -377,7 +435,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     providers_other = expect_json_status(
         request(
             "GET",
-            f"{base_url}/v1/p2p/assets/{large_payload_asset_id}/providers",
+            f"{base_url}/v2/p2p/assets/{large_payload_asset_id}/providers",
             token=token_other,
         ),
         200,
@@ -386,7 +444,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     expect(len(providers_other) == 0, "list other P2P providers: expected isolation")
 
     invite = expect_json_status(
-        request("POST", f"{base_url}/v1/sync/invites", token=token_b),
+        request("POST", f"{base_url}/v2/sync/invites", token=token_b),
         200,
         "create invite from B",
     )["data"]
@@ -397,7 +455,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     join_c = expect_json_status(
         request(
             "POST",
-            f"{base_url}/v1/sync/join",
+            f"{base_url}/v2/sync/join",
             json_body={"device_name": "Probe Device C", "pairing_code": fresh_code},
         ),
         200,

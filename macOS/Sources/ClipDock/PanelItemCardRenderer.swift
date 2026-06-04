@@ -24,12 +24,24 @@ struct PanelItemCardRenderArtifacts {
     let linkPreviewViews: [NSView]
     let linkIconViews: [NSImageView]
     let sourceIconViews: [NSImageView]
+    let syncStatusViews: [NSView]
 
     @MainActor
     func prepareForRemoval() {
+        stopProgressIndicators(in: syncStatusViews)
         for imageView in imagePreviewViews + linkIconViews + sourceIconViews {
             imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
             (imageView as? PanelCardAsyncWorkCancellable)?.cancelPanelCardAsyncWork()
+        }
+    }
+
+    @MainActor
+    private func stopProgressIndicators(in views: [NSView]) {
+        for view in views {
+            if let progress = view as? NSProgressIndicator {
+                progress.stopAnimation(nil)
+            }
+            stopProgressIndicators(in: view.subviews)
         }
     }
 
@@ -205,7 +217,8 @@ final class PanelItemCardRenderer {
         toolTip: String? = nil,
         onSelect: ((NSEvent) -> Void)? = nil,
         onDoubleClick: (() -> Void)? = nil,
-        onContextMenu: ((NSEvent) -> Void)? = nil
+        onContextMenu: ((NSEvent) -> Void)? = nil,
+        onRetrySync: (() -> Void)? = nil
     ) -> PanelRenderedItemCard {
         let resolvedItem = cardAssetResolver.resolvedItem(for: state.assetRequest)
         let isTextLikeItem = state.symbolName == "doc.text" || state.symbolName == "doc.richtext"
@@ -454,6 +467,10 @@ final class PanelItemCardRenderer {
             isHidden: !isTextBodyCard,
             surfaceStyle: textSurfaceStyle
         )
+        let syncStatusView = makeSyncStatusView(
+            status: state.syncStatus,
+            onRetrySync: onRetrySync
+        )
         let footerRow = NSView()
         footerRow.userInterfaceLayoutDirection = .leftToRight
         footerRow.translatesAutoresizingMaskIntoConstraints = false
@@ -488,6 +505,14 @@ final class PanelItemCardRenderer {
         container.contentView?.addSubview(linkFooterBackgroundView)
         container.contentView?.addSubview(textBodyFadeView)
         container.contentView?.addSubview(footerRow)
+        if let syncStatusView {
+            syncStatusView.alphaValue = 0
+            container.contentView?.addSubview(syncStatusView)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                syncStatusView.animator().alphaValue = 1
+            }
+        }
 
         let widthConstraint = container.widthAnchor.constraint(equalToConstant: metrics.defaultItemSide)
         let heightConstraint = container.heightAnchor.constraint(equalToConstant: metrics.defaultItemSide)
@@ -577,6 +602,14 @@ final class PanelItemCardRenderer {
             indexLabel.topAnchor.constraint(greaterThanOrEqualTo: footerRow.topAnchor),
             indexLabel.leadingAnchor.constraint(greaterThanOrEqualTo: footnoteView.trailingAnchor, constant: 8)
         ])
+        if let syncStatusView {
+            NSLayoutConstraint.activate([
+                syncStatusView.leadingAnchor.constraint(equalTo: container.contentView!.leadingAnchor, constant: 8),
+                syncStatusView.bottomAnchor.constraint(equalTo: container.contentView!.bottomAnchor, constant: -8),
+                syncStatusView.widthAnchor.constraint(equalToConstant: 24),
+                syncStatusView.heightAnchor.constraint(equalToConstant: 24)
+            ])
+        }
 
         let shadowHost = PanelItemCardShadowHostView(
             cardView: container,
@@ -603,9 +636,65 @@ final class PanelItemCardRenderer {
                 bodyLabels: [summaryLabel],
                 linkPreviewViews: previewBundle.linkPreviewViews,
                 linkIconViews: previewBundle.linkIconViews,
-                sourceIconViews: [iconView]
+                sourceIconViews: [iconView],
+                syncStatusViews: syncStatusView.map { [$0] } ?? []
             )
         )
+    }
+
+    private func makeSyncStatusView(
+        status: PanelItemSyncStatus,
+        onRetrySync: (() -> Void)?
+    ) -> NSView? {
+        switch status {
+        case .none:
+            return nil
+        case .sending:
+            let container = NSView()
+            container.identifier = NSUserInterfaceItemIdentifier("PanelCardSyncSendingIndicator")
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.wantsLayer = true
+            container.layer?.cornerRadius = 12
+            container.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.42).cgColor
+
+            let progress = NSProgressIndicator()
+            progress.identifier = NSUserInterfaceItemIdentifier("PanelCardSyncSendingSpinner")
+            progress.style = .spinning
+            progress.controlSize = .small
+            progress.isIndeterminate = true
+            progress.translatesAutoresizingMaskIntoConstraints = false
+            progress.startAnimation(nil)
+            container.addSubview(progress)
+
+            NSLayoutConstraint.activate([
+                progress.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+                progress.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                progress.widthAnchor.constraint(equalToConstant: 16),
+                progress.heightAnchor.constraint(equalToConstant: 16)
+            ])
+            return container
+
+        case .failed:
+            let button = PanelActionButton()
+            button.identifier = NSUserInterfaceItemIdentifier("PanelCardSyncRetryButton")
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.isBordered = false
+            button.bezelStyle = .regularSquare
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
+            button.contentTintColor = .systemRed
+            button.toolTip = "Retry sync"
+            button.setAccessibilityLabel("Retry sync")
+            button.onPress = onRetrySync
+            button.image = NSImage(
+                systemSymbolName: "exclamationmark.circle.fill",
+                accessibilityDescription: "Retry sync"
+            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(
+                pointSize: 16,
+                weight: .semibold
+            ))
+            return button
+        }
     }
 
     private func makeCardContentContainer(

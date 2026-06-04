@@ -4,7 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.apkdv.clipdock.ClipDockApplication
+import com.apkdv.clipdock.data.ClipHistoryItem
 import com.apkdv.clipdock.data.HistoryFilter
+import com.apkdv.clipdock.data.OverlayClickAction
+import com.apkdv.clipdock.data.OverlaySnapEdge
 import kotlinx.coroutines.launch
 
 class MainScreenViewModel(application: Application) : AndroidViewModel(application) {
@@ -23,6 +26,16 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
 
   fun setOverlayEnabled(enabled: Boolean) = repository.setOverlayEnabled(enabled)
 
+  fun setOverlayClickAction(action: OverlayClickAction) = repository.setOverlayClickAction(action)
+
+  fun setOverlaySnapEdge(edge: OverlaySnapEdge) = repository.setOverlaySnapEdge(edge)
+
+  fun setOverlaySizeDp(value: Int) = repository.setOverlaySizeDp(value)
+
+  fun setOverlayIdleOpacityPercent(value: Int) = repository.setOverlayIdleOpacityPercent(value)
+
+  fun setOverlayVerticalFraction(value: Float) = repository.setOverlayVerticalFraction(value)
+
   fun setEncryptionEnabled(enabled: Boolean) = repository.setEncryptionEnabled(enabled)
 
   fun checkHealth() = viewModelScope.launch { runCatching { repository.checkHealth() } }
@@ -36,4 +49,6 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
   fun createInvite() = viewModelScope.launch { runCatching { repository.createInvite() } }
 
   fun refreshInfo() = viewModelScope.launch { runCatching { repository.refreshInfo() } }
+
+  fun useItem(item: ClipHistoryItem) = viewModelScope.launch { repository.useItem(item) }
 }

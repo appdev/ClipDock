@@ -1,6 +1,7 @@
 package com.apkdv.clipdock.p2p
 
 import android.content.Context
+import android.os.Looper
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,39 +39,49 @@ class NativeP2pTransport(context: Context) {
 
   suspend fun startNode(): P2pEndpointInfo =
     withContext(Dispatchers.IO) {
-      NativeP2pBridge.ensureLoaded()
-      NativeP2pBridge
-        .nativeStartNode(JSONObject().put("addr_timeout_ms", 3_000).toString())
-        .parseNativeEnvelope()
-        .toEndpointInfo()
+      runNativeP2pCall("nativeStartNode") {
+        NativeP2pBridge.ensureLoaded()
+        NativeP2pBridge
+          .nativeStartNode(JSONObject().put("addr_timeout_ms", 3_000).toString())
+          .parseNativeEnvelope()
+          .toEndpointInfo()
+      }
     }
 
   suspend fun endpointInfo(): P2pEndpointInfo =
     withContext(Dispatchers.IO) {
-      NativeP2pBridge.ensureLoaded()
-      NativeP2pBridge.nativeEndpointInfo().parseNativeEnvelope().toEndpointInfo()
+      runNativeP2pCall("nativeEndpointInfo") {
+        NativeP2pBridge.ensureLoaded()
+        NativeP2pBridge.nativeEndpointInfo().parseNativeEnvelope().toEndpointInfo()
+      }
     }
 
   suspend fun importBlob(file: File): P2pImportResult =
     withContext(Dispatchers.IO) {
-      NativeP2pBridge.ensureLoaded()
-      NativeP2pBridge.nativeImportBlob(file.absolutePath).parseNativeEnvelope().toImportResult()
+      runNativeP2pCall("nativeImportBlob") {
+        NativeP2pBridge.ensureLoaded()
+        NativeP2pBridge.nativeImportBlob(file.absolutePath).parseNativeEnvelope().toImportResult()
+      }
     }
 
   suspend fun downloadBlob(ticket: String, outputFile: File): P2pDownloadResult =
     withContext(Dispatchers.IO) {
-      NativeP2pBridge.ensureLoaded()
-      outputFile.parentFile?.mkdirs()
-      NativeP2pBridge
-        .nativeDownloadBlob(ticket, outputFile.absolutePath)
-        .parseNativeEnvelope()
-        .toDownloadResult()
+      runNativeP2pCall("nativeDownloadBlob") {
+        NativeP2pBridge.ensureLoaded()
+        outputFile.parentFile?.mkdirs()
+        NativeP2pBridge
+          .nativeDownloadBlob(ticket, outputFile.absolutePath)
+          .parseNativeEnvelope()
+          .toDownloadResult()
+      }
     }
 
   suspend fun shutdown() =
     withContext(Dispatchers.IO) {
-      NativeP2pBridge.ensureLoaded()
-      NativeP2pBridge.nativeShutdown().parseNativeEnvelope()
+      runNativeP2pCall("nativeShutdown") {
+        NativeP2pBridge.ensureLoaded()
+        NativeP2pBridge.nativeShutdown().parseNativeEnvelope()
+      }
     }
 
   fun defaultPayloadDir(): File = File(appContext.filesDir, "p2p-payloads")
@@ -109,6 +120,13 @@ private fun String.parseNativeEnvelope(): JSONObject {
     )
   }
   return root.optJSONObject("data") ?: JSONObject()
+}
+
+private inline fun <T> runNativeP2pCall(operation: String, block: () -> T): T {
+  check(Looper.myLooper() != Looper.getMainLooper()) {
+    "$operation must not run on Android main thread"
+  }
+  return block()
 }
 
 private fun JSONObject.toEndpointInfo(): P2pEndpointInfo =

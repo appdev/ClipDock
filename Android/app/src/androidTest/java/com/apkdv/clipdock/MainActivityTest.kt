@@ -12,6 +12,10 @@ class MainActivityTest {
   @Test
   fun launchesHistoryScreen() {
     composeRule.onNodeWithText("ClipDock").assertIsDisplayed()
+    composeRule.onNodeWithText("全部").assertIsDisplayed()
+    composeRule.onNodeWithText("链接").assertIsDisplayed()
+    composeRule.onNodeWithText("重要").assertIsDisplayed()
+    composeRule.onNodeWithText("图片").assertIsDisplayed()
     composeRule.onNodeWithText("历史").assertIsDisplayed()
   }
 }

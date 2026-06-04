@@ -628,6 +628,12 @@ final class PreferencesWindowController: NSWindowController {
         }
     }
 
+    var onCreateSyncInviteRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)? {
+        didSet {
+            viewModel.onCreateSyncInviteRequested = onCreateSyncInviteRequested
+        }
+    }
+
     var onJoinSyncRequested: ((RustPreferencesDocument, String) async -> SyncSettingsActionResult)? {
         didSet {
             viewModel.onJoinSyncRequested = onJoinSyncRequested
@@ -779,6 +785,14 @@ final class PreferencesWindowController: NSWindowController {
         viewModel.applySyncActionResultForQA(result)
     }
 
+    func smokeCreateSyncForQA() {
+        viewModel.createSync()
+    }
+
+    func smokeRefreshPairingCodeForQA() {
+        viewModel.refreshPairingCode()
+    }
+
     func smokeOpenVersionUpdateForQA() {
         viewModel.openVersionUpdate()
     }
@@ -849,6 +863,7 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     var onAutomaticUpdateChecksChanged: ((Bool) -> Void)?
     var onAppearanceModeChanged: (() -> Void)?
     var onCreateSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
+    var onCreateSyncInviteRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
     var onJoinSyncRequested: ((RustPreferencesDocument, String) async -> SyncSettingsActionResult)?
     var onTestSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
     var onDisconnectSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
@@ -917,6 +932,11 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
 
     func createSync() {
         guard !isSyncActionInFlight, let onCreateSyncRequested else { return }
+        guard !hasCurrentSyncRegistration else {
+            syncStatusText = AppLocalization.text("sync.status.alreadyCreated", defaultValue: "同步：已创建，请先断开当前同步")
+            syncStatusIsError = false
+            return
+        }
         isSyncActionInFlight = true
         syncPairingCode = nil
         syncPairingExpiresAtMs = nil
@@ -925,6 +945,23 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         let preferences = state.preferences
         Task { @MainActor [weak self] in
             let result = await onCreateSyncRequested(preferences)
+            self?.completeSyncAction(result)
+        }
+    }
+
+    func refreshPairingCode() {
+        guard !isSyncActionInFlight, let onCreateSyncInviteRequested else { return }
+        guard hasCurrentSyncRegistration else {
+            syncStatusText = AppLocalization.text("sync.status.notJoined", defaultValue: "同步：尚未加入同步空间")
+            syncStatusIsError = true
+            return
+        }
+        isSyncActionInFlight = true
+        syncStatusText = AppLocalization.text("sync.status.creatingInvite", defaultValue: "正在生成配对码")
+        syncStatusIsError = false
+        let preferences = state.preferences
+        Task { @MainActor [weak self] in
+            let result = await onCreateSyncInviteRequested(preferences)
             self?.completeSyncAction(result)
         }
     }
@@ -1020,7 +1057,8 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
             pairingExpiresAtMs: syncPairingExpiresAtMs,
             statusText: syncStatusText,
             statusIsError: syncStatusIsError,
-            isActionInFlight: isSyncActionInFlight
+            isActionInFlight: isSyncActionInFlight,
+            hasSyncRegistration: hasCurrentSyncRegistration
         )
     }
 
@@ -1086,6 +1124,11 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         syncStatusText = result.statusText
         syncStatusIsError = result.isError
         isSyncActionInFlight = false
+    }
+
+    private var hasCurrentSyncRegistration: Bool {
+        let sync = state.preferences.sync
+        return sync.syncID?.isEmpty == false || sync.deviceID?.isEmpty == false
     }
 
     private func scheduleDeferredRender() {
@@ -1177,6 +1220,7 @@ struct PreferencesSyncSmokeSnapshot: Equatable {
     let statusText: String
     let statusIsError: Bool
     let isActionInFlight: Bool
+    let hasSyncRegistration: Bool
 }
 
 struct SyncSettingsActionResult: Equatable {
@@ -1865,6 +1909,14 @@ private struct PreferenceSyncSection: View {
         hasServerURL && hasDeviceName && !model.isSyncActionInFlight
     }
 
+    private var canCreateSyncAction: Bool {
+        canStartSyncAction && !hasSyncSpace
+    }
+
+    private var canRefreshPairingCodeAction: Bool {
+        canStartSyncAction && sync.deviceID?.isEmpty == false
+    }
+
     private var canTestOrDisconnect: Bool {
         canStartSyncAction && sync.deviceID?.isEmpty == false
     }
@@ -1933,23 +1985,6 @@ private struct PreferenceSyncSection: View {
         pairingCode.count == 5
     }
 
-    private var pairingExpiryText: String {
-        guard let expiresAtMs = model.syncPairingExpiresAtMs else {
-            return AppLocalization.text("sync.pairing.expiryFallback", defaultValue: "约 10 分钟内有效")
-        }
-        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        let remainingSeconds = max(0, (expiresAtMs - nowMs) / 1000)
-        guard remainingSeconds > 0 else {
-            return AppLocalization.text("sync.pairing.expired", defaultValue: "已过期")
-        }
-        let remainingMinutes = max(1, Int((remainingSeconds + 59) / 60))
-        return AppLocalization.format(
-            "sync.pairing.expiresInMinutes",
-            defaultValue: "约 %lld 分钟后过期",
-            Int64(remainingMinutes)
-        )
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             PreferenceSectionGroup(title: AppLocalization.text("preferences.group.sync.server", defaultValue: "服务端")) {
@@ -2016,7 +2051,11 @@ private struct PreferenceSyncSection: View {
                 if let createdPairingCode = model.syncPairingCode {
                     PreferencePairingCodeCard(
                         code: createdPairingCode,
-                        expiryText: pairingExpiryText
+                        expiresAtMs: model.syncPairingExpiresAtMs,
+                        isRefreshDisabled: !canRefreshPairingCodeAction,
+                        onRefresh: {
+                            model.refreshPairingCode()
+                        }
                     )
                     PreferenceDivider()
                 }
@@ -2125,12 +2164,20 @@ private struct PreferenceSyncSection: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
                 createSyncButton
+                if hasSyncSpace && model.syncPairingCode == nil {
+                    refreshPairingCodeButton
+                }
                 pairingCodeField
                 joinSyncButton
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                createSyncButton
+                HStack(spacing: 10) {
+                    createSyncButton
+                    if hasSyncSpace && model.syncPairingCode == nil {
+                        refreshPairingCodeButton
+                    }
+                }
                 HStack(spacing: 10) {
                     pairingCodeField
                     joinSyncButton
@@ -2163,7 +2210,16 @@ private struct PreferenceSyncSection: View {
         } label: {
             Label(AppLocalization.text("sync.action.create", defaultValue: "创建同步"), systemImage: "plus.circle")
         }
-        .disabled(!canStartSyncAction)
+        .disabled(!canCreateSyncAction)
+    }
+
+    private var refreshPairingCodeButton: some View {
+        Button {
+            model.refreshPairingCode()
+        } label: {
+            Label(AppLocalization.text("sync.action.generatePairingCode", defaultValue: "生成配对码"), systemImage: "arrow.clockwise")
+        }
+        .disabled(!canRefreshPairingCodeAction)
     }
 
     private var joinSyncButton: some View {
@@ -2221,7 +2277,9 @@ private struct PreferenceInlineValue: View {
 
 private struct PreferencePairingCodeCard: View {
     let code: String
-    let expiryText: String
+    let expiresAtMs: Int64?
+    let isRefreshDisabled: Bool
+    let onRefresh: () -> Void
     @State private var didCopy = false
     @Environment(\.colorScheme) private var colorScheme
 
@@ -2277,9 +2335,28 @@ private struct PreferencePairingCodeCard: View {
                 .help(AppLocalization.text("sync.action.copyPairingCode.help", defaultValue: "复制配对码"))
             }
 
-            Text(expiryText)
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(colors.secondaryText)
+            TimelineView(.periodic(from: Date(), by: 10)) { context in
+                let isExpired = pairingCodeIsExpired(at: context.date)
+                HStack(alignment: .center, spacing: 10) {
+                    Text(pairingExpiryText(at: context.date))
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(isExpired ? Color.red : colors.secondaryText)
+
+                    Button {
+                        onRefresh()
+                    } label: {
+                        Label(
+                            isExpired
+                                ? AppLocalization.text("sync.action.refreshPairingCode", defaultValue: "刷新配对码")
+                                : AppLocalization.text("sync.action.regeneratePairingCode", defaultValue: "重新生成"),
+                            systemImage: "arrow.clockwise"
+                        )
+                    }
+                    .controlSize(.small)
+                    .disabled(isRefreshDisabled)
+                    .help(AppLocalization.text("sync.action.refreshPairingCode.help", defaultValue: "生成一个新的配对码"))
+                }
+            }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 16)
@@ -2291,6 +2368,29 @@ private struct PreferencePairingCodeCard: View {
         pasteboard.clearContents()
         pasteboard.setString(code, forType: .string)
         didCopy = true
+    }
+
+    private func pairingCodeIsExpired(at date: Date) -> Bool {
+        guard let expiresAtMs else { return false }
+        let nowMs = Int64(date.timeIntervalSince1970 * 1000)
+        return expiresAtMs <= nowMs
+    }
+
+    private func pairingExpiryText(at date: Date) -> String {
+        guard let expiresAtMs else {
+            return AppLocalization.text("sync.pairing.expiryFallback", defaultValue: "约 10 分钟内有效")
+        }
+        let nowMs = Int64(date.timeIntervalSince1970 * 1000)
+        let remainingSeconds = max(0, (expiresAtMs - nowMs) / 1000)
+        guard remainingSeconds > 0 else {
+            return AppLocalization.text("sync.pairing.expired", defaultValue: "已过期")
+        }
+        let remainingMinutes = max(1, Int((remainingSeconds + 59) / 60))
+        return AppLocalization.format(
+            "sync.pairing.expiresInMinutes",
+            defaultValue: "约 %lld 分钟后过期",
+            Int64(remainingMinutes)
+        )
     }
 }
 

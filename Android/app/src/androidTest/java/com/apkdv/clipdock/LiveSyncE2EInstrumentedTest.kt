@@ -8,25 +8,34 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.apkdv.clipdock.data.ClipItemType
 import com.apkdv.clipdock.data.PayloadState
 import com.apkdv.clipdock.data.QuickCopyResult
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import java.util.UUID
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertNotNull
 import junit.framework.TestCase.assertTrue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import org.apache.commons.codec.digest.Blake3
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LiveSyncE2EInstrumentedTest {
+  private val httpClient =
+    OkHttpClient.Builder()
+      .connectTimeout(5, TimeUnit.SECONDS)
+      .readTimeout(15, TimeUnit.SECONDS)
+      .build()
+
   @Test
   fun syncsTextDownloadsImageAndFileThenAppliesDelete() = runBlocking {
     val args = InstrumentationRegistry.getArguments()
@@ -125,7 +134,7 @@ class LiveSyncE2EInstrumentedTest {
     assertTrue(items.any { it.contentHash == imageHash && it.payloadState == PayloadState.Ready })
   }
 
-  private fun pushUpsert(
+  private suspend fun pushUpsert(
     serverUrl: String,
     token: String,
     contentHash: String,
@@ -146,7 +155,7 @@ class LiveSyncE2EInstrumentedTest {
     )
   }
 
-  private fun pushDelete(serverUrl: String, token: String, contentHash: String) {
+  private suspend fun pushDelete(serverUrl: String, token: String, contentHash: String) {
     pushEvent(
       serverUrl = serverUrl,
       token = token,
@@ -158,53 +167,52 @@ class LiveSyncE2EInstrumentedTest {
     )
   }
 
-  private fun pushEvent(serverUrl: String, token: String, event: JSONObject) {
+  private suspend fun pushEvent(serverUrl: String, token: String, event: JSONObject) {
     request(
       serverUrl = serverUrl,
-      path = "/v1/events",
+      path = "/v2/events",
       method = "POST",
       token = token,
       body = JSONObject().put("events", JSONArray().put(event)),
     )
   }
 
-  private fun request(
+  private suspend fun request(
     serverUrl: String,
     path: String,
     method: String,
     token: String,
     body: JSONObject,
-  ): JSONObject {
-    val connection = URL(serverUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
-    connection.requestMethod = method
-    connection.connectTimeout = 5_000
-    connection.readTimeout = 15_000
-    connection.setRequestProperty("Accept", "application/json")
-    connection.setRequestProperty("Authorization", "Bearer $token")
-    val bytes = body.toString().toByteArray(Charsets.UTF_8)
-    connection.doOutput = true
-    connection.setRequestProperty("Content-Type", "application/json")
-    connection.setRequestProperty("Content-Length", bytes.size.toString())
-    connection.outputStream.use { it.write(bytes) }
+  ): JSONObject =
+    withContext(Dispatchers.IO) {
+      val request =
+        Request.Builder()
+          .url(serverUrl.trimEnd('/') + path)
+          .header("Accept", "application/json")
+          .header("Authorization", "Bearer $token")
+          .method(method, body.toString().toRequestBody(JSON_MEDIA_TYPE))
+          .build()
 
-    val status = connection.responseCode
-    val responseText =
-      (if (status in 200..299) connection.inputStream else connection.errorStream)
-        ?.use { stream -> BufferedReader(InputStreamReader(stream)).readText() }
-        .orEmpty()
-    val envelope = if (responseText.isBlank()) JSONObject() else JSONObject(responseText)
-    if (status !in 200..299 || envelope.has("error")) {
-      throw AssertionError("HTTP $status $responseText")
+      httpClient.newCall(request).execute().use { response ->
+        val responseText = response.body.string()
+        val envelope = if (responseText.isBlank()) JSONObject() else JSONObject(responseText)
+        if (!response.isSuccessful || envelope.has("error")) {
+          throw AssertionError("HTTP ${response.code} $responseText")
+        }
+        envelope.optJSONObject("data") ?: JSONObject()
+      }
     }
-    return envelope.optJSONObject("data") ?: JSONObject()
-  }
 
   private fun contentHash(value: String): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
-    return "sha256:" + digest.joinToString("") { byte -> "%02x".format(byte) }
+    val digest = Blake3.hash(value.toByteArray(Charsets.UTF_8))
+    return "blake3:" + digest.joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
   }
 
   private fun readContentUri(context: Context, uri: String): ByteArray =
     context.contentResolver.openInputStream(Uri.parse(uri))?.use { it.readBytes() }
       ?: throw AssertionError("Cannot open downloaded URI: $uri")
+
+  private companion object {
+    val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+  }
 }

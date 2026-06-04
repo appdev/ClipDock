@@ -12,6 +12,10 @@ pub enum CoreErrorCode {
     InvalidInput,
     IoFailed,
     SearchFailed,
+    SyncIdentityMismatch,
+    SyncCursorRegression,
+    SyncOrderingRegression,
+    SyncInvalidEvent,
 }
 
 impl CoreErrorCode {
@@ -23,6 +27,10 @@ impl CoreErrorCode {
             Self::InvalidInput => "invalid_input",
             Self::IoFailed => "io_failed",
             Self::SearchFailed => "search_failed",
+            Self::SyncIdentityMismatch => "sync_identity_mismatch",
+            Self::SyncCursorRegression => "cursor_regression",
+            Self::SyncOrderingRegression => "ordering_regression",
+            Self::SyncInvalidEvent => "invalid_sync_event",
         }
     }
 
@@ -34,6 +42,10 @@ impl CoreErrorCode {
             Self::InvalidInput => "clipboard.error.invalid_input",
             Self::IoFailed => "clipboard.error.io_failed",
             Self::SearchFailed => "clipboard.error.search_failed",
+            Self::SyncIdentityMismatch => "clipboard.error.sync_identity_mismatch",
+            Self::SyncCursorRegression => "clipboard.error.sync_cursor_regression",
+            Self::SyncOrderingRegression => "clipboard.error.sync_ordering_regression",
+            Self::SyncInvalidEvent => "clipboard.error.sync_invalid_event",
         }
     }
 

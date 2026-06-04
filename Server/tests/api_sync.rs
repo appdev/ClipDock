@@ -16,7 +16,7 @@ async fn duplicate_push_does_not_increment_copy_count() {
     let first = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&device.token),
             body.clone(),
             &[],
@@ -26,7 +26,7 @@ async fn duplicate_push_does_not_increment_copy_count() {
     assert_eq!(first.body["data"]["events"][0]["duplicate"], false);
 
     let replay = server
-        .json(Method::POST, "/v1/events", Some(&device.token), body, &[])
+        .json(Method::POST, "/v2/events", Some(&device.token), body, &[])
         .await;
     assert_eq!(replay.status, StatusCode::OK, "{:?}", replay.body);
     assert_eq!(replay.body["data"]["events"][0]["duplicate"], true);
@@ -49,7 +49,7 @@ async fn independent_sync_spaces_do_not_share_events_or_snapshots() {
     let push = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&first.device.token),
             upsert_event("space-event", &hash, 1),
             &[],
@@ -60,7 +60,7 @@ async fn independent_sync_spaces_do_not_share_events_or_snapshots() {
     let first_pull = server
         .empty(
             Method::GET,
-            "/v1/events?after_seq=0&limit=10",
+            "/v2/events?after_seq=0&limit=10",
             Some(&first.device.token),
         )
         .await;
@@ -72,7 +72,7 @@ async fn independent_sync_spaces_do_not_share_events_or_snapshots() {
     let second_pull = server
         .empty(
             Method::GET,
-            "/v1/events?after_seq=0&limit=10",
+            "/v2/events?after_seq=0&limit=10",
             Some(&second.device.token),
         )
         .await;
@@ -83,7 +83,7 @@ async fn independent_sync_spaces_do_not_share_events_or_snapshots() {
     assert_eq!(second_pull.body["data"]["next_cursor"], 0);
 
     let second_snapshot = server
-        .empty(Method::GET, "/v1/snapshot", Some(&second.device.token))
+        .empty(Method::GET, "/v2/snapshot", Some(&second.device.token))
         .await;
     assert_eq!(
         second_snapshot.body["data"]["items"]
@@ -103,12 +103,12 @@ async fn concurrent_duplicate_push_is_idempotent() {
 
     let first = server.json(
         Method::POST,
-        "/v1/events",
+        "/v2/events",
         Some(&device.token),
         body.clone(),
         &[],
     );
-    let second = server.json(Method::POST, "/v1/events", Some(&device.token), body, &[]);
+    let second = server.json(Method::POST, "/v2/events", Some(&device.token), body, &[]);
     let (first, second) = tokio::join!(first, second);
     assert_eq!(first.status, StatusCode::OK, "{:?}", first.body);
     assert_eq!(second.status, StatusCode::OK, "{:?}", second.body);
@@ -129,7 +129,7 @@ async fn cursor_replay_invalid_cursor_and_beyond_latest() {
     let push = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&device.token),
             upsert_event("cursor-1", &hash, 1),
             &[],
@@ -140,7 +140,7 @@ async fn cursor_replay_invalid_cursor_and_beyond_latest() {
     let pull = server
         .empty(
             Method::GET,
-            "/v1/events?after_seq=0&limit=1",
+            "/v2/events?after_seq=0&limit=1",
             Some(&device.token),
         )
         .await;
@@ -149,9 +149,9 @@ async fn cursor_replay_invalid_cursor_and_beyond_latest() {
     assert_eq!(pull.body["data"]["next_cursor"], 1);
 
     for uri in [
-        "/v1/events?after_seq=-1",
-        "/v1/events?after_seq=abc",
-        "/v1/events?after_seq=9223372036854775808",
+        "/v2/events?after_seq=-1",
+        "/v2/events?after_seq=abc",
+        "/v2/events?after_seq=9223372036854775808",
     ] {
         let response = server.empty(Method::GET, uri, Some(&device.token)).await;
         assert_eq!(response.status, StatusCode::BAD_REQUEST, "{uri}");
@@ -159,7 +159,7 @@ async fn cursor_replay_invalid_cursor_and_beyond_latest() {
     }
 
     let invalid_limit = server
-        .empty(Method::GET, "/v1/events?limit=0", Some(&device.token))
+        .empty(Method::GET, "/v2/events?limit=0", Some(&device.token))
         .await;
     assert_eq!(invalid_limit.status, StatusCode::BAD_REQUEST);
     assert_eq!(invalid_limit.body["error"]["code"], "invalid_limit");
@@ -167,7 +167,7 @@ async fn cursor_replay_invalid_cursor_and_beyond_latest() {
     let beyond = server
         .empty(
             Method::GET,
-            "/v1/events?after_seq=999&limit=10",
+            "/v2/events?after_seq=999&limit=10",
             Some(&device.token),
         )
         .await;
@@ -186,7 +186,7 @@ async fn snapshot_then_pull_later_event() {
     let first = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&device.token),
             upsert_event("snap-1", &first_hash, 1),
             &[],
@@ -195,7 +195,7 @@ async fn snapshot_then_pull_later_event() {
     assert_eq!(first.status, StatusCode::OK, "{:?}", first.body);
 
     let snapshot = server
-        .empty(Method::GET, "/v1/snapshot", Some(&device.token))
+        .empty(Method::GET, "/v2/snapshot", Some(&device.token))
         .await;
     assert_eq!(snapshot.status, StatusCode::OK, "{:?}", snapshot.body);
     let snapshot_seq = snapshot.body["data"]["snapshot_seq"].as_i64().unwrap();
@@ -204,7 +204,7 @@ async fn snapshot_then_pull_later_event() {
     let second = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&device.token),
             upsert_event("snap-2", &second_hash, 1),
             &[],
@@ -212,7 +212,7 @@ async fn snapshot_then_pull_later_event() {
         .await;
     assert_eq!(second.status, StatusCode::OK, "{:?}", second.body);
 
-    let uri = format!("/v1/events?after_seq={snapshot_seq}");
+    let uri = format!("/v2/events?after_seq={snapshot_seq}");
     let later = server.empty(Method::GET, &uri, Some(&device.token)).await;
     assert_eq!(later.status, StatusCode::OK, "{:?}", later.body);
     assert_eq!(later.body["data"]["events"].as_array().unwrap().len(), 1);
@@ -220,7 +220,7 @@ async fn snapshot_then_pull_later_event() {
 }
 
 #[tokio::test]
-async fn tombstone_propagates_and_later_same_content_upsert_is_rejected() {
+async fn tombstone_propagates_and_later_same_content_upsert_restores_item() {
     let server = TestServer::new().await;
     let device = server.register().await;
     let hash = content_hash("deleted-content");
@@ -228,7 +228,7 @@ async fn tombstone_propagates_and_later_same_content_upsert_is_rejected() {
     let delete = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&device.token),
             delete_event("delete-1", &hash),
             &[],
@@ -237,7 +237,7 @@ async fn tombstone_propagates_and_later_same_content_upsert_is_rejected() {
     assert_eq!(delete.status, StatusCode::OK, "{:?}", delete.body);
 
     let snapshot = server
-        .empty(Method::GET, "/v1/snapshot", Some(&device.token))
+        .empty(Method::GET, "/v2/snapshot", Some(&device.token))
         .await;
     assert_eq!(snapshot.status, StatusCode::OK, "{:?}", snapshot.body);
     assert_eq!(snapshot.body["data"]["tombstones"][0]["content_hash"], hash);
@@ -245,14 +245,34 @@ async fn tombstone_propagates_and_later_same_content_upsert_is_rejected() {
     let upsert = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&device.token),
             upsert_event("upsert-after-delete", &hash, 1),
             &[],
         )
         .await;
-    assert_eq!(upsert.status, StatusCode::CONFLICT);
-    assert_eq!(upsert.body["error"]["code"], "item_deleted");
+    assert_eq!(upsert.status, StatusCode::OK, "{:?}", upsert.body);
+
+    let restored_snapshot = server
+        .empty(Method::GET, "/v2/snapshot", Some(&device.token))
+        .await;
+    assert_eq!(
+        restored_snapshot.status,
+        StatusCode::OK,
+        "{:?}",
+        restored_snapshot.body
+    );
+    assert_eq!(
+        restored_snapshot.body["data"]["tombstones"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(
+        restored_snapshot.body["data"]["items"][0]["content_hash"],
+        hash
+    );
 }
 
 #[tokio::test]
@@ -262,7 +282,7 @@ async fn event_validation_rejects_delta_outside_contract() {
     let response = server
         .json(
             Method::POST,
-            "/v1/events",
+            "/v2/events",
             Some(&device.token),
             json!({
                 "events": [{
