@@ -119,12 +119,6 @@ ClipDock is open source because clipboard tools are personal infrastructure. You
 
 ## Developer Notes
 
-### Project Layout
-
-- `macOS/`: the main macOS app. Swift UI and AppKit runtime live in `macOS/Sources/ClipDock`, reusable panel logic lives in `macOS/Sources/ClipboardPanelApp`, and the Rust FFI core lives in `macOS/rust`.
-- `Server/`: the self-hosted sync server. Protocol documentation lives in `Server/docs/protocol-v2.md`.
-- `Android/`: the Android client, including sync-space setup, snapshot/event pull, P2P downloads, and the floating overlay.
-- `docs/`: the GitHub Pages website directory, including the product homepage, first-open help, site manifest, CNAME, and page assets.
 
 ### Requirements
 
@@ -160,7 +154,3 @@ cd macOS && swift test
 cd macOS && cargo test --manifest-path rust/Cargo.toml
 cd Server && cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings
 ```
-
-### Documentation Record
-
-Updated on 2026-06-02 by Codex.
