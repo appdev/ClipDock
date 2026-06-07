@@ -1,6 +1,5 @@
 package com.apkdv.clipdock
 
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,8 +41,13 @@ fun MainNavigation() {
                 backStack.add(SettingsDetail(detail))
               }
             },
+            onOpenItemDetail = { stableId ->
+              if (backStack.lastOrNull() !is ItemDetail) {
+                backStack.add(ItemDetail(stableId, selectedDestination))
+              }
+            },
             onBackFromDetail = { backStack.removeLastOrNull() },
-            modifier = Modifier.safeDrawingPadding(),
+            modifier = Modifier,
           )
         }
         entry<SettingsDetail> { key ->
@@ -58,7 +62,26 @@ fun MainNavigation() {
               }
             },
             onBackFromDetail = { backStack.removeLastOrNull() },
-            modifier = Modifier.safeDrawingPadding(),
+            modifier = Modifier,
+          )
+        }
+        entry<ItemDetail> { key ->
+          MainScreen(
+            selectedDestination = key.origin,
+            settingsDetail = null,
+            itemDetailStableId = key.stableId,
+            onDestinationSelected = ::selectRoot,
+            onOpenSettingsDetail = { detail ->
+              selectedDestinationName = MainDestination.Settings.name
+              backStack.removeLastOrNull()
+              backStack.add(SettingsDetail(detail))
+            },
+            onOpenItemDetail = { stableId ->
+              backStack.removeLastOrNull()
+              backStack.add(ItemDetail(stableId, key.origin))
+            },
+            onBackFromDetail = { backStack.removeLastOrNull() },
+            modifier = Modifier,
           )
         }
       },

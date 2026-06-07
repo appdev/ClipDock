@@ -838,6 +838,61 @@ fn capture_text_inserts_source_and_updates_empty_history() {
 }
 
 #[test]
+fn capture_text_reuses_legacy_source_app_id_for_existing_bundle_id() {
+    let (_, mut core) = open_temp_core();
+    core.connection
+        .execute(
+            r#"
+            INSERT INTO source_apps (
+                id, bundle_id, derived_key, name, bundle_path,
+                last_seen_at_ms, created_at_ms, updated_at_ms
+            )
+            VALUES ('source_legacy_codex', 'com.openai.codex', NULL, 'Codex', '/Applications/Codex.app', 1, 1, 1)
+            "#,
+            [],
+        )
+        .unwrap();
+
+    core.capture_text(CaptureTextRequest {
+        text: "Copy after source id format changed".to_string(),
+        detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
+        source_bundle_id: Some("com.openai.codex".to_string()),
+        source_app_name: Some("Codex".to_string()),
+        source_bundle_path: Some("/Applications/Codex.app".to_string()),
+        source_icon_relative_path: Some("app-icons/com.openai.codex.png".to_string()),
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 12,
+        self_write_token: None,
+    })
+    .unwrap();
+
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(
+        page.items[0].source_app_id.as_deref(),
+        Some("source_legacy_codex")
+    );
+
+    let source_app_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM source_apps", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(source_app_count, 1);
+
+    let icon_count: i64 = core
+        .connection
+        .query_row("SELECT COUNT(*) FROM source_app_icons", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(icon_count, 1);
+}
+
+#[test]
 fn updating_source_icon_replaces_previous_icon_row() {
     let (_, mut core) = open_temp_core();
 

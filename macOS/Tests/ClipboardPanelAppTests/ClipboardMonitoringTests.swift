@@ -7,6 +7,35 @@ import Testing
 struct ClipboardMonitoringTests {
     @Test
     @MainActor
+    func clipboardMonitorStartPollsPasteboardChanges() async throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        let monitor = ClipboardMonitor(pasteboard: pasteboard, pollInterval: 0.01)
+        var capturedTexts: [(text: String, changeCount: Int)] = []
+        monitor.onTextCaptured = { text, _, changeCount in
+            capturedTexts.append((text, changeCount))
+        }
+
+        monitor.start()
+        defer {
+            monitor.stop()
+            pasteboard.clearContents()
+        }
+
+        let text = "timer observed clipboard text"
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+
+        let didCapture = await waitForClipboardMonitorCapture {
+            capturedTexts.contains { $0.text == text }
+        }
+
+        #expect(didCapture)
+        #expect(capturedTexts.first?.text == text)
+    }
+
+    @Test
+    @MainActor
     func clipboardMonitorIgnoresMarkedSelfWrites() throws {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
         pasteboard.clearContents()
@@ -779,6 +808,19 @@ private func makePNGData(width: Int, height: Int) throws -> Data {
     NSGraphicsContext.restoreGraphicsState()
 
     return try #require(bitmap.representation(using: .png, properties: [:]))
+}
+
+private func waitForClipboardMonitorCapture(
+    attempts: Int = 200,
+    condition: @MainActor @escaping () -> Bool
+) async -> Bool {
+    for _ in 0..<attempts {
+        if await MainActor.run(body: condition) {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return false
 }
 
 private func makeRTFData(

@@ -1,0 +1,18 @@
+{
+  "assetTreeHashExcludes": [
+    "manifest.json",
+    "provenance.json"
+  ],
+  "assetTreeSha256": "8dbf8ce802d5d2a2cdb3f671dbdc0bc61011d7b32769087a52792d20fd980924",
+  "designReferenceSha256": "0a542b615b19532f8c12ca0fa2b48f6170ac37ba5f8475578b67df54488e46d0",
+  "entry": "index.html",
+  "generatedBy": "Android/scripts/mobile_v4_validate_web_source.py --write",
+  "hotzones": "hotzones.json",
+  "hotzonesSha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+  "provenance": "provenance.json",
+  "reference": "reference/clipdock-mobile-complete-design-v4.html",
+  "runtimeAssetSha256": "8dbf8ce802d5d2a2cdb3f671dbdc0bc61011d7b32769087a52792d20fd980924",
+  "screens": "screens/{theme}/{screen_id}.png",
+  "sourceSha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+  "version": 5
+}

@@ -1,0 +1,30 @@
+[package]
+name = "clipdock_windows_panel"
+version = "0.1.0"
+description = "ClipDock cross-platform panel shell"
+authors = ["ClipDock"]
+edition = "2021"
+
+[lib]
+name = "clipdock_windows_panel_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+arboard = { version = "3", default-features = true }
+image = { version = "0.25", default-features = false, features = ["gif", "ico", "jpeg", "png", "webp"] }
+plist = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+scraper = "0.24"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "tray-icon"] }
+url = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSScreen", "NSWindow"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGWindowLevel"] }

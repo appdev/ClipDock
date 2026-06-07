@@ -1,0 +1,4331 @@
+{
+  "assetTreeHashExcludes": [
+    "manifest.json",
+    "provenance.json"
+  ],
+  "assetTreeSha256": "8dbf8ce802d5d2a2cdb3f671dbdc0bc61011d7b32769087a52792d20fd980924",
+  "chromium": {
+    "version": "148.0.7778.96"
+  },
+  "designReference": "Android/ui-web/mobile-v4/reference/clipdock-mobile-complete-design-v4.html",
+  "designReferenceSha256": "0a542b615b19532f8c12ca0fa2b48f6170ac37ba5f8475578b67df54488e46d0",
+  "generated_at": "2026-06-05T15:28:05.082613+00:00",
+  "generator": {
+    "path": "Android/scripts/mobile_v4_validate_web_source.py",
+    "platform": "macOS-15.7.3-arm64-arm-64bit-Mach-O",
+    "python": "/Volumes/extendData/Data/IdeaProjects/ClipDock/.codex/venvs/android-mobile-v4-pixel/bin/python",
+    "version": 5
+  },
+  "hotzonesSha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+  "playwright": {
+    "chromium": "playwright.chromium",
+    "playwright_version": "Version 1.60.0",
+    "python": "/Volumes/extendData/Data/IdeaProjects/ClipDock/.codex/venvs/android-mobile-v4-pixel/bin/python",
+    "python_version": "3.13.5"
+  },
+  "runtimeAssetSha256": "8dbf8ce802d5d2a2cdb3f671dbdc0bc61011d7b32769087a52792d20fd980924",
+  "screenSize": {
+    "height": 824,
+    "width": 370
+  },
+  "screens": [
+    "history",
+    "devices",
+    "files",
+    "settings",
+    "keep_alive",
+    "floating_ball",
+    "item_detail_text",
+    "remote_asset_sheet",
+    "delete_confirm"
+  ],
+  "semanticSha256": {
+    "dark": {
+      "delete_confirm": "a16cde1e6040abcf454e70bc5c0149e42e641a9deb7cc8a9b6eae982b703cb0b",
+      "devices": "f03bb0aa31fc6807fd5a0c179a61f19b0bf8fe0dc497d88114388ec99dfa00e8",
+      "files": "d58324441330041c05fe209c75764ccf24d5614752b5db9c3be933db8182b4b8",
+      "floating_ball": "288c0ec4d2a4425278e2e0589e748cdbc8fde515538fb18225c1a7715d70081a",
+      "history": "424f3d8788b5747207155724b5e2d785fc5fe5c2ac32ca96b0fe4ebcd41323c9",
+      "item_detail_text": "9dd2a7c49f8795107fe6c9c7617d18cdc10a00b9c460758e4e40cbb6819221a0",
+      "keep_alive": "68580417bdf3c90fc94658e322009e476fbdf589084044403f2cc28c23be1cc5",
+      "remote_asset_sheet": "f8c91da307a5d27cfdc4d1c042a296612cd21e6b891e276acea7048c589a3d9c",
+      "settings": "6d5715b5e8518a73e4ba5b46c7c0c11d2df0da46927f4358f901b93e51b6ccc5"
+    },
+    "light": {
+      "delete_confirm": "fc2ee34f96d91910c962cb5068af6d6f45b0c28d366aa54c8ff9724eea6585ab",
+      "devices": "4949ff32762b6bb98b69ec16c50a07d329d27dceedffa054a7f0bc975a8ce2ca",
+      "files": "07d7bc24f0a466e7c3ef667e868ce5e1d36197e8c3653e8a9ccc426a62ccb2cf",
+      "floating_ball": "459e93c5cc018a18d0d333d744f647b9e2abe719315c33b0247b8d5822cb01fe",
+      "history": "f4e37eb6b02f088c5a7c7205357cd6019d62787a8d8d3300902d1feeed20ac5b",
+      "item_detail_text": "c587bdd5053f0a26b16bab219e8e5059eee18747f0e49de55d13cc4303df106f",
+      "keep_alive": "08446457c6cf7ff7ddbd03446a6096f8ee476ec0b6760b766d0c8cf581d455ed",
+      "remote_asset_sheet": "edd10fccc1fb0aa464465119e382b5e50f00684e38ee0a4e42da46c92ad82664",
+      "settings": "195df88506d27f86fe29a78501b5483c338a2ee076075cd6f20e296fa5521b26"
+    }
+  },
+  "semantics": {
+    "dark": {
+      "delete_confirm": {
+        "active_sheet": "delete_confirm",
+        "anchors": [
+          {
+            "action_id": "hideDeleteConfirm",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 16,
+              "y": 53
+            },
+            "stable_id": "hideDeleteConfirm"
+          },
+          {
+            "action_id": "removeLocalCache:qa-ready-text",
+            "bounds": {
+              "height": 46,
+              "width": 304,
+              "x": 33,
+              "y": 635
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "deleteSyncRecord:qa-ready-text",
+            "bounds": {
+              "height": 46,
+              "width": 304,
+              "x": 33,
+              "y": 690
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "hideDeleteConfirm",
+            "bounds": {
+              "height": 46,
+              "width": 304,
+              "x": 33,
+              "y": 745
+            },
+            "stable_id": "hideDeleteConfirm"
+          }
+        ],
+        "aria_labels": [
+          "取消删除",
+          "仅移除本机缓存",
+          "删除同步记录",
+          "取消"
+        ],
+        "bridge_action_ids": [
+          "hideDeleteConfirm",
+          "removeLocalCache:qa-ready-text",
+          "deleteSyncRecord:qa-ready-text"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "deleteSyncRecord:qa-ready-text": true,
+          "hideDeleteConfirm": true,
+          "removeLocalCache:qa-ready-text": false
+        },
+        "fallback": false,
+        "focus_order": [
+          "hideDeleteConfirm",
+          "removeLocalCache:qa-ready-text",
+          "deleteSyncRecord:qa-ready-text",
+          "hideDeleteConfirm"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "删除这条历史？ 如果只清理本机缓存，其他设备和同步空间仍保留记录。删除同步记录会从所有设备历史中移除。 仅移除本机缓存 删除同步": {
+            "height": 332,
+            "width": 342,
+            "x": 14,
+            "y": 478
+          },
+          "复制": {
+            "height": 66,
+            "width": 342,
+            "x": 14,
+            "y": 746
+          },
+          "文本详情": {
+            "height": 25,
+            "width": 180,
+            "x": 95,
+            "y": 48
+          }
+        },
+        "route": "delete_confirm",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "delete_confirm",
+        "selected_nav": null,
+        "selected_stable_id": "qa-ready-text",
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [
+          {
+            "action_id": "hideDeleteConfirm",
+            "z_order": 1
+          },
+          {
+            "action_id": "removeLocalCache:qa-ready-text",
+            "z_order": 100
+          },
+          {
+            "action_id": "deleteSyncRecord:qa-ready-text",
+            "z_order": 101
+          },
+          {
+            "action_id": "hideDeleteConfirm",
+            "z_order": 102
+          }
+        ],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "deleteSyncRecord:qa-ready-text": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 690
+          },
+          "hideDeleteConfirm": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 745
+          },
+          "removeLocalCache:qa-ready-text": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 635
+          }
+        },
+        "visible_texts": [
+          "9:41 文本详情MacBook Pro · 09:38 · seq 40 发布说明：Android 端新增远端取回入口 这条记录已经同步到 3 台设备，删除范围需要明确表达。 已同步3 台设备 内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。 复制",
+          "9:41",
+          "文本详情MacBook Pro · 09:38 · seq 40",
+          "文本详情",
+          "MacBook Pro · 09:38 · seq 40",
+          "发布说明：Android 端新增远端取回入口 这条记录已经同步到 3 台设备，删除范围需要明确表达。 已同步3 台设备",
+          "发布说明：Android 端新增远端取回入口",
+          "这条记录已经同步到 3 台设备，删除范围需要明确表达。",
+          "已同步3 台设备",
+          "已同步",
+          "3 台设备",
+          "内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。",
+          "内容预览",
+          "发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。",
+          "复制",
+          "删除这条历史？ 如果只清理本机缓存，其他设备和同步空间仍保留记录。删除同步记录会从所有设备历史中移除。 仅移除本机缓存 删除同步记录 取消",
+          "删除这条历史？",
+          "如果只清理本机缓存，其他设备和同步空间仍保留记录。删除同步记录会从所有设备历史中移除。",
+          "仅移除本机缓存 删除同步记录 取消",
+          "仅移除本机缓存",
+          "删除同步记录",
+          "取消"
+        ],
+        "visual_png_sha256": "c6bd1444594610c0a88f3fad4b1a02c3c02ec66555f9e2553783fdedc34cd5f8"
+      },
+      "devices": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 187,
+              "y": 762
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 268,
+              "y": 762
+            },
+            "stable_id": "selectDestination:settings"
+          }
+        ],
+        "aria_labels": [
+          "历史",
+          "文件",
+          "设置"
+        ],
+        "bridge_action_ids": [
+          "selectDestination:history",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "selectDestination:history",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "MacBook ProP2P endpoint 在线 · 2 秒前可取回": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 358
+          },
+          "Pixel 9 Pro · 本机实时已连接 · cursor 40在线": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 278
+          },
+          "iPad最后同步 18 分钟前离线": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 438
+          },
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "撤销丢失设备删除设备令牌后需要重新配对": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 518
+          },
+          "设备": {
+            "height": 25,
+            "width": 152,
+            "x": 16,
+            "y": 48
+          }
+        },
+        "route": "devices",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "devices",
+        "selected_nav": "设备",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "selectDestination:files": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "selectDestination:settings": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          }
+        },
+        "visible_texts": [
+          "9:41 设备clipdock-home · 3 台在线 3在线设备 40最新序号 2P2P 可用 邀请新设备生成 5 位配对码或扫码加入生成 Pixel 9 Pro · 本机实时已连接 · cursor 40在线 MacBook ProP2P endpoint 在线 · 2 秒前可取回 iPad最后同步 18 分钟前离线 撤销丢失设备删除设备令牌后需要重新配对 历史设备文件设置",
+          "9:41",
+          "设备clipdock-home · 3 台在线",
+          "设备",
+          "clipdock-home · 3 台在线",
+          "3在线设备 40最新序号 2P2P 可用",
+          "3在线设备",
+          "3",
+          "在线设备",
+          "40最新序号",
+          "40",
+          "最新序号",
+          "2P2P 可用",
+          "2",
+          "P2P 可用",
+          "邀请新设备生成 5 位配对码或扫码加入生成",
+          "邀请新设备生成 5 位配对码或扫码加入",
+          "邀请新设备",
+          "生成 5 位配对码或扫码加入",
+          "生成",
+          "Pixel 9 Pro · 本机实时已连接 · cursor 40在线",
+          "Pixel 9 Pro · 本机实时已连接 · cursor 40",
+          "Pixel 9 Pro · 本机",
+          "实时已连接 · cursor 40",
+          "在线",
+          "MacBook ProP2P endpoint 在线 · 2 秒前可取回",
+          "MacBook ProP2P endpoint 在线 · 2 秒前",
+          "MacBook Pro",
+          "P2P endpoint 在线 · 2 秒前",
+          "可取回",
+          "iPad最后同步 18 分钟前离线",
+          "iPad最后同步 18 分钟前",
+          "iPad",
+          "最后同步 18 分钟前",
+          "离线",
+          "撤销丢失设备删除设备令牌后需要重新配对",
+          "撤销丢失设备",
+          "删除设备令牌后需要重新配对",
+          "历史设备文件设置",
+          "历史",
+          "文件",
+          "设置"
+        ],
+        "visual_png_sha256": "29ebe9436883e33892c058cebf74fe3614c3d94885323b18aa81f28940f0780a"
+      },
+      "files": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 106,
+              "y": 762
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 268,
+              "y": 762
+            },
+            "stable_id": "selectDestination:settings"
+          },
+          {
+            "action_id": "openItemDetail:qa-remote-image",
+            "bounds": {
+              "height": 68,
+              "width": 342,
+              "x": 14,
+              "y": 252
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "openItemDetail:qa-ready-file",
+            "bounds": {
+              "height": 68,
+              "width": 342,
+              "x": 14,
+              "y": 428
+            },
+            "stable_id": "qa-ready-file"
+          }
+        ],
+        "aria_labels": [
+          "历史",
+          "设备",
+          "设置",
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+          "Server-config.txt已缓存 · text/plain · 12 KB打开"
+        ],
+        "bridge_action_ids": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:settings",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "openItemDetail:qa-ready-file": true,
+          "openItemDetail:qa-remote-image": true,
+          "selectDestination:devices": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:settings",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "Release-notes.pdf正在从 MacBook Pro 下载 · 64%": {
+            "height": 84,
+            "width": 342,
+            "x": 14,
+            "y": 332
+          },
+          "Server-config.txt已缓存 · text/plain · 12 KB打开": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 428
+          },
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 252
+          },
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "文件": {
+            "height": 25,
+            "width": 169,
+            "x": 16,
+            "y": 48
+          },
+          "缓存策略上限 1 GB · 到期自动清理": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 508
+          }
+        },
+        "route": "files",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "files",
+        "selected_nav": "文件",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "openItemDetail:qa-ready-file": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 428
+          },
+          "openItemDetail:qa-remote-image": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 252
+          },
+          "selectDestination:devices": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "selectDestination:settings": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          }
+        },
+        "visible_texts": [
+          "9:41 文件远端 8 个 · 本机缓存 428 MB 全部图片文件已缓存 按需下载远端图片/文件不会在列表中自动下载仅 Wi‑Fi UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回 Release-notes.pdf正在从 MacBook Pro 下载 · 64% Server-config.txt已缓存 · text/plain · 12 KB打开 缓存策略上限 1 GB · 到期自动清理 历史设备文件设置",
+          "9:41",
+          "文件远端 8 个 · 本机缓存 428 MB",
+          "文件",
+          "远端 8 个 · 本机缓存 428 MB",
+          "全部图片文件已缓存",
+          "全部",
+          "图片",
+          "已缓存",
+          "按需下载远端图片/文件不会在列表中自动下载仅 Wi‑Fi",
+          "按需下载远端图片/文件不会在列表中自动下载",
+          "按需下载",
+          "远端图片/文件不会在列表中自动下载",
+          "仅 Wi‑Fi",
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端",
+          "UI-review-screenshot.png",
+          "MacBook Pro · 1.2 MB · 远端",
+          "取回",
+          "Release-notes.pdf正在从 MacBook Pro 下载 · 64%",
+          "Release-notes.pdf",
+          "正在从 MacBook Pro 下载 · 64%",
+          "Server-config.txt已缓存 · text/plain · 12 KB打开",
+          "Server-config.txt已缓存 · text/plain · 12 KB",
+          "Server-config.txt",
+          "已缓存 · text/plain · 12 KB",
+          "打开",
+          "缓存策略上限 1 GB · 到期自动清理",
+          "缓存策略",
+          "上限 1 GB · 到期自动清理",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "设置"
+        ],
+        "visual_png_sha256": "a3afe8d912d75c2eba3bca1b7bfc53ebe0d0794a10277c7d186276d137873c3e"
+      },
+      "floating_ball": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "closeSettingsDetail",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 318,
+              "y": 52
+            },
+            "stable_id": "closeSettingsDetail"
+          },
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 25,
+              "y": 764
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 106,
+              "y": 764
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 187,
+              "y": 764
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 268,
+              "y": 764
+            },
+            "stable_id": "selectDestination:settings"
+          },
+          {
+            "action_id": "setOverlayEnabled",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 235
+            },
+            "stable_id": "setOverlayEnabled"
+          },
+          {
+            "action_id": "setOverlayVerticalFraction",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 298
+            },
+            "stable_id": "setOverlayVerticalFraction"
+          },
+          {
+            "action_id": "setOverlaySnapEdge",
+            "bounds": {
+              "height": 62,
+              "width": 340,
+              "x": 15,
+              "y": 361
+            },
+            "stable_id": "setOverlaySnapEdge"
+          },
+          {
+            "action_id": "setOverlaySize",
+            "bounds": {
+              "height": 88,
+              "width": 342,
+              "x": 14,
+              "y": 556
+            },
+            "stable_id": "setOverlaySize"
+          },
+          {
+            "action_id": "setOverlayOpacity",
+            "bounds": {
+              "height": 88,
+              "width": 342,
+              "x": 14,
+              "y": 656
+            },
+            "stable_id": "setOverlayOpacity"
+          },
+          {
+            "action_id": "setOverlaySnapEdge",
+            "bounds": {
+              "height": 115,
+              "width": 342,
+              "x": 14,
+              "y": 429
+            },
+            "stable_id": "setOverlaySnapEdge"
+          }
+        ],
+        "aria_labels": [
+          "返回设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置",
+          "启用悬浮球显示在系统桌面边缘",
+          "点击动作同步一次并复制最新可用内容默认",
+          "停靠边缘拖动松手后自动吸附右侧",
+          "尺寸64 dp · 兼顾可点按和遮挡范围",
+          "闲置透明度78% · 不完全隐藏，保持可发现",
+          "停靠方向当前吸附到右侧边缘左侧右侧"
+        ],
+        "bridge_action_ids": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "setOverlayEnabled",
+          "setOverlayVerticalFraction",
+          "setOverlaySnapEdge",
+          "setOverlaySize",
+          "setOverlayOpacity"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "closeSettingsDetail": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true,
+          "setOverlayEnabled": true,
+          "setOverlayOpacity": true,
+          "setOverlaySize": true,
+          "setOverlaySnapEdge": true,
+          "setOverlayVerticalFraction": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "setOverlayEnabled",
+          "setOverlayVerticalFraction",
+          "setOverlaySnapEdge",
+          "setOverlaySize",
+          "setOverlayOpacity",
+          "setOverlaySnapEdge"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "停靠方向当前吸附到右侧边缘左侧右侧": {
+            "height": 115,
+            "width": 342,
+            "x": 14,
+            "y": 429
+          },
+          "停靠边缘拖动松手后自动吸附右侧": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 361
+          },
+          "启用悬浮球显示在系统桌面边缘": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 235
+          },
+          "尺寸64 dp · 兼顾可点按和遮挡范围": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 556
+          },
+          "悬浮球": {
+            "height": 25,
+            "width": 117,
+            "x": 16,
+            "y": 47
+          },
+          "点击动作同步一次并复制最新可用内容默认": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 298
+          },
+          "闲置透明度78% · 不完全隐藏，保持可发现": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 656
+          }
+        },
+        "route": "floating_ball",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "floating_ball",
+        "selected_nav": "设置",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "closeSettingsDetail": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 52
+          },
+          "selectDestination:devices": {
+            "height": 40,
+            "width": 77,
+            "x": 106,
+            "y": 764
+          },
+          "selectDestination:files": {
+            "height": 40,
+            "width": 77,
+            "x": 187,
+            "y": 764
+          },
+          "selectDestination:history": {
+            "height": 40,
+            "width": 77,
+            "x": 25,
+            "y": 764
+          },
+          "selectDestination:settings": {
+            "height": 40,
+            "width": 77,
+            "x": 268,
+            "y": 764
+          },
+          "setOverlayEnabled": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 235
+          },
+          "setOverlayOpacity": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 656
+          },
+          "setOverlaySize": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 556
+          },
+          "setOverlaySnapEdge": {
+            "height": 115,
+            "width": 342,
+            "x": 14,
+            "y": 429
+          },
+          "setOverlayVerticalFraction": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 298
+          }
+        },
+        "visible_texts": [
+          "9:41 悬浮球桌面快速同步并复制 已复制最新内容发布说明：Android 端新增远端取回入口 启用悬浮球显示在系统桌面边缘 点击动作同步一次并复制最新可用内容默认 停靠边缘拖动松手后自动吸附右侧 停靠方向当前吸附到右侧边缘左侧右侧 尺寸64 dp · 兼顾可点按和遮挡范围 闲置透明度78% · 不完全隐藏，保持可发现 历史设备文件设置",
+          "9:41",
+          "悬浮球桌面快速同步并复制",
+          "悬浮球",
+          "桌面快速同步并复制",
+          "已复制最新内容发布说明：Android 端新增远端取回入口",
+          "已复制最新内容",
+          "发布说明：Android 端新增远端取回入口",
+          "启用悬浮球显示在系统桌面边缘 点击动作同步一次并复制最新可用内容默认 停靠边缘拖动松手后自动吸附右侧",
+          "启用悬浮球显示在系统桌面边缘",
+          "启用悬浮球",
+          "显示在系统桌面边缘",
+          "点击动作同步一次并复制最新可用内容默认",
+          "点击动作同步一次并复制最新可用内容",
+          "点击动作",
+          "同步一次并复制最新可用内容",
+          "默认",
+          "停靠边缘拖动松手后自动吸附右侧",
+          "停靠边缘拖动松手后自动吸附",
+          "停靠边缘",
+          "拖动松手后自动吸附",
+          "右侧",
+          "停靠方向当前吸附到右侧边缘左侧右侧",
+          "停靠方向当前吸附到右侧边缘",
+          "停靠方向",
+          "当前吸附到右侧边缘",
+          "左侧右侧",
+          "左侧",
+          "尺寸64 dp · 兼顾可点按和遮挡范围",
+          "尺寸",
+          "64 dp · 兼顾可点按和遮挡范围",
+          "闲置透明度78% · 不完全隐藏，保持可发现",
+          "闲置透明度",
+          "78% · 不完全隐藏，保持可发现",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置"
+        ],
+        "visual_png_sha256": "1cbd3d895b07620782d0cec52cc65418377ae21a6be5aec808dbe20ff0a1f521"
+      },
+      "history": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "syncNow",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 274,
+              "y": 47
+            },
+            "stable_id": "syncNow"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 34,
+              "width": 77,
+              "x": 106,
+              "y": 770
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 34,
+              "width": 77,
+              "x": 187,
+              "y": 770
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 34,
+              "width": 77,
+              "x": 268,
+              "y": 770
+            },
+            "stable_id": "selectDestination:settings"
+          },
+          {
+            "action_id": "openItemDetail:qa-ready-text",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 14,
+              "y": 280
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "openItemDetail:qa-remote-image",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 190,
+              "y": 280
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "openItemDetail:qa-ready-file",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 14,
+              "y": 440
+            },
+            "stable_id": "qa-ready-file"
+          },
+          {
+            "action_id": "openItemDetail:qa-link",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 190,
+              "y": 440
+            },
+            "stable_id": "qa-link"
+          },
+          {
+            "action_id": "openItemDetail:qa-color",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 14,
+              "y": 600
+            },
+            "stable_id": "qa-color"
+          },
+          {
+            "action_id": "copyItem:qa-ready-text",
+            "bounds": {
+              "height": 20,
+              "width": 38,
+              "x": 25,
+              "y": 401
+            },
+            "stable_id": "qa-ready-text"
+          }
+        ],
+        "aria_labels": [
+          "立即同步",
+          "设备",
+          "文件",
+          "设置",
+          "打开 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "打开 图片09:321086 × 1448",
+          "打开 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "打开 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "打开 颜色08:12#7C3AEDRGB 124,58,237",
+          "复制"
+        ],
+        "bridge_action_ids": [
+          "syncNow",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "openItemDetail:qa-ready-text",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file",
+          "openItemDetail:qa-link",
+          "openItemDetail:qa-color",
+          "copyItem:qa-ready-text"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "copyItem:qa-ready-text": true,
+          "openItemDetail:qa-color": true,
+          "openItemDetail:qa-link": true,
+          "openItemDetail:qa-ready-file": true,
+          "openItemDetail:qa-ready-text": true,
+          "openItemDetail:qa-remote-image": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:settings": true,
+          "syncNow": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "syncNow",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "openItemDetail:qa-ready-text",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file",
+          "openItemDetail:qa-link",
+          "openItemDetail:qa-color",
+          "copyItem:qa-ready-text"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "剪贴板": {
+            "height": 25,
+            "width": 173,
+            "x": 16,
+            "y": 43
+          },
+          "图片09:321086 × 1448": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 280
+          },
+          "文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Ser": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 440
+          },
+          "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 280
+          },
+          "链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup ·": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 440
+          },
+          "颜色08:12#7C3AEDRGB 124,58,237": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 600
+          }
+        },
+        "route": "history",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "history",
+        "selected_nav": "历史",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "copyItem:qa-ready-text": {
+            "height": 20,
+            "width": 38,
+            "x": 25,
+            "y": 401
+          },
+          "openItemDetail:qa-color": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 600
+          },
+          "openItemDetail:qa-link": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 440
+          },
+          "openItemDetail:qa-ready-file": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 440
+          },
+          "openItemDetail:qa-ready-text": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 280
+          },
+          "openItemDetail:qa-remote-image": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 280
+          },
+          "selectDestination:devices": {
+            "height": 34,
+            "width": 77,
+            "x": 106,
+            "y": 770
+          },
+          "selectDestination:files": {
+            "height": 34,
+            "width": 77,
+            "x": 187,
+            "y": 770
+          },
+          "selectDestination:settings": {
+            "height": 34,
+            "width": 77,
+            "x": 268,
+            "y": 770
+          },
+          "syncNow": {
+            "height": 36,
+            "width": 36,
+            "x": 274,
+            "y": 47
+          }
+        },
+        "visible_texts": [
+          "9:41 剪贴板刚刚同步 12 条 · 3 台设备在线 搜索文本、链接、文件名 全部文本图片文件 同步正常下一次实时同步已连接2 秒前 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符 图片09:321086 × 1448 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明 颜色08:12#7C3AEDRGB 124,58,237 历史设备文件设置",
+          "9:41",
+          "剪贴板刚刚同步 12 条 · 3 台设备在线",
+          "剪贴板",
+          "刚刚同步 12 条 · 3 台设备在线",
+          "搜索文本、链接、文件名",
+          "全部文本图片文件",
+          "全部",
+          "文本",
+          "图片",
+          "文件",
+          "同步正常下一次实时同步已连接2 秒前",
+          "同步正常下一次实时同步已连接",
+          "同步正常",
+          "下一次实时同步已连接",
+          "2 秒前",
+          "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符 图片09:321086 × 1448 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明 颜色08:12#7C3AEDRGB 124,58,237",
+          "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "文本09:38",
+          "09:38",
+          "发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。",
+          "复制64 字符",
+          "复制",
+          "64 字符",
+          "图片09:321086 × 1448",
+          "图片09:32",
+          "09:32",
+          "1086 × 1448",
+          "文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "文件08:31",
+          "08:31",
+          "/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "链接08:54",
+          "链接",
+          "08:54",
+          "docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "docs.clipdock.app",
+          "https://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "颜色08:12#7C3AEDRGB 124,58,237",
+          "颜色08:12",
+          "颜色",
+          "08:12",
+          "#7C3AEDRGB 124,58,237",
+          "#7C3AED",
+          "RGB 124,58,237",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "设置"
+        ],
+        "visual_png_sha256": "6094a1ca1fef7086d81499808467cba1ac7f4b969c183b5f7ffe5d64626b6254"
+      },
+      "item_detail_text": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "closeDetail",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 16,
+              "y": 53
+            },
+            "stable_id": "closeDetail"
+          },
+          {
+            "action_id": "copyItem:qa-ready-text",
+            "bounds": {
+              "height": 44,
+              "width": 112,
+              "x": 25,
+              "y": 757
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "showDeleteConfirm:qa-ready-text",
+            "bounds": {
+              "height": 44,
+              "width": 44,
+              "x": 301,
+              "y": 757
+            },
+            "stable_id": "qa-ready-text"
+          }
+        ],
+        "aria_labels": [
+          "返回",
+          "复制",
+          "删除"
+        ],
+        "bridge_action_ids": [
+          "closeDetail",
+          "copyItem:qa-ready-text",
+          "showDeleteConfirm:qa-ready-text"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "closeDetail": true,
+          "copyItem:qa-ready-text": true,
+          "showDeleteConfirm:qa-ready-text": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "closeDetail",
+          "copyItem:qa-ready-text",
+          "showDeleteConfirm:qa-ready-text"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "复制": {
+            "height": 66,
+            "width": 342,
+            "x": 14,
+            "y": 746
+          },
+          "文本详情": {
+            "height": 25,
+            "width": 180,
+            "x": 95,
+            "y": 48
+          }
+        },
+        "route": "item_detail_text",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "item_detail_text",
+        "selected_nav": null,
+        "selected_stable_id": "qa-ready-text",
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "closeDetail": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "copyItem:qa-ready-text": {
+            "height": 44,
+            "width": 112,
+            "x": 25,
+            "y": 757
+          },
+          "showDeleteConfirm:qa-ready-text": {
+            "height": 44,
+            "width": 44,
+            "x": 301,
+            "y": 757
+          }
+        },
+        "visible_texts": [
+          "9:41 文本详情MacBook Pro · 09:38 · seq 40 发布说明：Android 端新增远端取回入口 从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。 本机可复制已同步未固定 内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。 sync_policy: text_auto, asset_on_demandsource_device: MacBook Procreated_at: 2026-06-04 09:38 来源MacBook Pro 状态已同步到本机 空间clipdock-home 保留30 天后清理 复制",
+          "9:41",
+          "文本详情MacBook Pro · 09:38 · seq 40",
+          "文本详情",
+          "MacBook Pro · 09:38 · seq 40",
+          "发布说明：Android 端新增远端取回入口 从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。 本机可复制已同步未固定",
+          "发布说明：Android 端新增远端取回入口",
+          "从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。",
+          "本机可复制已同步未固定",
+          "本机可复制",
+          "已同步",
+          "未固定",
+          "内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。 sync_policy: text_auto, asset_on_demandsource_device: MacBook Procreated_at: 2026-06-04 09:38",
+          "内容预览",
+          "发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。",
+          "sync_policy: text_auto, asset_on_demandsource_device: MacBook Procreated_at: 2026-06-04 09:38",
+          "来源MacBook Pro 状态已同步到本机 空间clipdock-home 保留30 天后清理",
+          "来源MacBook Pro",
+          "来源",
+          "MacBook Pro",
+          "状态已同步到本机",
+          "状态",
+          "已同步到本机",
+          "空间clipdock-home",
+          "空间",
+          "clipdock-home",
+          "保留30 天后清理",
+          "保留",
+          "30 天后清理",
+          "复制"
+        ],
+        "visual_png_sha256": "55784448883eaebfeb0f08600e70edb5096d768e1ca081f8c6e75c8b7771d1fa"
+      },
+      "keep_alive": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "closeSettingsDetail",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 318,
+              "y": 53
+            },
+            "stable_id": "closeSettingsDetail"
+          },
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 106,
+              "y": 762
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 187,
+              "y": 762
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 268,
+              "y": 762
+            },
+            "stable_id": "selectDestination:settings"
+          }
+        ],
+        "aria_labels": [
+          "返回设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置"
+        ],
+        "bridge_action_ids": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "closeSettingsDetail": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "保活权限": {
+            "height": 25,
+            "width": 182,
+            "x": 16,
+            "y": 48
+          },
+          "全局悬浮窗允许桌面显示悬浮球已授权": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 202
+          },
+          "剪贴板隐私敏感内容写入时使用系统隐私标记内置": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 533
+          },
+          "厂商后台保护MIUI/ColorOS 等需要手动允许自启动去设置": {
+            "height": 79,
+            "width": 342,
+            "x": 14,
+            "y": 442
+          },
+          "忽略电池优化降低 Doze/App Standby 中断概率建议": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 362
+          },
+          "通知权限用于前台同步状态提示去开启": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 282
+          }
+        },
+        "route": "keep_alive",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "keep_alive",
+        "selected_nav": "设置",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "closeSettingsDetail": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 53
+          },
+          "selectDestination:devices": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "selectDestination:files": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "selectDestination:settings": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          }
+        },
+        "visible_texts": [
+          "9:41 保活权限确保悬浮球和实时同步可靠运行 还差 2 项建议权限不影响基础使用，但会影响后台实时同步检查 全局悬浮窗允许桌面显示悬浮球已授权 通知权限用于前台同步状态提示去开启 忽略电池优化降低 Doze/App Standby 中断概率建议 厂商后台保护MIUI/ColorOS 等需要手动允许自启动去设置 剪贴板隐私敏感内容写入时使用系统隐私标记内置 历史设备文件设置",
+          "9:41",
+          "保活权限确保悬浮球和实时同步可靠运行",
+          "保活权限",
+          "确保悬浮球和实时同步可靠运行",
+          "还差 2 项建议权限不影响基础使用，但会影响后台实时同步检查",
+          "还差 2 项建议权限不影响基础使用，但会影响后台实时同步",
+          "还差 2 项建议权限",
+          "不影响基础使用，但会影响后台实时同步",
+          "检查",
+          "全局悬浮窗允许桌面显示悬浮球已授权",
+          "全局悬浮窗允许桌面显示悬浮球",
+          "全局悬浮窗",
+          "允许桌面显示悬浮球",
+          "已授权",
+          "通知权限用于前台同步状态提示去开启",
+          "通知权限用于前台同步状态提示",
+          "通知权限",
+          "用于前台同步状态提示",
+          "去开启",
+          "忽略电池优化降低 Doze/App Standby 中断概率建议",
+          "忽略电池优化降低 Doze/App Standby 中断概率",
+          "忽略电池优化",
+          "降低 Doze/App Standby 中断概率",
+          "建议",
+          "厂商后台保护MIUI/ColorOS 等需要手动允许自启动去设置",
+          "厂商后台保护MIUI/ColorOS 等需要手动允许自启动",
+          "厂商后台保护",
+          "MIUI/ColorOS 等需要手动允许自启动",
+          "去设置",
+          "剪贴板隐私敏感内容写入时使用系统隐私标记内置",
+          "剪贴板隐私敏感内容写入时使用系统隐私标记",
+          "剪贴板隐私",
+          "敏感内容写入时使用系统隐私标记",
+          "内置",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置"
+        ],
+        "visual_png_sha256": "fadcb69b2625800ccb2697b1d234320cd130f21b7fa482e0c9d07dfbf4cbfd12"
+      },
+      "remote_asset_sheet": {
+        "active_sheet": "remote_retrieval",
+        "anchors": [
+          {
+            "action_id": "hideRemoteRetrieval",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 16,
+              "y": 53
+            },
+            "stable_id": "hideRemoteRetrieval"
+          },
+          {
+            "action_id": "downloadAndCopy:qa-remote-image",
+            "bounds": {
+              "height": 54,
+              "width": 316,
+              "x": 27,
+              "y": 619
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "downloadToCache:qa-remote-image",
+            "bounds": {
+              "height": 54,
+              "width": 316,
+              "x": 27,
+              "y": 681
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "copyThumbnail:qa-remote-image",
+            "bounds": {
+              "height": 54,
+              "width": 316,
+              "x": 27,
+              "y": 743
+            },
+            "stable_id": "qa-remote-image"
+          }
+        ],
+        "aria_labels": [
+          "关闭远端取回",
+          "下载并复制P2P 取回原图后写入系统剪贴板",
+          "仅下载到本机缓存用于稍后打开或分享，不改变剪贴板",
+          "复制缩略图快速使用预览图，保留原图远端状态"
+        ],
+        "bridge_action_ids": [
+          "hideRemoteRetrieval",
+          "downloadAndCopy:qa-remote-image",
+          "downloadToCache:qa-remote-image",
+          "copyThumbnail:qa-remote-image"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "copyThumbnail:qa-remote-image": true,
+          "downloadAndCopy:qa-remote-image": true,
+          "downloadToCache:qa-remote-image": true,
+          "hideRemoteRetrieval": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "hideRemoteRetrieval",
+          "downloadAndCopy:qa-remote-image",
+          "downloadToCache:qa-remote-image",
+          "copyThumbnail:qa-remote-image"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "取回远端图片选择下载后如何处理，不自动覆盖剪贴板。 下载并复制P2P 取回原图后写入系统剪贴板 仅下载到本机缓存用于稍后打开或分": {
+            "height": 278,
+            "width": 342,
+            "x": 14,
+            "y": 532
+          },
+          "图片详情": {
+            "height": 25,
+            "width": 190,
+            "x": 90,
+            "y": 48
+          }
+        },
+        "route": "remote_asset_sheet",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "remote_asset_sheet",
+        "selected_nav": null,
+        "selected_stable_id": "qa-remote-image",
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [
+          {
+            "action_id": "hideRemoteRetrieval",
+            "z_order": 1
+          },
+          {
+            "action_id": "downloadAndCopy:qa-remote-image",
+            "z_order": 100
+          },
+          {
+            "action_id": "downloadToCache:qa-remote-image",
+            "z_order": 101
+          },
+          {
+            "action_id": "copyThumbnail:qa-remote-image",
+            "z_order": 102
+          }
+        ],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "copyThumbnail:qa-remote-image": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 743
+          },
+          "downloadAndCopy:qa-remote-image": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 619
+          },
+          "downloadToCache:qa-remote-image": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 681
+          },
+          "hideRemoteRetrieval": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          }
+        },
+        "visible_texts": [
+          "9:41 图片详情MacBook Pro · 09:32 · 远端原图 UI-review-screenshot.png 列表只显示同步缩略图；原图 1.2 MB 留在 MacBook Pro，需要 P2P 取回。 远端原图缩略图可用仅 Wi‑Fi 尺寸1280 x 960 大小1.2 MB 提供方MacBook Pro 在线 缓存未下载到本机",
+          "9:41",
+          "图片详情MacBook Pro · 09:32 · 远端原图",
+          "图片详情",
+          "MacBook Pro · 09:32 · 远端原图",
+          "UI-review-screenshot.png 列表只显示同步缩略图；原图 1.2 MB 留在 MacBook Pro，需要 P2P 取回。 远端原图缩略图可用仅 Wi‑Fi",
+          "UI-review-screenshot.png",
+          "列表只显示同步缩略图；原图 1.2 MB 留在 MacBook Pro，需要 P2P 取回。",
+          "远端原图缩略图可用仅 Wi‑Fi",
+          "远端原图",
+          "缩略图可用",
+          "仅 Wi‑Fi",
+          "尺寸1280 x 960 大小1.2 MB 提供方MacBook Pro 在线 缓存未下载到本机",
+          "尺寸1280 x 960",
+          "尺寸",
+          "1280 x 960",
+          "大小1.2 MB",
+          "大小",
+          "1.2 MB",
+          "提供方MacBook Pro 在线",
+          "提供方",
+          "MacBook Pro 在线",
+          "缓存未下载到本机",
+          "缓存",
+          "未下载到本机",
+          "取回远端图片选择下载后如何处理，不自动覆盖剪贴板。 下载并复制P2P 取回原图后写入系统剪贴板 仅下载到本机缓存用于稍后打开或分享，不改变剪贴板 复制缩略图快速使用预览图，保留原图远端状态",
+          "取回远端图片选择下载后如何处理，不自动覆盖剪贴板。",
+          "取回远端图片",
+          "选择下载后如何处理，不自动覆盖剪贴板。",
+          "下载并复制P2P 取回原图后写入系统剪贴板 仅下载到本机缓存用于稍后打开或分享，不改变剪贴板 复制缩略图快速使用预览图，保留原图远端状态",
+          "下载并复制P2P 取回原图后写入系统剪贴板",
+          "下载并复制",
+          "P2P 取回原图后写入系统剪贴板",
+          "仅下载到本机缓存用于稍后打开或分享，不改变剪贴板",
+          "仅下载到本机缓存",
+          "用于稍后打开或分享，不改变剪贴板",
+          "复制缩略图快速使用预览图，保留原图远端状态",
+          "复制缩略图",
+          "快速使用预览图，保留原图远端状态"
+        ],
+        "visual_png_sha256": "8c644b057f4feee14753a0d88b5eb6022a489922baef4e90ad033778f0d74884"
+      },
+      "settings": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 106,
+              "y": 762
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 187,
+              "y": 762
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "setP2pEnabled",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 250
+            },
+            "stable_id": "setP2pEnabled"
+          },
+          {
+            "action_id": "openSettingsDetail:keep_alive",
+            "bounds": {
+              "height": 74,
+              "width": 340,
+              "x": 15,
+              "y": 389
+            },
+            "stable_id": "openSettingsDetail:keep_alive"
+          },
+          {
+            "action_id": "openSettingsDetail:floating_ball",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 463
+            },
+            "stable_id": "openSettingsDetail:floating_ball"
+          },
+          {
+            "action_id": "setWifiOnly",
+            "bounds": {
+              "height": 62,
+              "width": 340,
+              "x": 15,
+              "y": 526
+            },
+            "stable_id": "setWifiOnly"
+          }
+        ],
+        "aria_labels": [
+          "历史",
+          "设备",
+          "文件",
+          "P2P 远端取回图片和文件按需下载",
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理",
+          "悬浮球同步并复制最新内容已启用",
+          "文件与缓存428 MB · 仅 Wi‑Fi 下载"
+        ],
+        "bridge_action_ids": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "setP2pEnabled",
+          "openSettingsDetail:keep_alive",
+          "openSettingsDetail:floating_ball",
+          "setWifiOnly"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "openSettingsDetail:floating_ball": true,
+          "openSettingsDetail:keep_alive": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "setP2pEnabled": true,
+          "setWifiOnly": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "setP2pEnabled",
+          "openSettingsDetail:keep_alive",
+          "openSettingsDetail:floating_ball",
+          "setWifiOnly"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "P2P 远端取回图片和文件按需下载": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 250
+          },
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理": {
+            "height": 74,
+            "width": 340,
+            "x": 15,
+            "y": 389
+          },
+          "剪贴板同步文本、链接和缩略图自动同步": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 187
+          },
+          "同步服务运行中Server 在线 · 本机令牌已保存正常": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 106
+          },
+          "已连接设备MacBook Pro、iPad、Pixel3 台": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 313
+          },
+          "悬浮球同步并复制最新内容已启用": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 463
+          },
+          "文件与缓存428 MB · 仅 Wi‑Fi 下载": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 526
+          },
+          "服务端地址https://sync.example.com": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 602
+          },
+          "清理本机缓存不影响云端历史": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 665
+          },
+          "设置": {
+            "height": 25,
+            "width": 153,
+            "x": 16,
+            "y": 48
+          }
+        },
+        "route": "settings",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "settings",
+        "selected_nav": "设置",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "dark",
+        "touch_targets_px": {
+          "openSettingsDetail:floating_ball": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 463
+          },
+          "openSettingsDetail:keep_alive": {
+            "height": 74,
+            "width": 340,
+            "x": 15,
+            "y": 389
+          },
+          "selectDestination:devices": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "selectDestination:files": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "setP2pEnabled": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 250
+          },
+          "setWifiOnly": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 526
+          }
+        },
+        "visible_texts": [
+          "9:41 设置同步空间 · clipdock-home 同步服务运行中Server 在线 · 本机令牌已保存正常 剪贴板同步文本、链接和缩略图自动同步 P2P 远端取回图片和文件按需下载 已连接设备MacBook Pro、iPad、Pixel3 台 保活权限通知、后台、电池优化和厂商设置2 项待处理 悬浮球同步并复制最新内容已启用 文件与缓存428 MB · 仅 Wi‑Fi 下载 服务端地址https://sync.example.com 清理本机缓存不影响云端历史 历史设备文件设置",
+          "9:41",
+          "设置同步空间 · clipdock-home",
+          "设置",
+          "同步空间 · clipdock-home",
+          "同步服务运行中Server 在线 · 本机令牌已保存正常",
+          "同步服务运行中Server 在线 · 本机令牌已保存",
+          "同步服务运行中",
+          "Server 在线 · 本机令牌已保存",
+          "正常",
+          "剪贴板同步文本、链接和缩略图自动同步 P2P 远端取回图片和文件按需下载 已连接设备MacBook Pro、iPad、Pixel3 台",
+          "剪贴板同步文本、链接和缩略图自动同步",
+          "剪贴板同步",
+          "文本、链接和缩略图自动同步",
+          "P2P 远端取回图片和文件按需下载",
+          "P2P 远端取回",
+          "图片和文件按需下载",
+          "已连接设备MacBook Pro、iPad、Pixel3 台",
+          "已连接设备MacBook Pro、iPad、Pixel",
+          "已连接设备",
+          "MacBook Pro、iPad、Pixel",
+          "3 台",
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理 悬浮球同步并复制最新内容已启用 文件与缓存428 MB · 仅 Wi‑Fi 下载",
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理",
+          "保活权限通知、后台、电池优化和厂商设置",
+          "保活权限",
+          "通知、后台、电池优化和厂商设置",
+          "2 项待处理",
+          "悬浮球同步并复制最新内容已启用",
+          "悬浮球同步并复制最新内容",
+          "悬浮球",
+          "同步并复制最新内容",
+          "已启用",
+          "文件与缓存428 MB · 仅 Wi‑Fi 下载",
+          "文件与缓存",
+          "428 MB · 仅 Wi‑Fi 下载",
+          "服务端地址https://sync.example.com 清理本机缓存不影响云端历史",
+          "服务端地址https://sync.example.com",
+          "服务端地址",
+          "https://sync.example.com",
+          "清理本机缓存不影响云端历史",
+          "清理本机缓存",
+          "不影响云端历史",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "文件"
+        ],
+        "visual_png_sha256": "7eccb932bf9c7d9633b4e01b1aeb210200414825e632460e75f8ccabe2605211"
+      }
+    },
+    "light": {
+      "delete_confirm": {
+        "active_sheet": "delete_confirm",
+        "anchors": [
+          {
+            "action_id": "hideDeleteConfirm",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 16,
+              "y": 53
+            },
+            "stable_id": "hideDeleteConfirm"
+          },
+          {
+            "action_id": "removeLocalCache:qa-ready-text",
+            "bounds": {
+              "height": 46,
+              "width": 304,
+              "x": 33,
+              "y": 635
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "deleteSyncRecord:qa-ready-text",
+            "bounds": {
+              "height": 46,
+              "width": 304,
+              "x": 33,
+              "y": 690
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "hideDeleteConfirm",
+            "bounds": {
+              "height": 46,
+              "width": 304,
+              "x": 33,
+              "y": 745
+            },
+            "stable_id": "hideDeleteConfirm"
+          }
+        ],
+        "aria_labels": [
+          "取消删除",
+          "仅移除本机缓存",
+          "删除同步记录",
+          "取消"
+        ],
+        "bridge_action_ids": [
+          "hideDeleteConfirm",
+          "removeLocalCache:qa-ready-text",
+          "deleteSyncRecord:qa-ready-text"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "deleteSyncRecord:qa-ready-text": true,
+          "hideDeleteConfirm": true,
+          "removeLocalCache:qa-ready-text": false
+        },
+        "fallback": false,
+        "focus_order": [
+          "hideDeleteConfirm",
+          "removeLocalCache:qa-ready-text",
+          "deleteSyncRecord:qa-ready-text",
+          "hideDeleteConfirm"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "删除这条历史？ 如果只清理本机缓存，其他设备和同步空间仍保留记录。删除同步记录会从所有设备历史中移除。 仅移除本机缓存 删除同步": {
+            "height": 332,
+            "width": 342,
+            "x": 14,
+            "y": 478
+          },
+          "复制": {
+            "height": 66,
+            "width": 342,
+            "x": 14,
+            "y": 746
+          },
+          "文本详情": {
+            "height": 25,
+            "width": 180,
+            "x": 95,
+            "y": 48
+          }
+        },
+        "route": "delete_confirm",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "delete_confirm",
+        "selected_nav": null,
+        "selected_stable_id": "qa-ready-text",
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [
+          {
+            "action_id": "hideDeleteConfirm",
+            "z_order": 1
+          },
+          {
+            "action_id": "removeLocalCache:qa-ready-text",
+            "z_order": 100
+          },
+          {
+            "action_id": "deleteSyncRecord:qa-ready-text",
+            "z_order": 101
+          },
+          {
+            "action_id": "hideDeleteConfirm",
+            "z_order": 102
+          }
+        ],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "deleteSyncRecord:qa-ready-text": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 690
+          },
+          "hideDeleteConfirm": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 745
+          },
+          "removeLocalCache:qa-ready-text": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 635
+          }
+        },
+        "visible_texts": [
+          "9:41 文本详情MacBook Pro · 09:38 · seq 40 发布说明：Android 端新增远端取回入口 这条记录已经同步到 3 台设备，删除范围需要明确表达。 已同步3 台设备 内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。 复制",
+          "9:41",
+          "文本详情MacBook Pro · 09:38 · seq 40",
+          "文本详情",
+          "MacBook Pro · 09:38 · seq 40",
+          "发布说明：Android 端新增远端取回入口 这条记录已经同步到 3 台设备，删除范围需要明确表达。 已同步3 台设备",
+          "发布说明：Android 端新增远端取回入口",
+          "这条记录已经同步到 3 台设备，删除范围需要明确表达。",
+          "已同步3 台设备",
+          "已同步",
+          "3 台设备",
+          "内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。",
+          "内容预览",
+          "发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。",
+          "复制",
+          "删除这条历史？ 如果只清理本机缓存，其他设备和同步空间仍保留记录。删除同步记录会从所有设备历史中移除。 仅移除本机缓存 删除同步记录 取消",
+          "删除这条历史？",
+          "如果只清理本机缓存，其他设备和同步空间仍保留记录。删除同步记录会从所有设备历史中移除。",
+          "仅移除本机缓存 删除同步记录 取消",
+          "仅移除本机缓存",
+          "删除同步记录",
+          "取消"
+        ],
+        "visual_png_sha256": "3abfa14309a25c81c6e32d9bad61ce960e473861ec8334b8c1ebc8b8d5c23d60"
+      },
+      "devices": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 187,
+              "y": 762
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 268,
+              "y": 762
+            },
+            "stable_id": "selectDestination:settings"
+          }
+        ],
+        "aria_labels": [
+          "历史",
+          "文件",
+          "设置"
+        ],
+        "bridge_action_ids": [
+          "selectDestination:history",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "selectDestination:history",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "MacBook ProP2P endpoint 在线 · 2 秒前可取回": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 358
+          },
+          "Pixel 9 Pro · 本机实时已连接 · cursor 40在线": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 278
+          },
+          "iPad最后同步 18 分钟前离线": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 438
+          },
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "撤销丢失设备删除设备令牌后需要重新配对": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 518
+          },
+          "设备": {
+            "height": 25,
+            "width": 152,
+            "x": 16,
+            "y": 48
+          }
+        },
+        "route": "devices",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "devices",
+        "selected_nav": "设备",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "selectDestination:files": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "selectDestination:settings": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          }
+        },
+        "visible_texts": [
+          "9:41 设备clipdock-home · 3 台在线 3在线设备 40最新序号 2P2P 可用 邀请新设备生成 5 位配对码或扫码加入生成 Pixel 9 Pro · 本机实时已连接 · cursor 40在线 MacBook ProP2P endpoint 在线 · 2 秒前可取回 iPad最后同步 18 分钟前离线 撤销丢失设备删除设备令牌后需要重新配对 历史设备文件设置",
+          "9:41",
+          "设备clipdock-home · 3 台在线",
+          "设备",
+          "clipdock-home · 3 台在线",
+          "3在线设备 40最新序号 2P2P 可用",
+          "3在线设备",
+          "3",
+          "在线设备",
+          "40最新序号",
+          "40",
+          "最新序号",
+          "2P2P 可用",
+          "2",
+          "P2P 可用",
+          "邀请新设备生成 5 位配对码或扫码加入生成",
+          "邀请新设备生成 5 位配对码或扫码加入",
+          "邀请新设备",
+          "生成 5 位配对码或扫码加入",
+          "生成",
+          "Pixel 9 Pro · 本机实时已连接 · cursor 40在线",
+          "Pixel 9 Pro · 本机实时已连接 · cursor 40",
+          "Pixel 9 Pro · 本机",
+          "实时已连接 · cursor 40",
+          "在线",
+          "MacBook ProP2P endpoint 在线 · 2 秒前可取回",
+          "MacBook ProP2P endpoint 在线 · 2 秒前",
+          "MacBook Pro",
+          "P2P endpoint 在线 · 2 秒前",
+          "可取回",
+          "iPad最后同步 18 分钟前离线",
+          "iPad最后同步 18 分钟前",
+          "iPad",
+          "最后同步 18 分钟前",
+          "离线",
+          "撤销丢失设备删除设备令牌后需要重新配对",
+          "撤销丢失设备",
+          "删除设备令牌后需要重新配对",
+          "历史设备文件设置",
+          "历史",
+          "文件",
+          "设置"
+        ],
+        "visual_png_sha256": "67f4009d9efe86fc09d9a31af57cfe6246c468f3490aa649c99bc04941b306ef"
+      },
+      "files": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 106,
+              "y": 762
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 268,
+              "y": 762
+            },
+            "stable_id": "selectDestination:settings"
+          },
+          {
+            "action_id": "openItemDetail:qa-remote-image",
+            "bounds": {
+              "height": 68,
+              "width": 342,
+              "x": 14,
+              "y": 250
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "openItemDetail:qa-ready-file",
+            "bounds": {
+              "height": 68,
+              "width": 342,
+              "x": 14,
+              "y": 426
+            },
+            "stable_id": "qa-ready-file"
+          }
+        ],
+        "aria_labels": [
+          "历史",
+          "设备",
+          "设置",
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+          "Server-config.txt已缓存 · text/plain · 12 KB打开"
+        ],
+        "bridge_action_ids": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:settings",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "openItemDetail:qa-ready-file": true,
+          "openItemDetail:qa-remote-image": true,
+          "selectDestination:devices": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:settings",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "Release-notes.pdf正在从 MacBook Pro 下载 · 64%": {
+            "height": 84,
+            "width": 342,
+            "x": 14,
+            "y": 330
+          },
+          "Server-config.txt已缓存 · text/plain · 12 KB打开": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 426
+          },
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 250
+          },
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "文件": {
+            "height": 25,
+            "width": 169,
+            "x": 16,
+            "y": 48
+          },
+          "缓存策略上限 1 GB · 到期自动清理": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 506
+          }
+        },
+        "route": "files",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "files",
+        "selected_nav": "文件",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "openItemDetail:qa-ready-file": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 426
+          },
+          "openItemDetail:qa-remote-image": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 250
+          },
+          "selectDestination:devices": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "selectDestination:settings": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          }
+        },
+        "visible_texts": [
+          "9:41 文件远端 8 个 · 本机缓存 428 MB 全部图片文件已缓存 按需下载远端图片/文件不会在列表中自动下载仅 Wi‑Fi UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回 Release-notes.pdf正在从 MacBook Pro 下载 · 64% Server-config.txt已缓存 · text/plain · 12 KB打开 缓存策略上限 1 GB · 到期自动清理 历史设备文件设置",
+          "9:41",
+          "文件远端 8 个 · 本机缓存 428 MB",
+          "文件",
+          "远端 8 个 · 本机缓存 428 MB",
+          "全部图片文件已缓存",
+          "全部",
+          "图片",
+          "已缓存",
+          "按需下载远端图片/文件不会在列表中自动下载仅 Wi‑Fi",
+          "按需下载远端图片/文件不会在列表中自动下载",
+          "按需下载",
+          "远端图片/文件不会在列表中自动下载",
+          "仅 Wi‑Fi",
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+          "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端",
+          "UI-review-screenshot.png",
+          "MacBook Pro · 1.2 MB · 远端",
+          "取回",
+          "Release-notes.pdf正在从 MacBook Pro 下载 · 64%",
+          "Release-notes.pdf",
+          "正在从 MacBook Pro 下载 · 64%",
+          "Server-config.txt已缓存 · text/plain · 12 KB打开",
+          "Server-config.txt已缓存 · text/plain · 12 KB",
+          "Server-config.txt",
+          "已缓存 · text/plain · 12 KB",
+          "打开",
+          "缓存策略上限 1 GB · 到期自动清理",
+          "缓存策略",
+          "上限 1 GB · 到期自动清理",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "设置"
+        ],
+        "visual_png_sha256": "7c937f24023226e2fae25dffcca02f827cf7157dc29e84aba019ce7ce78e8784"
+      },
+      "floating_ball": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "closeSettingsDetail",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 318,
+              "y": 52
+            },
+            "stable_id": "closeSettingsDetail"
+          },
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 25,
+              "y": 764
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 106,
+              "y": 764
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 187,
+              "y": 764
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 40,
+              "width": 77,
+              "x": 268,
+              "y": 764
+            },
+            "stable_id": "selectDestination:settings"
+          },
+          {
+            "action_id": "setOverlayEnabled",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 235
+            },
+            "stable_id": "setOverlayEnabled"
+          },
+          {
+            "action_id": "setOverlayVerticalFraction",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 298
+            },
+            "stable_id": "setOverlayVerticalFraction"
+          },
+          {
+            "action_id": "setOverlaySnapEdge",
+            "bounds": {
+              "height": 62,
+              "width": 340,
+              "x": 15,
+              "y": 361
+            },
+            "stable_id": "setOverlaySnapEdge"
+          },
+          {
+            "action_id": "setOverlaySize",
+            "bounds": {
+              "height": 88,
+              "width": 342,
+              "x": 14,
+              "y": 556
+            },
+            "stable_id": "setOverlaySize"
+          },
+          {
+            "action_id": "setOverlayOpacity",
+            "bounds": {
+              "height": 88,
+              "width": 342,
+              "x": 14,
+              "y": 656
+            },
+            "stable_id": "setOverlayOpacity"
+          },
+          {
+            "action_id": "setOverlaySnapEdge",
+            "bounds": {
+              "height": 115,
+              "width": 342,
+              "x": 14,
+              "y": 429
+            },
+            "stable_id": "setOverlaySnapEdge"
+          }
+        ],
+        "aria_labels": [
+          "返回设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置",
+          "启用悬浮球显示在系统桌面边缘",
+          "点击动作同步一次并复制最新可用内容默认",
+          "停靠边缘拖动松手后自动吸附右侧",
+          "尺寸64 dp · 兼顾可点按和遮挡范围",
+          "闲置透明度78% · 不完全隐藏，保持可发现",
+          "停靠方向当前吸附到右侧边缘左侧右侧"
+        ],
+        "bridge_action_ids": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "setOverlayEnabled",
+          "setOverlayVerticalFraction",
+          "setOverlaySnapEdge",
+          "setOverlaySize",
+          "setOverlayOpacity"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "closeSettingsDetail": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true,
+          "setOverlayEnabled": true,
+          "setOverlayOpacity": true,
+          "setOverlaySize": true,
+          "setOverlaySnapEdge": true,
+          "setOverlayVerticalFraction": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "setOverlayEnabled",
+          "setOverlayVerticalFraction",
+          "setOverlaySnapEdge",
+          "setOverlaySize",
+          "setOverlayOpacity",
+          "setOverlaySnapEdge"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "停靠方向当前吸附到右侧边缘左侧右侧": {
+            "height": 115,
+            "width": 342,
+            "x": 14,
+            "y": 429
+          },
+          "停靠边缘拖动松手后自动吸附右侧": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 361
+          },
+          "启用悬浮球显示在系统桌面边缘": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 235
+          },
+          "尺寸64 dp · 兼顾可点按和遮挡范围": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 556
+          },
+          "悬浮球": {
+            "height": 25,
+            "width": 117,
+            "x": 16,
+            "y": 47
+          },
+          "点击动作同步一次并复制最新可用内容默认": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 298
+          },
+          "闲置透明度78% · 不完全隐藏，保持可发现": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 656
+          }
+        },
+        "route": "floating_ball",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "floating_ball",
+        "selected_nav": "设置",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "closeSettingsDetail": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 52
+          },
+          "selectDestination:devices": {
+            "height": 40,
+            "width": 77,
+            "x": 106,
+            "y": 764
+          },
+          "selectDestination:files": {
+            "height": 40,
+            "width": 77,
+            "x": 187,
+            "y": 764
+          },
+          "selectDestination:history": {
+            "height": 40,
+            "width": 77,
+            "x": 25,
+            "y": 764
+          },
+          "selectDestination:settings": {
+            "height": 40,
+            "width": 77,
+            "x": 268,
+            "y": 764
+          },
+          "setOverlayEnabled": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 235
+          },
+          "setOverlayOpacity": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 656
+          },
+          "setOverlaySize": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 556
+          },
+          "setOverlaySnapEdge": {
+            "height": 115,
+            "width": 342,
+            "x": 14,
+            "y": 429
+          },
+          "setOverlayVerticalFraction": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 298
+          }
+        },
+        "visible_texts": [
+          "9:41 悬浮球桌面快速同步并复制 已复制最新内容发布说明：Android 端新增远端取回入口 启用悬浮球显示在系统桌面边缘 点击动作同步一次并复制最新可用内容默认 停靠边缘拖动松手后自动吸附右侧 停靠方向当前吸附到右侧边缘左侧右侧 尺寸64 dp · 兼顾可点按和遮挡范围 闲置透明度78% · 不完全隐藏，保持可发现 历史设备文件设置",
+          "9:41",
+          "悬浮球桌面快速同步并复制",
+          "悬浮球",
+          "桌面快速同步并复制",
+          "已复制最新内容发布说明：Android 端新增远端取回入口",
+          "已复制最新内容",
+          "发布说明：Android 端新增远端取回入口",
+          "启用悬浮球显示在系统桌面边缘 点击动作同步一次并复制最新可用内容默认 停靠边缘拖动松手后自动吸附右侧",
+          "启用悬浮球显示在系统桌面边缘",
+          "启用悬浮球",
+          "显示在系统桌面边缘",
+          "点击动作同步一次并复制最新可用内容默认",
+          "点击动作同步一次并复制最新可用内容",
+          "点击动作",
+          "同步一次并复制最新可用内容",
+          "默认",
+          "停靠边缘拖动松手后自动吸附右侧",
+          "停靠边缘拖动松手后自动吸附",
+          "停靠边缘",
+          "拖动松手后自动吸附",
+          "右侧",
+          "停靠方向当前吸附到右侧边缘左侧右侧",
+          "停靠方向当前吸附到右侧边缘",
+          "停靠方向",
+          "当前吸附到右侧边缘",
+          "左侧右侧",
+          "左侧",
+          "尺寸64 dp · 兼顾可点按和遮挡范围",
+          "尺寸",
+          "64 dp · 兼顾可点按和遮挡范围",
+          "闲置透明度78% · 不完全隐藏，保持可发现",
+          "闲置透明度",
+          "78% · 不完全隐藏，保持可发现",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置"
+        ],
+        "visual_png_sha256": "7d5584c868ec9c7a434a251494f23efe0165ad9538324b2ff5ba3c97c602c536"
+      },
+      "history": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "syncNow",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 274,
+              "y": 47
+            },
+            "stable_id": "syncNow"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 34,
+              "width": 77,
+              "x": 106,
+              "y": 770
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 34,
+              "width": 77,
+              "x": 187,
+              "y": 770
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 34,
+              "width": 77,
+              "x": 268,
+              "y": 770
+            },
+            "stable_id": "selectDestination:settings"
+          },
+          {
+            "action_id": "openItemDetail:qa-ready-text",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 14,
+              "y": 280
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "openItemDetail:qa-remote-image",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 190,
+              "y": 280
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "openItemDetail:qa-ready-file",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 14,
+              "y": 440
+            },
+            "stable_id": "qa-ready-file"
+          },
+          {
+            "action_id": "openItemDetail:qa-link",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 190,
+              "y": 440
+            },
+            "stable_id": "qa-link"
+          },
+          {
+            "action_id": "openItemDetail:qa-color",
+            "bounds": {
+              "height": 150,
+              "width": 166,
+              "x": 14,
+              "y": 600
+            },
+            "stable_id": "qa-color"
+          },
+          {
+            "action_id": "copyItem:qa-ready-text",
+            "bounds": {
+              "height": 20,
+              "width": 38,
+              "x": 25,
+              "y": 401
+            },
+            "stable_id": "qa-ready-text"
+          }
+        ],
+        "aria_labels": [
+          "立即同步",
+          "设备",
+          "文件",
+          "设置",
+          "打开 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "打开 图片09:321086 × 1448",
+          "打开 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "打开 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "打开 颜色08:12#7C3AEDRGB 124,58,237",
+          "复制"
+        ],
+        "bridge_action_ids": [
+          "syncNow",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "openItemDetail:qa-ready-text",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file",
+          "openItemDetail:qa-link",
+          "openItemDetail:qa-color",
+          "copyItem:qa-ready-text"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "copyItem:qa-ready-text": true,
+          "openItemDetail:qa-color": true,
+          "openItemDetail:qa-link": true,
+          "openItemDetail:qa-ready-file": true,
+          "openItemDetail:qa-ready-text": true,
+          "openItemDetail:qa-remote-image": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:settings": true,
+          "syncNow": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "syncNow",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings",
+          "openItemDetail:qa-ready-text",
+          "openItemDetail:qa-remote-image",
+          "openItemDetail:qa-ready-file",
+          "openItemDetail:qa-link",
+          "openItemDetail:qa-color",
+          "copyItem:qa-ready-text"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "剪贴板": {
+            "height": 25,
+            "width": 173,
+            "x": 16,
+            "y": 43
+          },
+          "图片09:321086 × 1448": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 280
+          },
+          "文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Ser": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 440
+          },
+          "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 280
+          },
+          "链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup ·": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 440
+          },
+          "颜色08:12#7C3AEDRGB 124,58,237": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 600
+          }
+        },
+        "route": "history",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "history",
+        "selected_nav": "历史",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "copyItem:qa-ready-text": {
+            "height": 20,
+            "width": 38,
+            "x": 25,
+            "y": 401
+          },
+          "openItemDetail:qa-color": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 600
+          },
+          "openItemDetail:qa-link": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 440
+          },
+          "openItemDetail:qa-ready-file": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 440
+          },
+          "openItemDetail:qa-ready-text": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 280
+          },
+          "openItemDetail:qa-remote-image": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 280
+          },
+          "selectDestination:devices": {
+            "height": 34,
+            "width": 77,
+            "x": 106,
+            "y": 770
+          },
+          "selectDestination:files": {
+            "height": 34,
+            "width": 77,
+            "x": 187,
+            "y": 770
+          },
+          "selectDestination:settings": {
+            "height": 34,
+            "width": 77,
+            "x": 268,
+            "y": 770
+          },
+          "syncNow": {
+            "height": 36,
+            "width": 36,
+            "x": 274,
+            "y": 47
+          }
+        },
+        "visible_texts": [
+          "9:41 剪贴板刚刚同步 12 条 · 3 台设备在线 搜索文本、链接、文件名 全部文本图片文件 同步正常下一次实时同步已连接2 秒前 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符 图片09:321086 × 1448 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明 颜色08:12#7C3AEDRGB 124,58,237 历史设备文件设置",
+          "9:41",
+          "剪贴板刚刚同步 12 条 · 3 台设备在线",
+          "剪贴板",
+          "刚刚同步 12 条 · 3 台设备在线",
+          "搜索文本、链接、文件名",
+          "全部文本图片文件",
+          "全部",
+          "文本",
+          "图片",
+          "文件",
+          "同步正常下一次实时同步已连接2 秒前",
+          "同步正常下一次实时同步已连接",
+          "同步正常",
+          "下一次实时同步已连接",
+          "2 秒前",
+          "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符 图片09:321086 × 1448 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明 颜色08:12#7C3AEDRGB 124,58,237",
+          "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "文本09:38",
+          "09:38",
+          "发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。",
+          "复制64 字符",
+          "复制",
+          "64 字符",
+          "图片09:321086 × 1448",
+          "图片09:32",
+          "09:32",
+          "1086 × 1448",
+          "文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "文件08:31",
+          "08:31",
+          "/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "链接08:54",
+          "链接",
+          "08:54",
+          "docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "docs.clipdock.app",
+          "https://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "颜色08:12#7C3AEDRGB 124,58,237",
+          "颜色08:12",
+          "颜色",
+          "08:12",
+          "#7C3AEDRGB 124,58,237",
+          "#7C3AED",
+          "RGB 124,58,237",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "设置"
+        ],
+        "visual_png_sha256": "8d6a8d260d0e6b30ce3ffad51d099d2f6f80e6c33c7c849b7c169a97453813a8"
+      },
+      "item_detail_text": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "closeDetail",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 16,
+              "y": 53
+            },
+            "stable_id": "closeDetail"
+          },
+          {
+            "action_id": "copyItem:qa-ready-text",
+            "bounds": {
+              "height": 44,
+              "width": 112,
+              "x": 25,
+              "y": 757
+            },
+            "stable_id": "qa-ready-text"
+          },
+          {
+            "action_id": "showDeleteConfirm:qa-ready-text",
+            "bounds": {
+              "height": 44,
+              "width": 44,
+              "x": 301,
+              "y": 757
+            },
+            "stable_id": "qa-ready-text"
+          }
+        ],
+        "aria_labels": [
+          "返回",
+          "复制",
+          "删除"
+        ],
+        "bridge_action_ids": [
+          "closeDetail",
+          "copyItem:qa-ready-text",
+          "showDeleteConfirm:qa-ready-text"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "closeDetail": true,
+          "copyItem:qa-ready-text": true,
+          "showDeleteConfirm:qa-ready-text": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "closeDetail",
+          "copyItem:qa-ready-text",
+          "showDeleteConfirm:qa-ready-text"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "复制": {
+            "height": 66,
+            "width": 342,
+            "x": 14,
+            "y": 746
+          },
+          "文本详情": {
+            "height": 25,
+            "width": 180,
+            "x": 95,
+            "y": 48
+          }
+        },
+        "route": "item_detail_text",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "item_detail_text",
+        "selected_nav": null,
+        "selected_stable_id": "qa-ready-text",
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "closeDetail": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "copyItem:qa-ready-text": {
+            "height": 44,
+            "width": 112,
+            "x": 25,
+            "y": 757
+          },
+          "showDeleteConfirm:qa-ready-text": {
+            "height": 44,
+            "width": 44,
+            "x": 301,
+            "y": 757
+          }
+        },
+        "visible_texts": [
+          "9:41 文本详情MacBook Pro · 09:38 · seq 40 发布说明：Android 端新增远端取回入口 从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。 本机可复制已同步未固定 内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。 sync_policy: text_auto, asset_on_demandsource_device: MacBook Procreated_at: 2026-06-04 09:38 来源MacBook Pro 状态已同步到本机 空间clipdock-home 保留30 天后清理 复制",
+          "9:41",
+          "文本详情MacBook Pro · 09:38 · seq 40",
+          "文本详情",
+          "MacBook Pro · 09:38 · seq 40",
+          "发布说明：Android 端新增远端取回入口 从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。 本机可复制已同步未固定",
+          "发布说明：Android 端新增远端取回入口",
+          "从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。",
+          "本机可复制已同步未固定",
+          "本机可复制",
+          "已同步",
+          "未固定",
+          "内容预览 发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。 sync_policy: text_auto, asset_on_demandsource_device: MacBook Procreated_at: 2026-06-04 09:38",
+          "内容预览",
+          "发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。",
+          "sync_policy: text_auto, asset_on_demandsource_device: MacBook Procreated_at: 2026-06-04 09:38",
+          "来源MacBook Pro 状态已同步到本机 空间clipdock-home 保留30 天后清理",
+          "来源MacBook Pro",
+          "来源",
+          "MacBook Pro",
+          "状态已同步到本机",
+          "状态",
+          "已同步到本机",
+          "空间clipdock-home",
+          "空间",
+          "clipdock-home",
+          "保留30 天后清理",
+          "保留",
+          "30 天后清理",
+          "复制"
+        ],
+        "visual_png_sha256": "e4580d04c1c3313811b5db46c9c5cf267f58d23b9defaa28c7cb83a6fbe4473b"
+      },
+      "keep_alive": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "closeSettingsDetail",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 318,
+              "y": 53
+            },
+            "stable_id": "closeSettingsDetail"
+          },
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 106,
+              "y": 762
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 187,
+              "y": 762
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "selectDestination:settings",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 268,
+              "y": 762
+            },
+            "stable_id": "selectDestination:settings"
+          }
+        ],
+        "aria_labels": [
+          "返回设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置"
+        ],
+        "bridge_action_ids": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "closeSettingsDetail": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "selectDestination:settings": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "closeSettingsDetail",
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "selectDestination:settings"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "保活权限": {
+            "height": 25,
+            "width": 182,
+            "x": 16,
+            "y": 48
+          },
+          "全局悬浮窗允许桌面显示悬浮球已授权": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 200
+          },
+          "剪贴板隐私敏感内容写入时使用系统隐私标记内置": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 531
+          },
+          "厂商后台保护MIUI/ColorOS 等需要手动允许自启动去设置": {
+            "height": 79,
+            "width": 342,
+            "x": 14,
+            "y": 440
+          },
+          "忽略电池优化降低 Doze/App Standby 中断概率建议": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 360
+          },
+          "通知权限用于前台同步状态提示去开启": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 280
+          }
+        },
+        "route": "keep_alive",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "keep_alive",
+        "selected_nav": "设置",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "closeSettingsDetail": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 53
+          },
+          "selectDestination:devices": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "selectDestination:files": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "selectDestination:settings": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          }
+        },
+        "visible_texts": [
+          "9:41 保活权限确保悬浮球和实时同步可靠运行 还差 2 项建议权限不影响基础使用，但会影响后台实时同步检查 全局悬浮窗允许桌面显示悬浮球已授权 通知权限用于前台同步状态提示去开启 忽略电池优化降低 Doze/App Standby 中断概率建议 厂商后台保护MIUI/ColorOS 等需要手动允许自启动去设置 剪贴板隐私敏感内容写入时使用系统隐私标记内置 历史设备文件设置",
+          "9:41",
+          "保活权限确保悬浮球和实时同步可靠运行",
+          "保活权限",
+          "确保悬浮球和实时同步可靠运行",
+          "还差 2 项建议权限不影响基础使用，但会影响后台实时同步检查",
+          "还差 2 项建议权限不影响基础使用，但会影响后台实时同步",
+          "还差 2 项建议权限",
+          "不影响基础使用，但会影响后台实时同步",
+          "检查",
+          "全局悬浮窗允许桌面显示悬浮球已授权",
+          "全局悬浮窗允许桌面显示悬浮球",
+          "全局悬浮窗",
+          "允许桌面显示悬浮球",
+          "已授权",
+          "通知权限用于前台同步状态提示去开启",
+          "通知权限用于前台同步状态提示",
+          "通知权限",
+          "用于前台同步状态提示",
+          "去开启",
+          "忽略电池优化降低 Doze/App Standby 中断概率建议",
+          "忽略电池优化降低 Doze/App Standby 中断概率",
+          "忽略电池优化",
+          "降低 Doze/App Standby 中断概率",
+          "建议",
+          "厂商后台保护MIUI/ColorOS 等需要手动允许自启动去设置",
+          "厂商后台保护MIUI/ColorOS 等需要手动允许自启动",
+          "厂商后台保护",
+          "MIUI/ColorOS 等需要手动允许自启动",
+          "去设置",
+          "剪贴板隐私敏感内容写入时使用系统隐私标记内置",
+          "剪贴板隐私敏感内容写入时使用系统隐私标记",
+          "剪贴板隐私",
+          "敏感内容写入时使用系统隐私标记",
+          "内置",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "文件",
+          "设置"
+        ],
+        "visual_png_sha256": "02d7845ddcef5bf46dfc283d568791955bf8935c6742c8c6c2522d7eeedeecb9"
+      },
+      "remote_asset_sheet": {
+        "active_sheet": "remote_retrieval",
+        "anchors": [
+          {
+            "action_id": "hideRemoteRetrieval",
+            "bounds": {
+              "height": 36,
+              "width": 36,
+              "x": 16,
+              "y": 53
+            },
+            "stable_id": "hideRemoteRetrieval"
+          },
+          {
+            "action_id": "downloadAndCopy:qa-remote-image",
+            "bounds": {
+              "height": 54,
+              "width": 316,
+              "x": 27,
+              "y": 619
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "downloadToCache:qa-remote-image",
+            "bounds": {
+              "height": 54,
+              "width": 316,
+              "x": 27,
+              "y": 681
+            },
+            "stable_id": "qa-remote-image"
+          },
+          {
+            "action_id": "copyThumbnail:qa-remote-image",
+            "bounds": {
+              "height": 54,
+              "width": 316,
+              "x": 27,
+              "y": 743
+            },
+            "stable_id": "qa-remote-image"
+          }
+        ],
+        "aria_labels": [
+          "关闭远端取回",
+          "下载并复制P2P 取回原图后写入系统剪贴板",
+          "仅下载到本机缓存用于稍后打开或分享，不改变剪贴板",
+          "复制缩略图快速使用预览图，保留原图远端状态"
+        ],
+        "bridge_action_ids": [
+          "hideRemoteRetrieval",
+          "downloadAndCopy:qa-remote-image",
+          "downloadToCache:qa-remote-image",
+          "copyThumbnail:qa-remote-image"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "copyThumbnail:qa-remote-image": true,
+          "downloadAndCopy:qa-remote-image": true,
+          "downloadToCache:qa-remote-image": true,
+          "hideRemoteRetrieval": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "hideRemoteRetrieval",
+          "downloadAndCopy:qa-remote-image",
+          "downloadToCache:qa-remote-image",
+          "copyThumbnail:qa-remote-image"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "取回远端图片选择下载后如何处理，不自动覆盖剪贴板。 下载并复制P2P 取回原图后写入系统剪贴板 仅下载到本机缓存用于稍后打开或分": {
+            "height": 278,
+            "width": 342,
+            "x": 14,
+            "y": 532
+          },
+          "图片详情": {
+            "height": 25,
+            "width": 190,
+            "x": 90,
+            "y": 48
+          }
+        },
+        "route": "remote_asset_sheet",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "remote_asset_sheet",
+        "selected_nav": null,
+        "selected_stable_id": "qa-remote-image",
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [
+          {
+            "action_id": "hideRemoteRetrieval",
+            "z_order": 1
+          },
+          {
+            "action_id": "downloadAndCopy:qa-remote-image",
+            "z_order": 100
+          },
+          {
+            "action_id": "downloadToCache:qa-remote-image",
+            "z_order": 101
+          },
+          {
+            "action_id": "copyThumbnail:qa-remote-image",
+            "z_order": 102
+          }
+        ],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "copyThumbnail:qa-remote-image": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 743
+          },
+          "downloadAndCopy:qa-remote-image": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 619
+          },
+          "downloadToCache:qa-remote-image": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 681
+          },
+          "hideRemoteRetrieval": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          }
+        },
+        "visible_texts": [
+          "9:41 图片详情MacBook Pro · 09:32 · 远端原图 UI-review-screenshot.png 列表只显示同步缩略图；原图 1.2 MB 留在 MacBook Pro，需要 P2P 取回。 远端原图缩略图可用仅 Wi‑Fi 尺寸1280 x 960 大小1.2 MB 提供方MacBook Pro 在线 缓存未下载到本机",
+          "9:41",
+          "图片详情MacBook Pro · 09:32 · 远端原图",
+          "图片详情",
+          "MacBook Pro · 09:32 · 远端原图",
+          "UI-review-screenshot.png 列表只显示同步缩略图；原图 1.2 MB 留在 MacBook Pro，需要 P2P 取回。 远端原图缩略图可用仅 Wi‑Fi",
+          "UI-review-screenshot.png",
+          "列表只显示同步缩略图；原图 1.2 MB 留在 MacBook Pro，需要 P2P 取回。",
+          "远端原图缩略图可用仅 Wi‑Fi",
+          "远端原图",
+          "缩略图可用",
+          "仅 Wi‑Fi",
+          "尺寸1280 x 960 大小1.2 MB 提供方MacBook Pro 在线 缓存未下载到本机",
+          "尺寸1280 x 960",
+          "尺寸",
+          "1280 x 960",
+          "大小1.2 MB",
+          "大小",
+          "1.2 MB",
+          "提供方MacBook Pro 在线",
+          "提供方",
+          "MacBook Pro 在线",
+          "缓存未下载到本机",
+          "缓存",
+          "未下载到本机",
+          "取回远端图片选择下载后如何处理，不自动覆盖剪贴板。 下载并复制P2P 取回原图后写入系统剪贴板 仅下载到本机缓存用于稍后打开或分享，不改变剪贴板 复制缩略图快速使用预览图，保留原图远端状态",
+          "取回远端图片选择下载后如何处理，不自动覆盖剪贴板。",
+          "取回远端图片",
+          "选择下载后如何处理，不自动覆盖剪贴板。",
+          "下载并复制P2P 取回原图后写入系统剪贴板 仅下载到本机缓存用于稍后打开或分享，不改变剪贴板 复制缩略图快速使用预览图，保留原图远端状态",
+          "下载并复制P2P 取回原图后写入系统剪贴板",
+          "下载并复制",
+          "P2P 取回原图后写入系统剪贴板",
+          "仅下载到本机缓存用于稍后打开或分享，不改变剪贴板",
+          "仅下载到本机缓存",
+          "用于稍后打开或分享，不改变剪贴板",
+          "复制缩略图快速使用预览图，保留原图远端状态",
+          "复制缩略图",
+          "快速使用预览图，保留原图远端状态"
+        ],
+        "visual_png_sha256": "de9d6234700aabbbbd7a8550fde6e4ec879d22cfb215b53c86b5803f07c5b9cf"
+      },
+      "settings": {
+        "active_sheet": null,
+        "anchors": [
+          {
+            "action_id": "selectDestination:history",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 25,
+              "y": 762
+            },
+            "stable_id": "selectDestination:history"
+          },
+          {
+            "action_id": "selectDestination:devices",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 106,
+              "y": 762
+            },
+            "stable_id": "selectDestination:devices"
+          },
+          {
+            "action_id": "selectDestination:files",
+            "bounds": {
+              "height": 42,
+              "width": 77,
+              "x": 187,
+              "y": 762
+            },
+            "stable_id": "selectDestination:files"
+          },
+          {
+            "action_id": "setP2pEnabled",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 250
+            },
+            "stable_id": "setP2pEnabled"
+          },
+          {
+            "action_id": "openSettingsDetail:keep_alive",
+            "bounds": {
+              "height": 74,
+              "width": 340,
+              "x": 15,
+              "y": 389
+            },
+            "stable_id": "openSettingsDetail:keep_alive"
+          },
+          {
+            "action_id": "openSettingsDetail:floating_ball",
+            "bounds": {
+              "height": 63,
+              "width": 340,
+              "x": 15,
+              "y": 463
+            },
+            "stable_id": "openSettingsDetail:floating_ball"
+          },
+          {
+            "action_id": "setWifiOnly",
+            "bounds": {
+              "height": 62,
+              "width": 340,
+              "x": 15,
+              "y": 526
+            },
+            "stable_id": "setWifiOnly"
+          }
+        ],
+        "aria_labels": [
+          "历史",
+          "设备",
+          "文件",
+          "P2P 远端取回图片和文件按需下载",
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理",
+          "悬浮球同步并复制最新内容已启用",
+          "文件与缓存428 MB · 仅 Wi‑Fi 下载"
+        ],
+        "bridge_action_ids": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "setP2pEnabled",
+          "openSettingsDetail:keep_alive",
+          "openSettingsDetail:floating_ball",
+          "setWifiOnly"
+        ],
+        "computed": {
+          "screen": {
+            "bounds": {
+              "height": 824,
+              "width": 370,
+              "x": 0,
+              "y": 0
+            }
+          }
+        },
+        "enabled_states": {
+          "openSettingsDetail:floating_ball": true,
+          "openSettingsDetail:keep_alive": true,
+          "selectDestination:devices": true,
+          "selectDestination:files": true,
+          "selectDestination:history": true,
+          "setP2pEnabled": true,
+          "setWifiOnly": true
+        },
+        "fallback": false,
+        "focus_order": [
+          "selectDestination:history",
+          "selectDestination:devices",
+          "selectDestination:files",
+          "setP2pEnabled",
+          "openSettingsDetail:keep_alive",
+          "openSettingsDetail:floating_ball",
+          "setWifiOnly"
+        ],
+        "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+        "key_bounds_px": {
+          "P2P 远端取回图片和文件按需下载": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 250
+          },
+          "screen": {
+            "height": 824,
+            "width": 370,
+            "x": 0,
+            "y": 0
+          },
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理": {
+            "height": 74,
+            "width": 340,
+            "x": 15,
+            "y": 389
+          },
+          "剪贴板同步文本、链接和缩略图自动同步": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 187
+          },
+          "同步服务运行中Server 在线 · 本机令牌已保存正常": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 106
+          },
+          "已连接设备MacBook Pro、iPad、Pixel3 台": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 313
+          },
+          "悬浮球同步并复制最新内容已启用": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 463
+          },
+          "文件与缓存428 MB · 仅 Wi‑Fi 下载": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 526
+          },
+          "服务端地址https://sync.example.com": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 602
+          },
+          "清理本机缓存不影响云端历史": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 665
+          },
+          "设置": {
+            "height": 25,
+            "width": 153,
+            "x": 16,
+            "y": 48
+          }
+        },
+        "route": "settings",
+        "runtime_asset_sha256": null,
+        "runtime_dom_source": "playwright-reference-dom",
+        "screen_id": "settings",
+        "selected_nav": "设置",
+        "selected_stable_id": null,
+        "semantic_source": "dom-extracted-reference-and-production-hotzones",
+        "sheet_order": [],
+        "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+        "theme": "light",
+        "touch_targets_px": {
+          "openSettingsDetail:floating_ball": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 463
+          },
+          "openSettingsDetail:keep_alive": {
+            "height": 74,
+            "width": 340,
+            "x": 15,
+            "y": 389
+          },
+          "selectDestination:devices": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "selectDestination:files": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "selectDestination:history": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "setP2pEnabled": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 250
+          },
+          "setWifiOnly": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 526
+          }
+        },
+        "visible_texts": [
+          "9:41 设置同步空间 · clipdock-home 同步服务运行中Server 在线 · 本机令牌已保存正常 剪贴板同步文本、链接和缩略图自动同步 P2P 远端取回图片和文件按需下载 已连接设备MacBook Pro、iPad、Pixel3 台 保活权限通知、后台、电池优化和厂商设置2 项待处理 悬浮球同步并复制最新内容已启用 文件与缓存428 MB · 仅 Wi‑Fi 下载 服务端地址https://sync.example.com 清理本机缓存不影响云端历史 历史设备文件设置",
+          "9:41",
+          "设置同步空间 · clipdock-home",
+          "设置",
+          "同步空间 · clipdock-home",
+          "同步服务运行中Server 在线 · 本机令牌已保存正常",
+          "同步服务运行中Server 在线 · 本机令牌已保存",
+          "同步服务运行中",
+          "Server 在线 · 本机令牌已保存",
+          "正常",
+          "剪贴板同步文本、链接和缩略图自动同步 P2P 远端取回图片和文件按需下载 已连接设备MacBook Pro、iPad、Pixel3 台",
+          "剪贴板同步文本、链接和缩略图自动同步",
+          "剪贴板同步",
+          "文本、链接和缩略图自动同步",
+          "P2P 远端取回图片和文件按需下载",
+          "P2P 远端取回",
+          "图片和文件按需下载",
+          "已连接设备MacBook Pro、iPad、Pixel3 台",
+          "已连接设备MacBook Pro、iPad、Pixel",
+          "已连接设备",
+          "MacBook Pro、iPad、Pixel",
+          "3 台",
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理 悬浮球同步并复制最新内容已启用 文件与缓存428 MB · 仅 Wi‑Fi 下载",
+          "保活权限通知、后台、电池优化和厂商设置2 项待处理",
+          "保活权限通知、后台、电池优化和厂商设置",
+          "保活权限",
+          "通知、后台、电池优化和厂商设置",
+          "2 项待处理",
+          "悬浮球同步并复制最新内容已启用",
+          "悬浮球同步并复制最新内容",
+          "悬浮球",
+          "同步并复制最新内容",
+          "已启用",
+          "文件与缓存428 MB · 仅 Wi‑Fi 下载",
+          "文件与缓存",
+          "428 MB · 仅 Wi‑Fi 下载",
+          "服务端地址https://sync.example.com 清理本机缓存不影响云端历史",
+          "服务端地址https://sync.example.com",
+          "服务端地址",
+          "https://sync.example.com",
+          "清理本机缓存不影响云端历史",
+          "清理本机缓存",
+          "不影响云端历史",
+          "历史设备文件设置",
+          "历史",
+          "设备",
+          "文件"
+        ],
+        "visual_png_sha256": "265eb9a88554ef11d3857c634273671a88baf88fe1b1d35de81ce1ce28a5a22a"
+      }
+    }
+  },
+  "source": "playwright-design-render",
+  "sourceManifest": {
+    "entry": "src/index.html",
+    "networkResources": false,
+    "reference": "reference/clipdock-mobile-complete-design-v4.html",
+    "runtimeAssetPath": "Android/app/src/main/assets/clipdock-mobile-v4",
+    "source": "Android/ui-web/mobile-v4",
+    "version": 1
+  },
+  "sourceTreeSha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "version": 5,
+  "visualPngSha256": {
+    "dark": {
+      "delete_confirm": "c6bd1444594610c0a88f3fad4b1a02c3c02ec66555f9e2553783fdedc34cd5f8",
+      "devices": "29ebe9436883e33892c058cebf74fe3614c3d94885323b18aa81f28940f0780a",
+      "files": "a3afe8d912d75c2eba3bca1b7bfc53ebe0d0794a10277c7d186276d137873c3e",
+      "floating_ball": "1cbd3d895b07620782d0cec52cc65418377ae21a6be5aec808dbe20ff0a1f521",
+      "history": "6094a1ca1fef7086d81499808467cba1ac7f4b969c183b5f7ffe5d64626b6254",
+      "item_detail_text": "55784448883eaebfeb0f08600e70edb5096d768e1ca081f8c6e75c8b7771d1fa",
+      "keep_alive": "fadcb69b2625800ccb2697b1d234320cd130f21b7fa482e0c9d07dfbf4cbfd12",
+      "remote_asset_sheet": "8c644b057f4feee14753a0d88b5eb6022a489922baef4e90ad033778f0d74884",
+      "settings": "7eccb932bf9c7d9633b4e01b1aeb210200414825e632460e75f8ccabe2605211"
+    },
+    "light": {
+      "delete_confirm": "3abfa14309a25c81c6e32d9bad61ce960e473861ec8334b8c1ebc8b8d5c23d60",
+      "devices": "67f4009d9efe86fc09d9a31af57cfe6246c468f3490aa649c99bc04941b306ef",
+      "files": "7c937f24023226e2fae25dffcca02f827cf7157dc29e84aba019ce7ce78e8784",
+      "floating_ball": "7d5584c868ec9c7a434a251494f23efe0165ad9538324b2ff5ba3c97c602c536",
+      "history": "8d6a8d260d0e6b30ce3ffad51d099d2f6f80e6c33c7c849b7c169a97453813a8",
+      "item_detail_text": "e4580d04c1c3313811b5db46c9c5cf267f58d23b9defaa28c7cb83a6fbe4473b",
+      "keep_alive": "02d7845ddcef5bf46dfc283d568791955bf8935c6742c8c6c2522d7eeedeecb9",
+      "remote_asset_sheet": "de9d6234700aabbbbd7a8550fde6e4ec879d22cfb215b53c86b5803f07c5b9cf",
+      "settings": "265eb9a88554ef11d3857c634273671a88baf88fe1b1d35de81ce1ce28a5a22a"
+    }
+  }
+}

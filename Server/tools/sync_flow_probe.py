@@ -18,6 +18,7 @@ By default the script starts a temporary local server instance. Pass
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -166,11 +167,18 @@ def blake3_probe_digest(data: bytes) -> str:
         b"ClipDock sync probe asset": "904dbaddc51270e60ad53c600b922a047db84d6774d3832cfba065d674f5af98",
         b"ClipDock sync probe item": "6c75ac7a294f19fe4a1c6f46451862aa76d44af1880cd91953f5237b5435d5b6",
         b"ClipDock P2P probe large payload": "d15501fd5d941939eff81a89ca21736d639ec71e3f32b7f2f7cbd7c30ed21cb5",
+        probe_png_1x1(): "052cf76212e52767e02da9ad36df42189c8ace5d78b0a3a6d8f377ff206970da",
     }
     try:
         return f"blake3:{fixtures[data]}"
     except KeyError as error:
         raise ProbeFailure(f"missing fixed BLAKE3 fixture for {data!r}") from error
+
+
+def probe_png_1x1() -> bytes:
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAEElEQVR4AQEFAPr/ACBAgP8DRAHgoCr69QAAAABJRU5ErkJggg=="
+    )
 
 
 def run_probe(base_url: str) -> dict[str, Any]:
@@ -348,7 +356,7 @@ def run_probe(base_url: str) -> dict[str, Any]:
     )["data"]
     expect(len(pull_other["events"]) == 0, "pull other events: expected isolation")
 
-    asset_bytes = b"ClipDock sync probe asset"
+    asset_bytes = probe_png_1x1()
     sha256_asset_digest = sha256_digest(asset_bytes)
     sha256_asset = expect_json_status(
         request(
@@ -359,6 +367,8 @@ def run_probe(base_url: str) -> dict[str, Any]:
             headers={
                 "content-type": "image/png",
                 "x-clipdock-asset-kind": "thumbnail",
+                "x-clipdock-asset-width": "1",
+                "x-clipdock-asset-height": "1",
             },
         ),
         400,
@@ -376,16 +386,22 @@ def run_probe(base_url: str) -> dict[str, Any]:
             headers={
                 "content-type": "image/png",
                 "x-clipdock-asset-kind": "thumbnail",
+                "x-clipdock-asset-width": "1",
+                "x-clipdock-asset-height": "1",
             },
         ),
         200,
         "upload asset",
     )["data"]
     expect(upload["already_exists"] is False, "upload asset: expected first upload")
+    expect(upload["width_px"] == 1, "upload asset: wrong width")
+    expect(upload["height_px"] == 1, "upload asset: wrong height")
 
     download_b = request("GET", f"{base_url}/v2/assets/{asset_digest}", token=token_b)
     expect(download_b.status == 200, f"download B asset: expected 200, got {download_b.status}")
     expect(download_b.body == asset_bytes, "download B asset: bytes mismatch")
+    expect(download_b.headers.get("x-clipdock-asset-width") == "1", "download B asset: missing width header")
+    expect(download_b.headers.get("x-clipdock-asset-height") == "1", "download B asset: missing height header")
 
     download_other = expect_json_status(
         request("GET", f"{base_url}/v2/assets/{asset_digest}", token=token_other),

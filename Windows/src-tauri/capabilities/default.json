@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default ClipDock panel capability",
+  "windows": ["main", "preferences"],
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-set-webview-focus",
+    "core:webview:allow-webview-hide",
+    "core:webview:allow-webview-show",
+    "core:window:allow-create",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus"
+  ]
+}

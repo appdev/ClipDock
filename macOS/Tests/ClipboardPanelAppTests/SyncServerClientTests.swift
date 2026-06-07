@@ -252,6 +252,79 @@ struct SyncServerClientTests {
     }
 
     @Test
+    func uploadAssetUsesRequestDimensionsWhenLegacyResponseOmitsDimensions() async throws {
+        let httpClient = MockSyncServerHTTPClient(responseBody: """
+        {
+          "protocol_version": 2,
+          "data": {
+            "digest": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "thumbnail",
+            "mime_type": "image/webp",
+            "size_bytes": 4,
+            "already_exists": true
+          }
+        }
+        """)
+        let client = SyncServerClient(httpClient: httpClient)
+
+        let result = try await client.uploadAsset(
+            serverURL: "http://127.0.0.1:8787",
+            token: "cds_token",
+            digest: "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            kind: "thumbnail",
+            mimeType: "image/webp",
+            width: 420,
+            height: 336,
+            bytes: Data("webp".utf8)
+        )
+
+        #expect(result == SyncUploadedAssetResult(
+            digest: "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            kind: "thumbnail",
+            mimeType: "image/webp",
+            sizeBytes: 4,
+            width: 420,
+            height: 336,
+            alreadyExists: true
+        ))
+        let request = try #require(httpClient.requests.first)
+        #expect(request.value(forHTTPHeaderField: "X-ClipDock-Asset-Width") == "420")
+        #expect(request.value(forHTTPHeaderField: "X-ClipDock-Asset-Height") == "336")
+    }
+
+    @Test
+    func uploadAssetRejectsInvalidResponseDimensions() async throws {
+        let httpClient = MockSyncServerHTTPClient(responseBody: """
+        {
+          "protocol_version": 2,
+          "data": {
+            "digest": "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "thumbnail",
+            "mime_type": "image/webp",
+            "size_bytes": 4,
+            "width_px": 0,
+            "height_px": 2,
+            "already_exists": false
+          }
+        }
+        """)
+        let client = SyncServerClient(httpClient: httpClient)
+
+        await #expect(throws: SyncServerClientError.invalidResponse) {
+            _ = try await client.uploadAsset(
+                serverURL: "http://127.0.0.1:8787",
+                token: "cds_token",
+                digest: "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                kind: "thumbnail",
+                mimeType: "image/webp",
+                width: 2,
+                height: 2,
+                bytes: Data("webp".utf8)
+            )
+        }
+    }
+
+    @Test
     func pushEventsPostsBatchWithBearerTokenAndTwelveSecondTimeout() async throws {
         let httpClient = MockSyncServerHTTPClient(responseBody: """
         {

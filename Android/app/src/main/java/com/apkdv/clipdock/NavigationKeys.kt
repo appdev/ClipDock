@@ -21,3 +21,9 @@ enum class SettingsDetailDestination {
 
 @Serializable
 data class SettingsDetail(val destination: SettingsDetailDestination) : NavKey
+
+@Serializable
+data class ItemDetail(
+  val stableId: String,
+  val origin: MainDestination = MainDestination.History,
+) : NavKey

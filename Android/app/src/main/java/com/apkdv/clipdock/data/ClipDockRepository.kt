@@ -21,15 +21,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.serialization.json.JsonObject
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonObject
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -41,6 +41,7 @@ class ClipDockRepository(private val context: Context) {
   private val api = ClipDockApiClient()
   private val p2pTransport = NativeP2pTransport(appContext)
   private val localImagePreparer = AndroidLocalImagePreparer(appContext, p2pTransport)
+  private val linkMetadataResolver = AndroidLinkMetadataResolver(appContext)
   private val syncStore = SharedPreferencesSyncStore(preferences)
   private val syncEngine = SyncEngine(
     syncStore,
@@ -84,9 +85,17 @@ class ClipDockRepository(private val context: Context) {
       logger = AndroidSyncEventLogger,
     )
   private val setupMutex = Mutex()
+  private val deleteMutex = Mutex()
+  private val localCacheRemovalMutex = Mutex()
+  private val inFlightDeleteEventIds = mutableMapOf<String, String>()
+  private val inFlightLinkMetadataHashes = mutableSetOf<String>()
   private val _state = MutableStateFlow(loadState())
 
   val state: StateFlow<ClipDockUiState> = _state
+
+  init {
+    scheduleLinkMetadataRefresh(_state.value.items)
+  }
 
   fun setServerUrl(value: String) {
     preferences.edit().putString(KEY_SERVER_URL, value).apply()
@@ -152,6 +161,14 @@ class ClipDockRepository(private val context: Context) {
 
   fun startLocalClipboardCapture() {
     clipboardCaptureMonitor.start()
+  }
+
+  fun captureCurrentClipboard() {
+    if (!current.hasSyncRegistration()) {
+      AndroidSyncEventLogger.log("local_clipboard_capture_skipped reason=no_sync_registration")
+      return
+    }
+    clipboardCaptureMonitor.captureCurrentPrimaryClip()
   }
 
   suspend fun checkHealth() =
@@ -342,9 +359,11 @@ class ClipDockRepository(private val context: Context) {
           .optJSONArray("events")
           ?.let { events -> (0 until events.length()).mapNotNull { events.optJSONObject(it) } }
           ?.firstOrNull { it.optString("client_event_id") == event.clientEventId }
+      val localSyncedItem = preparedImage.item.copy(assetId = imported.assetId)
+      preserveLocalImagePayload(localSyncedItem)
       val reconcileResult = syncEngine.syncFromStoredCursor(current.serverUrl, token)
       applySyncResult(reconcileResult, isSyncing = false, connectionStatus = "已加入")
-      preserveLocalImagePayload(preparedImage.item.copy(assetId = imported.assetId))
+      preserveLocalImagePayload(localSyncedItem)
       LocalSyncPushResult(
         contentHash = event.contentHash,
         clientEventId = event.clientEventId,
@@ -433,6 +452,181 @@ class ClipDockRepository(private val context: Context) {
     }
   }
 
+  suspend fun downloadAndCopy(
+    item: ClipHistoryItem,
+    timeoutMillis: Long = 30_000,
+  ): RemoteAssetActionResult =
+    try {
+      withTimeout(timeoutMillis) {
+        val readyItem = if (item.needsRemotePayload) downloadRemotePayload(item) else item
+        if (copyItem(readyItem)) {
+          RemoteAssetActionResult.Copied(readyItem)
+        } else {
+          val message = "P2P 已下载，但该类型暂时无法写入剪贴板"
+          _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = message)) }
+          RemoteAssetActionResult.Failed(readyItem, message)
+        }
+      }
+    } catch (timeout: TimeoutCancellationException) {
+      val message = "下载超时，剪贴板未更改"
+      _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = message)) }
+      RemoteAssetActionResult.Failed(item, message)
+    } catch (throwable: Throwable) {
+      val message = throwable.userMessage()
+      _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = message)) }
+      RemoteAssetActionResult.Failed(item, message)
+    }
+
+  suspend fun downloadToCache(
+    item: ClipHistoryItem,
+    timeoutMillis: Long = 30_000,
+  ): RemoteAssetActionResult =
+    try {
+      withTimeout(timeoutMillis) {
+        val readyItem = if (item.needsRemotePayload) downloadRemotePayload(item) else item
+        RemoteAssetActionResult.Cached(readyItem)
+      }
+    } catch (timeout: TimeoutCancellationException) {
+      val message = "下载超时，本机缓存未更新"
+      _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = message)) }
+      RemoteAssetActionResult.Failed(item, message)
+    } catch (throwable: Throwable) {
+      val message = throwable.userMessage()
+      _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = message)) }
+      RemoteAssetActionResult.Failed(item, message)
+    }
+
+  fun copyThumbnail(item: ClipHistoryItem): RemoteAssetActionResult {
+    if (item.type != ClipItemType.Image && item.type != ClipItemType.File) {
+      return RemoteAssetActionResult.Failed(item, "该类型没有可复制缩略图")
+    }
+    val thumbnailUri = item.thumbnailUri?.takeIf(String::isNotBlank)
+      ?: return RemoteAssetActionResult.Failed(item, "没有可用缩略图")
+    val clipboardUri =
+      resolveAppOwnedThumbnailClipboardUri(thumbnailUri)
+        ?: return RemoteAssetActionResult.Failed(item, "缩略图不是 app-owned 可读文件")
+    return try {
+      appContext.contentResolver.openInputStream(clipboardUri)?.use { } ?: error("缩略图不可读")
+      val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+      val clip = ClipData.newUri(appContext.contentResolver, "${item.displayClipboardLabel()} thumbnail", clipboardUri)
+      clip.description.extras =
+        PersistableBundle().apply {
+          putBoolean("android.content.extra.IS_SENSITIVE", false)
+          putString(CLIPDOCK_CLIP_EXTRA_SOURCE, CLIPDOCK_CLIP_SOURCE)
+          if (item.contentHash.isNotBlank()) {
+            putString(CLIPDOCK_CLIP_EXTRA_CONTENT_HASH, item.contentHash)
+          }
+        }
+      clipboardCaptureMonitor.ignoreSelfCopy(clip)
+      clipboard.setPrimaryClip(clip)
+      RemoteAssetActionResult.ThumbnailCopied(item)
+    } catch (throwable: Throwable) {
+      val message = throwable.userMessage()
+      _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = message)) }
+      RemoteAssetActionResult.Failed(item, message)
+    }
+  }
+
+  suspend fun deleteSyncRecord(item: ClipHistoryItem): DeleteRecordResult =
+    deleteMutex.withLock {
+      val requestedAtMillis = System.currentTimeMillis()
+      val deviceId =
+        current.deviceId?.takeIf(String::isNotBlank)
+          ?: return@withLock DeleteRecordResult.Failed(item, "缺少本机同步设备 ID")
+      val contentHash =
+        item.contentHash.takeIf(String::isNotBlank)
+          ?: return@withLock DeleteRecordResult.Failed(item, "缺少内容标识，无法删除同步记录")
+      inFlightDeleteEventIds[item.stableId]?.let { eventId ->
+        return@withLock DeleteRecordResult.Failed(item, "删除进行中: $eventId")
+      }
+      val eventId = stableAndroidDeleteEventId(deviceId, contentHash, requestedAtMillis)
+      val rollbackItems = current.items
+      inFlightDeleteEventIds[item.stableId] = eventId
+      _state.update {
+        it.copy(
+          items = it.items.filterNot { candidate -> candidate.stableId == item.stableId || candidate.contentHash == contentHash },
+          diagnostics = it.diagnostics.copy(lastError = null),
+        )
+      }
+      try {
+        val token = requireToken()
+        val event =
+          SyncPushEventRequest(
+            clientEventId = eventId,
+            type = "item_delete",
+            contentHash = contentHash,
+            itemType = null,
+            payload = null,
+            copyCountDelta = null,
+          )
+        val data = api.pushEvents(current.serverUrl, token, listOf(event)).toJSONObject()
+        val pushedEvent =
+          data
+            .optJSONArray("events")
+            ?.let { events -> (0 until events.length()).mapNotNull { events.optJSONObject(it) } }
+            ?.firstOrNull { it.optString("client_event_id") == event.clientEventId }
+        val reconcileResult = syncEngine.syncFromStoredCursor(current.serverUrl, token)
+        applySyncResult(reconcileResult, isSyncing = false, connectionStatus = "已加入")
+        DeleteRecordResult.Deleted(
+          item = item,
+          clientEventId = eventId,
+          nextCursor = data.optLong("next_cursor"),
+          serverSeq = pushedEvent?.optLong("server_seq"),
+        )
+      } catch (throwable: Throwable) {
+        persistItems(rollbackItems)
+        val message = "删除失败: ${throwable.userMessage()}"
+        _state.update {
+          it.copy(
+            items = rollbackItems,
+            diagnostics = it.diagnostics.copy(lastError = message),
+          )
+        }
+        DeleteRecordResult.Failed(item, message)
+      } finally {
+        inFlightDeleteEventIds.remove(item.stableId)
+      }
+    }
+
+  suspend fun removeLocalCache(item: ClipHistoryItem): LocalCacheRemovalResult =
+    localCacheRemovalMutex.withLock {
+      if (item.type != ClipItemType.Image && item.type != ClipItemType.File) {
+        return@withLock LocalCacheRemovalResult.Failed(item, "该类型没有本机缓存")
+      }
+      val payloadFile =
+        item.localUri
+          ?.takeIf(String::isNotBlank)
+          ?.let(::resolveAppOwnedPayloadFile)
+          ?: return@withLock LocalCacheRemovalResult.Failed(item, "没有本机缓存")
+      if (!payloadFile.exists()) {
+        return@withLock LocalCacheRemovalResult.Failed(item, "本机缓存文件不存在")
+      }
+      if (!payloadFile.delete()) {
+        return@withLock LocalCacheRemovalResult.Failed(item, "本机缓存文件删除失败")
+      }
+      val providerDeleteMessage =
+        item.assetId?.takeIf(String::isNotBlank)?.let { assetId ->
+          runCatching {
+            val token = requireToken()
+            api.deleteP2pProvider(current.serverUrl, token, assetId)
+          }.fold(
+            onSuccess = { null },
+            onFailure = { throwable -> "P2P provider 删除未完成: ${throwable.userMessage()}" },
+          )
+        }
+      val updated =
+        item.copy(
+          localUri = null,
+          payloadState = if (item.assetId.isNullOrBlank()) PayloadState.Failed else PayloadState.RemoteOnly,
+          transferState = TransferState.Idle,
+        )
+      replaceItem(updated)
+      providerDeleteMessage?.let { message ->
+        _state.update { it.copy(diagnostics = it.diagnostics.copy(lastError = message)) }
+      }
+      LocalCacheRemovalResult.Removed(updated, providerDeleteMessage)
+    }
+
   fun copyItem(item: ClipHistoryItem): Boolean {
     if (item.needsRemotePayload) return false
     val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -479,6 +673,49 @@ class ClipDockRepository(private val context: Context) {
     )
     return imported
   }
+
+  private fun resolveAppOwnedThumbnailClipboardUri(rawUri: String): Uri? {
+    val uri = Uri.parse(rawUri)
+    return when (uri.scheme) {
+      "file" -> {
+        val file = File(uri.path ?: return null)
+        if (!file.isWithin(File(appContext.filesDir, "clipdock-thumbnails"))) return null
+        FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", file)
+      }
+      "content" -> {
+        val expectedAuthority = "${appContext.packageName}.files"
+        if (uri.authority != expectedAuthority) return null
+        val path = Uri.decode(uri.path.orEmpty()).trimStart('/')
+        if (!path.startsWith("clipdock_thumbnails/")) return null
+        uri
+      }
+      else -> null
+    }
+  }
+
+  private fun resolveAppOwnedPayloadFile(rawUri: String): File? {
+    val uri = Uri.parse(rawUri)
+    val file =
+      when (uri.scheme) {
+        "file" -> File(uri.path ?: return null)
+        "content" -> {
+          val expectedAuthority = "${appContext.packageName}.files"
+          if (uri.authority != expectedAuthority) return null
+          val path = Uri.decode(uri.path.orEmpty()).trimStart('/')
+          if (!path.startsWith("p2p_payloads/")) return null
+          File(appContext.filesDir, "p2p-payloads/${path.removePrefix("p2p_payloads/")}")
+        }
+        else -> return null
+      }
+    val p2pPayloadDir = p2pTransport.defaultPayloadDir()
+    val androidCaptureDir = File(appContext.filesDir, "p2p-payloads/android-captures")
+    return file.takeIf { candidate ->
+      candidate.isWithin(p2pPayloadDir) || candidate.isWithin(androidCaptureDir)
+    }
+  }
+
+  private fun ClipHistoryItem.displayClipboardLabel(): String =
+    title.ifBlank { body }.ifBlank { type.label }
 
   private suspend fun reportP2pEndpoint(token: String) {
     val endpoint = p2pTransport.startNode()
@@ -723,6 +960,76 @@ class ClipDockRepository(private val context: Context) {
           ),
       )
     }
+    scheduleLinkMetadataRefresh(_state.value.items)
+  }
+
+  private fun scheduleLinkMetadataRefresh(items: List<ClipHistoryItem>) {
+    val candidates =
+      items
+        .asSequence()
+        .filter { item ->
+          item.type == ClipItemType.Link &&
+            item.contentHash.isNotBlank() &&
+            item.linkMetadataState != "failed" &&
+            (item.linkIconUri.isNullOrBlank() || item.linkPreviewUri.isNullOrBlank() || item.linkSiteName.isNullOrBlank())
+        }
+        .take(MAX_LINK_METADATA_REFRESH_BATCH)
+        .toList()
+    for (item in candidates) {
+      val shouldStart =
+        synchronized(inFlightLinkMetadataHashes) {
+          inFlightLinkMetadataHashes.add(item.contentHash)
+        }
+      if (!shouldStart) continue
+      syncScope.launch {
+        try {
+          val resolved = linkMetadataResolver.resolve(item)
+          if (resolved == null) {
+            markLinkMetadataState(item.contentHash, "failed")
+          } else {
+            applyResolvedLinkMetadata(item.contentHash, resolved)
+          }
+        } catch (_: Throwable) {
+          markLinkMetadataState(item.contentHash, "failed")
+        } finally {
+          synchronized(inFlightLinkMetadataHashes) {
+            inFlightLinkMetadataHashes.remove(item.contentHash)
+          }
+        }
+      }
+    }
+  }
+
+  private fun applyResolvedLinkMetadata(contentHash: String, resolved: AndroidResolvedLinkMetadata) {
+    val updated =
+      current.items.map { item ->
+        if (item.contentHash != contentHash || item.type != ClipItemType.Link) {
+          item
+        } else {
+          item.copy(
+            title = resolved.title?.takeIf(String::isNotBlank) ?: item.title,
+            linkIconUri = resolved.iconUri ?: item.linkIconUri,
+            linkPreviewUri = resolved.previewUri ?: item.linkPreviewUri,
+            linkSiteName = resolved.siteName ?: item.linkSiteName,
+            linkMetadataState = "ready",
+          )
+        }
+      }
+    persistItems(updated)
+    _state.update { it.copy(items = updated) }
+  }
+
+  private fun markLinkMetadataState(contentHash: String, state: String) {
+    val updated =
+      current.items.map { item ->
+        if (item.contentHash == contentHash && item.type == ClipItemType.Link) {
+          item.copy(linkMetadataState = state)
+        } else {
+          item
+        }
+      }
+    persistItems(updated)
+    _state.update { it.copy(items = updated) }
   }
 
   private fun scheduleRealtimeReconnect() {
@@ -798,6 +1105,7 @@ class ClipDockRepository(private val context: Context) {
     private const val KEY_OVERLAY_VERTICAL_FRACTION = "overlayVerticalFraction"
     private const val KEY_ENCRYPTION_ENABLED = "encryptionEnabled"
     private const val REST_FALLBACK_POLL_INTERVAL_MS = 30_000L
+    private const val MAX_LINK_METADATA_REFRESH_BATCH = 8
   }
 }
 
@@ -822,6 +1130,12 @@ internal class RealtimeReconnectBackoff(
 
 private fun ClipDockUiState.hasSyncRegistration(): Boolean =
   tokenPresent || !syncId.isNullOrBlank() || !deviceId.isNullOrBlank()
+
+private fun File.isWithin(parent: File): Boolean {
+  val childPath = canonicalFile.toPath().normalize()
+  val parentPath = parent.canonicalFile.toPath().normalize()
+  return childPath.startsWith(parentPath)
+}
 
 private fun ClipHistoryItem.payloadExtension(candidate: P2pProviderCandidate): String {
   title.substringAfterLast('.', "")

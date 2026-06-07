@@ -1,0 +1,212 @@
+{
+  "active_sheet": null,
+  "anchors": [
+    {
+      "action_id": "selectDestination:history",
+      "bounds": {
+        "height": 42,
+        "width": 77,
+        "x": 25,
+        "y": 762
+      },
+      "stable_id": "selectDestination:history"
+    },
+    {
+      "action_id": "selectDestination:devices",
+      "bounds": {
+        "height": 42,
+        "width": 77,
+        "x": 106,
+        "y": 762
+      },
+      "stable_id": "selectDestination:devices"
+    },
+    {
+      "action_id": "selectDestination:settings",
+      "bounds": {
+        "height": 42,
+        "width": 77,
+        "x": 268,
+        "y": 762
+      },
+      "stable_id": "selectDestination:settings"
+    },
+    {
+      "action_id": "openItemDetail:qa-remote-image",
+      "bounds": {
+        "height": 68,
+        "width": 342,
+        "x": 14,
+        "y": 250
+      },
+      "stable_id": "qa-remote-image"
+    },
+    {
+      "action_id": "openItemDetail:qa-ready-file",
+      "bounds": {
+        "height": 68,
+        "width": 342,
+        "x": 14,
+        "y": 426
+      },
+      "stable_id": "qa-ready-file"
+    }
+  ],
+  "aria_labels": [
+    "历史",
+    "设备",
+    "设置",
+    "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+    "Server-config.txt已缓存 · text/plain · 12 KB打开"
+  ],
+  "bridge_action_ids": [
+    "selectDestination:history",
+    "selectDestination:devices",
+    "selectDestination:settings",
+    "openItemDetail:qa-remote-image",
+    "openItemDetail:qa-ready-file"
+  ],
+  "computed": {
+    "screen": {
+      "bounds": {
+        "height": 824,
+        "width": 370,
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "enabled_states": {
+    "openItemDetail:qa-ready-file": true,
+    "openItemDetail:qa-remote-image": true,
+    "selectDestination:devices": true,
+    "selectDestination:history": true,
+    "selectDestination:settings": true
+  },
+  "fallback": false,
+  "focus_order": [
+    "selectDestination:history",
+    "selectDestination:devices",
+    "selectDestination:settings",
+    "openItemDetail:qa-remote-image",
+    "openItemDetail:qa-ready-file"
+  ],
+  "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+  "key_bounds_px": {
+    "Release-notes.pdf正在从 MacBook Pro 下载 · 64%": {
+      "height": 84,
+      "width": 342,
+      "x": 14,
+      "y": 330
+    },
+    "Server-config.txt已缓存 · text/plain · 12 KB打开": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 426
+    },
+    "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 250
+    },
+    "screen": {
+      "height": 824,
+      "width": 370,
+      "x": 0,
+      "y": 0
+    },
+    "文件": {
+      "height": 25,
+      "width": 169,
+      "x": 16,
+      "y": 48
+    },
+    "缓存策略上限 1 GB · 到期自动清理": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 506
+    }
+  },
+  "route": "files",
+  "runtime_asset_sha256": null,
+  "runtime_dom_source": "playwright-reference-dom",
+  "screen_id": "files",
+  "selected_nav": "文件",
+  "selected_stable_id": null,
+  "semantic_source": "dom-extracted-reference-and-production-hotzones",
+  "sheet_order": [],
+  "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+  "theme": "light",
+  "touch_targets_px": {
+    "openItemDetail:qa-ready-file": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 426
+    },
+    "openItemDetail:qa-remote-image": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 250
+    },
+    "selectDestination:devices": {
+      "height": 42,
+      "width": 77,
+      "x": 106,
+      "y": 762
+    },
+    "selectDestination:history": {
+      "height": 42,
+      "width": 77,
+      "x": 25,
+      "y": 762
+    },
+    "selectDestination:settings": {
+      "height": 42,
+      "width": 77,
+      "x": 268,
+      "y": 762
+    }
+  },
+  "visible_texts": [
+    "9:41 文件远端 8 个 · 本机缓存 428 MB 全部图片文件已缓存 按需下载远端图片/文件不会在列表中自动下载仅 Wi‑Fi UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回 Release-notes.pdf正在从 MacBook Pro 下载 · 64% Server-config.txt已缓存 · text/plain · 12 KB打开 缓存策略上限 1 GB · 到期自动清理 历史设备文件设置",
+    "9:41",
+    "文件远端 8 个 · 本机缓存 428 MB",
+    "文件",
+    "远端 8 个 · 本机缓存 428 MB",
+    "全部图片文件已缓存",
+    "全部",
+    "图片",
+    "已缓存",
+    "按需下载远端图片/文件不会在列表中自动下载仅 Wi‑Fi",
+    "按需下载远端图片/文件不会在列表中自动下载",
+    "按需下载",
+    "远端图片/文件不会在列表中自动下载",
+    "仅 Wi‑Fi",
+    "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+    "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端",
+    "UI-review-screenshot.png",
+    "MacBook Pro · 1.2 MB · 远端",
+    "取回",
+    "Release-notes.pdf正在从 MacBook Pro 下载 · 64%",
+    "Release-notes.pdf",
+    "正在从 MacBook Pro 下载 · 64%",
+    "Server-config.txt已缓存 · text/plain · 12 KB打开",
+    "Server-config.txt已缓存 · text/plain · 12 KB",
+    "Server-config.txt",
+    "已缓存 · text/plain · 12 KB",
+    "打开",
+    "缓存策略上限 1 GB · 到期自动清理",
+    "缓存策略",
+    "上限 1 GB · 到期自动清理",
+    "历史设备文件设置",
+    "历史",
+    "设备",
+    "设置"
+  ],
+  "visual_png_sha256": "7c937f24023226e2fae25dffcca02f827cf7157dc29e84aba019ce7ce78e8784"
+}

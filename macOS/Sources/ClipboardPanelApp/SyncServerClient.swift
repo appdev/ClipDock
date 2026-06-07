@@ -482,13 +482,15 @@ public struct SyncServerClient: Sendable {
             )
         }
         let responseEnvelope = try JSONDecoder().decode(SuccessEnvelope<UploadAssetResponse>.self, from: data)
+        let responseWidth = try resolvedUploadDimension(responseEnvelope.data.width, fallback: width)
+        let responseHeight = try resolvedUploadDimension(responseEnvelope.data.height, fallback: height)
         return SyncUploadedAssetResult(
             digest: responseEnvelope.data.digest,
             kind: responseEnvelope.data.kind,
             mimeType: responseEnvelope.data.mimeType,
             sizeBytes: responseEnvelope.data.sizeBytes,
-            width: responseEnvelope.data.width,
-            height: responseEnvelope.data.height,
+            width: responseWidth,
+            height: responseHeight,
             alreadyExists: responseEnvelope.data.alreadyExists
         )
     }
@@ -883,8 +885,8 @@ private struct UploadAssetResponse: Decodable {
     let kind: String
     let mimeType: String
     let sizeBytes: Int64
-    let width: Int64
-    let height: Int64
+    let width: Int64?
+    let height: Int64?
     let alreadyExists: Bool
 
     private enum CodingKeys: String, CodingKey {
@@ -896,6 +898,16 @@ private struct UploadAssetResponse: Decodable {
         case height = "height_px"
         case alreadyExists = "already_exists"
     }
+}
+
+private func resolvedUploadDimension(_ value: Int64?, fallback: Int) throws -> Int64 {
+    if let value {
+        guard value > 0 else {
+            throw SyncServerClientError.invalidResponse
+        }
+        return value
+    }
+    return Int64(fallback)
 }
 
 private struct PushEventsRequest: Encodable {

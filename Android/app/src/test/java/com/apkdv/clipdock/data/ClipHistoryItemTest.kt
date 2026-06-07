@@ -73,6 +73,58 @@ class ClipHistoryItemTest {
   }
 
   @Test
+  fun fromServerEvent_mapsLinkMetadataPreviewFields() {
+    val contentHash = "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    val event =
+      JSONObject()
+        .put("type", "item_upsert")
+        .put("content_hash", contentHash)
+        .put("item_type", "link")
+        .put("copy_count_delta", 1L)
+        .put("created_at_ms", 123L)
+        .put(
+          "payload",
+          JSONObject()
+            .put("url", "https://example.com/article")
+            .put("display_url", "https://example.com/article")
+            .put("title", "Example article")
+            .put("site_name", "Example")
+            .put("icon_uri", "file:///icon.png")
+            .put("image_uri", "file:///preview.jpg")
+            .put("metadata_state", "ready"),
+        )
+
+    val item = ClipHistoryItem.fromServerEvent(event)!!
+
+    assertEquals(ClipItemType.Link, item.type)
+    assertEquals("https://example.com/article", item.body)
+    assertEquals("file:///icon.png", item.linkIconUri)
+    assertEquals("file:///preview.jpg", item.linkPreviewUri)
+    assertEquals("Example", item.linkSiteName)
+    assertEquals("ready", item.linkMetadataState)
+  }
+
+  @Test
+  fun fromJson_restoresLinkMetadataPreviewFields() {
+    val item =
+      sampleItem(type = ClipItemType.Link, title = "Example", localUri = null)
+        .copy(
+          body = "https://example.com/article",
+          linkIconUri = "file:///icon.png",
+          linkPreviewUri = "file:///preview.jpg",
+          linkSiteName = "Example",
+          linkMetadataState = "ready",
+        )
+
+    val restored = ClipHistoryItem.fromJson(item.toJson())
+
+    assertEquals(item.linkIconUri, restored.linkIconUri)
+    assertEquals(item.linkPreviewUri, restored.linkPreviewUri)
+    assertEquals(item.linkSiteName, restored.linkSiteName)
+    assertEquals(item.linkMetadataState, restored.linkMetadataState)
+  }
+
+  @Test
   fun fromJson_resetsInFlightTransferStateAfterProcessRestart() {
     val item =
       sampleItem(type = ClipItemType.File, title = "remote.txt", localUri = null)

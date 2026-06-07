@@ -2,7 +2,7 @@ use crate::domain::ItemManagementResult;
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
 use crate::ACTIVE_SOURCE_ICON_HEADER_COLOR_CACHE_VERSION;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use super::support::stable_hash;
 use super::ClipboardCore;
@@ -103,7 +103,25 @@ impl ClipboardCore {
         let derived_key = bundle_id
             .map(|value| format!("bundle:{value}"))
             .unwrap_or_else(|| format!("name:{}", app_name.to_lowercase()));
-        let source_app_id = format!("source_{}", &stable_hash(&derived_key)[..24]);
+        let existing_source_app_id = if let Some(bundle_id) = bundle_id {
+            self.connection
+                .query_row(
+                    "SELECT id FROM source_apps WHERE bundle_id = ?1",
+                    params![bundle_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+        } else {
+            self.connection
+                .query_row(
+                    "SELECT id FROM source_apps WHERE derived_key = ?1",
+                    params![&derived_key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+        };
+        let source_app_id = existing_source_app_id
+            .unwrap_or_else(|| format!("source_{}", &stable_hash(&derived_key)[..24]));
 
         self.connection.execute(
             r#"

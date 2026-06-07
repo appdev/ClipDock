@@ -66,6 +66,20 @@ struct PreferencesShellTests {
 
     @Test
     @MainActor
+    func preferencesSidebarNavigationDoesNotShowKeyboardFocusRing() throws {
+        let controller = PreferencesWindowController()
+        defer { controller.close() }
+        let window = try #require(controller.window)
+
+        window.setFrame(NSRect(x: 0, y: 0, width: 820, height: 600), display: false)
+        window.layoutIfNeeded()
+        let snapshot = try #require(controller.preferencesShellSmokeSnapshot())
+
+        #expect(!snapshot.sidebarNavigationAllowsKeyboardFocus)
+    }
+
+    @Test
+    @MainActor
     func preferencesWindowHonorsForcedDarkModeBeforeGlobalAppearanceChanges() throws {
         let app = NSApplication.shared
         let originalAppearance = app.appearance

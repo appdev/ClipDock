@@ -112,6 +112,10 @@ data class ClipHistoryItem(
   val transferState: TransferState,
   val copiedAtMillis: Long,
   val copyCount: Long,
+  val linkIconUri: String? = null,
+  val linkPreviewUri: String? = null,
+  val linkSiteName: String? = null,
+  val linkMetadataState: String? = null,
 ) {
   val compactText: String
     get() =
@@ -145,6 +149,10 @@ data class ClipHistoryItem(
       .put("transferState", transferState.name)
       .put("copiedAtMillis", copiedAtMillis)
       .put("copyCount", copyCount)
+      .put("linkIconUri", linkIconUri)
+      .put("linkPreviewUri", linkPreviewUri)
+      .put("linkSiteName", linkSiteName)
+      .put("linkMetadataState", linkMetadataState)
 
   companion object {
     fun fromJson(json: JSONObject): ClipHistoryItem {
@@ -174,6 +182,10 @@ data class ClipHistoryItem(
         transferState = transferState,
         copiedAtMillis = json.optLong("copiedAtMillis"),
         copyCount = json.optLong("copyCount"),
+        linkIconUri = json.optNullableString("linkIconUri"),
+        linkPreviewUri = json.optNullableString("linkPreviewUri"),
+        linkSiteName = json.optNullableString("linkSiteName"),
+        linkMetadataState = json.optNullableString("linkMetadataState"),
       )
     }
 
@@ -231,6 +243,22 @@ data class ClipHistoryItem(
           ?: payload.optNullableString("preview_local_uri")
           ?: payload.optNullableString("thumbnail_path")
           ?: payload.optNullableString("preview_path")
+      val linkIconUri =
+        payload.optNullableString("icon_uri")
+          ?: payload.optNullableString("icon_local_uri")
+          ?: payload.optNullableString("favicon_uri")
+          ?: payload.optNullableString("favicon_url")
+          ?: payload.optNullableString("icon_url")
+          ?: payload.optNullableString("icon_path")
+          ?: payload.optNullableString("icon_asset_path")
+      val linkPreviewUri =
+        payload.optNullableString("image_uri")
+          ?: payload.optNullableString("image_local_uri")
+          ?: payload.optNullableString("image_url")
+          ?: payload.optNullableString("image_path")
+          ?: payload.optNullableString("image_asset_path")
+          ?: payload.optNullableString("media_preview_uri")
+          ?: payload.optNullableString("media_preview_url")
       val title =
         when (itemType) {
           ClipItemType.Text -> payload.firstText("title", "text", "primary_text", "summary").linePreview()
@@ -243,7 +271,7 @@ data class ClipHistoryItem(
         }
       val body =
         when (itemType) {
-          ClipItemType.Link -> payload.firstText("display_url", "url", "canonical_url")
+          ClipItemType.Link -> payload.firstText("url", "canonical_url", "display_url")
           ClipItemType.File -> payload.firstText("mime_type", "content_type", "summary")
           ClipItemType.Image -> payload.firstText("summary", "mime_type", "content_type")
           ClipItemType.Color -> payload.firstText("name", "source_app_name")
@@ -283,6 +311,10 @@ data class ClipHistoryItem(
         transferState = TransferState.Idle,
         copiedAtMillis = updatedAtMillis,
         copyCount = copyCount,
+        linkIconUri = if (itemType == ClipItemType.Link) linkIconUri else null,
+        linkPreviewUri = if (itemType == ClipItemType.Link) linkPreviewUri else null,
+        linkSiteName = if (itemType == ClipItemType.Link) payload.optNullableString("site_name") else null,
+        linkMetadataState = if (itemType == ClipItemType.Link) payload.optNullableString("metadata_state") else null,
       )
     }
   }

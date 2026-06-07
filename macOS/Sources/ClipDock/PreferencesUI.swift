@@ -1206,6 +1206,7 @@ struct PreferencesShellSmokeSnapshot: Equatable {
     let sidebarBackgroundWhiteComponent: CGFloat
     let sidebarHostingAppearanceIsDark: Bool
     let contentHostingAppearanceIsDark: Bool
+    let sidebarNavigationAllowsKeyboardFocus: Bool
 }
 
 struct PreferencesVersionUpdateSmokeSnapshot: Equatable {
@@ -1444,7 +1445,8 @@ private final class PreferencesSplitViewController: NSSplitViewController {
             contentBackgroundMatchesTheme: preferenceColorsMatch(contentBackground, preferencesTheme.contentBackgroundColor),
             sidebarBackgroundWhiteComponent: preferenceWhiteComponent(sidebarBackground),
             sidebarHostingAppearanceIsDark: ClipDockTheme.isDark(sidebarController.view.effectiveAppearance),
-            contentHostingAppearanceIsDark: ClipDockTheme.isDark(contentController.view.effectiveAppearance)
+            contentHostingAppearanceIsDark: ClipDockTheme.isDark(contentController.view.effectiveAppearance),
+            sidebarNavigationAllowsKeyboardFocus: PreferenceSidebarFocusPolicy.allowsKeyboardFocus
         )
     }
 
@@ -1480,6 +1482,10 @@ private final class PreferencesSplitViewController: NSSplitViewController {
             )
         }
     }
+}
+
+private enum PreferenceSidebarFocusPolicy {
+    static let allowsKeyboardFocus = false
 }
 
 @MainActor
@@ -1599,6 +1605,7 @@ private struct PreferenceSidebarButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable(PreferenceSidebarFocusPolicy.allowsKeyboardFocus)
         .help(section.title)
     }
 }
@@ -3755,6 +3762,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
         button.setButtonType(.toggle)
         button.bezelStyle = .rounded
         button.isBordered = false
+        button.focusRingType = .none
         button.alignment = .left
         button.image = NSImage(systemSymbolName: section.symbolName, accessibilityDescription: section.title)
         button.imagePosition = .imageLeading

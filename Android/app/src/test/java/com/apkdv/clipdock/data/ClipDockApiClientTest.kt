@@ -184,6 +184,69 @@ class ClipDockApiClientTest {
     assertEquals(2, uploaded.height)
   }
 
+  @Test
+  fun uploadAsset_usesRequestDimensionsWhenLegacyResponseOmitsDimensions() = runTest {
+    val api =
+      ClipDockApiClient(
+        client =
+          respondingClient {
+            jsonResponse(
+              code = 200,
+              body =
+                """{"protocol_version":2,"data":{"digest":"blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","kind":"thumbnail","mime_type":"image/webp","size_bytes":4,"already_exists":true}}""",
+            )
+          },
+      )
+
+    val uploaded =
+      api.uploadAsset(
+        "http://clipdock.test",
+        "cds_secret",
+        "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        kind = "thumbnail",
+        mimeType = "image/webp",
+        width = 420,
+        height = 336,
+        bytes = "webp".toByteArray(),
+      )
+
+    assertEquals("thumbnail", uploaded.kind)
+    assertEquals(4L, uploaded.byteCount)
+    assertEquals(420, uploaded.width)
+    assertEquals(336, uploaded.height)
+    assertTrue(uploaded.alreadyExists)
+  }
+
+  @Test
+  fun uploadAsset_rejectsInvalidResponseDimensions() = runTest {
+    val api =
+      ClipDockApiClient(
+        client =
+          respondingClient {
+            jsonResponse(
+              code = 200,
+              body =
+                """{"protocol_version":2,"data":{"digest":"blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","kind":"thumbnail","mime_type":"image/webp","size_bytes":4,"width_px":0,"height_px":2,"already_exists":false}}""",
+            )
+          },
+      )
+
+    try {
+      api.uploadAsset(
+        "http://clipdock.test",
+        "cds_secret",
+        "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        kind = "thumbnail",
+        mimeType = "image/webp",
+        width = 2,
+        height = 2,
+        bytes = "webp".toByteArray(),
+      )
+      fail("Expected ClipDockApiException")
+    } catch (exception: ClipDockApiException) {
+      assertEquals("invalid_asset_metadata", exception.code)
+    }
+  }
 
   @Test
   fun errorEnvelopeThrowsClipDockApiException() = runTest {

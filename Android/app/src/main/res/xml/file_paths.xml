@@ -3,4 +3,7 @@
     <files-path
         name="p2p_payloads"
         path="p2p-payloads/" />
+    <files-path
+        name="clipdock_thumbnails"
+        path="clipdock-thumbnails/" />
 </paths>

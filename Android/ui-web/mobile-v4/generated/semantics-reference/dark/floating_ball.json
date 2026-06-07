@@ -1,0 +1,341 @@
+{
+  "active_sheet": null,
+  "anchors": [
+    {
+      "action_id": "closeSettingsDetail",
+      "bounds": {
+        "height": 36,
+        "width": 36,
+        "x": 318,
+        "y": 52
+      },
+      "stable_id": "closeSettingsDetail"
+    },
+    {
+      "action_id": "selectDestination:history",
+      "bounds": {
+        "height": 40,
+        "width": 77,
+        "x": 25,
+        "y": 764
+      },
+      "stable_id": "selectDestination:history"
+    },
+    {
+      "action_id": "selectDestination:devices",
+      "bounds": {
+        "height": 40,
+        "width": 77,
+        "x": 106,
+        "y": 764
+      },
+      "stable_id": "selectDestination:devices"
+    },
+    {
+      "action_id": "selectDestination:files",
+      "bounds": {
+        "height": 40,
+        "width": 77,
+        "x": 187,
+        "y": 764
+      },
+      "stable_id": "selectDestination:files"
+    },
+    {
+      "action_id": "selectDestination:settings",
+      "bounds": {
+        "height": 40,
+        "width": 77,
+        "x": 268,
+        "y": 764
+      },
+      "stable_id": "selectDestination:settings"
+    },
+    {
+      "action_id": "setOverlayEnabled",
+      "bounds": {
+        "height": 63,
+        "width": 340,
+        "x": 15,
+        "y": 235
+      },
+      "stable_id": "setOverlayEnabled"
+    },
+    {
+      "action_id": "setOverlayVerticalFraction",
+      "bounds": {
+        "height": 63,
+        "width": 340,
+        "x": 15,
+        "y": 298
+      },
+      "stable_id": "setOverlayVerticalFraction"
+    },
+    {
+      "action_id": "setOverlaySnapEdge",
+      "bounds": {
+        "height": 62,
+        "width": 340,
+        "x": 15,
+        "y": 361
+      },
+      "stable_id": "setOverlaySnapEdge"
+    },
+    {
+      "action_id": "setOverlaySize",
+      "bounds": {
+        "height": 88,
+        "width": 342,
+        "x": 14,
+        "y": 556
+      },
+      "stable_id": "setOverlaySize"
+    },
+    {
+      "action_id": "setOverlayOpacity",
+      "bounds": {
+        "height": 88,
+        "width": 342,
+        "x": 14,
+        "y": 656
+      },
+      "stable_id": "setOverlayOpacity"
+    },
+    {
+      "action_id": "setOverlaySnapEdge",
+      "bounds": {
+        "height": 115,
+        "width": 342,
+        "x": 14,
+        "y": 429
+      },
+      "stable_id": "setOverlaySnapEdge"
+    }
+  ],
+  "aria_labels": [
+    "返回设置",
+    "历史",
+    "设备",
+    "文件",
+    "设置",
+    "启用悬浮球显示在系统桌面边缘",
+    "点击动作同步一次并复制最新可用内容默认",
+    "停靠边缘拖动松手后自动吸附右侧",
+    "尺寸64 dp · 兼顾可点按和遮挡范围",
+    "闲置透明度78% · 不完全隐藏，保持可发现",
+    "停靠方向当前吸附到右侧边缘左侧右侧"
+  ],
+  "bridge_action_ids": [
+    "closeSettingsDetail",
+    "selectDestination:history",
+    "selectDestination:devices",
+    "selectDestination:files",
+    "selectDestination:settings",
+    "setOverlayEnabled",
+    "setOverlayVerticalFraction",
+    "setOverlaySnapEdge",
+    "setOverlaySize",
+    "setOverlayOpacity"
+  ],
+  "computed": {
+    "screen": {
+      "bounds": {
+        "height": 824,
+        "width": 370,
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "enabled_states": {
+    "closeSettingsDetail": true,
+    "selectDestination:devices": true,
+    "selectDestination:files": true,
+    "selectDestination:history": true,
+    "selectDestination:settings": true,
+    "setOverlayEnabled": true,
+    "setOverlayOpacity": true,
+    "setOverlaySize": true,
+    "setOverlaySnapEdge": true,
+    "setOverlayVerticalFraction": true
+  },
+  "fallback": false,
+  "focus_order": [
+    "closeSettingsDetail",
+    "selectDestination:history",
+    "selectDestination:devices",
+    "selectDestination:files",
+    "selectDestination:settings",
+    "setOverlayEnabled",
+    "setOverlayVerticalFraction",
+    "setOverlaySnapEdge",
+    "setOverlaySize",
+    "setOverlayOpacity",
+    "setOverlaySnapEdge"
+  ],
+  "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+  "key_bounds_px": {
+    "screen": {
+      "height": 824,
+      "width": 370,
+      "x": 0,
+      "y": 0
+    },
+    "停靠方向当前吸附到右侧边缘左侧右侧": {
+      "height": 115,
+      "width": 342,
+      "x": 14,
+      "y": 429
+    },
+    "停靠边缘拖动松手后自动吸附右侧": {
+      "height": 62,
+      "width": 340,
+      "x": 15,
+      "y": 361
+    },
+    "启用悬浮球显示在系统桌面边缘": {
+      "height": 63,
+      "width": 340,
+      "x": 15,
+      "y": 235
+    },
+    "尺寸64 dp · 兼顾可点按和遮挡范围": {
+      "height": 88,
+      "width": 342,
+      "x": 14,
+      "y": 556
+    },
+    "悬浮球": {
+      "height": 25,
+      "width": 117,
+      "x": 16,
+      "y": 47
+    },
+    "点击动作同步一次并复制最新可用内容默认": {
+      "height": 63,
+      "width": 340,
+      "x": 15,
+      "y": 298
+    },
+    "闲置透明度78% · 不完全隐藏，保持可发现": {
+      "height": 88,
+      "width": 342,
+      "x": 14,
+      "y": 656
+    }
+  },
+  "route": "floating_ball",
+  "runtime_asset_sha256": null,
+  "runtime_dom_source": "playwright-reference-dom",
+  "screen_id": "floating_ball",
+  "selected_nav": "设置",
+  "selected_stable_id": null,
+  "semantic_source": "dom-extracted-reference-and-production-hotzones",
+  "sheet_order": [],
+  "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+  "theme": "dark",
+  "touch_targets_px": {
+    "closeSettingsDetail": {
+      "height": 36,
+      "width": 36,
+      "x": 318,
+      "y": 52
+    },
+    "selectDestination:devices": {
+      "height": 40,
+      "width": 77,
+      "x": 106,
+      "y": 764
+    },
+    "selectDestination:files": {
+      "height": 40,
+      "width": 77,
+      "x": 187,
+      "y": 764
+    },
+    "selectDestination:history": {
+      "height": 40,
+      "width": 77,
+      "x": 25,
+      "y": 764
+    },
+    "selectDestination:settings": {
+      "height": 40,
+      "width": 77,
+      "x": 268,
+      "y": 764
+    },
+    "setOverlayEnabled": {
+      "height": 63,
+      "width": 340,
+      "x": 15,
+      "y": 235
+    },
+    "setOverlayOpacity": {
+      "height": 88,
+      "width": 342,
+      "x": 14,
+      "y": 656
+    },
+    "setOverlaySize": {
+      "height": 88,
+      "width": 342,
+      "x": 14,
+      "y": 556
+    },
+    "setOverlaySnapEdge": {
+      "height": 115,
+      "width": 342,
+      "x": 14,
+      "y": 429
+    },
+    "setOverlayVerticalFraction": {
+      "height": 63,
+      "width": 340,
+      "x": 15,
+      "y": 298
+    }
+  },
+  "visible_texts": [
+    "9:41 悬浮球桌面快速同步并复制 已复制最新内容发布说明：Android 端新增远端取回入口 启用悬浮球显示在系统桌面边缘 点击动作同步一次并复制最新可用内容默认 停靠边缘拖动松手后自动吸附右侧 停靠方向当前吸附到右侧边缘左侧右侧 尺寸64 dp · 兼顾可点按和遮挡范围 闲置透明度78% · 不完全隐藏，保持可发现 历史设备文件设置",
+    "9:41",
+    "悬浮球桌面快速同步并复制",
+    "悬浮球",
+    "桌面快速同步并复制",
+    "已复制最新内容发布说明：Android 端新增远端取回入口",
+    "已复制最新内容",
+    "发布说明：Android 端新增远端取回入口",
+    "启用悬浮球显示在系统桌面边缘 点击动作同步一次并复制最新可用内容默认 停靠边缘拖动松手后自动吸附右侧",
+    "启用悬浮球显示在系统桌面边缘",
+    "启用悬浮球",
+    "显示在系统桌面边缘",
+    "点击动作同步一次并复制最新可用内容默认",
+    "点击动作同步一次并复制最新可用内容",
+    "点击动作",
+    "同步一次并复制最新可用内容",
+    "默认",
+    "停靠边缘拖动松手后自动吸附右侧",
+    "停靠边缘拖动松手后自动吸附",
+    "停靠边缘",
+    "拖动松手后自动吸附",
+    "右侧",
+    "停靠方向当前吸附到右侧边缘左侧右侧",
+    "停靠方向当前吸附到右侧边缘",
+    "停靠方向",
+    "当前吸附到右侧边缘",
+    "左侧右侧",
+    "左侧",
+    "尺寸64 dp · 兼顾可点按和遮挡范围",
+    "尺寸",
+    "64 dp · 兼顾可点按和遮挡范围",
+    "闲置透明度78% · 不完全隐藏，保持可发现",
+    "闲置透明度",
+    "78% · 不完全隐藏，保持可发现",
+    "历史设备文件设置",
+    "历史",
+    "设备",
+    "文件",
+    "设置"
+  ],
+  "visual_png_sha256": "1cbd3d895b07620782d0cec52cc65418377ae21a6be5aec808dbe20ff0a1f521"
+}

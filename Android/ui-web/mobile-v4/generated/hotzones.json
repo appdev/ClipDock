@@ -1,0 +1,2686 @@
+{
+  "items": {
+    "dark": {
+      "delete_confirm": [
+        {
+          "action": "hideDeleteConfirm",
+          "action_id": "hideDeleteConfirm",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "bridge": {
+            "action": "hideDeleteConfirm",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "取消删除",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "hideDeleteConfirm",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "removeLocalCache",
+          "action_id": "removeLocalCache:qa-ready-text",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 635
+          },
+          "bridge": {
+            "action": "removeLocalCache",
+            "sheet": "delete_confirm",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": false,
+          "label": "仅移除本机缓存",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "dark",
+          "z_order": 100
+        },
+        {
+          "action": "deleteSyncRecord",
+          "action_id": "deleteSyncRecord:qa-ready-text",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 690
+          },
+          "bridge": {
+            "action": "deleteSyncRecord",
+            "sheet": "delete_confirm",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "删除同步记录",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "dark",
+          "z_order": 101
+        },
+        {
+          "action": "hideDeleteConfirm",
+          "action_id": "hideDeleteConfirm",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 745
+          },
+          "bridge": {
+            "action": "hideDeleteConfirm",
+            "sheet": "delete_confirm",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "取消",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "hideDeleteConfirm",
+          "theme": "dark",
+          "z_order": 102
+        }
+      ],
+      "devices": [
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "devices",
+          "selected_nav": "设备",
+          "stable_id": "selectDestination:history",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "devices",
+          "selected_nav": "设备",
+          "stable_id": "selectDestination:files",
+          "theme": "dark",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "devices",
+          "selected_nav": "设备",
+          "stable_id": "selectDestination:settings",
+          "theme": "dark",
+          "z_order": 3
+        }
+      ],
+      "files": [
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "selectDestination:history",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "selectDestination:devices",
+          "theme": "dark",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "selectDestination:settings",
+          "theme": "dark",
+          "z_order": 3
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-remote-image",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 252
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "qa-remote-image",
+          "theme": "dark",
+          "z_order": 4
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-ready-file",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 428
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-ready-file",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "Server-config.txt已缓存 · text/plain · 12 KB打开",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "qa-ready-file",
+          "theme": "dark",
+          "z_order": 5
+        }
+      ],
+      "floating_ball": [
+        {
+          "action": "closeSettingsDetail",
+          "action_id": "closeSettingsDetail",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 52
+          },
+          "bridge": {
+            "action": "closeSettingsDetail",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "返回设置",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "closeSettingsDetail",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 25,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:history",
+          "theme": "dark",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 106,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:devices",
+          "theme": "dark",
+          "z_order": 3
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 187,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:files",
+          "theme": "dark",
+          "z_order": 4
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 268,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:settings",
+          "theme": "dark",
+          "z_order": 5
+        },
+        {
+          "action": "setOverlayEnabled",
+          "action_id": "setOverlayEnabled",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 235
+          },
+          "bridge": {
+            "action": "setOverlayEnabled",
+            "setting": "overlay_enabled",
+            "value": false,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "启用悬浮球显示在系统桌面边缘",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlayEnabled",
+          "theme": "dark",
+          "z_order": 6
+        },
+        {
+          "action": "setOverlayVerticalFraction",
+          "action_id": "setOverlayVerticalFraction",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 298
+          },
+          "bridge": {
+            "action": "setOverlayVerticalFraction",
+            "setting": "overlay_vertical_fraction",
+            "value": 0.5,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "点击动作同步一次并复制最新可用内容默认",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlayVerticalFraction",
+          "theme": "dark",
+          "z_order": 7
+        },
+        {
+          "action": "setOverlaySnapEdge",
+          "action_id": "setOverlaySnapEdge",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 361
+          },
+          "bridge": {
+            "action": "setOverlaySnapEdge",
+            "setting": "overlay_snap_edge",
+            "value": "left",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "停靠边缘拖动松手后自动吸附右侧",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlaySnapEdge",
+          "theme": "dark",
+          "z_order": 8
+        },
+        {
+          "action": "setOverlaySize",
+          "action_id": "setOverlaySize",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 556
+          },
+          "bridge": {
+            "action": "setOverlaySize",
+            "setting": "overlay_size",
+            "value": 64,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "尺寸64 dp · 兼顾可点按和遮挡范围",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlaySize",
+          "theme": "dark",
+          "z_order": 9
+        },
+        {
+          "action": "setOverlayOpacity",
+          "action_id": "setOverlayOpacity",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 656
+          },
+          "bridge": {
+            "action": "setOverlayOpacity",
+            "setting": "overlay_opacity",
+            "value": 78,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "闲置透明度78% · 不完全隐藏，保持可发现",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlayOpacity",
+          "theme": "dark",
+          "z_order": 10
+        },
+        {
+          "action": "setOverlaySnapEdge",
+          "action_id": "setOverlaySnapEdge",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 115,
+            "width": 342,
+            "x": 14,
+            "y": 429
+          },
+          "bridge": {
+            "action": "setOverlaySnapEdge",
+            "setting": "overlay_snap_edge",
+            "value": "left",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "停靠方向当前吸附到右侧边缘左侧右侧",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlaySnapEdge",
+          "theme": "dark",
+          "z_order": 11
+        }
+      ],
+      "history": [
+        {
+          "action": "syncNow",
+          "action_id": "syncNow",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 274,
+            "y": 47
+          },
+          "bridge": {
+            "action": "syncNow",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "立即同步",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "syncNow",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 34,
+            "width": 77,
+            "x": 106,
+            "y": 770
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "selectDestination:devices",
+          "theme": "dark",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 34,
+            "width": 77,
+            "x": 187,
+            "y": 770
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "selectDestination:files",
+          "theme": "dark",
+          "z_order": 3
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 34,
+            "width": 77,
+            "x": 268,
+            "y": 770
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "selectDestination:settings",
+          "theme": "dark",
+          "z_order": 4
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 280
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-ready-text",
+          "theme": "dark",
+          "z_order": 5
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-remote-image",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 280
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 图片09:321086 × 1448",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-remote-image",
+          "theme": "dark",
+          "z_order": 6
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-ready-file",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 440
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-ready-file",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-ready-file",
+          "theme": "dark",
+          "z_order": 7
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-link",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 440
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-link",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-link",
+          "theme": "dark",
+          "z_order": 8
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-color",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 600
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-color",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 颜色08:12#7C3AEDRGB 124,58,237",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-color",
+          "theme": "dark",
+          "z_order": 9
+        },
+        {
+          "action": "copyItem",
+          "action_id": "copyItem:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [
+            ".text-card",
+            ".copy-chip"
+          ],
+          "bounds": {
+            "height": 20,
+            "width": 38,
+            "x": 25,
+            "y": 401
+          },
+          "bridge": {
+            "action": "copyItem",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "复制",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-ready-text",
+          "theme": "dark",
+          "z_order": 200
+        }
+      ],
+      "item_detail_text": [
+        {
+          "action": "closeDetail",
+          "action_id": "closeDetail",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "bridge": {
+            "action": "closeDetail",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "返回",
+          "role": "button",
+          "route": "item_detail_text",
+          "selected_nav": null,
+          "stable_id": "closeDetail",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "copyItem",
+          "action_id": "copyItem:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 44,
+            "width": 112,
+            "x": 25,
+            "y": 757
+          },
+          "bridge": {
+            "action": "copyItem",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "复制",
+          "role": "button",
+          "route": "item_detail_text",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "dark",
+          "z_order": 2
+        },
+        {
+          "action": "showDeleteConfirm",
+          "action_id": "showDeleteConfirm:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 44,
+            "width": 44,
+            "x": 301,
+            "y": 757
+          },
+          "bridge": {
+            "action": "showDeleteConfirm",
+            "sheet": "delete_confirm",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "删除",
+          "role": "button",
+          "route": "item_detail_text",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "dark",
+          "z_order": 3
+        }
+      ],
+      "keep_alive": [
+        {
+          "action": "closeSettingsDetail",
+          "action_id": "closeSettingsDetail",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 53
+          },
+          "bridge": {
+            "action": "closeSettingsDetail",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "返回设置",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "closeSettingsDetail",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:history",
+          "theme": "dark",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:devices",
+          "theme": "dark",
+          "z_order": 3
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:files",
+          "theme": "dark",
+          "z_order": 4
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:settings",
+          "theme": "dark",
+          "z_order": 5
+        }
+      ],
+      "remote_asset_sheet": [
+        {
+          "action": "hideRemoteRetrieval",
+          "action_id": "hideRemoteRetrieval",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "bridge": {
+            "action": "hideRemoteRetrieval",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "关闭远端取回",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "hideRemoteRetrieval",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "downloadAndCopy",
+          "action_id": "downloadAndCopy:qa-remote-image",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 619
+          },
+          "bridge": {
+            "action": "downloadAndCopy",
+            "sheet": "remote_retrieval",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "下载并复制P2P 取回原图后写入系统剪贴板",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "qa-remote-image",
+          "theme": "dark",
+          "z_order": 100
+        },
+        {
+          "action": "downloadToCache",
+          "action_id": "downloadToCache:qa-remote-image",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 681
+          },
+          "bridge": {
+            "action": "downloadToCache",
+            "sheet": "remote_retrieval",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "仅下载到本机缓存用于稍后打开或分享，不改变剪贴板",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "qa-remote-image",
+          "theme": "dark",
+          "z_order": 101
+        },
+        {
+          "action": "copyThumbnail",
+          "action_id": "copyThumbnail:qa-remote-image",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 743
+          },
+          "bridge": {
+            "action": "copyThumbnail",
+            "sheet": "remote_retrieval",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "复制缩略图快速使用预览图，保留原图远端状态",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "qa-remote-image",
+          "theme": "dark",
+          "z_order": 102
+        }
+      ],
+      "settings": [
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:history",
+          "theme": "dark",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:devices",
+          "theme": "dark",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:files",
+          "theme": "dark",
+          "z_order": 3
+        },
+        {
+          "action": "setP2pEnabled",
+          "action_id": "setP2pEnabled",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 250
+          },
+          "bridge": {
+            "action": "setP2pEnabled",
+            "setting": "p2p_enabled",
+            "value": false,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "P2P 远端取回图片和文件按需下载",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "setP2pEnabled",
+          "theme": "dark",
+          "z_order": 4
+        },
+        {
+          "action": "openSettingsDetail",
+          "action_id": "openSettingsDetail:keep_alive",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 74,
+            "width": 340,
+            "x": 15,
+            "y": 389
+          },
+          "bridge": {
+            "action": "openSettingsDetail",
+            "route": "keep_alive",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "保活权限通知、后台、电池优化和厂商设置2 项待处理",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "openSettingsDetail:keep_alive",
+          "theme": "dark",
+          "z_order": 5
+        },
+        {
+          "action": "openSettingsDetail",
+          "action_id": "openSettingsDetail:floating_ball",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 463
+          },
+          "bridge": {
+            "action": "openSettingsDetail",
+            "route": "floating_ball",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "悬浮球同步并复制最新内容已启用",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "openSettingsDetail:floating_ball",
+          "theme": "dark",
+          "z_order": 6
+        },
+        {
+          "action": "setWifiOnly",
+          "action_id": "setWifiOnly",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 526
+          },
+          "bridge": {
+            "action": "setWifiOnly",
+            "setting": "wifi_only",
+            "value": false,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件与缓存428 MB · 仅 Wi‑Fi 下载",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "setWifiOnly",
+          "theme": "dark",
+          "z_order": 7
+        }
+      ]
+    },
+    "light": {
+      "delete_confirm": [
+        {
+          "action": "hideDeleteConfirm",
+          "action_id": "hideDeleteConfirm",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "bridge": {
+            "action": "hideDeleteConfirm",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "取消删除",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "hideDeleteConfirm",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "removeLocalCache",
+          "action_id": "removeLocalCache:qa-ready-text",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 635
+          },
+          "bridge": {
+            "action": "removeLocalCache",
+            "sheet": "delete_confirm",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": false,
+          "label": "仅移除本机缓存",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "light",
+          "z_order": 100
+        },
+        {
+          "action": "deleteSyncRecord",
+          "action_id": "deleteSyncRecord:qa-ready-text",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 690
+          },
+          "bridge": {
+            "action": "deleteSyncRecord",
+            "sheet": "delete_confirm",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "删除同步记录",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "light",
+          "z_order": 101
+        },
+        {
+          "action": "hideDeleteConfirm",
+          "action_id": "hideDeleteConfirm",
+          "active_sheet": "delete_confirm",
+          "anchors": [],
+          "bounds": {
+            "height": 46,
+            "width": 304,
+            "x": 33,
+            "y": 745
+          },
+          "bridge": {
+            "action": "hideDeleteConfirm",
+            "sheet": "delete_confirm",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "取消",
+          "role": "button",
+          "route": "delete_confirm",
+          "selected_nav": null,
+          "stable_id": "hideDeleteConfirm",
+          "theme": "light",
+          "z_order": 102
+        }
+      ],
+      "devices": [
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "devices",
+          "selected_nav": "设备",
+          "stable_id": "selectDestination:history",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "devices",
+          "selected_nav": "设备",
+          "stable_id": "selectDestination:files",
+          "theme": "light",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "devices",
+          "selected_nav": "设备",
+          "stable_id": "selectDestination:settings",
+          "theme": "light",
+          "z_order": 3
+        }
+      ],
+      "files": [
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "selectDestination:history",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "selectDestination:devices",
+          "theme": "light",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "selectDestination:settings",
+          "theme": "light",
+          "z_order": 3
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-remote-image",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 250
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "UI-review-screenshot.pngMacBook Pro · 1.2 MB · 远端取回",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "qa-remote-image",
+          "theme": "light",
+          "z_order": 4
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-ready-file",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 68,
+            "width": 342,
+            "x": 14,
+            "y": 426
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-ready-file",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "Server-config.txt已缓存 · text/plain · 12 KB打开",
+          "role": "button",
+          "route": "files",
+          "selected_nav": "文件",
+          "stable_id": "qa-ready-file",
+          "theme": "light",
+          "z_order": 5
+        }
+      ],
+      "floating_ball": [
+        {
+          "action": "closeSettingsDetail",
+          "action_id": "closeSettingsDetail",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 52
+          },
+          "bridge": {
+            "action": "closeSettingsDetail",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "返回设置",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "closeSettingsDetail",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 25,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:history",
+          "theme": "light",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 106,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:devices",
+          "theme": "light",
+          "z_order": 3
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 187,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:files",
+          "theme": "light",
+          "z_order": 4
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 40,
+            "width": 77,
+            "x": 268,
+            "y": 764
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:settings",
+          "theme": "light",
+          "z_order": 5
+        },
+        {
+          "action": "setOverlayEnabled",
+          "action_id": "setOverlayEnabled",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 235
+          },
+          "bridge": {
+            "action": "setOverlayEnabled",
+            "setting": "overlay_enabled",
+            "value": false,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "启用悬浮球显示在系统桌面边缘",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlayEnabled",
+          "theme": "light",
+          "z_order": 6
+        },
+        {
+          "action": "setOverlayVerticalFraction",
+          "action_id": "setOverlayVerticalFraction",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 298
+          },
+          "bridge": {
+            "action": "setOverlayVerticalFraction",
+            "setting": "overlay_vertical_fraction",
+            "value": 0.5,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "点击动作同步一次并复制最新可用内容默认",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlayVerticalFraction",
+          "theme": "light",
+          "z_order": 7
+        },
+        {
+          "action": "setOverlaySnapEdge",
+          "action_id": "setOverlaySnapEdge",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 361
+          },
+          "bridge": {
+            "action": "setOverlaySnapEdge",
+            "setting": "overlay_snap_edge",
+            "value": "left",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "停靠边缘拖动松手后自动吸附右侧",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlaySnapEdge",
+          "theme": "light",
+          "z_order": 8
+        },
+        {
+          "action": "setOverlaySize",
+          "action_id": "setOverlaySize",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 556
+          },
+          "bridge": {
+            "action": "setOverlaySize",
+            "setting": "overlay_size",
+            "value": 64,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "尺寸64 dp · 兼顾可点按和遮挡范围",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlaySize",
+          "theme": "light",
+          "z_order": 9
+        },
+        {
+          "action": "setOverlayOpacity",
+          "action_id": "setOverlayOpacity",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 88,
+            "width": 342,
+            "x": 14,
+            "y": 656
+          },
+          "bridge": {
+            "action": "setOverlayOpacity",
+            "setting": "overlay_opacity",
+            "value": 78,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "闲置透明度78% · 不完全隐藏，保持可发现",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlayOpacity",
+          "theme": "light",
+          "z_order": 10
+        },
+        {
+          "action": "setOverlaySnapEdge",
+          "action_id": "setOverlaySnapEdge",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 115,
+            "width": 342,
+            "x": 14,
+            "y": 429
+          },
+          "bridge": {
+            "action": "setOverlaySnapEdge",
+            "setting": "overlay_snap_edge",
+            "value": "left",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "停靠方向当前吸附到右侧边缘左侧右侧",
+          "role": "button",
+          "route": "floating_ball",
+          "selected_nav": "设置",
+          "stable_id": "setOverlaySnapEdge",
+          "theme": "light",
+          "z_order": 11
+        }
+      ],
+      "history": [
+        {
+          "action": "syncNow",
+          "action_id": "syncNow",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 274,
+            "y": 47
+          },
+          "bridge": {
+            "action": "syncNow",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "立即同步",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "syncNow",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 34,
+            "width": 77,
+            "x": 106,
+            "y": 770
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "selectDestination:devices",
+          "theme": "light",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 34,
+            "width": 77,
+            "x": 187,
+            "y": 770
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "selectDestination:files",
+          "theme": "light",
+          "z_order": 3
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 34,
+            "width": 77,
+            "x": 268,
+            "y": 770
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "selectDestination:settings",
+          "theme": "light",
+          "z_order": 4
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 280
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-ready-text",
+          "theme": "light",
+          "z_order": 5
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-remote-image",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 280
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 图片09:321086 × 1448",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-remote-image",
+          "theme": "light",
+          "z_order": 6
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-ready-file",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 440
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-ready-file",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-ready-file",
+          "theme": "light",
+          "z_order": 7
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-link",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 190,
+            "y": 440
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-link",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-link",
+          "theme": "light",
+          "z_order": 8
+        },
+        {
+          "action": "openItemDetail",
+          "action_id": "openItemDetail:qa-color",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 150,
+            "width": 166,
+            "x": 14,
+            "y": 600
+          },
+          "bridge": {
+            "action": "openItemDetail",
+            "stableId": "qa-color",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "打开 颜色08:12#7C3AEDRGB 124,58,237",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-color",
+          "theme": "light",
+          "z_order": 9
+        },
+        {
+          "action": "copyItem",
+          "action_id": "copyItem:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [
+            ".text-card",
+            ".copy-chip"
+          ],
+          "bounds": {
+            "height": 20,
+            "width": 38,
+            "x": 25,
+            "y": 401
+          },
+          "bridge": {
+            "action": "copyItem",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "复制",
+          "role": "button",
+          "route": "history",
+          "selected_nav": "历史",
+          "stable_id": "qa-ready-text",
+          "theme": "light",
+          "z_order": 200
+        }
+      ],
+      "item_detail_text": [
+        {
+          "action": "closeDetail",
+          "action_id": "closeDetail",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "bridge": {
+            "action": "closeDetail",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "返回",
+          "role": "button",
+          "route": "item_detail_text",
+          "selected_nav": null,
+          "stable_id": "closeDetail",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "copyItem",
+          "action_id": "copyItem:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 44,
+            "width": 112,
+            "x": 25,
+            "y": 757
+          },
+          "bridge": {
+            "action": "copyItem",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "复制",
+          "role": "button",
+          "route": "item_detail_text",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "light",
+          "z_order": 2
+        },
+        {
+          "action": "showDeleteConfirm",
+          "action_id": "showDeleteConfirm:qa-ready-text",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 44,
+            "width": 44,
+            "x": 301,
+            "y": 757
+          },
+          "bridge": {
+            "action": "showDeleteConfirm",
+            "sheet": "delete_confirm",
+            "stableId": "qa-ready-text",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "删除",
+          "role": "button",
+          "route": "item_detail_text",
+          "selected_nav": null,
+          "stable_id": "qa-ready-text",
+          "theme": "light",
+          "z_order": 3
+        }
+      ],
+      "keep_alive": [
+        {
+          "action": "closeSettingsDetail",
+          "action_id": "closeSettingsDetail",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 318,
+            "y": 53
+          },
+          "bridge": {
+            "action": "closeSettingsDetail",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "返回设置",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "closeSettingsDetail",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:history",
+          "theme": "light",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:devices",
+          "theme": "light",
+          "z_order": 3
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:files",
+          "theme": "light",
+          "z_order": 4
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:settings",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 268,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "settings",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设置",
+          "role": "button",
+          "route": "keep_alive",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:settings",
+          "theme": "light",
+          "z_order": 5
+        }
+      ],
+      "remote_asset_sheet": [
+        {
+          "action": "hideRemoteRetrieval",
+          "action_id": "hideRemoteRetrieval",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 36,
+            "width": 36,
+            "x": 16,
+            "y": 53
+          },
+          "bridge": {
+            "action": "hideRemoteRetrieval",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "关闭远端取回",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "hideRemoteRetrieval",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "downloadAndCopy",
+          "action_id": "downloadAndCopy:qa-remote-image",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 619
+          },
+          "bridge": {
+            "action": "downloadAndCopy",
+            "sheet": "remote_retrieval",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "下载并复制P2P 取回原图后写入系统剪贴板",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "qa-remote-image",
+          "theme": "light",
+          "z_order": 100
+        },
+        {
+          "action": "downloadToCache",
+          "action_id": "downloadToCache:qa-remote-image",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 681
+          },
+          "bridge": {
+            "action": "downloadToCache",
+            "sheet": "remote_retrieval",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "仅下载到本机缓存用于稍后打开或分享，不改变剪贴板",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "qa-remote-image",
+          "theme": "light",
+          "z_order": 101
+        },
+        {
+          "action": "copyThumbnail",
+          "action_id": "copyThumbnail:qa-remote-image",
+          "active_sheet": "remote_retrieval",
+          "anchors": [],
+          "bounds": {
+            "height": 54,
+            "width": 316,
+            "x": 27,
+            "y": 743
+          },
+          "bridge": {
+            "action": "copyThumbnail",
+            "sheet": "remote_retrieval",
+            "stableId": "qa-remote-image",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "复制缩略图快速使用预览图，保留原图远端状态",
+          "role": "button",
+          "route": "remote_asset_sheet",
+          "selected_nav": null,
+          "stable_id": "qa-remote-image",
+          "theme": "light",
+          "z_order": 102
+        }
+      ],
+      "settings": [
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:history",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 25,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "history",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "历史",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:history",
+          "theme": "light",
+          "z_order": 1
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:devices",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 106,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "devices",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "设备",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:devices",
+          "theme": "light",
+          "z_order": 2
+        },
+        {
+          "action": "selectDestination",
+          "action_id": "selectDestination:files",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 42,
+            "width": 77,
+            "x": 187,
+            "y": 762
+          },
+          "bridge": {
+            "action": "selectDestination",
+            "route": "files",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "selectDestination:files",
+          "theme": "light",
+          "z_order": 3
+        },
+        {
+          "action": "setP2pEnabled",
+          "action_id": "setP2pEnabled",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 250
+          },
+          "bridge": {
+            "action": "setP2pEnabled",
+            "setting": "p2p_enabled",
+            "value": false,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "P2P 远端取回图片和文件按需下载",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "setP2pEnabled",
+          "theme": "light",
+          "z_order": 4
+        },
+        {
+          "action": "openSettingsDetail",
+          "action_id": "openSettingsDetail:keep_alive",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 74,
+            "width": 340,
+            "x": 15,
+            "y": 389
+          },
+          "bridge": {
+            "action": "openSettingsDetail",
+            "route": "keep_alive",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "保活权限通知、后台、电池优化和厂商设置2 项待处理",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "openSettingsDetail:keep_alive",
+          "theme": "light",
+          "z_order": 5
+        },
+        {
+          "action": "openSettingsDetail",
+          "action_id": "openSettingsDetail:floating_ball",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 63,
+            "width": 340,
+            "x": 15,
+            "y": 463
+          },
+          "bridge": {
+            "action": "openSettingsDetail",
+            "route": "floating_ball",
+            "version": 1
+          },
+          "enabled": true,
+          "label": "悬浮球同步并复制最新内容已启用",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "openSettingsDetail:floating_ball",
+          "theme": "light",
+          "z_order": 6
+        },
+        {
+          "action": "setWifiOnly",
+          "action_id": "setWifiOnly",
+          "active_sheet": null,
+          "anchors": [],
+          "bounds": {
+            "height": 62,
+            "width": 340,
+            "x": 15,
+            "y": 526
+          },
+          "bridge": {
+            "action": "setWifiOnly",
+            "setting": "wifi_only",
+            "value": false,
+            "version": 1
+          },
+          "enabled": true,
+          "label": "文件与缓存428 MB · 仅 Wi‑Fi 下载",
+          "role": "button",
+          "route": "settings",
+          "selected_nav": "设置",
+          "stable_id": "setWifiOnly",
+          "theme": "light",
+          "z_order": 7
+        }
+      ]
+    }
+  },
+  "screen_size": {
+    "height": 824,
+    "width": 370
+  },
+  "screens": [
+    "history",
+    "devices",
+    "files",
+    "settings",
+    "keep_alive",
+    "floating_ball",
+    "item_detail_text",
+    "remote_asset_sheet",
+    "delete_confirm"
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "version": 5
+}

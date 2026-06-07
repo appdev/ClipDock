@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "screen_size": { "width": 370, "height": 824, "density": 160 },
+  "screens": [
+    "history",
+    "devices",
+    "files",
+    "settings",
+    "keep_alive",
+    "floating_ball",
+    "item_detail_text",
+    "remote_asset_sheet",
+    "delete_confirm"
+  ],
+  "themes": ["light", "dark"],
+  "thresholds": {
+    "ssim_min": 0.995,
+    "rmse_max": 0.015,
+    "changed_ratio_max": 0.005,
+    "region_changed_ratio_max": 0.015,
+    "geometry_px_tolerance": 1
+  },
+  "report_schema": {
+    "version": "integer",
+    "generated_at": "ISO-8601 string",
+    "config": "object",
+    "summary": {
+      "total": "integer",
+      "passed": "integer",
+      "failed": "integer"
+    },
+    "results": [
+      {
+        "screen_id": "string",
+        "theme": "light|dark",
+        "reference": "path",
+        "android": "path",
+        "diff": "path",
+        "mask": "path",
+        "reference_shape": "[height,width,channels]",
+        "android_shape": "[height,width,channels]",
+        "compared_shape": "[height,width,channels]",
+        "ssim": "number",
+        "rmse": "number",
+        "changed_ratio": "number",
+        "passed": "boolean",
+        "failures": ["string"]
+      }
+    ]
+  }
+}

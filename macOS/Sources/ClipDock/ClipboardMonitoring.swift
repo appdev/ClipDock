@@ -337,12 +337,16 @@ final class ClipboardMonitor: ClipboardMonitoring {
     func start() {
         stop()
         lastChangeCount = pasteboard.changeCount
-        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+        let timer = Timer(timeInterval: pollInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
                 self?.pollPasteboard()
             }
         }
-        RunLoop.main.add(timer!, forMode: .common)
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .default)
+        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: .eventTracking)
+        RunLoop.main.add(timer, forMode: .modalPanel)
     }
 
     func stop() {

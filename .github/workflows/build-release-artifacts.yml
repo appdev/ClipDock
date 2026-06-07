@@ -163,7 +163,6 @@ jobs:
           name: ClipDock-${{ needs.metadata.outputs.version }}-macos
           path: |
             .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/ClipDock-${{ needs.metadata.outputs.version }}-*.dmg
-            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/SHA256SUMS
             .codex/artifacts/release/${{ needs.metadata.outputs.version }}/macos/ClipDock-release-manifest.txt
           if-no-files-found: error
           retention-days: 30
@@ -265,7 +264,7 @@ jobs:
           artifact_root="$PWD/${{ needs.metadata.outputs.artifact_path }}/android"
 
           mkdir -p "$artifact_root"
-          rm -f "$artifact_root"/*.apk "$artifact_root"/*.aab "$artifact_root"/SHA256SUMS "$artifact_root"/ClipDock-Android-release-manifest.txt
+          rm -f "$artifact_root"/*.apk "$artifact_root"/*.aab "$artifact_root"/ClipDock-Android-release-manifest.txt
 
           apk_sources=()
           while IFS= read -r artifact; do
@@ -278,19 +277,9 @@ jobs:
           fi
 
           apk_path="$artifact_root/ClipDock-$version-$build-android-release-signed.apk"
-          checksums_path="$artifact_root/SHA256SUMS"
           manifest_path="$artifact_root/ClipDock-Android-release-manifest.txt"
 
           cp "${apk_sources[0]}" "$apk_path"
-
-          : > "$checksums_path"
-          for artifact in "$apk_path"; do
-            if command -v sha256sum >/dev/null 2>&1; then
-              (cd "$artifact_root" && sha256sum "$(basename "$artifact")") >> "$checksums_path"
-            else
-              (cd "$artifact_root" && shasum -a 256 "$(basename "$artifact")") >> "$checksums_path"
-            fi
-          done
 
           {
             printf 'name=ClipDock\n'
@@ -308,7 +297,8 @@ jobs:
         with:
           name: ClipDock-${{ needs.metadata.outputs.version }}-android
           path: |
-            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/android/*
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/android/*.apk
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/android/ClipDock-Android-release-manifest.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -337,9 +327,6 @@ jobs:
           - artifact_label: windows-x86_64
             runner: windows-2025
             target: x86_64-pc-windows-msvc
-          - artifact_label: windows-arm64
-            runner: windows-11-arm
-            target: aarch64-pc-windows-msvc
 
     steps:
       - name: Checkout
@@ -374,7 +361,9 @@ jobs:
         with:
           name: ClipDock-Server-${{ needs.metadata.outputs.version }}-${{ matrix.artifact_label }}
           path: |
-            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*.tar.gz
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*.zip
+            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*.manifest.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -461,4 +450,3 @@ jobs:
             release-artifacts/**/*.dmg
             release-artifacts/**/*.tar.gz
             release-artifacts/**/*.zip
-            release-artifacts/**/*.sha256

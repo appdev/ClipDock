@@ -1,0 +1,57 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "ClipDock Panel",
+  "version": "0.1.0",
+  "identifier": "com.apkdv.clipdock.panel",
+  "build": {
+    "beforeDevCommand": "npm run dev:web",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": false
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "ClipDock",
+        "width": 1280,
+        "height": 320,
+        "minWidth": 640,
+        "minHeight": 260,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundThrottling": "disabled",
+        "shadow": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": true,
+        "windowEffects": {
+          "effects": ["popover", "windowBackground", "acrylic"],
+          "state": "active",
+          "radius": 26,
+          "color": "#eef3f8cc"
+        },
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPLOCALDATA/native-assets/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "category": "Productivity",
+    "icon": ["icons/icon.png"]
+  }
+}

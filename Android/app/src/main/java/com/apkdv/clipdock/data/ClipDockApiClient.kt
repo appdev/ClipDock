@@ -271,8 +271,8 @@ class ClipDockApiClient(
       kind = data.optString("kind"),
       mimeType = data.optString("mime_type"),
       byteCount = data.optLong("size_bytes"),
-      width = data.optInt("width_px"),
-      height = data.optInt("height_px"),
+      width = data.optionalPositiveInt("width_px") ?: width,
+      height = data.optionalPositiveInt("height_px") ?: height,
       alreadyExists = data.optBoolean("already_exists"),
     )
   }
@@ -333,6 +333,16 @@ class ClipDockApiClient(
         .build()
     val defaultJson: Json = Json { ignoreUnknownKeys = true }
   }
+}
+
+private fun JSONObject.optionalPositiveInt(name: String): Int? {
+  if (!has(name) || isNull(name)) return null
+  val value = opt(name)
+  return when (value) {
+    is Number -> value.toInt().takeIf { it > 0 }
+    is String -> value.toIntOrNull()?.takeIf { it > 0 }
+    else -> null
+  } ?: throw ClipDockApiException("invalid_asset_metadata", "Invalid asset metadata: $name")
 }
 
 private data class NetworkResponse(

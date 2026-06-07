@@ -1,0 +1,1536 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ClipDock Mobile Complete Design V4</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root,
+    .theme-light {
+      --board-bg: linear-gradient(135deg, #fff 0%, #f1f6f4 58%, #eef3f5 100%);
+      --page-bg: #edf1f2;
+      --phone-bg: #f6f8f9;
+      --surface: #fff;
+      --surface-2: #f7fafb;
+      --surface-3: #eef4f2;
+      --ink: #172033;
+      --muted: #697586;
+      --faint: #94a3b8;
+      --line: #dbe3ea;
+      --soft-line: rgba(148,163,184,.28);
+      --frame: #111820;
+      --accent: #18a67a;
+      --accent-2: #2563eb;
+      --warn: #c77916;
+      --danger: #d54b6a;
+      --accent-soft: #e8f6f1;
+      --blue-soft: #e9f0ff;
+      --warn-soft: #fff4df;
+      --danger-soft: #fff0f4;
+      --shadow: 0 18px 46px rgba(17,24,39,.12);
+      --card-shadow: 0 8px 22px rgba(17,24,39,.07);
+      --phone-shadow: 0 30px 70px rgba(15,23,42,.20), 0 4px 14px rgba(15,23,42,.12);
+      --hero-bg: linear-gradient(135deg, #101820, #173f35);
+    }
+    .theme-dark {
+      --board-bg: radial-gradient(circle at 16% 14%, rgba(24,166,122,.18), transparent 34%),
+        radial-gradient(circle at 82% 8%, rgba(37,99,235,.16), transparent 30%),
+        linear-gradient(135deg, #08100f 0%, #0d1719 58%, #111827 100%);
+      --page-bg: #060d0d;
+      --phone-bg: #0d1416;
+      --surface: #141d20;
+      --surface-2: #101719;
+      --surface-3: #172422;
+      --ink: #eef6f3;
+      --muted: #9aa9b5;
+      --faint: #778694;
+      --line: #26343a;
+      --soft-line: rgba(148,163,184,.18);
+      --frame: #05080a;
+      --accent: #35d39f;
+      --accent-2: #73a5ff;
+      --warn: #f2b65e;
+      --danger: #ff7b99;
+      --accent-soft: rgba(53,211,159,.15);
+      --blue-soft: rgba(115,165,255,.15);
+      --warn-soft: rgba(242,182,94,.14);
+      --danger-soft: rgba(255,123,153,.14);
+      --shadow: 0 18px 46px rgba(0,0,0,.28);
+      --card-shadow: none;
+      --phone-shadow: 0 30px 70px rgba(0,0,0,.42), 0 4px 14px rgba(0,0,0,.24);
+      --hero-bg: linear-gradient(135deg, #172422, #10372e);
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      justify-items: center;
+      align-items: start;
+      gap: 42px;
+      padding: 0 0 54px;
+      background: var(--page-bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .icon {
+      width: 18px;
+      height: 18px;
+      display: block;
+      flex: 0 0 auto;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .icon-lg { width: 22px; height: 22px; }
+    .board {
+      width: 1800px;
+      min-height: 3120px;
+      padding: 56px 64px 70px;
+      background: var(--board-bg);
+      color: var(--ink);
+    }
+    .board-header {
+      max-width: 1560px;
+      margin: 0 auto 34px;
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 40px;
+    }
+    .board-header h1 {
+      margin: 0;
+      font-size: 34px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+    .board-header p {
+      max-width: 940px;
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .version {
+      flex: 0 0 auto;
+      padding: 9px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 740;
+    }
+    .grid {
+      max-width: 1560px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      column-gap: 70px;
+      row-gap: 54px;
+      justify-items: center;
+      align-items: start;
+    }
+    .panel {
+      width: 430px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .caption {
+      width: 430px;
+      min-height: 64px;
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .caption h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+    .caption p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .tag {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 720;
+    }
+    .phone {
+      position: relative;
+      width: 390px;
+      height: 844px;
+      overflow: hidden;
+      border: 10px solid var(--frame);
+      border-radius: 42px;
+      background: var(--phone-bg);
+      box-shadow: var(--phone-shadow);
+    }
+    .screen {
+      height: 100%;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--phone-bg);
+    }
+    .status {
+      height: 24px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 760;
+    }
+    .status-icons { display: flex; align-items: center; gap: 5px; }
+    .signal {
+      width: 16px;
+      height: 10px;
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      align-items: end;
+      gap: 1px;
+    }
+    .signal span { display: block; width: 2px; border-radius: 2px; background: currentColor; }
+    .signal span:nth-child(1) { height: 3px; }
+    .signal span:nth-child(2) { height: 5px; }
+    .signal span:nth-child(3) { height: 7px; }
+    .signal span:nth-child(4) { height: 9px; }
+    .battery {
+      width: 19px;
+      height: 10px;
+      border: 1.6px solid currentColor;
+      border-radius: 3px;
+      position: relative;
+    }
+    .battery:before {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      width: 11px;
+      height: 4px;
+      border-radius: 2px;
+      background: currentColor;
+    }
+    .battery:after {
+      content: "";
+      position: absolute;
+      right: -3px;
+      top: 3px;
+      width: 2px;
+      height: 4px;
+      border-radius: 1px;
+      background: currentColor;
+    }
+    .topbar {
+      padding: 0 2px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .title-block { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .screen-title {
+      font-size: 25px;
+      font-weight: 820;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+    .screen-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.3;
+    }
+    .icon-row { display: flex; align-items: center; gap: 8px; }
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 2px 8px rgba(15,23,42,.05);
+    }
+    .theme-dark .icon-btn { box-shadow: none; }
+    .banner {
+      min-height: 78px;
+      padding: 14px;
+      border-radius: 20px;
+      color: #fff;
+      background: var(--hero-bg);
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      box-shadow: var(--shadow);
+    }
+    .theme-dark .banner { border: 1px solid rgba(53,211,159,.18); box-shadow: none; }
+    .banner-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: rgba(255,255,255,.13);
+    }
+    .banner strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1.2;
+    }
+    .banner span {
+      display: block;
+      margin-top: 5px;
+      color: rgba(255,255,255,.72);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+    .pill,
+    .tiny-state,
+    .mini-chip {
+      height: 26px;
+      padding: 0 9px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface-3);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+    .pill.green, .tiny-state.green, .mini-chip.green { color: var(--accent); background: var(--accent-soft); }
+    .pill.blue, .tiny-state.blue, .mini-chip.blue { color: var(--accent-2); background: var(--blue-soft); }
+    .pill.amber, .tiny-state.amber, .mini-chip.amber { color: var(--warn); background: var(--warn-soft); }
+    .pill.red, .tiny-state.red, .mini-chip.red { color: var(--danger); background: var(--danger-soft); }
+    .search-pill {
+      height: 44px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .tab-row {
+      height: 38px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      gap: 4px;
+    }
+    .tab {
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 740;
+    }
+    .tab.active {
+      color: var(--ink);
+      background: var(--surface);
+      box-shadow: 0 2px 8px rgba(15,23,42,.06);
+    }
+    .theme-dark .tab.active { box-shadow: none; }
+    .card,
+    .row-card,
+    .clip-card,
+    .setting-group {
+      border: 1px solid var(--soft-line);
+      background: var(--surface);
+      box-shadow: var(--card-shadow);
+    }
+    .card { padding: 14px; border-radius: 18px; }
+    .row-card {
+      min-height: 68px;
+      padding: 12px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .row-icon {
+      flex: 0 0 auto;
+      width: 42px;
+      height: 42px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .row-icon.blue { color: var(--accent-2); background: var(--blue-soft); }
+    .row-icon.amber { color: var(--warn); background: var(--warn-soft); }
+    .row-icon.red { color: var(--danger); background: var(--danger-soft); }
+    .row-copy {
+      flex: 1;
+      min-width: 0;
+    }
+    .row-copy strong {
+      display: block;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.2;
+    }
+    .row-copy span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+      gap: 8px;
+    }
+    .metric {
+      min-height: 70px;
+      padding: 10px;
+      border-radius: 15px;
+      background: var(--surface);
+      border: 1px solid var(--soft-line);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+    }
+    .metric strong {
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1;
+    }
+    .metric span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+    .history-grid {
+      display: grid;
+      grid-template-columns: repeat(2,1fr);
+      gap: 10px;
+    }
+    .clip-card {
+      height: 150px;
+      min-height: 150px;
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .clip-card.selected {
+      border-color: color-mix(in srgb, var(--accent) 62%, var(--soft-line));
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), var(--card-shadow);
+    }
+    .clip-top {
+      height: 34px;
+      padding: 9px 12px 5px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .clip-kind {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 780;
+    }
+    .clip-kind .icon { width: 16px; height: 16px; }
+    .clip-time { color: var(--faint); font-size: 10px; font-weight: 720; white-space: nowrap; }
+    .clip-body {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      border-radius: 0 0 16px 16px;
+    }
+    .clip-content {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.28;
+    }
+    .text-card .clip-content {
+      font-size: 14px;
+      font-weight: 400;
+      display: -webkit-box;
+      padding: 7px 12px 42px;
+      border-radius: 0;
+      background: transparent;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+    }
+    .text-card .clip-body,
+    .file-card .clip-body,
+    .link-card .clip-body {
+      background: color-mix(in srgb, var(--surface-2) 78%, var(--surface));
+    }
+    .text-card .clip-body:before,
+    .file-card .clip-body:before,
+    .link-card .clip-body:before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: inset 0 12px 18px rgba(15,23,42,.045);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .text-card .clip-body:after,
+    .file-card .clip-body:after,
+    .link-card .clip-body:after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 48px;
+      border-radius: 0 0 16px 16px;
+      background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface-2) 78%, var(--surface)) 86%);
+      pointer-events: none;
+      z-index: 2;
+    }
+    .clip-footer {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 8px;
+      min-height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .text-card .clip-footer {
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 680;
+    }
+    .copy-chip {
+      height: 20px;
+      padding: 0 9px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 10px;
+      font-weight: 780;
+    }
+    .char-count {
+      min-width: 0;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      color: var(--faint);
+      background: color-mix(in srgb, var(--surface) 76%, transparent);
+      font-weight: 720;
+      white-space: nowrap;
+    }
+    .image-card {
+      background: #3f63dc;
+      border-color: color-mix(in srgb, #3f63dc 48%, var(--soft-line));
+    }
+    .image-card .clip-kind,
+    .image-card .clip-time,
+    .color-card .clip-kind,
+    .color-card .clip-time {
+      color: #fff;
+    }
+    .image-preview {
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+    .image-card .clip-body {
+      background-color: #181a20;
+      background-image:
+        linear-gradient(45deg, rgba(255,255,255,.055) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255,255,255,.055) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(255,255,255,.055) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255,255,255,.055) 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    }
+    .image-thumb {
+      width: 62px;
+      height: 100%;
+      border-radius: 0;
+      background: transparent;
+      position: relative;
+      overflow: visible;
+      display: grid;
+      place-items: center;
+    }
+    .image-thumb img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: contain;
+    }
+    .media-name {
+      position: absolute;
+      left: 50%;
+      right: auto;
+      bottom: 7px;
+      max-width: calc(100% - 18px);
+      transform: translateX(-50%);
+      padding: 4px 8px;
+      border-radius: 9px;
+      background: rgba(53,57,68,.94);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,.18);
+    }
+    .media-name,
+    .link-domain,
+    .color-values strong {
+      display: block;
+      color: var(--ink);
+      font-size: 11px;
+      line-height: 1.15;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .media-name {
+      color: #fff;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 760;
+    }
+    .file-preview,
+    .link-preview,
+    .color-preview {
+      height: 100%;
+      min-height: 0;
+      padding: 10px 12px 12px;
+      border-radius: 0;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .file-icon {
+      width: 36px;
+      height: 40px;
+      border-radius: 9px;
+      background: linear-gradient(180deg, var(--surface), var(--warn-soft));
+      border: 1px solid color-mix(in srgb, var(--warn) 22%, var(--soft-line));
+      color: var(--warn);
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      font-weight: 840;
+      flex: 0 0 auto;
+    }
+    .file-icon .icon {
+      width: 18px;
+      height: 18px;
+    }
+    .file-copy,
+    .color-values {
+      min-width: 0;
+      flex: 1;
+    }
+    .color-values span,
+    .link-copy {
+      display: -webkit-box;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10.5px;
+      line-height: 1.25;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .file-path {
+      display: -webkit-box;
+      color: var(--ink);
+      font-size: 10.6px;
+      line-height: 1.25;
+      font-weight: 500;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-all;
+    }
+    .file-card .clip-footer {
+      justify-content: flex-start;
+    }
+    .link-preview {
+      display: block;
+    }
+    .link-domain {
+      color: var(--accent-2);
+    }
+    .link-copy {
+      color: var(--ink);
+      font-weight: 720;
+    }
+    .color-card {
+      height: 150px;
+      min-height: 150px;
+      background: #a5a7aa;
+      border-color: color-mix(in srgb, #a5a7aa 50%, var(--soft-line));
+    }
+    .color-preview {
+      position: relative;
+      padding: 0;
+      background: #7c3aed;
+      border: 0;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+    }
+    .color-swatch {
+      position: absolute;
+      inset: 0;
+      display: block;
+      border-radius: 0 0 16px 16px;
+      background: #7c3aed;
+      box-shadow: inset 0 18px 34px rgba(255,255,255,.12), inset 0 -22px 34px rgba(45,15,101,.2);
+    }
+    .color-values {
+      position: absolute;
+      inset: 0;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      background: transparent;
+    }
+    .color-values strong {
+      color: #fff;
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 840;
+      letter-spacing: 0;
+    }
+    .color-values span {
+      display: none;
+    }
+    .progress {
+      height: 7px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--surface-3);
+    }
+    .progress span {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .setting-group {
+      overflow: hidden;
+      border-radius: 18px;
+    }
+    .setting-row {
+      min-height: 62px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      border-bottom: 1px solid var(--soft-line);
+    }
+    .setting-row:last-child { border-bottom: 0; }
+    .toggle {
+      width: 46px;
+      height: 28px;
+      padding: 3px;
+      border-radius: 999px;
+      background: var(--line);
+      display: flex;
+      justify-content: flex-start;
+      flex: 0 0 auto;
+    }
+    .toggle:before {
+      content: "";
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(15,23,42,.18);
+    }
+    .toggle.on {
+      justify-content: flex-end;
+      background: var(--accent);
+    }
+    .segmented {
+      height: 38px;
+      padding: 4px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      display: grid;
+      grid-template-columns: repeat(2,1fr);
+      gap: 4px;
+    }
+    .segmented span {
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+    .segmented .active {
+      color: var(--ink);
+      background: var(--surface);
+    }
+    .slider {
+      height: 7px;
+      border-radius: 999px;
+      background: var(--surface-3);
+      position: relative;
+    }
+    .slider span {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+    .slider:after {
+      content: "";
+      position: absolute;
+      top: -5px;
+      width: 17px;
+      height: 17px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 3px solid var(--accent);
+      box-shadow: 0 2px 7px rgba(15,23,42,.16);
+    }
+    .size .slider span { width: 64%; }
+    .size .slider:after { left: calc(64% - 8px); }
+    .opacity .slider span { width: 78%; }
+    .opacity .slider:after { left: calc(78% - 8px); }
+    .floating-preview {
+      height: 122px;
+      border: 1px dashed var(--line);
+      border-radius: 22px;
+      background:
+        linear-gradient(90deg, transparent 0 47%, color-mix(in srgb, var(--line) 60%, transparent) 47% 48%, transparent 48%),
+        var(--surface-2);
+      position: relative;
+      overflow: hidden;
+    }
+    .floating-ball {
+      position: absolute;
+      right: 0;
+      top: 28px;
+      width: 64px;
+      height: 70px;
+      border-radius: 34px 0 0 34px;
+      background: #1c222d;
+      display: grid;
+      place-items: center;
+      color: #e5e7eb;
+    }
+    .floating-ball .dot {
+      position: absolute;
+      right: 10px;
+      bottom: 13px;
+      box-shadow: none;
+    }
+    .floating-panel {
+      position: absolute;
+      right: 68px;
+      top: 22px;
+      width: 190px;
+      padding: 10px;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--soft-line);
+      box-shadow: var(--card-shadow);
+    }
+    .floating-panel strong {
+      display: block;
+      font-size: 12px;
+      color: var(--ink);
+      line-height: 1.2;
+    }
+    .floating-panel span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.25;
+    }
+    .bottom-nav {
+      margin-top: auto;
+      height: 58px;
+      padding: 7px 10px;
+      border: 1px solid var(--soft-line);
+      border-radius: 20px;
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      gap: 4px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.08);
+    }
+    .theme-dark .bottom-nav { box-shadow: none; }
+    .nav-item {
+      border-radius: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 760;
+    }
+    .nav-item .icon { width: 17px; height: 17px; }
+    .nav-item.active { color: var(--accent); background: var(--accent-soft); }
+    .detail-summary {
+      min-height: 94px;
+      padding: 14px;
+      border-radius: 19px;
+      border: 1px solid var(--soft-line);
+      background: var(--surface);
+      box-shadow: var(--card-shadow);
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .detail-mark {
+      flex: 0 0 auto;
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .detail-mark.blue { color: var(--accent-2); background: var(--blue-soft); }
+    .detail-mark.amber { color: var(--warn); background: var(--warn-soft); }
+    .detail-title {
+      color: var(--ink);
+      font-size: 17px;
+      font-weight: 820;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .detail-subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .detail-chip-row {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .content-preview {
+      min-height: 178px;
+      padding: 15px;
+      border-radius: 20px;
+      border: 1px solid var(--soft-line);
+      background: var(--surface);
+      box-shadow: var(--card-shadow);
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+    }
+    .content-preview h3 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.24;
+      letter-spacing: 0;
+    }
+    .content-preview p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .content-preview .code-line {
+      padding: 10px 11px;
+      border-radius: 13px;
+      background: var(--surface-2);
+      color: var(--ink);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .preview-image {
+      height: 174px;
+      border-radius: 21px;
+      background:
+        radial-gradient(circle at 23% 27%, rgba(255,255,255,.82), transparent 12%),
+        linear-gradient(145deg, color-mix(in srgb, var(--accent) 38%, transparent), color-mix(in srgb, var(--accent-2) 24%, transparent)),
+        var(--surface-3);
+      border: 1px solid var(--soft-line);
+      position: relative;
+      overflow: hidden;
+    }
+    .preview-image:before {
+      content: "";
+      position: absolute;
+      left: 25px;
+      bottom: 22px;
+      width: 128px;
+      height: 82px;
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--surface) 76%, transparent);
+      transform: rotate(-4deg);
+    }
+    .preview-image:after {
+      content: "";
+      position: absolute;
+      right: 32px;
+      top: 30px;
+      width: 58px;
+      height: 58px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 42%, transparent);
+      box-shadow: 0 0 0 22px color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2,1fr);
+      gap: 9px;
+    }
+    .meta-cell {
+      min-height: 58px;
+      padding: 10px;
+      border-radius: 15px;
+      background: var(--surface);
+      border: 1px solid var(--soft-line);
+    }
+    .meta-cell span {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.2;
+    }
+    .meta-cell strong {
+      display: block;
+      margin-top: 5px;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+    .action-dock {
+      margin-top: auto;
+      padding: 10px;
+      border-radius: 22px;
+      border: 1px solid var(--soft-line);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      box-shadow: 0 8px 24px rgba(15,23,42,.08);
+      display: grid;
+      grid-template-columns: 1.35fr repeat(4,44px);
+      gap: 8px;
+      align-items: center;
+    }
+    .theme-dark .action-dock { box-shadow: none; }
+    .primary-action,
+    .dock-action {
+      height: 44px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .primary-action {
+      color: #fff;
+      background: var(--accent);
+    }
+    .dock-action {
+      color: var(--muted);
+      background: var(--surface-3);
+    }
+    .danger-action { color: var(--danger); background: var(--danger-soft); }
+    .sheet-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(6,13,13,.42);
+      backdrop-filter: blur(3px);
+      z-index: 2;
+    }
+    .bottom-sheet,
+    .confirm-sheet {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      z-index: 3;
+      border: 1px solid var(--soft-line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .theme-dark .bottom-sheet,
+    .theme-dark .confirm-sheet { box-shadow: 0 18px 46px rgba(0,0,0,.34); }
+    .bottom-sheet {
+      padding: 10px 12px 12px;
+      border-radius: 28px;
+    }
+    .sheet-grabber {
+      width: 42px;
+      height: 4px;
+      margin: 0 auto 12px;
+      border-radius: 999px;
+      background: var(--line);
+    }
+    .sheet-heading {
+      display: flex;
+      gap: 11px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .sheet-heading strong {
+      display: block;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.2;
+    }
+    .sheet-heading span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .sheet-actions {
+      display: grid;
+      gap: 8px;
+    }
+    .sheet-action {
+      min-height: 54px;
+      padding: 9px 10px;
+      border-radius: 16px;
+      background: var(--surface-2);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sheet-action.primary {
+      color: #fff;
+      background: var(--accent);
+    }
+    .sheet-action .row-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: color-mix(in srgb, currentColor 12%, transparent);
+      color: inherit;
+    }
+    .sheet-action.primary .row-icon {
+      background: rgba(255,255,255,.16);
+      color: #fff;
+    }
+    .sheet-action strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.2;
+      color: inherit;
+    }
+    .sheet-action span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.25;
+    }
+    .sheet-action.primary span { color: rgba(255,255,255,.74); }
+    .confirm-sheet {
+      padding: 18px;
+      border-radius: 26px;
+    }
+    .confirm-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      color: var(--danger);
+      background: var(--danger-soft);
+      margin-bottom: 13px;
+    }
+    .confirm-sheet h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .confirm-sheet p {
+      margin: 7px 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .confirm-actions {
+      display: grid;
+      gap: 9px;
+    }
+    .confirm-button {
+      height: 46px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 820;
+      background: var(--surface-2);
+      color: var(--ink);
+    }
+    .confirm-button.danger {
+      background: var(--danger);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05a2 2 0 0 1-2.83 2.83l-.05-.05A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.08a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.05.05a2 2 0 0 1-2.83-2.83l.05-.05A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.08a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.88l-.05-.05a2 2 0 0 1 2.83-2.83l.05.05A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.08a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.05-.05a2 2 0 0 1 2.83 2.83l-.05.05A1.7 1.7 0 0 0 19.37 9c.2.63.79 1 1.55 1H21a2 2 0 0 1 0 4h-.08a1.7 1.7 0 0 0-1.55 1Z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="m5 17 14-14"/><path d="M7 3h10l-2 7 4 4v3H5v-3l4-4Z"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><path d="M7.5 7.5h.01"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 18H8a5 5 0 1 1 1.15-9.87A6 6 0 0 1 20 12.3 3.4 3.4 0 0 1 17.5 18Z"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="2"/><rect x="4" y="14" width="16" height="6" rx="2"/><path d="M8 7h.01M8 17h.01M12 7h4M12 17h4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.07 0l-2 2A5 5 0 0 0 12 20.07l1.2-1.2"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 16-5-5L5 19"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 7h16M6 12h12M8 17h8"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10"/><path d="m8 10 4 4 4-4"/><path d="M4 20h16"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4.2M8.6 13.4l6.8 4.2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="m10.3 4.3-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-2.7l-8-14a2 2 0 0 0-3.4 0Z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5M12 7v5l3 2"/></symbol>
+    <symbol id="i-devices" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="11" rx="2"/><rect x="17" y="9" width="4" height="10" rx="1.5"/><path d="M8 20h5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6Z"/><path d="m9 12 2 2 4-5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><path d="M12 12h.01M19 12h.01M5 12h.01"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 11v2M7 11h4"/></symbol>
+    <symbol id="i-window" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9h16M8 13h4"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+  </svg>
+
+  <main class="board theme-light" data-mode="light">
+    <header class="board-header">
+      <div>
+        <h1>ClipDock Android Mobile UI V4 Light</h1>
+        <p>补齐底部导航缺失页面、保活权限、悬浮球设置，并继续定义历史 item 点击后的详情、远端取回和删除确认。此版仍是设计评审稿，不修改 Android 代码。</p>
+      </div>
+      <div class="version">Light mode review · 2026-06-04</div>
+    </header>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="caption"><div><h2>1. 历史</h2><p>最近同步内容；底部四个入口均有对应页面。</p></div><span class="tag">History</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="title-block"><div class="screen-title">剪贴板</div><div class="screen-subtitle">刚刚同步 12 条 · 3 台设备在线</div></div><div class="icon-row"><div class="icon-btn"><svg class="icon"><use href="#i-search"/></svg></div><div class="icon-btn"><svg class="icon"><use href="#i-plus"/></svg></div></div></div>
+            <div class="search-pill"><svg class="icon"><use href="#i-search"/></svg><span>搜索文本、链接、文件名</span></div>
+            <div class="tab-row"><div class="tab active">全部</div><div class="tab">文本</div><div class="tab">图片</div><div class="tab">文件</div></div>
+            <div class="banner"><div class="banner-icon"><svg class="icon icon-lg"><use href="#i-cloud"/></svg></div><div><strong>同步正常</strong><span>下一次实时同步已连接</span></div><div class="pill green"><span class="dot"></span>2 秒前</div></div>
+            <div class="history-grid">
+              <div class="clip-card selected text-card" data-card-type="text" data-stable-id="qa-ready-text"><div class="clip-top"><div class="clip-kind"><svg class="icon"><use href="#i-text"/></svg><span>文本</span></div><div class="clip-time">09:38</div></div><div class="clip-body"><div class="clip-content">发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。</div><div class="clip-footer"><span class="copy-chip">复制</span><span class="char-count">64 字符</span></div></div></div>
+              <div class="clip-card image-card" data-card-type="image" data-stable-id="qa-remote-image"><div class="clip-top"><div class="clip-kind"><svg class="icon"><use href="#i-image"/></svg><span>图片</span></div><div class="clip-time">09:32</div></div><div class="clip-body"><div class="clip-content image-preview"><div class="image-thumb"><img src="assets/ui-review-screenshot.png" alt="UI-review-screenshot.png"></div><div class="media-name">1086 × 1448</div></div></div></div>
+              <div class="clip-card file-card" data-card-type="file" data-stable-id="qa-ready-file"><div class="clip-top"><div class="clip-kind"><svg class="icon"><use href="#i-file"/></svg><span>文件</span></div><div class="clip-time">08:31</div></div><div class="clip-body"><div class="clip-content file-preview"><div class="file-icon"><svg class="icon"><use href="#i-file"/></svg></div><div class="file-copy"><span class="file-path">/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt</span></div></div></div></div>
+              <div class="clip-card link-card" data-card-type="link" data-stable-id="qa-link"><div class="clip-top"><div class="clip-kind"><svg class="icon"><use href="#i-link"/></svg><span>链接</span></div><div class="clip-time">08:54</div></div><div class="clip-body"><div class="clip-content link-preview"><div class="link-domain">docs.clipdock.app</div><div class="link-copy">https://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明</div></div></div></div>
+              <div class="clip-card color-card" data-card-type="color" data-stable-id="qa-color"><div class="clip-top"><div class="clip-kind"><svg class="icon"><use href="#i-tag"/></svg><span>颜色</span></div><div class="clip-time">08:12</div></div><div class="clip-body"><div class="clip-content color-preview"><span class="color-swatch"></span><div class="color-values"><strong>#7C3AED</strong><span>RGB 124,58,237</span></div></div></div></div>
+            </div>
+            <div class="bottom-nav"><div class="nav-item active"><svg class="icon"><use href="#i-history"/></svg><span>历史</span></div><div class="nav-item"><svg class="icon"><use href="#i-devices"/></svg><span>设备</span></div><div class="nav-item"><svg class="icon"><use href="#i-folder"/></svg><span>文件</span></div><div class="nav-item"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></div></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>2. 设备</h2><p>管理同步空间内设备、在线状态和 P2P 端点。</p></div><span class="tag">Devices</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="title-block"><div class="screen-title">设备</div><div class="screen-subtitle">clipdock-home · 3 台在线</div></div><div class="icon-row"><div class="icon-btn"><svg class="icon"><use href="#i-plus"/></svg></div><div class="icon-btn"><svg class="icon"><use href="#i-more"/></svg></div></div></div>
+            <div class="metric-grid">
+              <div class="metric"><strong>3</strong><span>在线设备</span></div>
+              <div class="metric"><strong>40</strong><span>最新序号</span></div>
+              <div class="metric"><strong>2</strong><span>P2P 可用</span></div>
+            </div>
+            <div class="banner"><div class="banner-icon"><svg class="icon icon-lg"><use href="#i-link"/></svg></div><div><strong>邀请新设备</strong><span>生成 5 位配对码或扫码加入</span></div><div class="pill green">生成</div></div>
+            <div class="row-card"><div class="row-icon"><svg class="icon icon-lg"><use href="#i-devices"/></svg></div><div class="row-copy"><strong>Pixel 9 Pro · 本机</strong><span>实时已连接 · cursor 40</span></div><span class="tiny-state green">在线</span></div>
+            <div class="row-card"><div class="row-icon blue"><svg class="icon icon-lg"><use href="#i-devices"/></svg></div><div class="row-copy"><strong>MacBook Pro</strong><span>P2P endpoint 在线 · 2 秒前</span></div><span class="tiny-state green">可取回</span></div>
+            <div class="row-card"><div class="row-icon amber"><svg class="icon icon-lg"><use href="#i-devices"/></svg></div><div class="row-copy"><strong>iPad</strong><span>最后同步 18 分钟前</span></div><span class="tiny-state amber">离线</span></div>
+            <div class="row-card"><div class="row-icon red"><svg class="icon icon-lg"><use href="#i-alert"/></svg></div><div class="row-copy"><strong>撤销丢失设备</strong><span>删除设备令牌后需要重新配对</span></div><svg class="icon thin-chevron"><use href="#i-chevron"/></svg></div>
+            <div class="bottom-nav"><div class="nav-item"><svg class="icon"><use href="#i-history"/></svg><span>历史</span></div><div class="nav-item active"><svg class="icon"><use href="#i-devices"/></svg><span>设备</span></div><div class="nav-item"><svg class="icon"><use href="#i-folder"/></svg><span>文件</span></div><div class="nav-item"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></div></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>3. 文件</h2><p>聚合远端图片/文件、下载进度和本机缓存。</p></div><span class="tag">Files</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="title-block"><div class="screen-title">文件</div><div class="screen-subtitle">远端 8 个 · 本机缓存 428 MB</div></div><div class="icon-row"><div class="icon-btn"><svg class="icon"><use href="#i-search"/></svg></div><div class="icon-btn"><svg class="icon"><use href="#i-trash"/></svg></div></div></div>
+            <div class="tab-row"><div class="tab active">全部</div><div class="tab">图片</div><div class="tab">文件</div><div class="tab">已缓存</div></div>
+            <div class="banner"><div class="banner-icon"><svg class="icon icon-lg"><use href="#i-folder"/></svg></div><div><strong>按需下载</strong><span>远端图片/文件不会在列表中自动下载</span></div><div class="pill blue">仅 Wi‑Fi</div></div>
+            <div class="row-card"><div class="row-icon blue"><svg class="icon icon-lg"><use href="#i-image"/></svg></div><div class="row-copy"><strong>UI-review-screenshot.png</strong><span>MacBook Pro · 1.2 MB · 远端</span></div><span class="tiny-state blue">取回</span></div>
+            <div class="card"><div class="row-copy"><strong>Release-notes.pdf</strong><span>正在从 MacBook Pro 下载 · 64%</span></div><div style="height:10px"></div><div class="progress"><span style="width:64%"></span></div></div>
+            <div class="row-card"><div class="row-icon amber"><svg class="icon icon-lg"><use href="#i-file"/></svg></div><div class="row-copy"><strong>Server-config.txt</strong><span>已缓存 · text/plain · 12 KB</span></div><span class="tiny-state green">打开</span></div>
+            <div class="row-card"><div class="row-icon"><svg class="icon icon-lg"><use href="#i-folder"/></svg></div><div class="row-copy"><strong>缓存策略</strong><span>上限 1 GB · 到期自动清理</span></div><svg class="icon thin-chevron"><use href="#i-chevron"/></svg></div>
+            <div class="bottom-nav"><div class="nav-item"><svg class="icon"><use href="#i-history"/></svg><span>历史</span></div><div class="nav-item"><svg class="icon"><use href="#i-devices"/></svg><span>设备</span></div><div class="nav-item active"><svg class="icon"><use href="#i-folder"/></svg><span>文件</span></div><div class="nav-item"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></div></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>4. 设置</h2><p>总入口：同步、下载、权限、悬浮球。</p></div><span class="tag">Settings</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="title-block"><div class="screen-title">设置</div><div class="screen-subtitle">同步空间 · clipdock-home</div></div><div class="icon-btn"><svg class="icon"><use href="#i-more"/></svg></div></div>
+            <div class="row-card"><div class="row-icon"><svg class="icon icon-lg"><use href="#i-cloud"/></svg></div><div class="row-copy"><strong>同步服务运行中</strong><span>Server 在线 · 本机令牌已保存</span></div><span class="tiny-state green">正常</span></div>
+            <div class="setting-group">
+              <div class="setting-row"><div class="row-icon"><svg class="icon"><use href="#i-cloud"/></svg></div><div class="row-copy"><strong>剪贴板同步</strong><span>文本、链接和缩略图自动同步</span></div><div class="toggle on"></div></div>
+              <div class="setting-row"><div class="row-icon blue"><svg class="icon"><use href="#i-wifi"/></svg></div><div class="row-copy"><strong>P2P 远端取回</strong><span>图片和文件按需下载</span></div><div class="toggle on"></div></div>
+              <div class="setting-row"><div class="row-icon"><svg class="icon"><use href="#i-devices"/></svg></div><div class="row-copy"><strong>已连接设备</strong><span>MacBook Pro、iPad、Pixel</span></div><span class="tiny-state green">3 台</span></div>
+            </div>
+            <div class="setting-group">
+              <div class="setting-row"><div class="row-icon amber"><svg class="icon"><use href="#i-battery"/></svg></div><div class="row-copy"><strong>保活权限</strong><span>通知、后台、电池优化和厂商设置</span></div><span class="tiny-state amber">2 项待处理</span></div>
+              <div class="setting-row"><div class="row-icon"><svg class="icon"><use href="#i-window"/></svg></div><div class="row-copy"><strong>悬浮球</strong><span>同步并复制最新内容</span></div><span class="tiny-state green">已启用</span></div>
+              <div class="setting-row"><div class="row-icon blue"><svg class="icon"><use href="#i-folder"/></svg></div><div class="row-copy"><strong>文件与缓存</strong><span>428 MB · 仅 Wi‑Fi 下载</span></div><svg class="icon thin-chevron"><use href="#i-chevron"/></svg></div>
+            </div>
+            <div class="setting-group">
+              <div class="setting-row"><div class="row-icon"><svg class="icon"><use href="#i-server"/></svg></div><div class="row-copy"><strong>服务端地址</strong><span>https://sync.example.com</span></div><svg class="icon thin-chevron"><use href="#i-chevron"/></svg></div>
+              <div class="setting-row"><div class="row-icon red"><svg class="icon"><use href="#i-trash"/></svg></div><div class="row-copy"><strong>清理本机缓存</strong><span>不影响云端历史</span></div><svg class="icon thin-chevron"><use href="#i-chevron"/></svg></div>
+            </div>
+            <div class="bottom-nav"><div class="nav-item"><svg class="icon"><use href="#i-history"/></svg><span>历史</span></div><div class="nav-item"><svg class="icon"><use href="#i-devices"/></svg><span>设备</span></div><div class="nav-item"><svg class="icon"><use href="#i-folder"/></svg><span>文件</span></div><div class="nav-item active"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></div></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>5. 保活权限</h2><p>状态优先；缺什么才显示去开启。</p></div><span class="tag">Keep alive</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="title-block"><div class="screen-title">保活权限</div><div class="screen-subtitle">确保悬浮球和实时同步可靠运行</div></div><div class="icon-btn"><svg class="icon"><use href="#i-check"/></svg></div></div>
+            <div class="banner"><div class="banner-icon"><svg class="icon icon-lg"><use href="#i-shield"/></svg></div><div><strong>还差 2 项建议权限</strong><span>不影响基础使用，但会影响后台实时同步</span></div><div class="pill amber">检查</div></div>
+            <div class="row-card"><div class="row-icon"><svg class="icon icon-lg"><use href="#i-window"/></svg></div><div class="row-copy"><strong>全局悬浮窗</strong><span>允许桌面显示悬浮球</span></div><span class="tiny-state green">已授权</span></div>
+            <div class="row-card"><div class="row-icon blue"><svg class="icon icon-lg"><use href="#i-bell"/></svg></div><div class="row-copy"><strong>通知权限</strong><span>用于前台同步状态提示</span></div><span class="tiny-state blue">去开启</span></div>
+            <div class="row-card"><div class="row-icon amber"><svg class="icon icon-lg"><use href="#i-battery"/></svg></div><div class="row-copy"><strong>忽略电池优化</strong><span>降低 Doze/App Standby 中断概率</span></div><span class="tiny-state amber">建议</span></div>
+            <div class="row-card"><div class="row-icon amber"><svg class="icon icon-lg"><use href="#i-play"/></svg></div><div class="row-copy"><strong>厂商后台保护</strong><span>MIUI/ColorOS 等需要手动允许自启动</span></div><span class="tiny-state amber">去设置</span></div>
+            <div class="row-card"><div class="row-icon"><svg class="icon icon-lg"><use href="#i-lock"/></svg></div><div class="row-copy"><strong>剪贴板隐私</strong><span>敏感内容写入时使用系统隐私标记</span></div><span class="tiny-state green">内置</span></div>
+            <div class="bottom-nav"><div class="nav-item"><svg class="icon"><use href="#i-history"/></svg><span>历史</span></div><div class="nav-item"><svg class="icon"><use href="#i-devices"/></svg><span>设备</span></div><div class="nav-item"><svg class="icon"><use href="#i-folder"/></svg><span>文件</span></div><div class="nav-item active"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></div></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>6. 悬浮球设置</h2><p>系统 overlay；点击同步并复制最新内容。</p></div><span class="tag">Floating ball</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="title-block"><div class="screen-title">悬浮球</div><div class="screen-subtitle">桌面快速同步并复制</div></div><div class="icon-btn"><svg class="icon"><use href="#i-more"/></svg></div></div>
+            <div class="floating-preview">
+              <div class="floating-panel"><strong>已复制最新内容</strong><span>发布说明：Android 端新增远端取回入口</span></div>
+              <div class="floating-ball"><svg class="icon icon-lg"><use href="#i-copy"/></svg><span class="dot"></span></div>
+            </div>
+            <div class="setting-group">
+              <div class="setting-row"><div class="row-icon"><svg class="icon"><use href="#i-window"/></svg></div><div class="row-copy"><strong>启用悬浮球</strong><span>显示在系统桌面边缘</span></div><div class="toggle on"></div></div>
+              <div class="setting-row"><div class="row-icon blue"><svg class="icon"><use href="#i-copy"/></svg></div><div class="row-copy"><strong>点击动作</strong><span>同步一次并复制最新可用内容</span></div><span class="tiny-state green">默认</span></div>
+              <div class="setting-row"><div class="row-icon"><svg class="icon"><use href="#i-window"/></svg></div><div class="row-copy"><strong>停靠边缘</strong><span>拖动松手后自动吸附</span></div><span class="tiny-state">右侧</span></div>
+            </div>
+            <div class="card"><div class="row-copy"><strong>停靠方向</strong><span>当前吸附到右侧边缘</span></div><div style="height:10px"></div><div class="segmented"><span>左侧</span><span class="active">右侧</span></div></div>
+            <div class="card size"><div class="row-copy"><strong>尺寸</strong><span>64 dp · 兼顾可点按和遮挡范围</span></div><div style="height:14px"></div><div class="slider"><span></span></div></div>
+            <div class="card opacity"><div class="row-copy"><strong>闲置透明度</strong><span>78% · 不完全隐藏，保持可发现</span></div><div style="height:14px"></div><div class="slider"><span></span></div></div>
+            <div class="bottom-nav"><div class="nav-item"><svg class="icon"><use href="#i-history"/></svg><span>历史</span></div><div class="nav-item"><svg class="icon"><use href="#i-devices"/></svg><span>设备</span></div><div class="nav-item"><svg class="icon"><use href="#i-folder"/></svg><span>文件</span></div><div class="nav-item active"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></div></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>7. Item 详情</h2><p>点击历史 item 后进入详情；主操作固定在底部。</p></div><span class="tag">Tap detail</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="icon-btn"><svg class="icon"><use href="#i-arrow-left"/></svg></div><div class="title-block"><div class="screen-title">文本详情</div><div class="screen-subtitle">MacBook Pro · 09:38 · seq 40</div></div><div class="icon-btn"><svg class="icon"><use href="#i-more"/></svg></div></div>
+            <div class="detail-summary">
+              <div class="detail-mark"><svg class="icon icon-lg"><use href="#i-text"/></svg></div>
+              <div>
+                <div class="detail-title">发布说明：Android 端新增远端取回入口</div>
+                <div class="detail-subtitle">从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。</div>
+                <div class="detail-chip-row"><span class="mini-chip green">本机可复制</span><span class="mini-chip">已同步</span><span class="mini-chip">未固定</span></div>
+              </div>
+            </div>
+            <div class="content-preview">
+              <h3>内容预览</h3>
+              <p>发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。</p>
+              <div class="code-line">sync_policy: text_auto, asset_on_demand<br>source_device: MacBook Pro<br>created_at: 2026-06-04 09:38</div>
+            </div>
+            <div class="meta-grid">
+              <div class="meta-cell"><span>来源</span><strong>MacBook Pro</strong></div>
+              <div class="meta-cell"><span>状态</span><strong>已同步到本机</strong></div>
+              <div class="meta-cell"><span>空间</span><strong>clipdock-home</strong></div>
+              <div class="meta-cell"><span>保留</span><strong>30 天后清理</strong></div>
+            </div>
+            <div class="action-dock">
+              <div class="primary-action"><svg class="icon"><use href="#i-copy"/></svg><span>复制</span></div>
+              <div class="dock-action"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div class="dock-action"><svg class="icon"><use href="#i-share"/></svg></div>
+              <div class="dock-action"><svg class="icon"><use href="#i-tag"/></svg></div>
+              <div class="dock-action danger-action"><svg class="icon"><use href="#i-trash"/></svg></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>8. 远端取回 Sheet</h2><p>点击远端图片/文件时，先展示取回方式而不是自动下载。</p></div><span class="tag">Remote asset</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="icon-btn"><svg class="icon"><use href="#i-arrow-left"/></svg></div><div class="title-block"><div class="screen-title">图片详情</div><div class="screen-subtitle">MacBook Pro · 09:32 · 远端原图</div></div><div class="icon-btn"><svg class="icon"><use href="#i-more"/></svg></div></div>
+            <div class="preview-image"></div>
+            <div class="detail-summary">
+              <div class="detail-mark blue"><svg class="icon icon-lg"><use href="#i-image"/></svg></div>
+              <div>
+                <div class="detail-title">UI-review-screenshot.png</div>
+                <div class="detail-subtitle">列表只显示同步缩略图；原图 1.2 MB 留在 MacBook Pro，需要 P2P 取回。</div>
+                <div class="detail-chip-row"><span class="mini-chip blue">远端原图</span><span class="mini-chip green">缩略图可用</span><span class="mini-chip">仅 Wi‑Fi</span></div>
+              </div>
+            </div>
+            <div class="meta-grid">
+              <div class="meta-cell"><span>尺寸</span><strong>1280 x 960</strong></div>
+              <div class="meta-cell"><span>大小</span><strong>1.2 MB</strong></div>
+              <div class="meta-cell"><span>提供方</span><strong>MacBook Pro 在线</strong></div>
+              <div class="meta-cell"><span>缓存</span><strong>未下载到本机</strong></div>
+            </div>
+          </div>
+          <div class="sheet-backdrop"></div>
+          <div class="bottom-sheet">
+            <div class="sheet-grabber"></div>
+            <div class="sheet-heading"><div class="detail-mark blue"><svg class="icon icon-lg"><use href="#i-download"/></svg></div><div><strong>取回远端图片</strong><span>选择下载后如何处理，不自动覆盖剪贴板。</span></div></div>
+            <div class="sheet-actions">
+              <div class="sheet-action primary"><div class="row-icon"><svg class="icon"><use href="#i-copy"/></svg></div><div><strong>下载并复制</strong><span>P2P 取回原图后写入系统剪贴板</span></div></div>
+              <div class="sheet-action"><div class="row-icon blue"><svg class="icon"><use href="#i-download"/></svg></div><div><strong>仅下载到本机缓存</strong><span>用于稍后打开或分享，不改变剪贴板</span></div></div>
+              <div class="sheet-action"><div class="row-icon"><svg class="icon"><use href="#i-image"/></svg></div><div><strong>复制缩略图</strong><span>快速使用预览图，保留原图远端状态</span></div></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="caption"><div><h2>9. 删除确认</h2><p>危险动作二次确认；区分本机缓存与同步空间记录。</p></div><span class="tag">Confirm</span></div>
+        <div class="phone">
+          <div class="screen">
+            <div class="status"><span>9:41</span><span class="status-icons"><span class="signal"><span></span><span></span><span></span><span></span></span><span class="battery"></span></span></div>
+            <div class="topbar"><div class="icon-btn"><svg class="icon"><use href="#i-arrow-left"/></svg></div><div class="title-block"><div class="screen-title">文本详情</div><div class="screen-subtitle">MacBook Pro · 09:38 · seq 40</div></div><div class="icon-btn"><svg class="icon"><use href="#i-more"/></svg></div></div>
+            <div class="detail-summary">
+              <div class="detail-mark"><svg class="icon icon-lg"><use href="#i-text"/></svg></div>
+              <div>
+                <div class="detail-title">发布说明：Android 端新增远端取回入口</div>
+                <div class="detail-subtitle">这条记录已经同步到 3 台设备，删除范围需要明确表达。</div>
+                <div class="detail-chip-row"><span class="mini-chip green">已同步</span><span class="mini-chip">3 台设备</span></div>
+              </div>
+            </div>
+            <div class="content-preview">
+              <h3>内容预览</h3>
+              <p>发布说明：Android 端新增远端取回入口。图片和文件保持按需下载；文本、链接和缩略图保持即时同步。</p>
+            </div>
+            <div class="action-dock">
+              <div class="primary-action"><svg class="icon"><use href="#i-copy"/></svg><span>复制</span></div>
+              <div class="dock-action"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div class="dock-action"><svg class="icon"><use href="#i-share"/></svg></div>
+              <div class="dock-action"><svg class="icon"><use href="#i-tag"/></svg></div>
+              <div class="dock-action danger-action"><svg class="icon"><use href="#i-trash"/></svg></div>
+            </div>
+          </div>
+          <div class="sheet-backdrop"></div>
+          <div class="confirm-sheet">
+            <div class="confirm-icon"><svg class="icon icon-lg"><use href="#i-trash"/></svg></div>
+            <h3>删除这条历史？</h3>
+            <p>如果只清理本机缓存，其他设备和同步空间仍保留记录。删除同步记录会从所有设备历史中移除。</p>
+            <div class="confirm-actions">
+              <div class="confirm-button"><svg class="icon"><use href="#i-folder"/></svg><span>仅移除本机缓存</span></div>
+              <div class="confirm-button danger"><svg class="icon"><use href="#i-trash"/></svg><span>删除同步记录</span></div>
+              <div class="confirm-button"><span>取消</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>
+    const lightBoard = document.querySelector(".board.theme-light");
+    const darkBoard = lightBoard.cloneNode(true);
+    darkBoard.classList.remove("theme-light");
+    darkBoard.classList.add("theme-dark");
+    darkBoard.dataset.mode = "dark";
+    darkBoard.querySelector(".board-header h1").textContent = "ClipDock Android Mobile UI V4 Dark";
+    darkBoard.querySelector(".board-header p").textContent = "深色模式与浅色模式保持同一信息架构和交互状态：历史、设备、文件、设置、保活权限、悬浮球、item 详情、远端取回和删除确认均同步展示。";
+    darkBoard.querySelector(".version").textContent = "Dark mode review · 2026-06-04";
+    document.body.appendChild(darkBoard);
+  </script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+{
+  "active_sheet": null,
+  "anchors": [
+    {
+      "action_id": "selectDestination:history",
+      "bounds": {
+        "height": 42,
+        "width": 77,
+        "x": 25,
+        "y": 762
+      },
+      "stable_id": "selectDestination:history"
+    },
+    {
+      "action_id": "selectDestination:files",
+      "bounds": {
+        "height": 42,
+        "width": 77,
+        "x": 187,
+        "y": 762
+      },
+      "stable_id": "selectDestination:files"
+    },
+    {
+      "action_id": "selectDestination:settings",
+      "bounds": {
+        "height": 42,
+        "width": 77,
+        "x": 268,
+        "y": 762
+      },
+      "stable_id": "selectDestination:settings"
+    }
+  ],
+  "aria_labels": [
+    "历史",
+    "文件",
+    "设置"
+  ],
+  "bridge_action_ids": [
+    "selectDestination:history",
+    "selectDestination:files",
+    "selectDestination:settings"
+  ],
+  "computed": {
+    "screen": {
+      "bounds": {
+        "height": 824,
+        "width": 370,
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "enabled_states": {
+    "selectDestination:files": true,
+    "selectDestination:history": true,
+    "selectDestination:settings": true
+  },
+  "fallback": false,
+  "focus_order": [
+    "selectDestination:history",
+    "selectDestination:files",
+    "selectDestination:settings"
+  ],
+  "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+  "key_bounds_px": {
+    "MacBook ProP2P endpoint 在线 · 2 秒前可取回": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 358
+    },
+    "Pixel 9 Pro · 本机实时已连接 · cursor 40在线": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 278
+    },
+    "iPad最后同步 18 分钟前离线": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 438
+    },
+    "screen": {
+      "height": 824,
+      "width": 370,
+      "x": 0,
+      "y": 0
+    },
+    "撤销丢失设备删除设备令牌后需要重新配对": {
+      "height": 68,
+      "width": 342,
+      "x": 14,
+      "y": 518
+    },
+    "设备": {
+      "height": 25,
+      "width": 152,
+      "x": 16,
+      "y": 48
+    }
+  },
+  "route": "devices",
+  "runtime_asset_sha256": "8dbf8ce802d5d2a2cdb3f671dbdc0bc61011d7b32769087a52792d20fd980924",
+  "runtime_dom_source": "playwright-reference-dom",
+  "screen_id": "devices",
+  "selected_nav": "设备",
+  "selected_stable_id": null,
+  "semantic_source": "dom-extracted-reference-and-production-hotzones",
+  "sheet_order": [],
+  "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+  "theme": "light",
+  "touch_targets_px": {
+    "selectDestination:files": {
+      "height": 42,
+      "width": 77,
+      "x": 187,
+      "y": 762
+    },
+    "selectDestination:history": {
+      "height": 42,
+      "width": 77,
+      "x": 25,
+      "y": 762
+    },
+    "selectDestination:settings": {
+      "height": 42,
+      "width": 77,
+      "x": 268,
+      "y": 762
+    }
+  },
+  "visible_texts": [
+    "9:41 设备clipdock-home · 3 台在线 3在线设备 40最新序号 2P2P 可用 邀请新设备生成 5 位配对码或扫码加入生成 Pixel 9 Pro · 本机实时已连接 · cursor 40在线 MacBook ProP2P endpoint 在线 · 2 秒前可取回 iPad最后同步 18 分钟前离线 撤销丢失设备删除设备令牌后需要重新配对 历史设备文件设置",
+    "9:41",
+    "设备clipdock-home · 3 台在线",
+    "设备",
+    "clipdock-home · 3 台在线",
+    "3在线设备 40最新序号 2P2P 可用",
+    "3在线设备",
+    "3",
+    "在线设备",
+    "40最新序号",
+    "40",
+    "最新序号",
+    "2P2P 可用",
+    "2",
+    "P2P 可用",
+    "邀请新设备生成 5 位配对码或扫码加入生成",
+    "邀请新设备生成 5 位配对码或扫码加入",
+    "邀请新设备",
+    "生成 5 位配对码或扫码加入",
+    "生成",
+    "Pixel 9 Pro · 本机实时已连接 · cursor 40在线",
+    "Pixel 9 Pro · 本机实时已连接 · cursor 40",
+    "Pixel 9 Pro · 本机",
+    "实时已连接 · cursor 40",
+    "在线",
+    "MacBook ProP2P endpoint 在线 · 2 秒前可取回",
+    "MacBook ProP2P endpoint 在线 · 2 秒前",
+    "MacBook Pro",
+    "P2P endpoint 在线 · 2 秒前",
+    "可取回",
+    "iPad最后同步 18 分钟前离线",
+    "iPad最后同步 18 分钟前",
+    "iPad",
+    "最后同步 18 分钟前",
+    "离线",
+    "撤销丢失设备删除设备令牌后需要重新配对",
+    "撤销丢失设备",
+    "删除设备令牌后需要重新配对",
+    "历史设备文件设置",
+    "历史",
+    "文件",
+    "设置"
+  ],
+  "visual_png_sha256": "67f4009d9efe86fc09d9a31af57cfe6246c468f3490aa649c99bc04941b306ef"
+}

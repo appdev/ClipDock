@@ -65,6 +65,56 @@ class SyncEngineTest {
   }
 
   @Test
+  fun imageUpsertPreservesLocalPayloadAfterServerEcho() = runTest {
+    val contentHash = hash("local-image")
+    val thumbnailDigest = hash("thumbnail")
+    val localImage =
+      item(contentHash)
+        .copy(
+          type = ClipItemType.Image,
+          title = "local.png",
+          body = "image/png",
+          assetId = "blake3:${"b".repeat(64)}",
+          thumbnailUri = "file:///local/thumb.webp",
+          thumbnailDigest = thumbnailDigest,
+          thumbnailMimeType = "image/webp",
+          thumbnailByteCount = 204,
+          thumbnailWidth = 16,
+          thumbnailHeight = 12,
+          localUri = "content://com.apkdv.clipdock.files/local.png",
+          payloadState = PayloadState.Ready,
+          transferState = TransferState.Ready,
+        )
+    val incoming =
+      upsertEvent(7, contentHash, itemType = "image", text = "local.png", copyDelta = 1)
+        .also { event ->
+          event
+            .getJSONObject("payload")
+            .put("thumbnail_digest", thumbnailDigest)
+            .put("thumbnail_mime_type", "image/webp")
+            .put("thumbnail_byte_count", 204)
+            .put("thumbnail_width", 16)
+            .put("thumbnail_height", 12)
+            .put("payload_asset_id", "blake3:${"b".repeat(64)}")
+            .put("asset_id", "blake3:${"b".repeat(64)}")
+        }
+    val store = FakeStore(SyncProgress(listOf(localImage), cursor = 5, snapshotSeq = 5))
+    val api = FakeApi(events = restEventsJson(nextCursor = 7, events = listOf(incoming)))
+    val engine = SyncEngine(store, api)
+
+    val result = engine.syncFromStoredCursor("http://server", "token")
+
+    val item = result.items.single()
+    assertEquals(contentHash, item.contentHash)
+    assertEquals(ClipItemType.Image, item.type)
+    assertEquals("content://com.apkdv.clipdock.files/local.png", item.localUri)
+    assertEquals("file:///local/thumb.webp", item.thumbnailUri)
+    assertEquals(PayloadState.Ready, item.payloadState)
+    assertEquals(TransferState.Ready, item.transferState)
+    assertEquals("blake3:${"b".repeat(64)}", item.assetId)
+  }
+
+  @Test
   fun payloadAssetUpdateMergesImageAssetWithoutChangingOrderOrCopyCount() = runTest {
     val contentHash = hash("image-follow-up")
     val store = FakeStore(SyncProgress(emptyList(), cursor = 5, snapshotSeq = 5))

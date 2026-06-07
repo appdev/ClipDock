@@ -1,0 +1,335 @@
+{
+  "active_sheet": null,
+  "anchors": [
+    {
+      "action_id": "syncNow",
+      "bounds": {
+        "height": 36,
+        "width": 36,
+        "x": 274,
+        "y": 47
+      },
+      "stable_id": "syncNow"
+    },
+    {
+      "action_id": "selectDestination:devices",
+      "bounds": {
+        "height": 34,
+        "width": 77,
+        "x": 106,
+        "y": 770
+      },
+      "stable_id": "selectDestination:devices"
+    },
+    {
+      "action_id": "selectDestination:files",
+      "bounds": {
+        "height": 34,
+        "width": 77,
+        "x": 187,
+        "y": 770
+      },
+      "stable_id": "selectDestination:files"
+    },
+    {
+      "action_id": "selectDestination:settings",
+      "bounds": {
+        "height": 34,
+        "width": 77,
+        "x": 268,
+        "y": 770
+      },
+      "stable_id": "selectDestination:settings"
+    },
+    {
+      "action_id": "openItemDetail:qa-ready-text",
+      "bounds": {
+        "height": 150,
+        "width": 166,
+        "x": 14,
+        "y": 280
+      },
+      "stable_id": "qa-ready-text"
+    },
+    {
+      "action_id": "openItemDetail:qa-remote-image",
+      "bounds": {
+        "height": 150,
+        "width": 166,
+        "x": 190,
+        "y": 280
+      },
+      "stable_id": "qa-remote-image"
+    },
+    {
+      "action_id": "openItemDetail:qa-ready-file",
+      "bounds": {
+        "height": 150,
+        "width": 166,
+        "x": 14,
+        "y": 440
+      },
+      "stable_id": "qa-ready-file"
+    },
+    {
+      "action_id": "openItemDetail:qa-link",
+      "bounds": {
+        "height": 150,
+        "width": 166,
+        "x": 190,
+        "y": 440
+      },
+      "stable_id": "qa-link"
+    },
+    {
+      "action_id": "openItemDetail:qa-color",
+      "bounds": {
+        "height": 150,
+        "width": 166,
+        "x": 14,
+        "y": 600
+      },
+      "stable_id": "qa-color"
+    },
+    {
+      "action_id": "copyItem:qa-ready-text",
+      "bounds": {
+        "height": 20,
+        "width": 38,
+        "x": 25,
+        "y": 401
+      },
+      "stable_id": "qa-ready-text"
+    }
+  ],
+  "aria_labels": [
+    "立即同步",
+    "设备",
+    "文件",
+    "设置",
+    "打开 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+    "打开 图片09:321086 × 1448",
+    "打开 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+    "打开 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+    "打开 颜色08:12#7C3AEDRGB 124,58,237",
+    "复制"
+  ],
+  "bridge_action_ids": [
+    "syncNow",
+    "selectDestination:devices",
+    "selectDestination:files",
+    "selectDestination:settings",
+    "openItemDetail:qa-ready-text",
+    "openItemDetail:qa-remote-image",
+    "openItemDetail:qa-ready-file",
+    "openItemDetail:qa-link",
+    "openItemDetail:qa-color",
+    "copyItem:qa-ready-text"
+  ],
+  "computed": {
+    "screen": {
+      "bounds": {
+        "height": 824,
+        "width": 370,
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "enabled_states": {
+    "copyItem:qa-ready-text": true,
+    "openItemDetail:qa-color": true,
+    "openItemDetail:qa-link": true,
+    "openItemDetail:qa-ready-file": true,
+    "openItemDetail:qa-ready-text": true,
+    "openItemDetail:qa-remote-image": true,
+    "selectDestination:devices": true,
+    "selectDestination:files": true,
+    "selectDestination:settings": true,
+    "syncNow": true
+  },
+  "fallback": false,
+  "focus_order": [
+    "syncNow",
+    "selectDestination:devices",
+    "selectDestination:files",
+    "selectDestination:settings",
+    "openItemDetail:qa-ready-text",
+    "openItemDetail:qa-remote-image",
+    "openItemDetail:qa-ready-file",
+    "openItemDetail:qa-link",
+    "openItemDetail:qa-color",
+    "copyItem:qa-ready-text"
+  ],
+  "hotzones_sha256": "7b7260ee0261e36d112e9309ad0222f8f62c64855554e232f4e0e01505f1678f",
+  "key_bounds_px": {
+    "screen": {
+      "height": 824,
+      "width": 370,
+      "x": 0,
+      "y": 0
+    },
+    "剪贴板": {
+      "height": 25,
+      "width": 173,
+      "x": 16,
+      "y": 43
+    },
+    "图片09:321086 × 1448": {
+      "height": 150,
+      "width": 166,
+      "x": 190,
+      "y": 280
+    },
+    "文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Ser": {
+      "height": 150,
+      "width": 166,
+      "x": 14,
+      "y": 440
+    },
+    "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，": {
+      "height": 150,
+      "width": 166,
+      "x": 14,
+      "y": 280
+    },
+    "链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup ·": {
+      "height": 150,
+      "width": 166,
+      "x": 190,
+      "y": 440
+    },
+    "颜色08:12#7C3AEDRGB 124,58,237": {
+      "height": 150,
+      "width": 166,
+      "x": 14,
+      "y": 600
+    }
+  },
+  "route": "history",
+  "runtime_asset_sha256": null,
+  "runtime_dom_source": "playwright-reference-dom",
+  "screen_id": "history",
+  "selected_nav": "历史",
+  "selected_stable_id": null,
+  "semantic_source": "dom-extracted-reference-and-production-hotzones",
+  "sheet_order": [],
+  "source_sha256": "3b8a3a5f2a7fbfee125ecb47a65337cbffc3de59cd5add211283b64093b12784",
+  "theme": "light",
+  "touch_targets_px": {
+    "copyItem:qa-ready-text": {
+      "height": 20,
+      "width": 38,
+      "x": 25,
+      "y": 401
+    },
+    "openItemDetail:qa-color": {
+      "height": 150,
+      "width": 166,
+      "x": 14,
+      "y": 600
+    },
+    "openItemDetail:qa-link": {
+      "height": 150,
+      "width": 166,
+      "x": 190,
+      "y": 440
+    },
+    "openItemDetail:qa-ready-file": {
+      "height": 150,
+      "width": 166,
+      "x": 14,
+      "y": 440
+    },
+    "openItemDetail:qa-ready-text": {
+      "height": 150,
+      "width": 166,
+      "x": 14,
+      "y": 280
+    },
+    "openItemDetail:qa-remote-image": {
+      "height": 150,
+      "width": 166,
+      "x": 190,
+      "y": 280
+    },
+    "selectDestination:devices": {
+      "height": 34,
+      "width": 77,
+      "x": 106,
+      "y": 770
+    },
+    "selectDestination:files": {
+      "height": 34,
+      "width": 77,
+      "x": 187,
+      "y": 770
+    },
+    "selectDestination:settings": {
+      "height": 34,
+      "width": 77,
+      "x": 268,
+      "y": 770
+    },
+    "syncNow": {
+      "height": 36,
+      "width": 36,
+      "x": 274,
+      "y": 47
+    }
+  },
+  "visible_texts": [
+    "9:41 剪贴板刚刚同步 12 条 · 3 台设备在线 搜索文本、链接、文件名 全部文本图片文件 同步正常下一次实时同步已连接2 秒前 文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符 图片09:321086 × 1448 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明 颜色08:12#7C3AEDRGB 124,58,237 历史设备文件设置",
+    "9:41",
+    "剪贴板刚刚同步 12 条 · 3 台设备在线",
+    "剪贴板",
+    "刚刚同步 12 条 · 3 台设备在线",
+    "搜索文本、链接、文件名",
+    "全部文本图片文件",
+    "全部",
+    "文本",
+    "图片",
+    "文件",
+    "同步正常下一次实时同步已连接2 秒前",
+    "同步正常下一次实时同步已连接",
+    "同步正常",
+    "下一次实时同步已连接",
+    "2 秒前",
+    "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符 图片09:321086 × 1448 文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt 链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明 颜色08:12#7C3AEDRGB 124,58,237",
+    "文本09:38发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+    "文本09:38",
+    "09:38",
+    "发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。复制64 字符",
+    "发布说明：Android 端新增远端取回入口。从 macOS 复制后自动同步到手机。点击详情不立即覆盖系统剪贴板，用户通过底部主按钮复制。",
+    "复制64 字符",
+    "复制",
+    "64 字符",
+    "图片09:321086 × 1448",
+    "图片09:32",
+    "09:32",
+    "1086 × 1448",
+    "文件08:31/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+    "文件08:31",
+    "08:31",
+    "/Volumes/extendData/Data/IdeaProjects/ClipDock/Server/Server-config.txt",
+    "链接08:54docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+    "链接08:54",
+    "链接",
+    "08:54",
+    "docs.clipdock.apphttps://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+    "docs.clipdock.app",
+    "https://docs.clipdock.app/server/setup · 自托管服务端部署与配对说明",
+    "颜色08:12#7C3AEDRGB 124,58,237",
+    "颜色08:12",
+    "颜色",
+    "08:12",
+    "#7C3AEDRGB 124,58,237",
+    "#7C3AED",
+    "RGB 124,58,237",
+    "历史设备文件设置",
+    "历史",
+    "设备",
+    "设置"
+  ],
+  "visual_png_sha256": "8d6a8d260d0e6b30ce3ffad51d099d2f6f80e6c33c7c849b7c169a97453813a8"
+}

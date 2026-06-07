@@ -31,6 +31,10 @@ async fn asset_upload_download_and_duplicate_upload() {
         )
         .await;
     assert_eq!(upload.status, StatusCode::OK, "{:?}", upload.body);
+    let upload_body: serde_json::Value =
+        serde_json::from_slice(&upload.body).expect("upload json");
+    assert_eq!(upload_body["data"]["width_px"], 1);
+    assert_eq!(upload_body["data"]["height_px"], 1);
 
     let duplicate = server
         .raw(
@@ -45,6 +49,8 @@ async fn asset_upload_download_and_duplicate_upload() {
     let duplicate_body: serde_json::Value =
         serde_json::from_slice(&duplicate.body).expect("duplicate json");
     assert_eq!(duplicate_body["data"]["already_exists"], true);
+    assert_eq!(duplicate_body["data"]["width_px"], 1);
+    assert_eq!(duplicate_body["data"]["height_px"], 1);
 
     let download = server
         .raw(Method::GET, &uri, Some(&device.token), Vec::new(), &[])
