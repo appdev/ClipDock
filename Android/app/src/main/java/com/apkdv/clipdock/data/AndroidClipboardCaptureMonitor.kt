@@ -17,9 +17,13 @@ internal class AndroidClipboardCaptureMonitor(
   private val upload: suspend (ClipData, Long) -> LocalSyncPushResult?,
   private val logger: SyncEventLogger = AndroidSyncEventLogger,
 ) {
-  private val clipboard = context.applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+  private val appContext = context.applicationContext
+  private val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+  private val preferences = appContext.getSharedPreferences("clipdock", Context.MODE_PRIVATE)
   private var started = false
-  private val listener = ClipboardManager.OnPrimaryClipChangedListener { capturePrimaryClip() }
+  private val captureLock = Any()
+  private val inFlightSignatureDigests = mutableSetOf<String>()
+  private val listener = ClipboardManager.OnPrimaryClipChangedListener { capturePrimaryClip(trigger = "listener") }
 
   fun start() {
     if (started) return
@@ -35,33 +39,86 @@ internal class AndroidClipboardCaptureMonitor(
     logger.log("local_clipboard_capture_stopped")
   }
 
-  private fun capturePrimaryClip() {
+  fun captureCurrentPrimaryClip() {
+    capturePrimaryClip(trigger = "foreground")
+  }
+
+  fun ignoreSelfCopy(clip: ClipData) {
+    persistLastSuccessfulSignatureDigest(clip.captureSignatureDigest())
+  }
+
+  private fun capturePrimaryClip(trigger: String) {
     val clip =
       runCatching { clipboard.primaryClip }
-        .onFailure { logger.log("local_clipboard_capture_read_failed error=${it.toSyncLogErrorLabel()}") }
+        .onFailure { logger.log("local_clipboard_capture_read_failed trigger=$trigger error=${it.toSyncLogErrorLabel()}") }
         .getOrNull()
-        ?: return
+        ?: run {
+          logger.log("local_clipboard_capture_ignored trigger=$trigger reason=empty_clip")
+          return
+        }
     if (clip.description.isClipDockSelfCopy()) {
-      logger.log("local_clipboard_capture_ignored reason=self_copy")
+      logger.log("local_clipboard_capture_ignored trigger=$trigger reason=self_copy")
       return
     }
+    val signatureDigest = clip.captureSignatureDigest()
+    synchronized(captureLock) {
+      when {
+        signatureDigest == lastSuccessfulSignatureDigest() -> {
+          logger.log("local_clipboard_capture_ignored trigger=$trigger reason=duplicate")
+          return
+        }
+        !inFlightSignatureDigests.add(signatureDigest) -> {
+          logger.log("local_clipboard_capture_ignored trigger=$trigger reason=in_flight")
+          return
+        }
+      }
+    }
     val copiedAtMillis = System.currentTimeMillis()
-    logger.log("local_clipboard_capture_upload_start")
+    logger.log("local_clipboard_capture_upload_start trigger=$trigger")
     scope.launch {
-      runCatching { upload(clip, copiedAtMillis) }
-        .onSuccess { result ->
-          if (result == null) {
-            logger.log("local_clipboard_capture_ignored reason=unsupported_clip")
-          } else {
-            logger.log("local_clipboard_capture_upload_success content_hash=${result.contentHash}")
-          }
+      try {
+        val result = upload(clip, copiedAtMillis)
+        if (result == null) {
+          logger.log("local_clipboard_capture_ignored trigger=$trigger reason=unsupported_clip")
+        } else {
+          persistLastSuccessfulSignatureDigest(signatureDigest)
+          logger.log("local_clipboard_capture_upload_success trigger=$trigger content_hash=${result.contentHash}")
         }
-        .onFailure { throwable ->
-          logger.log("local_clipboard_capture_upload_failed error=${throwable.toSyncLogErrorLabel()}")
+      } catch (throwable: Throwable) {
+        logger.log("local_clipboard_capture_upload_failed trigger=$trigger error=${throwable.toSyncLogErrorLabel()}")
+      } finally {
+        synchronized(captureLock) {
+          inFlightSignatureDigests.remove(signatureDigest)
         }
+      }
     }
   }
+
+  private fun lastSuccessfulSignatureDigest(): String? =
+    preferences.getString(KEY_LAST_LOCAL_CLIPBOARD_SIGNATURE_DIGEST, null)
+
+  private fun persistLastSuccessfulSignatureDigest(signatureDigest: String) {
+    preferences.edit().putString(KEY_LAST_LOCAL_CLIPBOARD_SIGNATURE_DIGEST, signatureDigest).commit()
+  }
 }
+
+private fun ClipData.captureSignatureDigest(): String =
+  canonicalBlake3Digest(captureSignature().toByteArray(Charsets.UTF_8))
+
+private fun ClipData.captureSignature(): String {
+  val firstItem = if (itemCount > 0) getItemAt(0) else null
+  val mimeTypes = (0 until description.mimeTypeCount).joinToString("|") { description.getMimeType(it) }
+  return listOf(
+    itemCount.toString(),
+    mimeTypes,
+    firstItem?.text?.toString().orEmpty(),
+    firstItem?.htmlText.orEmpty(),
+    firstItem?.uri?.toString().orEmpty(),
+    firstItem?.intent?.toUri(0).orEmpty(),
+  ).joinToString("\u001f")
+}
+
+private const val KEY_LAST_LOCAL_CLIPBOARD_SIGNATURE_DIGEST = "lastLocalClipboardSignatureDigest"
 
 internal fun ClipDescription.isClipDockSelfCopy(): Boolean =
   extras?.getString(CLIPDOCK_CLIP_EXTRA_SOURCE) == CLIPDOCK_CLIP_SOURCE ||

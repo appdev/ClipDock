@@ -454,6 +454,7 @@ class ClipDockRepository(private val context: Context) {
           putString(CLIPDOCK_CLIP_EXTRA_CONTENT_HASH, item.contentHash)
         }
       }
+    clipboardCaptureMonitor.ignoreSelfCopy(clip)
     clipboard.setPrimaryClip(clip)
     return true
   }
