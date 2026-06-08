@@ -318,15 +318,6 @@ jobs:
           - artifact_label: linux-arm64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-          - artifact_label: macos-x86_64
-            runner: macos-15-intel
-            target: x86_64-apple-darwin
-          - artifact_label: macos-arm64
-            runner: macos-15
-            target: aarch64-apple-darwin
-          - artifact_label: windows-x86_64
-            runner: windows-2025
-            target: x86_64-pc-windows-msvc
 
     steps:
       - name: Checkout
@@ -362,7 +353,6 @@ jobs:
           name: ClipDock-Server-${{ needs.metadata.outputs.version }}-${{ matrix.artifact_label }}
           path: |
             .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*.tar.gz
-            .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*.zip
             .codex/artifacts/release/${{ needs.metadata.outputs.version }}/server/${{ matrix.artifact_label }}/*.manifest.txt
           if-no-files-found: error
           retention-days: 30
@@ -449,4 +439,3 @@ jobs:
             release-artifacts/**/*.apk
             release-artifacts/**/*.dmg
             release-artifacts/**/*.tar.gz
-            release-artifacts/**/*.zip
