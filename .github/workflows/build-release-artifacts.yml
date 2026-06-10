@@ -90,7 +90,6 @@ jobs:
             echo "tag=$tag"
             echo "artifact_dir=$artifact_dir"
             echo "dmgs=$artifact_dir/ClipDock-$version-*.dmg"
-            echo "checksums=$artifact_dir/SHA256SUMS"
             echo "manifest=$artifact_dir/ClipDock-release-manifest.txt"
             echo "release_notes=$artifact_dir/ClipDock-release-notes.md"
           } >> "$GITHUB_OUTPUT"
@@ -157,7 +156,6 @@ jobs:
           name: ClipDock-${{ steps.release.outputs.version }}-macos
           path: |
             ${{ steps.release.outputs.dmgs }}
-            ${{ steps.release.outputs.checksums }}
             ${{ steps.release.outputs.manifest }}
           if-no-files-found: error
           retention-days: 30
@@ -175,5 +173,4 @@ jobs:
           overwrite_files: true
           files: |
             ${{ steps.release.outputs.dmgs }}
-            ${{ steps.release.outputs.checksums }}
             ${{ steps.release.outputs.manifest }}

@@ -41,6 +41,9 @@ struct ClipboardPayloadReader: ClipboardContentReading {
         let image = CapturedClipboardImage.read(from: pasteboard, skipFileURLCheck: true)
 
         if let image {
+            if let linkText = plainLinkTextOverride(from: pasteboard) {
+                return .text(linkText)
+            }
             return .image(image)
         }
 
@@ -69,6 +72,16 @@ struct ClipboardPayloadReader: ClipboardContentReading {
         }
 
         return nil
+    }
+
+    private func plainLinkTextOverride(from pasteboard: NSPasteboard) -> String? {
+        guard let text = normalizedPlainText(from: pasteboard.string(forType: .string)),
+              ClipboardLinkDetector().detectPureLink(in: text) != nil,
+              !htmlAppearsToDescribeImageOnlyPayload(from: pasteboard)
+        else {
+            return nil
+        }
+        return text
     }
 
     private func readBestRichText(
@@ -304,6 +317,24 @@ struct ClipboardPayloadReader: ClipboardContentReading {
             }
         }
         return nil
+    }
+
+    private func htmlAppearsToDescribeImageOnlyPayload(from pasteboard: NSPasteboard) -> Bool {
+        guard let html = htmlString(from: pasteboard)?.lowercased(),
+              html.range(of: #"<img\b"#, options: .regularExpression) != nil
+        else {
+            return false
+        }
+
+        if html.range(of: #"<a\b"#, options: .regularExpression) != nil {
+            return false
+        }
+
+        guard let htmlPlainText = readHTMLPlainText(from: pasteboard) else {
+            return true
+        }
+
+        return ClipboardLinkDetector().detectPureLink(in: htmlPlainText) == nil
     }
 }
 

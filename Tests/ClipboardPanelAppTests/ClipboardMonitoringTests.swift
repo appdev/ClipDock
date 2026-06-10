@@ -476,6 +476,47 @@ struct ClipboardMonitoringTests {
 
     @Test
     @MainActor
+    func pureURLTextWinsOverBitmapSidecarFromRichEditors() throws {
+        let url = "https://english.news.cn/20260609/9e32edbd6ad94d4e8d6a42441cf14d1b/c.html"
+        let pngData = try makePNGData(width: 32, height: 20)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        _ = pasteboard.declareTypes([.png, .html, .string], owner: nil)
+        #expect(pasteboard.setData(pngData, forType: .png))
+        #expect(pasteboard.setString(#"<p><a href="\#(url)">\#(url)</a></p>"#, forType: .html))
+        #expect(pasteboard.setString(url, forType: .string))
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .text(let text, let displayRichText) = snapshot else {
+            Issue.record("Pure URL text from rich editors should not be captured as an image sidecar")
+            return
+        }
+
+        #expect(text == url)
+        #expect(displayRichText == nil)
+    }
+
+    @Test
+    @MainActor
+    func imageOnlyHTMLWithURLStringMetadataRemainsImage() throws {
+        let imageURL = "https://example.com/logo.png"
+        let pngData = try makePNGData(width: 32, height: 20)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name(UUID().uuidString))
+        pasteboard.clearContents()
+        _ = pasteboard.declareTypes([.png, .html, .string], owner: nil)
+        #expect(pasteboard.setData(pngData, forType: .png))
+        #expect(pasteboard.setString(#"<html><body><img src="\#(imageURL)" alt="logo"></body></html>"#, forType: .html))
+        #expect(pasteboard.setString(imageURL, forType: .string))
+
+        let snapshot = ClipboardPayloadReader().readContent(from: pasteboard)
+        guard case .image = snapshot else {
+            Issue.record("Image-only HTML plus URL metadata should remain an image payload")
+            return
+        }
+    }
+
+    @Test
+    @MainActor
     func fileEvidenceWinsOverRTF() throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
