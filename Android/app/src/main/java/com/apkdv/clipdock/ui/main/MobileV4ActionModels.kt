@@ -10,7 +10,6 @@ import com.apkdv.clipdock.ui.components.ClipDockTone
 enum class MobileV4ActionKind {
   Copy,
   ShowRemoteRetrieval,
-  DownloadAndCopy,
   DownloadToCache,
   CopyThumbnail,
   RemoveLocalCache,
@@ -27,7 +26,6 @@ object MobileV4Tags {
   const val DetailPrimaryAction = "item-detail-primary-action"
   const val DetailTrashAction = "item-detail-trash-action"
   const val RemoteRetrievalSheet = "remote-retrieval-sheet"
-  const val RemoteDownloadAndCopy = "remote-download-and-copy"
   const val RemoteDownloadToCache = "remote-download-to-cache"
   const val RemoteCopyThumbnail = "remote-copy-thumbnail"
   const val DeleteConfirmSheet = "delete-confirm-sheet"
@@ -57,7 +55,6 @@ internal data class MobileV4DetailAction(
 
 internal data class MobileV4DetailActions(
   val primary: MobileV4DetailAction,
-  val downloadAndCopy: MobileV4DetailAction,
   val downloadToCache: MobileV4DetailAction,
   val copyThumbnail: MobileV4DetailAction,
   val removeLocalCache: MobileV4DetailAction,
@@ -76,8 +73,7 @@ internal fun mobileV4DetailActions(
     when {
       inFlightKinds.contains(MobileV4ActionKind.Copy) ->
         MobileV4DetailAction(MobileV4ActionKind.Copy, "复制中", ClipDockIconKind.Copy, false, ClipDockTone.Green, "正在复制到剪贴板")
-      inFlightKinds.contains(MobileV4ActionKind.DownloadAndCopy) ||
-        inFlightKinds.contains(MobileV4ActionKind.DownloadToCache) ->
+      inFlightKinds.contains(MobileV4ActionKind.DownloadToCache) ->
         MobileV4DetailAction(MobileV4ActionKind.ShowRemoteRetrieval, "取回中", ClipDockIconKind.Download, false, ClipDockTone.Blue, "远端内容正在处理")
       mobileV4HasLocalCopySemantics(item) ->
         MobileV4DetailAction(MobileV4ActionKind.Copy, "复制", ClipDockIconKind.Copy, true, ClipDockTone.Green, "复制到剪贴板")
@@ -94,19 +90,10 @@ internal fun mobileV4DetailActions(
         MobileV4DetailAction(MobileV4ActionKind.Copy, "不可用", ClipDockIconKind.Alert, false, ClipDockTone.Neutral, "该内容暂不支持复制")
     }
 
-  val downloadAndCopy =
-    MobileV4DetailAction(
-      MobileV4ActionKind.DownloadAndCopy,
-      if (inFlightKinds.contains(MobileV4ActionKind.DownloadAndCopy)) "下载中" else "下载并复制",
-      ClipDockIconKind.Copy,
-      remoteEnabled && !inFlightKinds.contains(MobileV4ActionKind.DownloadAndCopy),
-      ClipDockTone.Green,
-      remoteMessage,
-    )
   val downloadToCache =
     MobileV4DetailAction(
       MobileV4ActionKind.DownloadToCache,
-      if (inFlightKinds.contains(MobileV4ActionKind.DownloadToCache)) "下载中" else "仅下载到本机缓存",
+      if (inFlightKinds.contains(MobileV4ActionKind.DownloadToCache)) "下载中" else "取回",
       ClipDockIconKind.Download,
       remoteEnabled && !inFlightKinds.contains(MobileV4ActionKind.DownloadToCache),
       ClipDockTone.Blue,
@@ -145,7 +132,7 @@ internal fun mobileV4DetailActions(
       ClipDockTone.Red,
       "从同步空间和所有设备历史中移除",
     )
-  return MobileV4DetailActions(primary, downloadAndCopy, downloadToCache, copyThumbnail, removeLocalCache, deleteSyncRecord)
+  return MobileV4DetailActions(primary, downloadToCache, copyThumbnail, removeLocalCache, deleteSyncRecord)
 }
 
 internal fun mobileV4HasLocalCopySemantics(item: ClipHistoryItem): Boolean =
@@ -172,7 +159,6 @@ private fun mobileV4RemoteActionEnabled(
     !wifiOnlyBlocked &&
     item.transferState != TransferState.DiscoveringPeer &&
     item.transferState != TransferState.Downloading &&
-    !inFlightKinds.contains(MobileV4ActionKind.DownloadAndCopy) &&
     !inFlightKinds.contains(MobileV4ActionKind.DownloadToCache)
 
 private fun mobileV4RemoteActionMessage(
@@ -189,5 +175,5 @@ private fun mobileV4RemoteActionMessage(
     item.transferState == TransferState.DiscoveringPeer -> "正在查找可用设备"
     item.transferState == TransferState.Downloading -> "正在下载"
     item.transferState == TransferState.Failed || item.payloadState == PayloadState.Failed -> "上次取回失败，可重试"
-    else -> "选择下载后如何处理"
+    else -> "点击取回后下载到本机缓存"
   }

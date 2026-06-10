@@ -146,7 +146,6 @@ dependencies {
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.work.runtime.ktx)
-  implementation(libs.androidx.webkit)
   implementation(libs.androidx.activity.compose)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.okhttp)
@@ -262,16 +261,6 @@ val copyRustJniTasks =
 
 tasks.named("preBuild") {
   dependsOn(copyRustJniTasks)
-}
-
-tasks.register<Exec>("validateMobileV4WebAssets") {
-  workingDir = rootProject.projectDir
-  commandLine(
-    "python3",
-    "scripts/mobile_v4_validate_web_source.py",
-    "--design",
-    "../.codex/artifacts/mobile-design-reference/clipdock-mobile-complete-design-v4.html",
-  )
 }
 
 val validateReleaseSigning =

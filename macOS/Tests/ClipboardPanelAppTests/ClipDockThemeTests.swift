@@ -41,6 +41,32 @@ struct ClipDockThemeTests {
 
     @Test
     @MainActor
+    func nativeMenuAppearanceResolvesFromSystemInterfaceStyle() throws {
+        #expect(ClipDockNativeMenuAppearance.systemAppearanceName(interfaceStyle: nil) == .aqua)
+        #expect(ClipDockNativeMenuAppearance.systemAppearanceName(interfaceStyle: "Light") == .aqua)
+        #expect(ClipDockNativeMenuAppearance.systemAppearanceName(interfaceStyle: "Dark") == .darkAqua)
+        #expect(ClipDockNativeMenuAppearance.systemAppearanceName(interfaceStyle: "dark") == .darkAqua)
+    }
+
+    @Test
+    @MainActor
+    func nativeMenuAppearanceIgnoresForcedApplicationAppearance() throws {
+        let app = NSApplication.shared
+        let originalAppearance = app.appearance
+        defer { app.appearance = originalAppearance }
+
+        app.appearance = NSAppearance(named: .darkAqua)
+        let menu = NSMenu()
+        ClipDockNativeMenuAppearance.applySystemAppearance(to: menu, defaults: makeAppearanceDefaults(style: "Light"))
+        #expect(menu.appearance?.name == .aqua)
+
+        app.appearance = NSAppearance(named: .aqua)
+        ClipDockNativeMenuAppearance.applySystemAppearance(to: menu, defaults: makeAppearanceDefaults(style: "Dark"))
+        #expect(menu.appearance?.name == .darkAqua)
+    }
+
+    @Test
+    @MainActor
     func coreSurfacesKeepReadableContrastInBothSchemes() throws {
         let palettes = [
             ClipDockTheme.current(for: NSAppearance(named: .aqua)),
@@ -220,6 +246,16 @@ struct ClipDockThemeTests {
         let lighter = max(foregroundLuminance, backgroundLuminance)
         let darker = min(foregroundLuminance, backgroundLuminance)
         return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private func makeAppearanceDefaults(style: String?) -> UserDefaults {
+        let suiteName = "ClipDockThemeTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        if let style {
+            defaults.set(style, forKey: "AppleInterfaceStyle")
+        }
+        return defaults
     }
 
     private func relativeLuminance(_ color: NSColor) -> CGFloat {

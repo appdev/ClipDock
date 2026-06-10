@@ -1,8 +1,0 @@
-{
-  "version": 1,
-  "source": "Android/ui-web/mobile-v4",
-  "reference": "reference/clipdock-mobile-complete-design-v4.html",
-  "entry": "src/index.html",
-  "runtimeAssetPath": "Android/app/src/main/assets/clipdock-mobile-v4",
-  "networkResources": false
-}

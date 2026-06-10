@@ -431,6 +431,7 @@ struct PanelRuntimeSeamTests {
         defer { delegate.smokeRemoveStatusItemForRealFunctionQA() }
 
         #expect(delegate.smokeStatusItemUsesManualMenuForRealFunctionQA)
+        #expect(delegate.smokeStatusItemMenuAppearanceNameForRealFunctionQA == ClipDockNativeMenuAppearance.systemAppearanceName())
     }
 
     @Test

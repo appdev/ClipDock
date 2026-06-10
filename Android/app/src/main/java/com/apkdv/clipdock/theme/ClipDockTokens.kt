@@ -57,11 +57,11 @@ data class ClipDockSpacingTokens(
 
 @Immutable
 data class ClipDockShapeTokens(
-  val card: Dp = 18.dp,
-  val rowCard: Dp = 16.dp,
+  val card: Dp = 16.dp,
+  val rowCard: Dp = 15.dp,
   val control: Dp = 999.dp,
-  val iconTile: Dp = 13.dp,
-  val bottomNav: Dp = 20.dp,
+  val iconTile: Dp = 12.dp,
+  val bottomNav: Dp = 24.dp,
 )
 
 @Immutable

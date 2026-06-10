@@ -1,4 +1,0 @@
-Pillow>=10.0
-numpy>=1.26
-scikit-image>=0.22
-playwright>=1.44

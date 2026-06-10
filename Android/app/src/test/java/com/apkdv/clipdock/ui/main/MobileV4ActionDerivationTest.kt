@@ -38,7 +38,7 @@ class MobileV4ActionDerivationTest {
   }
 
   @Test
-  fun remotePrimary_opensRetrievalSheetWhenAllowed() {
+  fun remotePrimary_downloadsToCacheWhenAllowed() {
     val item = sampleItem(type = ClipItemType.Image, localUri = null, assetId = "asset")
 
     val actions = mobileV4DetailActions(item, p2pEnabled = true, wifiOnlyBlocked = false)
@@ -46,7 +46,7 @@ class MobileV4ActionDerivationTest {
     assertEquals(MobileV4ActionKind.ShowRemoteRetrieval, actions.primary.kind)
     assertEquals("取回", actions.primary.label)
     assertTrue(actions.primary.enabled)
-    assertTrue(actions.downloadAndCopy.enabled)
+    assertEquals("取回", actions.downloadToCache.label)
     assertTrue(actions.downloadToCache.enabled)
   }
 
@@ -75,14 +75,14 @@ class MobileV4ActionDerivationTest {
     assertFalse(downloading.primary.enabled)
     assertTrue(downloading.primary.message.contains("下载"))
 
-    val inFlight = mobileV4DetailActions(remote, true, false, setOf(MobileV4ActionKind.DownloadAndCopy))
+    val inFlight = mobileV4DetailActions(remote, true, false, setOf(MobileV4ActionKind.DownloadToCache))
+    assertEquals("取回中", inFlight.primary.label)
     assertFalse(inFlight.primary.enabled)
-    assertFalse(inFlight.downloadAndCopy.enabled)
     assertFalse(inFlight.downloadToCache.enabled)
   }
 
   @Test
-  fun retrievalSheetActions_followThumbnailAndCacheAvailability() {
+  fun remoteActions_followThumbnailAndCacheAvailability() {
     val remoteWithThumbnail =
       sampleItem(
         type = ClipItemType.Image,
@@ -93,8 +93,8 @@ class MobileV4ActionDerivationTest {
 
     val actions = mobileV4DetailActions(remoteWithThumbnail, p2pEnabled = true, wifiOnlyBlocked = false)
 
-    assertTrue(actions.downloadAndCopy.enabled)
     assertTrue(actions.downloadToCache.enabled)
+    assertEquals("取回", actions.downloadToCache.label)
     assertTrue(actions.copyThumbnail.enabled)
     assertFalse(actions.removeLocalCache.enabled)
   }

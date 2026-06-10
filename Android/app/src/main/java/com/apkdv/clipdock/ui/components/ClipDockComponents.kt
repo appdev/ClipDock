@@ -96,8 +96,8 @@ fun ClipDockScreenHeader(
     horizontalArrangement = Arrangement.spacedBy(LocalClipDockTokens.current.spacing.gapMd),
   ) {
     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-      Text(title, style = MaterialTheme.typography.titleLarge, color = LocalClipDockTokens.current.colors.ink, maxLines = 1)
-      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LocalClipDockTokens.current.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(title, color = LocalClipDockTokens.current.colors.ink, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+      Text(subtitle, color = LocalClipDockTokens.current.colors.muted, fontSize = 13.sp, lineHeight = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
   }
@@ -119,13 +119,13 @@ fun ClipDockIconButton(
     border = BorderStroke(1.dp, tokens.colors.line),
     modifier =
       modifier
-        .size(36.dp)
+        .size(42.dp)
         .clip(CircleShape)
         .clickable(enabled = enabled, onClick = onClick)
         .semantics { this.contentDescription = contentDescription },
   ) {
     Box(contentAlignment = Alignment.Center) {
-      ClipDockSymbol(icon, Modifier.size(18.dp))
+      ClipDockSymbol(icon, Modifier.size(22.dp))
     }
   }
 }
@@ -141,10 +141,10 @@ fun ClipDockCard(
     shape = RoundedCornerShape(tokens.shapes.card),
     color = tokens.colors.surface,
     border = BorderStroke(1.dp, tokens.colors.softLine),
-    shadowElevation = 2.dp,
+    shadowElevation = 0.dp,
     modifier = modifier,
   ) {
-    Column(Modifier.padding(contentPadding), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+    Column(Modifier.padding(contentPadding), verticalArrangement = Arrangement.spacedBy(9.dp), content = content)
   }
 }
 
@@ -163,10 +163,10 @@ fun ClipDockHeroBanner(
     modifier =
       modifier
         .fillMaxWidth()
-        .clip(RoundedCornerShape(20.dp))
+        .clip(RoundedCornerShape(18.dp))
         .background(tokens.colors.heroBanner)
         .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
-        .padding(14.dp),
+        .padding(12.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(12.dp),
   ) {
@@ -190,23 +190,28 @@ fun RowCard(
   trailing: @Composable RowScope.() -> Unit = {},
 ) {
   val tokens = LocalClipDockTokens.current
-  Row(
+  Surface(
+    shape = RoundedCornerShape(tokens.shapes.rowCard),
+    color = tokens.colors.surface,
+    border = BorderStroke(1.dp, tokens.colors.softLine),
     modifier =
       modifier
         .fillMaxWidth()
         .clip(RoundedCornerShape(tokens.shapes.rowCard))
-        .background(tokens.colors.surface)
-        .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
-        .padding(12.dp),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(12.dp),
+        .clickable(enabled = onClick != null, onClick = { onClick?.invoke() }),
   ) {
-    IconTile(icon = icon, tone = tone)
-    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-      Text(title, style = MaterialTheme.typography.titleSmall, color = tokens.colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = tokens.colors.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(11.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+      IconTile(icon = icon, tone = tone)
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, color = tokens.colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = tokens.colors.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      }
+      trailing()
     }
-    trailing()
   }
 }
 
@@ -237,7 +242,7 @@ fun SettingRow(
     modifier =
       modifier
         .fillMaxWidth()
-        .height(64.dp)
+        .height(60.dp)
         .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
         .padding(horizontal = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
@@ -279,7 +284,7 @@ fun StatusPill(
 ) {
   val colors = tone.colors()
   Surface(shape = CircleShape, color = colors.container, contentColor = colors.content, modifier = modifier) {
-    Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1)
   }
 }
 
@@ -298,11 +303,11 @@ fun ActionChip(
     contentColor = if (enabled) colors.content else LocalClipDockTokens.current.colors.faint,
     modifier =
       modifier
-        .height(38.dp)
+        .height(30.dp)
         .clip(CircleShape)
         .clickable(enabled = enabled, onClick = onClick),
   ) {
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 11.dp)) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp)) {
       Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
   }
@@ -320,10 +325,10 @@ fun SegmentedControl(
     modifier =
       modifier
         .fillMaxWidth()
-        .height(38.dp)
+        .height(34.dp)
         .clip(CircleShape)
         .background(tokens.colors.surface3)
-        .padding(4.dp),
+        .padding(3.dp),
     horizontalArrangement = Arrangement.spacedBy(4.dp),
   ) {
     options.forEach { option ->
@@ -332,7 +337,7 @@ fun SegmentedControl(
         modifier =
           Modifier
             .weight(1f)
-            .height(30.dp)
+            .height(28.dp)
             .clip(CircleShape)
             .background(if (isSelected) tokens.colors.surface else Color.Transparent)
             .selectable(
@@ -379,7 +384,7 @@ fun IconTile(
   Box(
     modifier =
       modifier
-        .size(42.dp)
+        .size(40.dp)
         .clip(RoundedCornerShape(LocalClipDockTokens.current.shapes.iconTile))
         .background(if (dark) LocalClipDockTokens.current.colors.heroBannerIconContainer else colors.container),
     contentAlignment = Alignment.Center,
@@ -404,10 +409,10 @@ fun ClipDockBottomNav(
     modifier =
       modifier
         .fillMaxWidth()
-        .height(58.dp),
+        .height(76.dp),
   ) {
     Row(
-      modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 7.dp),
+      modifier = Modifier.fillMaxSize().padding(7.dp),
       horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       destinations.forEach { destination ->
@@ -418,7 +423,7 @@ fun ClipDockBottomNav(
             Modifier
               .weight(1f)
               .fillMaxHeight()
-              .clip(RoundedCornerShape(15.dp))
+              .clip(RoundedCornerShape(17.dp))
               .background(if (isSelected) tokens.colors.accentSoft else Color.Transparent)
               .clickable { onSelected(destination.key) }
               .semantics {
@@ -428,12 +433,12 @@ fun ClipDockBottomNav(
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
         ) {
-          ClipDockSymbol(destination.icon, Modifier.size(17.dp), color = contentColor)
+          ClipDockSymbol(destination.icon, Modifier.size(22.dp), color = contentColor)
           Text(
             destination.label,
             color = contentColor,
-            fontSize = 10.sp,
-            lineHeight = 13.sp,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1,
           )

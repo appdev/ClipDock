@@ -307,3 +307,39 @@ enum ClipDockTheme {
         )
     )
 }
+
+@MainActor
+enum ClipDockNativeMenuAppearance {
+    static func applySystemAppearance(to menu: NSMenu, defaults: UserDefaults = .standard) {
+        apply(currentSystemAppearance(defaults: defaults), to: menu)
+    }
+
+    static func currentSystemAppearance(defaults: UserDefaults = .standard) -> NSAppearance? {
+        NSAppearance(named: systemAppearanceName(defaults: defaults))
+    }
+
+    static func systemAppearanceName(defaults: UserDefaults = .standard) -> NSAppearance.Name {
+        systemAppearanceName(interfaceStyle: appleInterfaceStyle(defaults: defaults))
+    }
+
+    static func systemAppearanceName(interfaceStyle: String?) -> NSAppearance.Name {
+        guard interfaceStyle?.caseInsensitiveCompare("Dark") == .orderedSame else {
+            return .aqua
+        }
+        return .darkAqua
+    }
+
+    private static func apply(_ appearance: NSAppearance?, to menu: NSMenu) {
+        menu.appearance = appearance
+        for item in menu.items {
+            if let submenu = item.submenu {
+                apply(appearance, to: submenu)
+            }
+        }
+    }
+
+    private static func appleInterfaceStyle(defaults: UserDefaults) -> String? {
+        defaults.string(forKey: "AppleInterfaceStyle")
+            ?? defaults.persistentDomain(forName: UserDefaults.globalDomain)?["AppleInterfaceStyle"] as? String
+    }
+}

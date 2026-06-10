@@ -62,11 +62,6 @@ class MainScreenViewModel(application: Application) : AndroidViewModel(applicati
       repository.copyItem(item)
     }
 
-  fun downloadAndCopy(item: ClipHistoryItem) =
-    launchGuarded(item, MobileV4ActionKind.DownloadAndCopy) {
-      repository.downloadAndCopy(item)
-    }
-
   fun downloadToCache(item: ClipHistoryItem) =
     launchGuarded(item, MobileV4ActionKind.DownloadToCache) {
       repository.downloadToCache(item)

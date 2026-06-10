@@ -22,6 +22,8 @@ class MainActivityTest {
     composeRule.onNodeWithContentDescription("设备").assertIsDisplayed()
     composeRule.onNodeWithContentDescription("文件").assertIsDisplayed()
     composeRule.onNodeWithContentDescription("设置").assertIsDisplayed()
+    composeRule.onNodeWithText("链接").assertIsDisplayed()
+    composeRule.onNodeWithText("待上传").assertIsDisplayed()
     composeRule.runOnIdle {
       assertFalse(hasWebView(composeRule.activity.window.decorView))
     }
@@ -30,13 +32,14 @@ class MainActivityTest {
   @Test
   fun bottomNavigationUsesRealDataPages() {
     composeRule.onNodeWithContentDescription("设备").performClick()
-    composeRule.onNodeWithText("邀请新设备").assertIsDisplayed()
+    composeRule.onNodeWithText("最近传输").assertIsDisplayed()
 
     composeRule.onNodeWithContentDescription("文件").performClick()
     composeRule.onNodeWithText("按需下载").assertIsDisplayed()
+    composeRule.onNodeWithText("远程资产状态").assertIsDisplayed()
 
     composeRule.onNodeWithContentDescription("设置").performClick()
-    composeRule.onNodeWithText("同步服务运行中").assertIsDisplayed()
+    composeRule.onNodeWithText("同步服务运行中", substring = true).assertIsDisplayed()
 
     composeRule.onNodeWithContentDescription("历史").performClick()
     composeRule.onNodeWithText("剪贴板").assertIsDisplayed()

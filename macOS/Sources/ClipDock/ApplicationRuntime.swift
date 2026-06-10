@@ -2752,6 +2752,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         currentPreferences = result.preferences
         ClipDockTheme.applyAppearanceMode(result.preferences.appearance.mode)
+        applyNativeMenuAppearances()
         panelController.setConfiguredDefaultHeight(CGFloat(result.preferences.general.defaultPanelHeight))
         panelController.setPreviewPopoverEnabled(result.preferences.appearance.previewPopoverEnabled)
         panelController.setLinkWebPreviewEnabled(result.preferences.linkPreview.webPreviewEnabled)
@@ -3376,6 +3377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(editItem)
 
         NSApp.mainMenu = mainMenu
+        applyNativeMenuAppearances()
     }
 
     private func makeEditMenu() -> NSMenu {
@@ -3440,6 +3442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.quit", defaultValue: "退出"), imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "", modifiers: []))
         statusItemMenu = menu
         statusItem?.menu = nil
+        applyNativeMenuAppearances()
     }
 
     private func showStatusItemMenu() {
@@ -3447,11 +3450,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let menu = statusItemMenu
         else { return }
 
+        applyNativeMenuAppearances()
         menu.popUp(
             positioning: nil,
             at: NSPoint(x: 0, y: button.bounds.height),
             in: button
         )
+    }
+
+    private func applyNativeMenuAppearances() {
+        if let mainMenu = NSApp.mainMenu {
+            ClipDockNativeMenuAppearance.applySystemAppearance(to: mainMenu)
+        }
+        if let statusItemMenu {
+            ClipDockNativeMenuAppearance.applySystemAppearance(to: statusItemMenu)
+        }
     }
 
     private func makeStatusBarIcon() -> NSImage? {
@@ -3714,6 +3727,14 @@ extension AppDelegate {
             && statusItemMenu != nil
             && button.target === self
             && button.action == #selector(handleStatusItemClick(_:))
+    }
+
+    var smokeStatusItemMenuAppearanceNameForRealFunctionQA: NSAppearance.Name? {
+        statusItemMenu?.appearance?.name
+    }
+
+    func smokeApplyNativeMenuAppearancesForRealFunctionQA() {
+        applyNativeMenuAppearances()
     }
 
     var smokeEditMenuItemsForRealFunctionQA: [(title: String, keyEquivalent: String, modifiers: NSEvent.ModifierFlags, action: Selector?, targetIsNil: Bool)] {

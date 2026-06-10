@@ -15,20 +15,25 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,9 +43,14 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed as staggeredItemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +77,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -148,7 +159,6 @@ fun MainScreen(
     onRefreshInfo = viewModel::refreshInfo,
     onUseItem = viewModel::useItem,
     onCopyItem = viewModel::copyItem,
-    onDownloadAndCopy = viewModel::downloadAndCopy,
     onDownloadToCache = viewModel::downloadToCache,
     onCopyThumbnail = viewModel::copyThumbnail,
     onDeleteSyncRecord = viewModel::deleteSyncRecord,
@@ -188,7 +198,6 @@ internal fun ClipDockApp(
   onRefreshInfo: () -> Unit,
   onUseItem: (ClipHistoryItem) -> Unit,
   onCopyItem: (ClipHistoryItem) -> Unit,
-  onDownloadAndCopy: (ClipHistoryItem) -> Unit,
   onDownloadToCache: (ClipHistoryItem) -> Unit,
   onCopyThumbnail: (ClipHistoryItem) -> Unit,
   onDeleteSyncRecord: (ClipHistoryItem) -> Unit,
@@ -205,7 +214,7 @@ internal fun ClipDockApp(
   onOpenSettingsDetail: (SettingsDetailDestination) -> Unit,
   onOpenItemDetail: (String) -> Unit,
   modifier: Modifier = Modifier,
-  includeReferenceStatusBar: Boolean = false,
+  includeReferenceStatusBar: Boolean = true,
 ) {
   val tokens = LocalClipDockTokens.current
   val context = LocalContext.current
@@ -255,7 +264,6 @@ internal fun ClipDockApp(
             initialSheet = initialDetailSheet,
             onBack = onBackFromDetail,
             onCopyItem = onCopyItem,
-            onDownloadAndCopy = onDownloadAndCopy,
             onDownloadToCache = onDownloadToCache,
             onCopyThumbnail = onCopyThumbnail,
             onDeleteSyncRecord = onDeleteSyncRecord,
@@ -322,37 +330,13 @@ private fun ReferenceStatusBar() {
     modifier =
       Modifier
         .fillMaxWidth()
-        .height(36.dp)
-        .padding(start = 27.dp, end = 22.dp, top = 14.dp),
+        .height(22.dp)
+        .padding(start = 18.dp, end = 18.dp, top = 4.dp),
     verticalAlignment = Alignment.Top,
     horizontalArrangement = Arrangement.SpaceBetween,
   ) {
-    Text("9:41", color = LocalClipDockTokens.current.colors.ink, fontSize = 14.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold)
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-      Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
-        listOf(4.dp, 6.dp, 8.dp, 10.dp).forEach { height ->
-          Box(Modifier.width(2.dp).height(height).clip(CircleShape).background(LocalClipDockTokens.current.colors.ink))
-        }
-      }
-      Box(
-        modifier =
-          Modifier
-            .width(19.dp)
-            .height(9.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .background(Color.Transparent),
-        contentAlignment = Alignment.Center,
-      ) {
-        Surface(
-          shape = RoundedCornerShape(3.dp),
-          color = Color.Transparent,
-          border = BorderStroke(1.dp, LocalClipDockTokens.current.colors.ink),
-          modifier = Modifier.fillMaxSize(),
-        ) {
-          Box(Modifier.padding(2.dp).clip(RoundedCornerShape(2.dp)).background(LocalClipDockTokens.current.colors.ink))
-        }
-      }
-    }
+    Text("22:44", color = LocalClipDockTokens.current.colors.ink, fontSize = 13.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold)
+    Text("5G 100%", color = LocalClipDockTokens.current.colors.ink, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold)
   }
 }
 
@@ -366,7 +350,6 @@ private fun ItemDetailPage(
   initialSheet: MobileV4InitialSheet?,
   onBack: () -> Unit,
   onCopyItem: (ClipHistoryItem) -> Unit,
-  onDownloadAndCopy: (ClipHistoryItem) -> Unit,
   onDownloadToCache: (ClipHistoryItem) -> Unit,
   onCopyThumbnail: (ClipHistoryItem) -> Unit,
   onDeleteSyncRecord: (ClipHistoryItem) -> Unit,
@@ -400,50 +383,56 @@ private fun ItemDetailPage(
       inFlightKinds = actionState.inFlightKinds(item.stableId),
     )
   Box(Modifier.fillMaxSize().testTag(MobileV4Tags.ItemDetailScreen)) {
-    LazyColumn(
-      contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 112.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-      modifier = Modifier.fillMaxSize(),
-    ) {
-      item {
-        ItemDetailTopBar(item = item, onBack = onBack)
-      }
-      if (item.type == ClipItemType.Image || item.type == ClipItemType.Link) {
+    if (item.type == ClipItemType.Image) {
+      ImageDetailPhotoPage(
+        item = item,
+        state = state,
+        actions = actions,
+        onBack = onBack,
+        onCopyItem = onCopyItem,
+        onDownloadToCache = onDownloadToCache,
+        onCopyThumbnail = onCopyThumbnail,
+        onRemoveLocalCache = onRemoveLocalCache,
+        onDelete = { showDeleteConfirm = true },
+      )
+    } else {
+      LazyColumn(
+        contentPadding = PaddingValues(start = 14.dp, top = 15.dp, end = 14.dp, bottom = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize(),
+      ) {
         item {
-          ItemDetailImagePreview(item)
+          ItemDetailTopBar(item = item, onBack = onBack)
         }
-      }
-      item {
-        ItemDetailSummary(item = item)
-      }
-      item {
-        ItemDetailContentPreview(item = item)
-      }
-      item {
-        ItemDetailMetaGrid(item = item, state = state)
+        item {
+          ItemDetailSummary(item = item)
+        }
+        item {
+          ItemDetailContentPreview(item = item)
+        }
+        item {
+          ItemDetailInlineActions(
+            actions = actions,
+            onPrimary = {
+              when (actions.primary.kind) {
+                MobileV4ActionKind.Copy -> onCopyItem(item)
+                MobileV4ActionKind.ShowRemoteRetrieval -> onDownloadToCache(item)
+                else -> Unit
+              }
+            },
+            onDelete = { showDeleteConfirm = true },
+          )
+        }
+        item {
+          ItemDetailMetaGrid(item = item, state = state)
+        }
       }
     }
-    ItemDetailActionDock(
-      actions = actions,
-      modifier = Modifier.align(Alignment.BottomCenter),
-      onPrimary = {
-        when (actions.primary.kind) {
-          MobileV4ActionKind.Copy -> onCopyItem(item)
-          MobileV4ActionKind.ShowRemoteRetrieval -> showRemoteSheet = true
-          else -> Unit
-        }
-      },
-      onDelete = { showDeleteConfirm = true },
-    )
     if (showRemoteSheet) {
       V4SheetOverlay(testTag = MobileV4Tags.RemoteRetrievalSheet, withGrabber = true) {
         RemoteRetrievalSheetContent(
           item = item,
           actions = actions,
-          onDownloadAndCopy = {
-            showRemoteSheet = false
-            onDownloadAndCopy(item)
-          },
           onDownloadToCache = {
             showRemoteSheet = false
             onDownloadToCache(item)
@@ -471,6 +460,705 @@ private fun ItemDetailPage(
           onCancel = { showDeleteConfirm = false },
         )
       }
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailPhotoPage(
+  item: ClipHistoryItem,
+  state: ClipDockUiState,
+  actions: MobileV4DetailActions,
+  onBack: () -> Unit,
+  onCopyItem: (ClipHistoryItem) -> Unit,
+  onDownloadToCache: (ClipHistoryItem) -> Unit,
+  onCopyThumbnail: (ClipHistoryItem) -> Unit,
+  onRemoveLocalCache: (ClipHistoryItem) -> Unit,
+  onDelete: () -> Unit,
+) {
+  LazyColumn(
+    contentPadding = PaddingValues(start = 14.dp, top = 15.dp, end = 14.dp, bottom = 18.dp),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+    modifier = Modifier.fillMaxSize().background(LocalClipDockTokens.current.colors.pageBg),
+  ) {
+    item { ItemDetailTopBar(item = item, onBack = onBack) }
+    item {
+      val isRetrieving = actions.primary.kind == MobileV4ActionKind.ShowRemoteRetrieval && !actions.primary.enabled && actions.primary.label == "取回中"
+      Box(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .height(340.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color(0xFF101820)),
+      ) {
+        val bitmap by rememberImageBitmap(item.thumbnailUri ?: item.localUri)
+        if (bitmap != null) {
+          Image(bitmap = bitmap!!, contentDescription = item.displayTitle, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+          HistoryMediaFallback(HistoryCardVariant.Image, Modifier.fillMaxSize())
+        }
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, Color(0xB80F172A)))))
+        if (isRetrieving) {
+          LinearProgressIndicator(
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
+            color = LocalClipDockTokens.current.colors.accent2,
+            trackColor = Color.White.copy(alpha = 0.18f),
+          )
+        }
+        Row(
+          modifier = Modifier.align(Alignment.BottomStart).padding(14.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+          ClipDockSymbol(ClipDockIconKind.Image, Modifier.size(16.dp), color = Color.White)
+          Text("图片预览", color = Color.White, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.ExtraBold)
+        }
+      }
+    }
+    item {
+      ItemDetailInlineActions(
+        actions = actions,
+        onPrimary = {
+          when (actions.primary.kind) {
+            MobileV4ActionKind.Copy -> onCopyItem(item)
+            MobileV4ActionKind.ShowRemoteRetrieval -> onDownloadToCache(item)
+            else -> Unit
+          }
+        },
+        onDelete = onDelete,
+      )
+    }
+    item {
+      ImageDetailInfoList(item = item, state = state)
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailPhotoCanvas(
+  item: ClipHistoryItem,
+  modifier: Modifier = Modifier,
+) {
+  val tokens = LocalClipDockTokens.current
+  val localBitmap by rememberImageBitmap(item.localUri)
+  val thumbnailBitmap by rememberImageBitmap(item.thumbnailUri)
+  val displayBitmap = localBitmap ?: thumbnailBitmap
+  val showingOriginal = localBitmap != null && item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank()
+  Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    if (displayBitmap != null) {
+      Image(
+        bitmap = displayBitmap,
+        contentDescription = item.displayTitle,
+        contentScale = ContentScale.Fit,
+        modifier =
+          Modifier
+            .fillMaxSize(),
+      )
+    } else {
+      Box(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+            .padding(horizontal = 36.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(tokens.colors.surface2),
+        contentAlignment = Alignment.Center,
+      ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          ClipDockSymbol(ClipDockIconKind.Image, Modifier.size(42.dp), color = tokens.colors.accent2)
+          Text("等待图片预览", color = tokens.colors.muted, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold)
+        }
+      }
+    }
+    ImageDetailStageOverlay(
+      item = item,
+      showingOriginal = showingOriginal,
+      modifier = Modifier.align(Alignment.TopCenter),
+    )
+  }
+}
+
+@Composable
+private fun ImageDetailStageOverlay(
+  item: ClipHistoryItem,
+  showingOriginal: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  Row(
+    modifier = modifier.fillMaxWidth().padding(start = 18.dp, top = 96.dp, end = 18.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.SpaceBetween,
+  ) {
+    ImageDetailStageBadge(item = item, showingOriginal = showingOriginal)
+    Text("1 / 1", color = Color.White.copy(alpha = 0.78f), fontSize = 11.sp, lineHeight = 14.sp, fontFamily = FontFamily.Monospace)
+  }
+}
+
+@Composable
+private fun ImageDetailStageBadge(item: ClipHistoryItem, showingOriginal: Boolean) {
+  val tokens = LocalClipDockTokens.current
+  val label =
+    when {
+      showingOriginal -> "清晰原图 · 本机可复制"
+      item.transferState == TransferState.DiscoveringPeer -> "正在查找来源设备"
+      item.transferState == TransferState.Downloading -> "正在下载原图"
+      item.transferState == TransferState.Failed || item.payloadState == PayloadState.Failed -> "原图取回失败"
+      item.thumbnailUri.isNullOrBlank() -> "原图在远端"
+      else -> "同步缩略图 · 原图在远端"
+    }
+  Surface(
+    shape = CircleShape,
+    color = Color.Black.copy(alpha = 0.58f),
+    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      ClipDockSymbol(
+        if (item.transferState == TransferState.Failed || item.payloadState == PayloadState.Failed) ClipDockIconKind.Alert else if (showingOriginal) ClipDockIconKind.Check else ClipDockIconKind.Download,
+        Modifier.size(16.dp),
+        color = if (showingOriginal) tokens.colors.accent else tokens.colors.accent2,
+      )
+      Text(label, color = Color.White, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailTopOverlay(
+  item: ClipHistoryItem,
+  onBack: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Column(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .height(96.dp)
+        .background(
+          Brush.verticalGradient(
+            listOf(Color.Black.copy(alpha = 0.68f), Color.Black.copy(alpha = 0.24f), Color.Transparent),
+          ),
+        )
+  ) {
+    Spacer(Modifier.height(24.dp))
+    Row(
+      modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      PhotoOverlayIconButton(ClipDockIconKind.Chevron, "返回", onBack)
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(item.displayTitle, color = Color.White, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${item.sourceName?.takeIf(String::isNotBlank) ?: "未知来源"} · ${relativeTimeLabel(item.copiedAtMillis)}", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      }
+      PhotoOverlayIconButton(ClipDockIconKind.More, "更多", onClick = {}, enabled = false)
+    }
+  }
+}
+
+@Composable
+private fun PhotoOverlayIconButton(
+  icon: ClipDockIconKind,
+  contentDescription: String,
+  onClick: () -> Unit,
+  enabled: Boolean = true,
+) {
+  Surface(
+    shape = CircleShape,
+    color = Color.Black.copy(alpha = 0.42f),
+    contentColor = Color.White,
+    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+    modifier =
+      Modifier
+        .size(40.dp)
+        .clip(CircleShape)
+        .clickable(enabled = enabled, onClick = onClick)
+        .semantics { this.contentDescription = contentDescription },
+  ) {
+    Box(contentAlignment = Alignment.Center) {
+      ClipDockSymbol(icon, Modifier.size(19.dp), color = Color.White.copy(alpha = if (enabled) 1f else 0.38f))
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailInfoDrawer(
+  item: ClipHistoryItem,
+  state: ClipDockUiState,
+  actions: MobileV4DetailActions,
+  expanded: Boolean,
+  height: androidx.compose.ui.unit.Dp,
+  onExpandedChange: (Boolean) -> Unit,
+  onCopyItem: () -> Unit,
+  onDownloadToCache: () -> Unit,
+  onCopyThumbnail: () -> Unit,
+  onRemoveLocalCache: () -> Unit,
+  onDelete: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val tokens = LocalClipDockTokens.current
+  Surface(
+    shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+    color = tokens.colors.surface,
+    border = BorderStroke(1.dp, tokens.colors.softLine),
+    shadowElevation = 18.dp,
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .height(height)
+        .pointerInput(expanded) {
+          detectVerticalDragGestures { _, dragAmount ->
+            when {
+              dragAmount < -9f -> onExpandedChange(true)
+              dragAmount > 9f -> onExpandedChange(false)
+            }
+          }
+        },
+  ) {
+    LazyColumn(
+      modifier = Modifier.fillMaxSize(),
+      contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 18.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      item {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Box(
+            Modifier
+              .width(42.dp)
+              .height(4.dp)
+              .clip(CircleShape)
+              .background(tokens.colors.line),
+          )
+          ImageDetailDrawerHeader(
+            item = item,
+            actions = actions,
+            expanded = expanded,
+            onExpandedChange = onExpandedChange,
+            onCopyItem = onCopyItem,
+            onDownloadToCache = onDownloadToCache,
+          )
+        }
+      }
+      item {
+        ImageDetailStatusPills(item = item, state = state)
+      }
+      item {
+        if (expanded) {
+          ImageDetailExpandedActions(
+            item = item,
+            actions = actions,
+            onCopyItem = onCopyItem,
+            onDownloadToCache = onDownloadToCache,
+            onCopyThumbnail = onCopyThumbnail,
+            onRemoveLocalCache = onRemoveLocalCache,
+          )
+        } else {
+          ImageDetailUtilityActions(
+            item = item,
+            actions = actions,
+            onExpandedChange = onExpandedChange,
+            onCopyThumbnail = onCopyThumbnail,
+            onRemoveLocalCache = onRemoveLocalCache,
+          )
+        }
+      }
+      if (expanded) {
+        item {
+          ImageDetailInfoSection(item = item, state = state)
+        }
+        item {
+          ImageDetailDangerActions(
+            actions = actions,
+            onDelete = onDelete,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailDrawerHeader(
+  item: ClipHistoryItem,
+  actions: MobileV4DetailActions,
+  expanded: Boolean,
+  onExpandedChange: (Boolean) -> Unit,
+  onCopyItem: () -> Unit,
+  onDownloadToCache: () -> Unit,
+) {
+  val tokens = LocalClipDockTokens.current
+  val hasLocalOriginal = mobileV4HasLocalCopySemantics(item)
+  val primaryLabel =
+    when {
+      hasLocalOriginal -> "复制原图"
+      expanded -> actions.downloadToCache.label
+      else -> actions.primary.label
+    }
+  val primaryEnabled =
+    when {
+      hasLocalOriginal -> actions.primary.enabled
+      expanded -> actions.downloadToCache.enabled
+      else -> actions.primary.enabled
+    }
+  val primaryTone = if (hasLocalOriginal) ClipDockTone.Green else actions.primary.tone
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+      Text(item.displayTitle, color = tokens.colors.ink, fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(imageDrawerSubtitle(item), color = tokens.colors.muted, fontSize = 12.sp, lineHeight = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    ImageDetailPrimaryButton(
+      label = primaryLabel,
+      tone = primaryTone,
+      enabled = primaryEnabled,
+      onClick = {
+        when {
+          hasLocalOriginal -> onCopyItem()
+          expanded -> onDownloadToCache()
+          else -> onExpandedChange(true)
+        }
+      },
+      loading = primaryLabel == "取回中",
+    )
+  }
+}
+
+@Composable
+private fun ImageDetailPrimaryButton(
+  label: String,
+  tone: ClipDockTone,
+  enabled: Boolean,
+  onClick: () -> Unit,
+  loading: Boolean = false,
+) {
+  val tokens = LocalClipDockTokens.current
+  val background =
+    when (tone) {
+      ClipDockTone.Green -> tokens.colors.accent
+      ClipDockTone.Amber -> tokens.colors.warn
+      ClipDockTone.Red -> tokens.colors.danger
+      ClipDockTone.Blue -> tokens.colors.accent2
+      ClipDockTone.Neutral -> tokens.colors.muted
+    }
+  Surface(
+    shape = RoundedCornerShape(12.dp),
+    color = if (enabled) background else tokens.colors.surface3,
+    contentColor = if (enabled) Color.White else tokens.colors.faint,
+    modifier =
+      Modifier
+        .width(104.dp)
+        .height(42.dp)
+        .clip(RoundedCornerShape(12.dp))
+        .clickable(enabled = enabled, onClick = onClick)
+        .testTag(MobileV4Tags.DetailPrimaryAction),
+  ) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+      if (loading) {
+        CircularProgressIndicator(
+          modifier = Modifier.size(18.dp),
+          strokeWidth = 2.dp,
+          color = if (enabled) Color.White else tokens.colors.accent2,
+          trackColor = Color.Transparent,
+        )
+      } else {
+        Text(label, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      }
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailStatusPills(
+  item: ClipHistoryItem,
+  state: ClipDockUiState,
+) {
+  val hasLocalOriginal = mobileV4HasLocalCopySemantics(item)
+  Row(
+    horizontalArrangement = Arrangement.spacedBy(7.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    modifier = Modifier.fillMaxWidth(),
+  ) {
+    ImageDetailPill(
+      label = historyDetailStatus(item),
+      tone =
+        when {
+          item.transferState == TransferState.Failed || item.payloadState == PayloadState.Failed -> ClipDockTone.Red
+          hasLocalOriginal -> ClipDockTone.Green
+          else -> ClipDockTone.Amber
+        },
+    )
+    ImageDetailPill(
+      label = if (hasLocalOriginal) "原图已下载" else if (item.thumbnailUri.isNullOrBlank()) "无缩略图" else "缩略图可用",
+      tone = if (hasLocalOriginal) ClipDockTone.Green else ClipDockTone.Blue,
+    )
+    ImageDetailPill(
+      label = if (state.wifiOnly) "仅 Wi-Fi" else "任意网络",
+      tone = ClipDockTone.Neutral,
+    )
+  }
+}
+
+@Composable
+private fun ImageDetailPill(label: String, tone: ClipDockTone) {
+  val tokens = LocalClipDockTokens.current
+  val background =
+    when (tone) {
+      ClipDockTone.Green -> tokens.colors.accentSoft
+      ClipDockTone.Blue -> tokens.colors.blueSoft
+      ClipDockTone.Amber -> tokens.colors.warnSoft
+      ClipDockTone.Red -> tokens.colors.dangerSoft
+      ClipDockTone.Neutral -> tokens.colors.surface2
+    }
+  val foreground =
+    when (tone) {
+      ClipDockTone.Green -> tokens.colors.accent
+      ClipDockTone.Blue -> tokens.colors.accent2
+      ClipDockTone.Amber -> tokens.colors.warn
+      ClipDockTone.Red -> tokens.colors.danger
+      ClipDockTone.Neutral -> tokens.colors.muted
+    }
+  Surface(
+    shape = RoundedCornerShape(7.dp),
+    color = background,
+    contentColor = foreground,
+    border = if (tone == ClipDockTone.Neutral) BorderStroke(1.dp, tokens.colors.line) else null,
+  ) {
+    Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp), fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+  }
+}
+
+@Composable
+private fun ImageDetailUtilityActions(
+  item: ClipHistoryItem,
+  actions: MobileV4DetailActions,
+  onExpandedChange: (Boolean) -> Unit,
+  onCopyThumbnail: () -> Unit,
+  onRemoveLocalCache: () -> Unit,
+) {
+  val hasLocalOriginal = mobileV4HasLocalCopySemantics(item)
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(top = 1.dp),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    ImageDetailUtilityAction(
+      icon = ClipDockIconKind.Image,
+      label = "复制缩略图",
+      tone = ClipDockTone.Blue,
+      enabled = actions.copyThumbnail.enabled,
+      onClick = onCopyThumbnail,
+      modifier = Modifier.weight(1f),
+    )
+    ImageDetailUtilityAction(
+      icon = ClipDockIconKind.Share,
+      label = "分享",
+      tone = ClipDockTone.Neutral,
+      enabled = false,
+      onClick = {},
+      modifier = Modifier.weight(1f),
+    )
+    if (hasLocalOriginal) {
+      ImageDetailUtilityAction(
+        icon = ClipDockIconKind.Folder,
+        label = "移除缓存",
+        tone = ClipDockTone.Amber,
+        enabled = actions.removeLocalCache.enabled,
+        onClick = onRemoveLocalCache,
+        modifier = Modifier.weight(1f),
+      )
+    } else {
+      ImageDetailUtilityAction(
+        icon = ClipDockIconKind.More,
+        label = "详情",
+        tone = ClipDockTone.Neutral,
+        enabled = true,
+        onClick = { onExpandedChange(true) },
+        modifier = Modifier.weight(1f),
+      )
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailUtilityAction(
+  icon: ClipDockIconKind,
+  label: String,
+  tone: ClipDockTone,
+  enabled: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val tokens = LocalClipDockTokens.current
+  val background =
+    when (tone) {
+      ClipDockTone.Green -> tokens.colors.accentSoft
+      ClipDockTone.Blue -> tokens.colors.blueSoft
+      ClipDockTone.Amber -> tokens.colors.warnSoft
+      ClipDockTone.Red -> tokens.colors.dangerSoft
+      ClipDockTone.Neutral -> tokens.colors.surface2
+    }
+  val foreground =
+    when (tone) {
+      ClipDockTone.Green -> tokens.colors.accent
+      ClipDockTone.Blue -> tokens.colors.accent2
+      ClipDockTone.Amber -> tokens.colors.warn
+      ClipDockTone.Red -> tokens.colors.danger
+      ClipDockTone.Neutral -> tokens.colors.ink
+    }
+  Surface(
+    shape = RoundedCornerShape(13.dp),
+    color = if (enabled) background else tokens.colors.surface2,
+    border = BorderStroke(1.dp, if (tone == ClipDockTone.Neutral) tokens.colors.line else Color.Transparent),
+    contentColor = if (enabled) foreground else tokens.colors.faint,
+    modifier =
+      modifier
+        .height(58.dp)
+        .clip(RoundedCornerShape(13.dp))
+        .clickable(enabled = enabled, onClick = onClick),
+  ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+      ClipDockSymbol(icon, Modifier.size(19.dp), color = if (enabled) foreground else tokens.colors.faint)
+      Text(label, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailExpandedActions(
+  item: ClipHistoryItem,
+  actions: MobileV4DetailActions,
+  onCopyItem: () -> Unit,
+  onDownloadToCache: () -> Unit,
+  onCopyThumbnail: () -> Unit,
+  onRemoveLocalCache: () -> Unit,
+) {
+  val hasLocalOriginal = mobileV4HasLocalCopySemantics(item)
+  Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    if (hasLocalOriginal) {
+      ImageDetailActionCard("复制原图", "写入剪贴板", ClipDockTone.Green, actions.primary.enabled, onCopyItem, Modifier.weight(1f), primary = true)
+      ImageDetailActionCard("移除缓存", "保留同步记录", ClipDockTone.Amber, actions.removeLocalCache.enabled, onRemoveLocalCache, Modifier.weight(1f))
+      ImageDetailActionCard(actions.copyThumbnail.label, "快速使用预览", ClipDockTone.Blue, actions.copyThumbnail.enabled, onCopyThumbnail, Modifier.weight(1f))
+    } else {
+      ImageDetailActionCard(actions.downloadToCache.label, "下载到本机缓存", ClipDockTone.Blue, actions.downloadToCache.enabled, onDownloadToCache, Modifier.weight(1f), primary = true)
+      ImageDetailActionCard("复制缩略图", "保留远端原图", ClipDockTone.Neutral, actions.copyThumbnail.enabled, onCopyThumbnail, Modifier.weight(1f))
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailActionCard(
+  title: String,
+  subtitle: String,
+  tone: ClipDockTone,
+  enabled: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  primary: Boolean = false,
+) {
+  val tokens = LocalClipDockTokens.current
+  val primaryColor = if (tone == ClipDockTone.Green) tokens.colors.accent else tokens.colors.accent2
+  Surface(
+    shape = RoundedCornerShape(14.dp),
+    color = if (primary && enabled) primaryColor else tokens.colors.surface2,
+    border = BorderStroke(1.dp, if (primary && enabled) Color.Transparent else tokens.colors.line),
+    contentColor = if (primary && enabled) Color.White else if (enabled) tokens.colors.ink else tokens.colors.faint,
+    modifier =
+      modifier
+        .height(64.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .clickable(enabled = enabled, onClick = onClick),
+  ) {
+    Column(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+      verticalArrangement = Arrangement.Center,
+    ) {
+      Text(title, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(subtitle, fontSize = 10.sp, lineHeight = 12.sp, color = if (primary && enabled) Color.White.copy(alpha = 0.72f) else tokens.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailInfoSection(item: ClipHistoryItem, state: ClipDockUiState) {
+  Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+    ImageDetailInfoGroup("内容") {
+      ImageDetailMetaRow("文件名", item.displayTitle)
+      ImageDetailMetaRow("尺寸", imageOriginalDimensionsLabel(item))
+      ImageDetailMetaRow("原图大小", imageOriginalSizeLabel(item))
+    }
+    ImageDetailInfoGroup("同步") {
+      ImageDetailMetaRow("来源设备", item.sourceName?.takeIf(String::isNotBlank) ?: "未知来源")
+      ImageDetailMetaRow("同步空间", state.syncId ?: "未加入")
+      ImageDetailMetaRow("assetId", item.assetId?.let(::shortIdentifier) ?: "无可取回资产")
+      ImageDetailMetaRow("contentHash", shortIdentifier(item.contentHash))
+    }
+    ImageDetailInfoGroup("缓存") {
+      ImageDetailMetaRow("本机缓存", imageLocalCacheLabel(item))
+      ImageDetailMetaRow("缩略图", imageThumbnailDescription(item))
+      ImageDetailMetaRow("原图状态", imageOriginalStateLabel(item))
+      ImageDetailMetaRow("保留策略", "30 天")
+      ImageDetailMetaRow("复制次数", "${item.copyCount} 次 · ${relativeTimeLabel(item.copiedAtMillis)}")
+    }
+  }
+}
+
+@Composable
+private fun ImageDetailInfoGroup(
+  title: String,
+  content: @Composable () -> Unit,
+) {
+  val tokens = LocalClipDockTokens.current
+  Column(
+    modifier = Modifier.fillMaxWidth().padding(top = 11.dp, bottom = 10.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Text(title, color = tokens.colors.muted, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.ExtraBold)
+    content()
+  }
+}
+
+@Composable
+private fun ImageDetailMetaRow(label: String, value: String) {
+  val tokens = LocalClipDockTokens.current
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+    verticalAlignment = Alignment.Top,
+  ) {
+    Text(label, color = tokens.colors.muted, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.width(82.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(value, color = tokens.colors.ink, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+  }
+}
+
+@Composable
+private fun ImageDetailDangerActions(
+  actions: MobileV4DetailActions,
+  onDelete: () -> Unit,
+) {
+  val tokens = LocalClipDockTokens.current
+  Surface(
+    shape = RoundedCornerShape(14.dp),
+    color = tokens.colors.dangerSoft,
+    contentColor = tokens.colors.danger,
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .height(44.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .clickable(enabled = actions.deleteSyncRecord.enabled, onClick = onDelete)
+        .testTag(MobileV4Tags.DetailTrashAction),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      ClipDockSymbol(ClipDockIconKind.Trash, Modifier.size(17.dp), color = tokens.colors.danger)
+      Text(actions.deleteSyncRecord.label, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold)
     }
   }
 }
@@ -523,43 +1211,24 @@ private fun V4SheetOverlay(
 
 @Composable
 private fun ItemDetailTopBar(item: ClipHistoryItem, onBack: () -> Unit) {
-  val display = historyDetailDisplay(item)
   Row(
     modifier = Modifier.fillMaxWidth(),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     ClipDockIconButton(ClipDockIconKind.Chevron, "返回", onClick = onBack)
-    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-      Text("${item.type.label}详情", style = MaterialTheme.typography.titleLarge, color = LocalClipDockTokens.current.colors.ink, maxLines = 1)
-      Text(display.subtitle, style = MaterialTheme.typography.bodySmall, color = LocalClipDockTokens.current.colors.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-    ClipDockIconButton(ClipDockIconKind.More, "更多", onClick = {}, enabled = false)
+    Text("${item.type.label}详情", color = LocalClipDockTokens.current.colors.ink, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
+    ClipDockIconButton(ClipDockIconKind.Share, "分享", onClick = {}, enabled = false)
   }
 }
 
 @Composable
 private fun ItemDetailSummary(item: ClipHistoryItem) {
   val display = historyDetailDisplay(item)
-  ClipDockCard {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      IconTile(display.previewIcon, tone = typeTone(item.type))
-      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(display.title, style = MaterialTheme.typography.titleMedium, color = LocalClipDockTokens.current.colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(
-          item.displayBody.ifBlank { item.detail },
-          style = MaterialTheme.typography.bodySmall,
-          color = LocalClipDockTokens.current.colors.muted,
-          maxLines = 3,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          StatusPill(display.status, if (mobileV4HasLocalCopySemantics(item)) ClipDockTone.Green else ClipDockTone.Blue)
-          StatusPill("已同步", ClipDockTone.Neutral)
-          StatusPill("未固定", ClipDockTone.Neutral)
-        }
-      }
-    }
+  Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    HistoryActionPill(display.contentType, display.previewIcon, typeTone(item.type))
+    HistoryActionPill(display.source, if (item.sourceName?.contains("Pixel", ignoreCase = true) == true) ClipDockIconKind.Devices else ClipDockIconKind.Window, ClipDockTone.Neutral)
+    HistoryActionPill(display.timeLabel, ClipDockIconKind.History, ClipDockTone.Neutral)
   }
 }
 
@@ -603,38 +1272,129 @@ private fun ItemDetailContentPreview(item: ClipHistoryItem) {
       else -> item.body.ifBlank { item.detail }
     }
   ClipDockCard {
-    Text("内容预览", style = MaterialTheme.typography.labelMedium, color = LocalClipDockTokens.current.colors.muted)
     Text(
       text,
-      style = MaterialTheme.typography.bodyMedium,
       color = LocalClipDockTokens.current.colors.ink,
-      maxLines = 8,
+      fontSize = 16.sp,
+      lineHeight = 24.sp,
+      fontWeight = FontWeight.Normal,
+      maxLines = 12,
       overflow = TextOverflow.Ellipsis,
     )
   }
 }
 
 @Composable
+private fun ItemDetailInlineActions(
+  actions: MobileV4DetailActions,
+  onPrimary: () -> Unit,
+  onDelete: () -> Unit,
+) {
+  Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    DetailActionTile(
+      actions.primary.icon,
+      actions.primary.label,
+      ClipDockTone.Green,
+      actions.primary.enabled,
+      onPrimary,
+      Modifier.weight(1f),
+      primary = true,
+      loading = actions.primary.label == "取回中" || actions.primary.label == "复制中",
+    )
+    DetailActionTile(ClipDockIconKind.Pin, "固定", ClipDockTone.Neutral, enabled = false, onClick = {}, modifier = Modifier.weight(1f))
+    DetailActionTile(ClipDockIconKind.Share, "分享", ClipDockTone.Neutral, enabled = false, onClick = {}, modifier = Modifier.weight(1f))
+  }
+}
+
+@Composable
+private fun DetailActionTile(
+  icon: ClipDockIconKind,
+  label: String,
+  tone: ClipDockTone,
+  enabled: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  primary: Boolean = false,
+  loading: Boolean = false,
+) {
+  val tokens = LocalClipDockTokens.current
+  val colors = historyToneColors(tone)
+  Column(
+    modifier =
+      modifier
+        .height(62.dp)
+        .clip(RoundedCornerShape(16.dp))
+        .background(if (primary) tokens.colors.accentSoft else tokens.colors.surface)
+        .clickable(enabled = enabled, onClick = onClick)
+        .padding(vertical = 8.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.Center,
+  ) {
+    if (loading) {
+      CircularProgressIndicator(
+        modifier = Modifier.size(22.dp),
+        strokeWidth = 2.dp,
+        color = colors.first,
+        trackColor = colors.first.copy(alpha = 0.14f),
+      )
+    } else {
+      ClipDockSymbol(icon, Modifier.size(23.dp), color = if (enabled) colors.first else tokens.colors.muted)
+    }
+    Text(label, color = if (enabled) colors.first else tokens.colors.muted, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+  }
+}
+
+@Composable
 private fun ItemDetailMetaGrid(item: ClipHistoryItem, state: ClipDockUiState) {
   val display = historyDetailDisplay(item)
-  LazyVerticalGrid(
-    columns = GridCells.Fixed(2),
-    modifier = Modifier.height(148.dp),
-    userScrollEnabled = false,
-    horizontalArrangement = Arrangement.spacedBy(10.dp),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
-  ) {
-    val rows =
+  DetailInfoList(
+    rows =
       listOf(
         "来源" to display.source,
-        "状态" to display.status,
+        "类型" to display.contentType,
+        "同步状态" to display.status,
         "空间" to (state.syncId ?: "未加入"),
-        "保留" to if (item.needsRemotePayload) "远端保留" else "本机可用",
-      )
-    items(rows) { row ->
-      ClipDockCard(contentPadding = PaddingValues(12.dp)) {
-        Text(row.first, style = MaterialTheme.typography.labelSmall, color = LocalClipDockTokens.current.colors.muted)
-        Text(row.second, style = MaterialTheme.typography.titleSmall, color = LocalClipDockTokens.current.colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        "内容长度" to "${historyFullText(item).length} 个字符",
+      ),
+  )
+}
+
+@Composable
+private fun ImageDetailInfoList(item: ClipHistoryItem, state: ClipDockUiState) {
+  DetailInfoList(
+    rows =
+      listOf(
+        "文件名" to item.displayTitle.ifBlank { "图片" },
+        "尺寸" to imageOriginalDimensionsLabel(item),
+        "大小" to imageOriginalSizeLabel(item),
+        "来源" to (item.sourceName?.takeIf(String::isNotBlank) ?: "未知来源"),
+        "同步状态" to historyDetailStatus(item),
+      ),
+  )
+}
+
+@Composable
+private fun DetailInfoList(rows: List<Pair<String, String>>) {
+  val tokens = LocalClipDockTokens.current
+  Surface(
+    shape = RoundedCornerShape(16.dp),
+    color = tokens.colors.surface,
+    border = BorderStroke(1.dp, tokens.colors.softLine),
+    modifier = Modifier.fillMaxWidth(),
+  ) {
+    Column {
+      rows.forEachIndexed { index, row ->
+        Row(
+          modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp).padding(horizontal = 14.dp, vertical = 9.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Text(row.first, color = tokens.colors.muted, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.width(84.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+          Text(row.second, color = tokens.colors.ink, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        if (index != rows.lastIndex) {
+          SettingDivider()
+        }
       }
     }
   }
@@ -712,7 +1472,6 @@ private fun DockIconButton(
 private fun RemoteRetrievalSheetContent(
   item: ClipHistoryItem,
   actions: MobileV4DetailActions,
-  onDownloadAndCopy: () -> Unit,
   onDownloadToCache: () -> Unit,
   onCopyThumbnail: () -> Unit,
 ) {
@@ -724,8 +1483,7 @@ private fun RemoteRetrievalSheetContent(
         Text("选择下载后如何处理，不自动覆盖剪贴板。", style = MaterialTheme.typography.bodySmall, color = LocalClipDockTokens.current.colors.muted)
       }
     }
-    SheetActionRow(actions.downloadAndCopy, "P2P 取回原图后写入系统剪贴板", MobileV4Tags.RemoteDownloadAndCopy, onDownloadAndCopy, primary = true)
-    SheetActionRow(actions.downloadToCache, "用于稍后打开或分享，不改变剪贴板", MobileV4Tags.RemoteDownloadToCache, onDownloadToCache)
+    SheetActionRow(actions.downloadToCache, "下载到本机缓存；下载后可自行复制。", MobileV4Tags.RemoteDownloadToCache, onDownloadToCache, primary = true)
     SheetActionRow(actions.copyThumbnail, "快速使用预览图，保留原图远端状态", MobileV4Tags.RemoteCopyThumbnail, onCopyThumbnail)
   }
 }
@@ -852,37 +1610,37 @@ internal fun HistoryPage(
   val filtered = filteredHistoryItems(state.items, selectedVisualFilter)
 
   Box(modifier = modifier.fillMaxSize()) {
-    LazyVerticalGrid(
-      columns = GridCells.Fixed(2),
-      contentPadding = PaddingValues(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 24.dp),
+    LazyVerticalStaggeredGrid(
+      columns = StaggeredGridCells.Adaptive(164.dp),
+      contentPadding = PaddingValues(start = 14.dp, top = 15.dp, end = 14.dp, bottom = 18.dp),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
+      verticalItemSpacing = 10.dp,
       modifier = Modifier.fillMaxSize(),
     ) {
-      item(span = { GridItemSpan(maxLineSpan) }) {
+      item(span = StaggeredGridItemSpan.FullLine) {
         HistoryStableTopBar(
           state = state,
           onOpenSettings = onOpenSettings,
           onSyncNow = onSyncNow,
         )
       }
-      item(span = { GridItemSpan(maxLineSpan) }) {
+      item(span = StaggeredGridItemSpan.FullLine) {
         HistorySearchPill()
       }
-      item(span = { GridItemSpan(maxLineSpan) }) {
+      item(span = StaggeredGridItemSpan.FullLine) {
         HistoryVisualFilterRow(
           selected = selectedVisualFilter,
           onSelected = { selectedVisualFilter = it },
         )
       }
-      item(span = { GridItemSpan(maxLineSpan) }) {
-        HistorySyncBanner(
+      item(span = StaggeredGridItemSpan.FullLine) {
+        HistoryHealthStrip(
           state = state,
           onClick = if (state.tokenPresent) onSyncNow else onOpenSettings,
         )
       }
       if (filtered.isEmpty()) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
+        item(span = StaggeredGridItemSpan.FullLine) {
           EmptyState(
             title = if (state.tokenPresent) "暂无同步记录" else "先连接服务端",
             subtitle = if (state.tokenPresent) "点击同步拉取最近剪贴板历史。" else "ClipDock Android 会从同步空间读取最近历史。",
@@ -891,12 +1649,11 @@ internal fun HistoryPage(
           )
         }
       } else {
-        itemsIndexed(filtered, key = { _, item -> item.stableId }) { index, item ->
+        staggeredItemsIndexed(filtered, key = { _, item -> item.stableId }) { index, item ->
           HistoryStableCard(
             item = item,
             selected = index == 0,
             onOpenDetail = { onOpenItemDetail(item.stableId) },
-            modifier = Modifier.height(150.dp),
           )
         }
       }
@@ -907,6 +1664,7 @@ internal fun HistoryPage(
 private enum class HistoryVisualFilter(val label: String) {
   All("全部"),
   Text("文本"),
+  Link("链接"),
   Image("图片"),
   File("文件"),
 }
@@ -927,33 +1685,52 @@ private fun HistoryStableTopBar(
   onSyncNow: () -> Unit,
 ) {
   Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+    modifier = Modifier.fillMaxWidth(),
     verticalAlignment = Alignment.Top,
-    horizontalArrangement = Arrangement.spacedBy(12.dp),
+    horizontalArrangement = Arrangement.spacedBy(9.dp),
   ) {
-    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
       Text(
         "剪贴板",
         color = LocalClipDockTokens.current.colors.ink,
-        fontSize = 25.sp,
-        lineHeight = 25.sp,
+        fontSize = 30.sp,
+        lineHeight = 34.sp,
         fontWeight = FontWeight.ExtraBold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
       )
-      Text(
-        historyStableSyncText(state),
-        color = LocalClipDockTokens.current.colors.muted,
-        fontSize = 13.sp,
-        lineHeight = 17.sp,
-        fontWeight = FontWeight.Normal,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
+      HistorySyncChip(state)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
       HistoryRoundIconButton(icon = ClipDockIconKind.Search, contentDescription = "搜索", onClick = {})
       HistoryRoundIconButton(icon = ClipDockIconKind.Plus, contentDescription = "添加", onClick = onOpenSettings)
+    }
+  }
+}
+
+@Composable
+private fun HistorySyncChip(state: ClipDockUiState) {
+  val tokens = LocalClipDockTokens.current
+  Surface(
+    shape = CircleShape,
+    color = tokens.colors.surface,
+    border = BorderStroke(1.dp, tokens.colors.softLine),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+      Box(Modifier.size(8.dp).clip(CircleShape).background(if (state.tokenPresent) tokens.colors.accent else tokens.colors.faint))
+      Text(
+        historyStableSyncText(state),
+        color = tokens.colors.muted,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
     }
   }
 }
@@ -969,16 +1746,16 @@ private fun HistoryRoundIconButton(
     color = LocalClipDockTokens.current.colors.surface,
     contentColor = LocalClipDockTokens.current.colors.muted,
     border = BorderStroke(1.dp, LocalClipDockTokens.current.colors.line),
-    shadowElevation = 2.dp,
+    shadowElevation = 0.dp,
     modifier =
       Modifier
-        .size(36.dp)
+        .size(42.dp)
         .clip(CircleShape)
         .clickable(onClick = onClick)
         .semantics { this.contentDescription = contentDescription },
   ) {
     Box(contentAlignment = Alignment.Center) {
-      ClipDockSymbol(icon, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.muted)
+      ClipDockSymbol(icon, Modifier.size(22.dp), color = LocalClipDockTokens.current.colors.muted)
     }
   }
 }
@@ -989,15 +1766,15 @@ private fun HistorySearchPill() {
     modifier =
       Modifier
         .fillMaxWidth()
-        .height(44.dp)
-        .clip(CircleShape)
+        .height(50.dp)
+        .clip(RoundedCornerShape(16.dp))
         .background(LocalClipDockTokens.current.colors.surface)
         .semantics { contentDescription = "搜索文本、链接、文件名" }
-        .padding(horizontal = 14.dp),
+        .padding(horizontal = 15.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(10.dp),
   ) {
-    ClipDockSymbol(ClipDockIconKind.Search, Modifier.size(17.dp), color = LocalClipDockTokens.current.colors.muted)
+    ClipDockSymbol(ClipDockIconKind.Search, Modifier.size(20.dp), color = LocalClipDockTokens.current.colors.muted)
     Text(
       "搜索文本、链接、文件名",
       color = LocalClipDockTokens.current.colors.muted,
@@ -1019,8 +1796,8 @@ private fun HistoryVisualFilterRow(
     modifier =
       Modifier
         .fillMaxWidth()
-        .height(38.dp)
-        .clip(CircleShape)
+        .height(42.dp)
+        .clip(RoundedCornerShape(14.dp))
         .background(tokens.colors.surface3)
         .padding(4.dp),
     verticalAlignment = Alignment.CenterVertically,
@@ -1047,13 +1824,13 @@ private fun HistoryVisualFilterChip(
   val tokens = LocalClipDockTokens.current
   val contentColor = if (selected) tokens.colors.ink else tokens.colors.muted
   Surface(
-    shape = CircleShape,
+    shape = RoundedCornerShape(10.dp),
     color = if (selected) tokens.colors.surface else Color.Transparent,
     contentColor = contentColor,
     shadowElevation = if (selected) 2.dp else 0.dp,
     modifier =
       modifier
-        .clip(CircleShape)
+        .clip(RoundedCornerShape(10.dp))
         .clickable(onClick = onClick),
   ) {
     Box(contentAlignment = Alignment.Center) {
@@ -1071,75 +1848,72 @@ private fun HistoryVisualFilterChip(
 }
 
 @Composable
-private fun HistorySyncBanner(state: ClipDockUiState, onClick: () -> Unit) {
+private fun HistoryHealthStrip(state: ClipDockUiState, onClick: () -> Unit) {
   val tokens = LocalClipDockTokens.current
   val isConnected = state.tokenPresent
   Surface(
-    shape = RoundedCornerShape(20.dp),
-    color = tokens.colors.historySyncBanner,
+    shape = RoundedCornerShape(14.dp),
+    color = Color(0xFFF1FBF7),
     border = BorderStroke(1.dp, tokens.colors.accent.copy(alpha = 0.18f)),
-    shadowElevation = 12.dp,
+    shadowElevation = 0.dp,
     modifier =
       Modifier
         .fillMaxWidth()
-        .height(78.dp)
-        .clip(RoundedCornerShape(20.dp))
+        .height(68.dp)
+        .clip(RoundedCornerShape(14.dp))
         .clickable(onClick = onClick),
   ) {
     Row(
-      modifier = Modifier.fillMaxSize().padding(14.dp),
+      modifier = Modifier.fillMaxSize(),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Box(
-        modifier =
-          Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.13f)),
-        contentAlignment = Alignment.Center,
-      ) {
-        ClipDockSymbol(ClipDockIconKind.Cloud, Modifier.size(22.dp), color = Color.White)
+      HistoryHealthCell(
+        icon = ClipDockIconKind.Cloud,
+        title = if (isConnected) "同步正常" else "等待连接",
+        subtitle = if (isConnected) "连接稳定" else "打开设置",
+        modifier = Modifier.weight(1.1f),
+        showDivider = true,
+      )
+      HistoryHealthCell(
+        icon = ClipDockIconKind.Devices,
+        title = "在线设备",
+        subtitle = "${state.p2pDevices.size + if (state.tokenPresent) 1 else 0} 台",
+        modifier = Modifier.weight(0.85f),
+        showDivider = true,
+      )
+      HistoryHealthCell(
+        icon = ClipDockIconKind.Cloud,
+        title = "待上传",
+        subtitle = "0 项",
+        modifier = Modifier.weight(0.85f),
+        showDivider = false,
+      )
+    }
+  }
+}
+
+@Composable
+private fun HistoryHealthCell(
+  icon: ClipDockIconKind,
+  title: String,
+  subtitle: String,
+  modifier: Modifier = Modifier,
+  showDivider: Boolean,
+) {
+  val tokens = LocalClipDockTokens.current
+  Row(modifier = modifier.fillMaxSize()) {
+    Column(
+      modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 13.dp),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        ClipDockSymbol(icon, Modifier.size(17.dp), color = tokens.colors.accent)
+        Text(title, color = tokens.colors.ink, fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
       }
-      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(
-          if (isConnected) "同步正常" else "等待连接",
-          color = Color.White,
-          fontSize = 15.sp,
-          lineHeight = 18.sp,
-          fontWeight = FontWeight.Bold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-          if (isConnected) "下一次实时同步已连接" else "打开设置加入同步空间",
-          color = Color.White.copy(alpha = 0.72f),
-          fontSize = 12.sp,
-          lineHeight = 16.sp,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-      Row(
-        modifier =
-          Modifier
-            .height(26.dp)
-            .clip(CircleShape)
-            .background(tokens.colors.accentSoft)
-            .padding(horizontal = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(tokens.colors.accent))
-        Text(
-          if (isConnected) "2 秒前" else "未连接",
-          color = tokens.colors.accent,
-          fontSize = 11.sp,
-          lineHeight = 14.sp,
-          fontWeight = FontWeight.ExtraBold,
-          maxLines = 1,
-        )
-      }
+      Text(subtitle, color = tokens.colors.muted, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (showDivider) {
+      Box(Modifier.width(1.dp).fillMaxSize().padding(vertical = 8.dp).background(tokens.colors.accent.copy(alpha = 0.18f)))
     }
   }
 }
@@ -1151,14 +1925,18 @@ private fun HistoryStableCard(
   onOpenDetail: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val tokens = LocalClipDockTokens.current
   val variant = historyCardVariant(item)
-  val shape = RoundedCornerShape(16.dp)
+  if (variant == HistoryCardVariant.Image || variant == HistoryCardVariant.File) {
+    HistoryMediaCard(item = item, variant = variant, onOpenDetail = onOpenDetail, modifier = modifier)
+    return
+  }
+  val tokens = LocalClipDockTokens.current
+  val shape = RoundedCornerShape(12.dp)
   Surface(
     shape = shape,
     color = tokens.colors.surface,
     border = BorderStroke(1.dp, if (selected) tokens.colors.accent.copy(alpha = 0.62f) else tokens.colors.softLine),
-    shadowElevation = if (selected) 10.dp else 8.dp,
+    shadowElevation = 0.dp,
     modifier =
       modifier
         .fillMaxWidth()
@@ -1167,79 +1945,179 @@ private fun HistoryStableCard(
         .testTag(historyCardTestTag(item.stableId)),
   ) {
     Column(
-      modifier = Modifier.fillMaxSize().padding(12.dp),
-      verticalArrangement = Arrangement.spacedBy(9.dp),
+      modifier = Modifier.fillMaxWidth().padding(12.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+      Box(Modifier.size(8.dp).clip(CircleShape).background(if (variant == HistoryCardVariant.Link) tokens.colors.accent2 else tokens.colors.accent))
       Row(
-        modifier = Modifier.fillMaxWidth().height(24.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
       ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          ClipDockSymbol(historyCardIcon(variant), Modifier.size(16.dp), color = tokens.colors.muted)
-          Text(
-            historyCardLabel(variant),
-            color = tokens.colors.muted,
-            fontSize = 11.sp,
-            lineHeight = 14.sp,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 1,
-          )
-        }
+        HistoryTypePill(label = historyCardLabel(variant), tone = typeTone(item.type))
         Text(
           historyStableClockLabel(item),
           color = tokens.colors.faint,
-          fontSize = 10.sp,
-          lineHeight = 12.sp,
-          fontWeight = FontWeight.Bold,
+          fontSize = 11.sp,
+          lineHeight = 14.sp,
+          fontWeight = FontWeight.ExtraBold,
           maxLines = 1,
         )
       }
-      Column(
-        modifier = Modifier.fillMaxWidth().weight(1f),
-        verticalArrangement = Arrangement.SpaceBetween,
+      HistorySourceLine(item)
+      HistoryTextPayload(item = item, variant = variant)
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
       ) {
-        HistoryCardPrimaryContent(item = item, variant = variant)
-        Row(
-          modifier = Modifier.fillMaxWidth().height(24.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          val footer = historyCardFooter(item, variant)
-          HistoryMiniChip(footer.first.label, footer.first.tone)
-          HistoryMiniChip(footer.second.label, footer.second.tone)
-        }
+        HistoryActionPill("复制", ClipDockIconKind.Copy, ClipDockTone.Green)
+        HistoryActionPill(if (variant == HistoryCardVariant.Link) "分享" else "固定", if (variant == HistoryCardVariant.Link) ClipDockIconKind.Share else ClipDockIconKind.Pin, if (variant == HistoryCardVariant.Link) ClipDockTone.Blue else ClipDockTone.Neutral)
       }
     }
   }
 }
 
 @Composable
-private fun HistoryCardPrimaryContent(item: ClipHistoryItem, variant: HistoryCardVariant) {
-  when (variant) {
-    HistoryCardVariant.Image -> HistoryCompactThumb(item = item)
-    HistoryCardVariant.Link -> HistoryCompactLinkPreview(item = item)
-    HistoryCardVariant.File -> HistoryCompactFileLines()
-    else ->
-      Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(
-          item.displayTitle,
-          color = LocalClipDockTokens.current.colors.ink,
-          fontSize = 13.sp,
-          lineHeight = 17.sp,
-          fontWeight = FontWeight.ExtraBold,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-          item.displayBody.ifBlank { item.detail },
-          color = LocalClipDockTokens.current.colors.muted,
-          fontSize = 11.sp,
-          lineHeight = 14.sp,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
+private fun HistorySourceLine(item: ClipHistoryItem) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    ClipDockSymbol(if (item.sourceName?.contains("Pixel", ignoreCase = true) == true) ClipDockIconKind.Devices else ClipDockIconKind.Window, Modifier.size(13.dp), color = LocalClipDockTokens.current.colors.faint)
+    Text(
+      item.sourceName?.takeIf(String::isNotBlank) ?: "未知来源",
+      color = LocalClipDockTokens.current.colors.faint,
+      fontSize = 11.sp,
+      lineHeight = 14.sp,
+      fontWeight = FontWeight.ExtraBold,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+  }
+}
+
+@Composable
+private fun HistoryTextPayload(item: ClipHistoryItem, variant: HistoryCardVariant) {
+  val primary =
+    when (variant) {
+      HistoryCardVariant.Link -> historyFullText(item).lineSequence().firstOrNull()?.ifBlank { null } ?: item.displayTitle
+      else -> historyFullText(item).ifBlank { item.displayTitle.ifBlank { item.displayBody } }
+    }
+  val secondary =
+    if (variant == HistoryCardVariant.Link) {
+      item.linkSiteName?.takeIf(String::isNotBlank) ?: item.displayBody.ifBlank { item.detail }
+    } else {
+      ""
+    }
+  Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Text(
+      primary,
+      color = LocalClipDockTokens.current.colors.ink,
+      fontSize = 16.sp,
+      lineHeight = 22.sp,
+      fontWeight = FontWeight.Normal,
+      maxLines = if (variant == HistoryCardVariant.Link) 4 else 8,
+      overflow = TextOverflow.Ellipsis,
+    )
+    if (secondary.isNotBlank()) {
+      Text(
+        secondary,
+        color = LocalClipDockTokens.current.colors.muted,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        fontWeight = FontWeight.Normal,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+  }
+}
+
+@Composable
+private fun HistoryTypePill(label: String, tone: ClipDockTone) {
+  val colors = historyToneColors(tone)
+  Surface(shape = RoundedCornerShape(7.dp), color = colors.second, contentColor = colors.first) {
+    Text(label, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp), fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+  }
+}
+
+@Composable
+private fun HistoryActionPill(label: String, icon: ClipDockIconKind, tone: ClipDockTone) {
+  val colors = historyToneColors(tone)
+  Row(
+    modifier =
+      Modifier
+        .height(26.dp)
+        .clip(CircleShape)
+        .background(colors.second)
+        .padding(horizontal = 10.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(5.dp),
+  ) {
+    ClipDockSymbol(icon, Modifier.size(14.dp), color = colors.first)
+    Text(label, color = colors.first, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+  }
+}
+
+@Composable
+private fun historyToneColors(tone: ClipDockTone): Pair<Color, Color> {
+  val tokens = LocalClipDockTokens.current
+  return when (tone) {
+    ClipDockTone.Green -> tokens.colors.accent to tokens.colors.accentSoft
+    ClipDockTone.Blue -> tokens.colors.accent2 to tokens.colors.blueSoft
+    ClipDockTone.Amber -> tokens.colors.warn to tokens.colors.warnSoft
+    ClipDockTone.Red -> tokens.colors.danger to tokens.colors.dangerSoft
+    ClipDockTone.Neutral -> tokens.colors.muted to tokens.colors.surface3
+  }
+}
+
+@Composable
+private fun HistoryMediaCard(
+  item: ClipHistoryItem,
+  variant: HistoryCardVariant,
+  onOpenDetail: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val tokens = LocalClipDockTokens.current
+  val bitmap by rememberImageBitmap(item.thumbnailUri ?: item.localUri)
+  val shape = RoundedCornerShape(12.dp)
+  Box(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .height(if (variant == HistoryCardVariant.File) 172.dp else 190.dp)
+        .clip(shape)
+        .background(Color(0xFF101820))
+        .clickable(onClick = onOpenDetail)
+        .testTag(historyCardTestTag(item.stableId)),
+  ) {
+    if (bitmap != null) {
+      Image(bitmap = bitmap!!, contentDescription = item.displayTitle, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    } else {
+      HistoryMediaFallback(variant = variant, modifier = Modifier.fillMaxSize())
+    }
+    Box(
+      Modifier
+        .matchParentSize()
+        .background(Brush.verticalGradient(listOf(Color(0x990F172A), Color(0x110F172A), Color(0xB80F172A)))),
+    )
+    Row(
+      modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ClipDockSymbol(historyCardIcon(variant), Modifier.size(15.dp), color = Color.White.copy(alpha = 0.92f))
+        HistoryTypePill(if (variant == HistoryCardVariant.File) "封面" else "图片", if (variant == HistoryCardVariant.File) ClipDockTone.Amber else ClipDockTone.Green)
       }
+      Text(historyStableClockLabel(item), color = Color.White.copy(alpha = 0.82f), fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+    }
+    Row(
+      modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+      HistoryActionPill("复制", ClipDockIconKind.Copy, ClipDockTone.Green)
+      HistoryActionPill("下载", ClipDockIconKind.Download, ClipDockTone.Blue)
+    }
   }
 }
 
@@ -1252,8 +2130,8 @@ private fun HistoryCompactLinkPreview(item: ClipHistoryItem) {
     modifier =
       Modifier
         .fillMaxWidth()
-        .height(52.dp)
-        .clip(RoundedCornerShape(12.dp))
+        .height(44.dp)
+        .clip(RoundedCornerShape(11.dp))
         .background(tokens.colors.surface3),
   ) {
     if (previewBitmap != null) {
@@ -1323,6 +2201,58 @@ private fun HistoryCompactLinkPreview(item: ClipHistoryItem) {
 }
 
 @Composable
+private fun HistoryMediaFallback(variant: HistoryCardVariant, modifier: Modifier = Modifier) {
+  if (variant == HistoryCardVariant.File) {
+    Box(
+      modifier =
+        modifier.background(
+          Brush.verticalGradient(
+            listOf(Color(0xFFFFF7ED), Color(0xFFFFFFFF), Color(0xFF64748B)),
+          ),
+        ),
+    ) {
+      Box(
+        Modifier
+          .align(Alignment.Center)
+          .fillMaxWidth(0.74f)
+          .aspectRatio(1.45f)
+          .clip(RoundedCornerShape(18.dp))
+          .background(Color.White.copy(alpha = 0.78f)),
+      )
+      Box(Modifier.align(Alignment.CenterStart).padding(start = 24.dp).size(62.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFFB923C)))
+      Box(Modifier.align(Alignment.TopEnd).padding(top = 42.dp, end = 30.dp).width(78.dp).height(12.dp).clip(CircleShape).background(Color(0xFFFDAD64)))
+      Box(Modifier.align(Alignment.TopEnd).padding(top = 68.dp, end = 56.dp).width(48.dp).height(12.dp).clip(CircleShape).background(Color(0xFFFDD6A5)))
+      Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 50.dp).fillMaxWidth(0.70f).height(10.dp).clip(CircleShape).background(Color(0xFFD7CEC2)))
+    }
+  } else {
+    Box(
+      modifier =
+        modifier.background(
+          Brush.verticalGradient(
+            listOf(Color(0xFFA7F3D0), Color(0xFF67E8F9), Color(0xFF2563EB)),
+          ),
+        ),
+    ) {
+      Box(Modifier.align(Alignment.TopEnd).padding(24.dp).size(54.dp).clip(CircleShape).background(Color(0xFFFEF3C7)))
+      Box(
+        Modifier
+          .align(Alignment.BottomCenter)
+          .fillMaxWidth()
+          .height(118.dp)
+          .background(Brush.linearGradient(listOf(Color(0xFF18A67A), Color(0xFFFACC15)))),
+      )
+      Box(
+        Modifier
+          .align(Alignment.BottomCenter)
+          .fillMaxWidth()
+          .height(82.dp)
+          .background(Color(0xB80F766E)),
+      )
+    }
+  }
+}
+
+@Composable
 private fun HistoryCompactThumb(item: ClipHistoryItem) {
   val bitmap by rememberImageBitmap(item.thumbnailUri ?: item.localUri)
   if (bitmap != null) {
@@ -1330,15 +2260,15 @@ private fun HistoryCompactThumb(item: ClipHistoryItem) {
       bitmap = bitmap!!,
       contentDescription = item.displayTitle,
       contentScale = ContentScale.Crop,
-      modifier = Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(12.dp)),
+      modifier = Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(11.dp)),
     )
   } else {
     Box(
       modifier =
         Modifier
           .fillMaxWidth()
-          .height(52.dp)
-          .clip(RoundedCornerShape(12.dp))
+          .height(44.dp)
+          .clip(RoundedCornerShape(11.dp))
           .background(
             Brush.linearGradient(
               listOf(
@@ -1357,11 +2287,11 @@ private fun HistoryCompactFileLines() {
     modifier =
       Modifier
         .fillMaxWidth()
-        .height(52.dp)
-        .clip(RoundedCornerShape(12.dp))
+        .height(44.dp)
+        .clip(RoundedCornerShape(11.dp))
         .background(LocalClipDockTokens.current.colors.surface3)
-        .padding(horizontal = 16.dp, vertical = 12.dp),
-    verticalArrangement = Arrangement.spacedBy(6.dp),
+        .padding(horizontal = 14.dp, vertical = 10.dp),
+    verticalArrangement = Arrangement.spacedBy(5.dp),
   ) {
     Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(LocalClipDockTokens.current.colors.line))
     Box(Modifier.fillMaxWidth(0.76f).height(4.dp).clip(CircleShape).background(LocalClipDockTokens.current.colors.line))
@@ -1383,10 +2313,10 @@ private fun HistoryMiniChip(label: String, tone: ClipDockTone) {
   Box(
     modifier =
       Modifier
-        .height(24.dp)
+        .height(22.dp)
         .clip(CircleShape)
         .background(colors.second)
-        .padding(horizontal = 9.dp),
+        .padding(horizontal = 8.dp),
     contentAlignment = Alignment.Center,
   ) {
     Text(label, color = colors.first, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
@@ -1715,6 +2645,7 @@ private fun filteredHistoryItems(items: List<ClipHistoryItem>, filter: HistoryVi
     when (filter) {
       HistoryVisualFilter.All -> true
       HistoryVisualFilter.Text -> historyCardVariant(item) in setOf(HistoryCardVariant.Text, HistoryCardVariant.Code, HistoryCardVariant.Note)
+      HistoryVisualFilter.Link -> historyCardVariant(item) == HistoryCardVariant.Link
       HistoryVisualFilter.Image -> historyCardVariant(item) == HistoryCardVariant.Image
       HistoryVisualFilter.File -> historyCardVariant(item) == HistoryCardVariant.File
     }
@@ -1824,81 +2755,156 @@ private fun historyFileBadge(item: ClipHistoryItem): String =
 @Composable
 private fun DevicesPage(state: ClipDockUiState, onCreateInvite: () -> Unit, onRefresh: () -> Unit) {
   val onlineDevices = state.p2pDevices.filterNot { it.deviceId == state.deviceId }
-  LazyColumn(
-    contentPadding = PaddingValues(14.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+  val deviceCards =
+    listOf(
+      DeviceUiCard(
+        name = state.deviceName,
+        kind = "Android · 本机",
+        status = if (state.tokenPresent) "前台运行 · 悬浮球${if (state.overlayEnabled) "开启" else "关闭"}" else "未加入同步空间",
+        icon = ClipDockIconKind.Devices,
+        tone = ClipDockTone.Blue,
+        online = state.tokenPresent,
+        caps = listOf("复制", "下载"),
+      ),
+    ) +
+      onlineDevices.map { device ->
+        DeviceUiCard(
+          name = device.deviceName,
+          kind = "在线设备",
+          status = "P2P endpoint · ${timeLabel(device.endpoint.updatedAtMillis)}",
+          icon = ClipDockIconKind.Devices,
+          tone = ClipDockTone.Green,
+          online = true,
+          caps = listOf("文本", "图片", "文件"),
+        )
+      }
+  LazyVerticalGrid(
+    columns = GridCells.Adaptive(164.dp),
+    contentPadding = PaddingValues(start = 14.dp, top = 15.dp, end = 14.dp, bottom = 18.dp),
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
     modifier = Modifier.fillMaxSize(),
   ) {
-    item {
+    item(span = { GridItemSpan(maxLineSpan) }) {
       ClipDockScreenHeader(
         title = "设备",
-        subtitle = "${state.syncId ?: "未加入同步空间"} · ${onlineDevices.size + 1} 台可见",
+        subtitle = "当前账号下的同步设备和连接状态",
         actions = {
-          ClipDockIconButton(ClipDockIconKind.Plus, "生成配对码", onClick = onCreateInvite, enabled = state.tokenPresent && !state.isSyncSetupInFlight)
           ClipDockIconButton(ClipDockIconKind.More, "刷新设备", onClick = onRefresh, enabled = state.tokenPresent && !state.isSyncSetupInFlight)
+          ClipDockIconButton(ClipDockIconKind.Plus, "生成配对码", onClick = onCreateInvite, enabled = state.tokenPresent && !state.isSyncSetupInFlight)
         },
       )
     }
-    item {
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        MetricCard((onlineDevices.size + 1).toString(), "可见设备", Modifier.weight(1f))
-        MetricCard(state.diagnostics.nextCursor.toString(), "最新序号", Modifier.weight(1f))
-        MetricCard(onlineDevices.size.toString(), "P2P 可用", Modifier.weight(1f))
-      }
-    }
-    item {
-      ClipDockHeroBanner(
-        icon = ClipDockIconKind.Link,
-        title = "邀请新设备",
-        subtitle = state.pairingCode?.let { "$it · ${pairingExpiryText(state)}" } ?: "生成 5 位配对码给新设备加入",
-        actionLabel = if (state.pairingCode == null) "生成" else "刷新",
-        onClick = onCreateInvite,
+    item(span = { GridItemSpan(maxLineSpan) }) {
+      DeviceStatusPanel(
+        state = state,
+        onlineCount = deviceCards.count { it.online },
+        onCreateInvite = onCreateInvite,
       )
     }
-    item {
-      RowCard(
-        icon = ClipDockIconKind.Devices,
-        title = "${state.deviceName} · 本机",
-        subtitle = "状态 ${state.connectionStatus} · cursor ${state.diagnostics.nextCursor}",
-        tone = ClipDockTone.Green,
-      ) {
-        StatusPill(if (state.tokenPresent) "在线" else "未加入", if (state.tokenPresent) ClipDockTone.Green else ClipDockTone.Neutral)
-      }
+    items(deviceCards, key = { it.name }) { card ->
+      DeviceCard(card)
     }
-    onlineDevices.forEach { device ->
-      item(key = device.deviceId) {
-        DeviceEndpointRow(device)
-      }
+    item(span = { GridItemSpan(maxLineSpan) }) {
+      Text("最近传输", color = LocalClipDockTokens.current.colors.muted, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 8.dp, start = 2.dp))
     }
-    item {
-      RowCard(
-        icon = ClipDockIconKind.Alert,
-        title = "撤销丢失设备",
-        subtitle = "当前服务端未提供 Android 端撤销接口",
-        tone = ClipDockTone.Red,
-      ) {
-        StatusPill("说明", ClipDockTone.Neutral)
-      }
-    }
-    item {
+    item(span = { GridItemSpan(maxLineSpan) }) {
       ClipDockCard {
-        Text("服务器能力", style = MaterialTheme.typography.titleSmall)
-        Text("Protocol v${state.capabilities.protocolVersion}", color = LocalClipDockTokens.current.colors.muted, style = MaterialTheme.typography.bodySmall)
-        Text("P2P ${state.capabilities.p2p}", color = LocalClipDockTokens.current.colors.muted, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        TimelineRow(ClipDockIconKind.Image, "图片缩略图已同步", if (state.tokenPresent) "${state.deviceName} · ${relativeTimeLabel(state.diagnostics.lastSyncAtMillis)}" else "加入同步空间后显示最近传输", "刚刚")
+        TimelineRow(ClipDockIconKind.Link, "邀请新设备", state.pairingCode?.let { "$it · ${pairingExpiryText(state)}" } ?: "生成 5 位配对码给新设备加入", if (state.pairingCode == null) "生成" else "刷新")
       }
     }
   }
 }
 
+private data class DeviceUiCard(
+  val name: String,
+  val kind: String,
+  val status: String,
+  val icon: ClipDockIconKind,
+  val tone: ClipDockTone,
+  val online: Boolean,
+  val caps: List<String>,
+)
+
 @Composable
-private fun DeviceEndpointRow(device: P2pDeviceInfo) {
-  RowCard(
-    icon = ClipDockIconKind.Devices,
-    title = device.deviceName,
-    subtitle = "P2P endpoint 在线 · ${timeLabel(device.endpoint.updatedAtMillis)}",
-    tone = ClipDockTone.Blue,
-  ) {
-    StatusPill("可取回", ClipDockTone.Green)
+private fun DeviceStatusPanel(state: ClipDockUiState, onlineCount: Int, onCreateInvite: () -> Unit) {
+  ClipDockCard(contentPadding = PaddingValues(14.dp), modifier = Modifier.background(Color.Transparent)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      ClipDockSymbol(ClipDockIconKind.Cloud, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.accent)
+      Text(if (state.tokenPresent) "同步通道正常" else "等待连接服务端", color = LocalClipDockTokens.current.colors.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.ExtraBold)
+    }
+    Text(
+      if (state.tokenPresent) "${state.deviceName} 在线，最近一次同步${relativeTimeLabel(state.diagnostics.lastSyncAtMillis)}完成。" else "邀请新设备前需要先加入同步空间。",
+      color = LocalClipDockTokens.current.colors.muted,
+      fontSize = 13.sp,
+      lineHeight = 18.sp,
+      fontWeight = FontWeight.Bold,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+      TimelineInlineMetric(ClipDockIconKind.Devices, "$onlineCount 台在线", "设备可见")
+      StatusPill(if (state.tokenPresent) "稳定" else "未连接", if (state.tokenPresent) ClipDockTone.Green else ClipDockTone.Neutral)
+    }
+    Row(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .height(40.dp)
+          .clip(RoundedCornerShape(13.dp))
+          .background(LocalClipDockTokens.current.colors.accentSoft)
+          .clickable(enabled = state.tokenPresent && !state.isSyncSetupInFlight, onClick = onCreateInvite)
+          .padding(horizontal = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Text("邀请新设备", color = LocalClipDockTokens.current.colors.accent, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.ExtraBold)
+      ClipDockSymbol(ClipDockIconKind.Chevron, Modifier.size(16.dp), color = LocalClipDockTokens.current.colors.accent)
+    }
+  }
+}
+
+@Composable
+private fun DeviceCard(card: DeviceUiCard) {
+  val tokens = LocalClipDockTokens.current
+  ClipDockCard(contentPadding = PaddingValues(13.dp), modifier = Modifier.height(170.dp)) {
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(card.name, color = tokens.colors.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(card.kind, color = tokens.colors.muted, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      }
+      IconTile(card.icon, tone = card.tone)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      Box(Modifier.size(7.dp).clip(CircleShape).background(if (card.online) tokens.colors.accent else tokens.colors.faint))
+      Text(card.status, color = tokens.colors.muted, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    Spacer(Modifier.weight(1f))
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+      card.caps.take(3).forEach { cap -> HistoryMiniChip(cap, ClipDockTone.Neutral) }
+    }
+  }
+}
+
+@Composable
+private fun TimelineInlineMetric(icon: ClipDockIconKind, title: String, subtitle: String) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+    IconTile(icon, tone = ClipDockTone.Green, modifier = Modifier.size(34.dp))
+    Column {
+      Text(title, color = LocalClipDockTokens.current.colors.ink, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.ExtraBold)
+      Text(subtitle, color = LocalClipDockTokens.current.colors.muted, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
+    }
+  }
+}
+
+@Composable
+private fun TimelineRow(icon: ClipDockIconKind, title: String, subtitle: String, trailing: String) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+    IconTile(icon, tone = ClipDockTone.Green, modifier = Modifier.size(34.dp))
+    Column(Modifier.weight(1f)) {
+      Text(title, color = LocalClipDockTokens.current.colors.ink, fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(subtitle, color = LocalClipDockTokens.current.colors.muted, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    Text(trailing, color = LocalClipDockTokens.current.colors.faint, fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
   }
 }
 
@@ -1917,61 +2923,104 @@ private fun FilesPage(
       .filter {
         when (selectedSegment) {
           "图片" -> it.type == ClipItemType.Image
-          "文件" -> it.type == ClipItemType.File
-          "已缓存" -> it.payloadState == PayloadState.Ready && !it.localUri.isNullOrBlank()
+          "文档" -> it.type == ClipItemType.File
+          "下载" -> it.payloadState == PayloadState.Ready && !it.localUri.isNullOrBlank()
           else -> true
         }
       }
-  LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
-    item {
+  LazyVerticalGrid(
+    columns = GridCells.Adaptive(154.dp),
+    contentPadding = PaddingValues(start = 14.dp, top = 15.dp, end = 14.dp, bottom = 18.dp),
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
+    modifier = Modifier.fillMaxSize(),
+  ) {
+    item(span = { GridItemSpan(maxLineSpan) }) {
       ClipDockScreenHeader(
         title = "文件",
-        subtitle = "远端 ${state.items.count { it.needsRemotePayload }} 个 · 本机缓存 ${state.items.count { !it.localUri.isNullOrBlank() }} 个",
+        subtitle = "图片、视频、文档和远程资产",
         actions = {
           ClipDockIconButton(ClipDockIconKind.Search, "搜索文件", onClick = {}, enabled = false)
-          ClipDockIconButton(ClipDockIconKind.Trash, "清理缓存", onClick = {}, enabled = false)
+          ClipDockIconButton(ClipDockIconKind.Download, "下载队列", onClick = {}, enabled = false)
         },
       )
     }
-    item {
-      SegmentedControl(listOf("全部", "图片", "文件", "已缓存"), selectedSegment, { selectedSegment = it })
-    }
-    item {
-      ClipDockHeroBanner(
-        icon = ClipDockIconKind.Folder,
-        title = "按需下载",
-        subtitle = if (wifiOnlyBlocked) "仅 Wi-Fi 下载已开启，当前网络不可取回" else "远端图片/文件不会在列表中自动下载",
-        actionLabel = if (state.wifiOnly) "仅 Wi-Fi" else "允许下载",
-        actionTone = if (wifiOnlyBlocked) ClipDockTone.Amber else ClipDockTone.Blue,
-      )
+    item(span = { GridItemSpan(maxLineSpan) }) {
+      SegmentedControl(listOf("全部", "图片", "视频", "文档", "下载"), selectedSegment, { selectedSegment = it })
     }
     if (fileItems.isEmpty()) {
-      item {
+      item(span = { GridItemSpan(maxLineSpan) }) {
         EmptyState("暂无文件", "图片和文件会从同步历史中自动聚合。", null, null)
       }
     } else {
-      fileItems.forEach { item ->
-        item(key = item.stableId) {
-          FileRow(
-            item = item,
-            p2pEnabled = state.p2pEnabled,
-            wifiOnlyBlocked = wifiOnlyBlocked,
-            onUseItem = onUseItem,
-            onOpenDetail = { onOpenItemDetail(item.stableId) },
-            onOpenItem = { openLocalUri(context, item) },
-          )
-        }
+      items(fileItems, key = { it.stableId }) { item ->
+        FileAssetCard(
+          item = item,
+          p2pEnabled = state.p2pEnabled,
+          wifiOnlyBlocked = wifiOnlyBlocked,
+          onUseItem = onUseItem,
+          onOpenDetail = { onOpenItemDetail(item.stableId) },
+          onOpenItem = { openLocalUri(context, item) },
+        )
       }
     }
-    item {
-      RowCard(
-        icon = ClipDockIconKind.Folder,
-        title = "缓存策略",
-        subtitle = "默认保留 app-owned P2P payload；暂不自动清理",
-        tone = ClipDockTone.Green,
-      ) {
-        ClipDockSymbol(ClipDockIconKind.Chevron, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.muted)
+    item(span = { GridItemSpan(maxLineSpan) }) {
+      Text("远程资产状态", color = LocalClipDockTokens.current.colors.muted, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 8.dp, start = 2.dp))
+    }
+    item(span = { GridItemSpan(maxLineSpan) }) {
+      ClipDockCard {
+        TimelineRow(ClipDockIconKind.Check, "缩略图可直接预览", "原始文件按需下载，避免占用本机空间", "设计态")
+        TimelineRow(ClipDockIconKind.Download, "按需下载", if (wifiOnlyBlocked) "仅 Wi-Fi 下载已开启，当前网络不可取回" else "下载队列为空", if (state.wifiOnly) "仅 Wi-Fi" else "空闲")
       }
+    }
+  }
+}
+
+@Composable
+private fun FileAssetCard(
+  item: ClipHistoryItem,
+  p2pEnabled: Boolean,
+  wifiOnlyBlocked: Boolean,
+  onUseItem: (ClipHistoryItem) -> Unit,
+  onOpenDetail: () -> Unit,
+  onOpenItem: () -> Unit,
+) {
+  val state = fileActionState(item, p2pEnabled, wifiOnlyBlocked)
+  val variant = if (item.type == ClipItemType.File) HistoryCardVariant.File else HistoryCardVariant.Image
+  val bitmap by rememberImageBitmap(item.thumbnailUri ?: item.localUri)
+  Box(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .height(if (item.type == ClipItemType.File) 226.dp else 190.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .background(Color(0xFF101820))
+        .clickable(onClick = { if (state.opensLocalUri) onOpenItem() else onOpenDetail() }),
+  ) {
+    if (bitmap != null) {
+      Image(bitmap = bitmap!!, contentDescription = item.displayTitle, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+    } else {
+      HistoryMediaFallback(variant = variant, modifier = Modifier.fillMaxSize())
+    }
+    Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x730F172A), Color.Transparent, Color(0xB80F172A)))))
+    Row(
+      modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ClipDockSymbol(if (item.type == ClipItemType.Image) ClipDockIconKind.Image else ClipDockIconKind.File, Modifier.size(15.dp), color = Color.White)
+        HistoryTypePill(if (item.type == ClipItemType.Image) "图片" else "文档", typeTone(item.type))
+      }
+      Text(historyStableClockLabel(item), color = Color.White.copy(alpha = 0.86f), fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+    }
+    Row(
+      modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+      horizontalArrangement = Arrangement.spacedBy(7.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      HistoryActionPill(if (state.primaryLabel == "打开") "打开" else "复制", if (state.primaryLabel == "打开") ClipDockIconKind.Folder else ClipDockIconKind.Copy, ClipDockTone.Green)
+      HistoryActionPill("下载", ClipDockIconKind.Download, ClipDockTone.Blue)
     }
   }
 }
@@ -1986,28 +3035,29 @@ private fun FileRow(
   onOpenItem: () -> Unit,
 ) {
   val state = fileActionState(item, p2pEnabled, wifiOnlyBlocked)
-  ClipDockCard {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      IconTile(if (item.type == ClipItemType.Image) ClipDockIconKind.Image else ClipDockIconKind.File, tone = typeTone(item.type))
-      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(item.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(state.message, style = MaterialTheme.typography.bodySmall, color = LocalClipDockTokens.current.colors.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-      }
+  Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    RowCard(
+      icon = if (item.type == ClipItemType.Image) ClipDockIconKind.Image else ClipDockIconKind.File,
+      title = item.displayTitle,
+      subtitle = state.message,
+      tone = typeTone(item.type),
+      onClick = { if (state.opensLocalUri) onOpenItem() else onOpenDetail() },
+    ) {
       ActionChip(
         label = state.primaryLabel,
         enabled = state.primaryEnabled,
         tone = state.tone,
-        onClick = { if (state.opensLocalUri) onOpenItem() else onOpenDetail() },
+        onClick = {
+          when {
+            state.opensLocalUri -> onOpenItem()
+            state.primaryLabel == "复制" -> onUseItem(item)
+            else -> onOpenDetail()
+          }
+        },
       )
     }
     if (item.transferState == TransferState.Downloading) {
-      LinearProgressIndicator(Modifier.fillMaxWidth(), color = LocalClipDockTokens.current.colors.accent)
-    }
-    if (item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank()) {
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onOpenItem, modifier = Modifier.weight(1f)) { Text("打开") }
-        Button(onClick = { onUseItem(item) }, modifier = Modifier.weight(1f)) { Text("复制") }
-      }
+      LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 2.dp), color = LocalClipDockTokens.current.colors.accent)
     }
   }
 }
@@ -2030,46 +3080,69 @@ private fun SettingsOverviewPage(
   onOpenSettingsDetail: (SettingsDetailDestination) -> Unit,
 ) {
   val context = LocalContext.current
+  val overlayGranted = Settings.canDrawOverlays(context)
+  val notificationGranted =
+    Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+  val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+  val batteryIgnored = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+  val keepAliveMissingCount = listOf(overlayGranted, notificationGranted, batteryIgnored).count { !it }
   LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
     item {
       ClipDockScreenHeader(
         title = "设置",
-        subtitle = "${state.connectionStatus} · ${state.syncId ?: "未加入"}",
-        actions = { ClipDockIconButton(ClipDockIconKind.More, "更多设置", onClick = {}, enabled = false) },
+        subtitle = "同步、隐私、悬浮球和外观",
+        actions = { ClipDockIconButton(ClipDockIconKind.Search, "设置搜索", onClick = {}, enabled = false) },
       )
     }
     item {
-      SettingGroup {
-        SettingRow(ClipDockIconKind.Cloud, "同步服务运行中", "Server ${state.connectionStatus} · 本机令牌${if (state.tokenPresent) "已保存" else "未设置"}") {
+      ClipDockCard(contentPadding = PaddingValues(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          IconTile(ClipDockIconKind.Cloud, tone = ClipDockTone.Green, modifier = Modifier.size(36.dp))
+          Column(Modifier.weight(1f)) {
+            Text(if (state.tokenPresent) "当前设备已连接" else "当前设备未连接", color = LocalClipDockTokens.current.colors.ink, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.ExtraBold)
+            Text("同步服务运行中 · ${state.deviceName}", color = LocalClipDockTokens.current.colors.muted, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          }
           StatusPill(if (state.tokenPresent) "正常" else "未设置", if (state.tokenPresent) ClipDockTone.Green else ClipDockTone.Neutral)
-        }
-        SettingDivider()
-        SwitchSettingRow(ClipDockIconKind.Cloud, "剪贴板同步", "文本、链接和缩略图自动同步", checked = state.tokenPresent, onCheckedChange = {}, tone = ClipDockTone.Green)
-        SettingDivider()
-        SwitchSettingRow(ClipDockIconKind.Wifi, "P2P 远端取回", "图片和文件按需下载", state.p2pEnabled, onP2pEnabledChange, ClipDockTone.Blue)
-        SettingDivider()
-        SettingRow(ClipDockIconKind.Devices, "已连接设备", state.p2pDevices.joinToString(limit = 3) { it.deviceName }.ifBlank { "暂无 fresh P2P endpoint" }) {
-          StatusPill("${state.p2pDevices.size + 1} 台", ClipDockTone.Green)
         }
       }
     }
     item {
       SettingGroup {
-        SettingRow(ClipDockIconKind.Battery, "保活权限", "通知、后台、电池优化和厂商设置", tone = ClipDockTone.Amber, onClick = { onOpenSettingsDetail(SettingsDetailDestination.KeepAlive) }) {
-          StatusPill("检查", ClipDockTone.Amber)
+        SwitchSettingRow(ClipDockIconKind.Cloud, "自动同步", "文本、链接、图片缩略图保持同步", checked = state.tokenPresent, onCheckedChange = {}, tone = ClipDockTone.Green)
+        SettingDivider()
+        SwitchSettingRow(ClipDockIconKind.Window, "悬浮球", "在其他应用中快速复制和打开面板", state.overlayEnabled, onOverlayEnabledChange, ClipDockTone.Blue)
+        SettingDivider()
+        SettingRow(ClipDockIconKind.Download, "远程文件下载", "原始文件按需下载，保留缩略图预览", tone = ClipDockTone.Amber) {
+          ClipDockSymbol(ClipDockIconKind.Chevron, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.muted)
+        }
+      }
+    }
+    item {
+      SettingGroup {
+        SwitchSettingRow(ClipDockIconKind.Shield, "敏感内容保护", "密码和验证码不展示预览", state.encryptionEnabled, onEncryptionEnabledChange, ClipDockTone.Green)
+        SettingDivider()
+        SettingRow(ClipDockIconKind.Lock, "设备授权", "查看配对码、撤销旧设备", tone = ClipDockTone.Blue, onClick = { onOpenSettingsDetail(SettingsDetailDestination.KeepAlive) }) {
+          ClipDockSymbol(ClipDockIconKind.Chevron, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.muted)
         }
         SettingDivider()
-        SettingRow(ClipDockIconKind.Window, "悬浮球", "同步并复制最新内容", onClick = { onOpenSettingsDetail(SettingsDetailDestination.FloatingBall) }) {
+        SettingRow(ClipDockIconKind.Trash, "清理历史", "删除本机缓存或远程空资产", tone = ClipDockTone.Amber) {
+          ClipDockSymbol(ClipDockIconKind.Chevron, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.muted)
+        }
+      }
+    }
+    item {
+      SettingGroup {
+        SettingRow(ClipDockIconKind.Shield, "保活权限", "通知、后台、电池优化和厂商设置", tone = ClipDockTone.Amber, onClick = { onOpenSettingsDetail(SettingsDetailDestination.KeepAlive) }) {
+          StatusPill(if (keepAliveMissingCount == 0) "完成" else "${keepAliveMissingCount} 项待处理", if (keepAliveMissingCount == 0) ClipDockTone.Green else ClipDockTone.Amber)
+        }
+        SettingDivider()
+        SettingRow(ClipDockIconKind.Window, "悬浮球高级设置", "尺寸、停靠边缘和闲置透明度", onClick = { onOpenSettingsDetail(SettingsDetailDestination.FloatingBall) }) {
           StatusPill(if (state.overlayEnabled) "已启用" else "关闭", if (state.overlayEnabled) ClipDockTone.Green else ClipDockTone.Neutral)
         }
         SettingDivider()
         SwitchSettingRow(ClipDockIconKind.Folder, "文件与缓存", "${if (state.wifiOnly) "仅 Wi-Fi" else "任意网络"} 下载", state.wifiOnly, onWifiOnlyChange, ClipDockTone.Blue)
         SettingDivider()
-        SettingRow(ClipDockIconKind.Server, "服务器地址", state.serverUrl, onClick = null) {
-          ClipDockSymbol(ClipDockIconKind.Chevron, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.muted)
-        }
-        SettingDivider()
-        SettingRow(ClipDockIconKind.Trash, "清理本机缓存", "仅限 app-owned P2P/cache 文件；暂未启用自动清理", tone = ClipDockTone.Red) {
+        SettingRow(ClipDockIconKind.Server, "服务器地址", state.serverUrl) {
           ClipDockSymbol(ClipDockIconKind.Chevron, Modifier.size(18.dp), color = LocalClipDockTokens.current.colors.muted)
         }
       }
@@ -2143,6 +3216,7 @@ private fun KeepAlivePage(state: ClipDockUiState, onBack: () -> Unit) {
     Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
   val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
   val batteryIgnored = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+  val missingPermissionCount = listOf(overlayGranted, notificationGranted, batteryIgnored).count { !it }
   LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
     item {
       ClipDockScreenHeader(
@@ -2154,10 +3228,10 @@ private fun KeepAlivePage(state: ClipDockUiState, onBack: () -> Unit) {
     item {
       ClipDockHeroBanner(
         icon = ClipDockIconKind.Shield,
-        title = if (overlayGranted && notificationGranted && batteryIgnored) "关键权限已处理" else "还有建议权限",
+        title = if (missingPermissionCount == 0) "关键权限已处理" else "还差 ${missingPermissionCount} 项建议权限",
         subtitle = "不影响基础使用，但会影响后台实时同步时间",
-        actionLabel = if (overlayGranted && notificationGranted && batteryIgnored) "完成" else "检查",
-        actionTone = if (overlayGranted && notificationGranted && batteryIgnored) ClipDockTone.Green else ClipDockTone.Amber,
+        actionLabel = if (missingPermissionCount == 0) "完成" else "检查",
+        actionTone = if (missingPermissionCount == 0) ClipDockTone.Green else ClipDockTone.Amber,
       )
     }
     item {
@@ -2300,8 +3374,8 @@ private fun FloatingPreview(state: ClipDockUiState) {
   Box(
     Modifier
       .fillMaxWidth()
-      .height(122.dp)
-      .clip(RoundedCornerShape(22.dp))
+      .height(112.dp)
+      .clip(RoundedCornerShape(20.dp))
       .background(tokens.colors.surface2)
       .padding(16.dp),
   ) {
@@ -2338,7 +3412,7 @@ private fun FloatingPreview(state: ClipDockUiState) {
 
 @Composable
 private fun MetricCard(value: String, label: String, modifier: Modifier = Modifier) {
-  ClipDockCard(modifier = modifier, contentPadding = PaddingValues(10.dp)) {
+  ClipDockCard(modifier = modifier.height(58.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 9.dp)) {
     Text(value, style = MaterialTheme.typography.titleMedium, color = LocalClipDockTokens.current.colors.ink)
     Text(label, style = MaterialTheme.typography.labelSmall, color = LocalClipDockTokens.current.colors.muted)
   }
@@ -2472,6 +3546,111 @@ internal fun fileActionState(item: ClipHistoryItem, p2pEnabled: Boolean, wifiOnl
       FileActionState("取回", "远端内容尚未下载到本机", primaryEnabled = true, opensLocalUri = false, tone = ClipDockTone.Blue)
   }
 
+private fun imageCacheSummary(item: ClipHistoryItem): String =
+  when {
+    item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank() -> "原图已下载 · 自动使用清晰图片"
+    item.transferState == TransferState.Downloading -> "正在下载原图 · 完成后自动切换清晰图"
+    item.transferState == TransferState.DiscoveringPeer -> "正在查找来源设备 · 当前显示缩略图"
+    item.thumbnailUri != null -> "原图保留在远端 · 当前显示模糊缩略图"
+    else -> "远端原图未下载"
+  }
+
+private fun imageDrawerSubtitle(item: ClipHistoryItem): String {
+  val source = item.sourceName?.takeIf(String::isNotBlank) ?: "未知来源"
+  val time = relativeTimeLabel(item.copiedAtMillis)
+  val sizeOrState =
+    when {
+      item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank() -> item.localUri
+      item.detail.isNotBlank() && !item.detail.startsWith("content://") -> imageDetailValueLabel(item.detail)
+      item.thumbnailByteCount != null -> byteCountLabel(item.thumbnailByteCount).ifBlank { historyDetailStatus(item) }
+      else -> historyDetailStatus(item)
+    }
+  return listOf(source, time, sizeOrState).filter(String::isNotBlank).joinToString(" · ")
+}
+
+private fun imageOriginalDimensionsLabel(item: ClipHistoryItem): String =
+  if (item.thumbnailWidth != null && item.thumbnailHeight != null) {
+    "${item.thumbnailWidth} x ${item.thumbnailHeight}"
+  } else {
+    "原图尺寸待取回"
+  }
+
+private fun imageOriginalSizeLabel(item: ClipHistoryItem): String =
+  when {
+    item.detail.isNotBlank() && !item.detail.startsWith("content://") -> imageDetailValueLabel(item.detail)
+    item.thumbnailByteCount != null -> byteCountLabel(item.thumbnailByteCount).ifBlank { "原图大小待取回" }
+    else -> "原图大小待取回"
+  }
+
+private fun imageDetailValueLabel(value: String): String {
+  val trimmed = value.trim()
+  val bytes = trimmed.toLongOrNull()
+  return if (bytes != null) byteCountLabel(bytes).ifBlank { trimmed } else trimmed
+}
+
+private fun imageLocalCacheLabel(item: ClipHistoryItem): String =
+  when {
+    item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank() -> "已下载到 app-owned cache"
+    item.transferState == TransferState.Downloading -> "正在写入本机缓存"
+    item.transferState == TransferState.DiscoveringPeer -> "等待来源设备"
+    else -> "未下载"
+  }
+
+private fun imageOriginalStateLabel(item: ClipHistoryItem): String =
+  when {
+    item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank() -> "本机可复制"
+    item.transferState == TransferState.Downloading -> "下载中"
+    item.transferState == TransferState.DiscoveringPeer -> "查找来源"
+    item.transferState == TransferState.Failed || item.payloadState == PayloadState.Failed -> "取回失败"
+    item.assetId.isNullOrBlank() -> "远端不可用"
+    else -> "远端"
+  }
+
+private fun imageTransferTitle(item: ClipHistoryItem): String =
+  when {
+    item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank() -> "清晰原图已就绪"
+    item.transferState == TransferState.DiscoveringPeer -> "正在查找 P2P 来源"
+    item.transferState == TransferState.Downloading -> "正在取回原图"
+    item.transferState == TransferState.Failed || item.payloadState == PayloadState.Failed -> "取回失败"
+    item.assetId.isNullOrBlank() -> "远端资产不可用"
+    else -> "原图在远端设备"
+  }
+
+private fun imageTransferMessage(item: ClipHistoryItem, actions: MobileV4DetailActions): String =
+  when {
+    item.payloadState == PayloadState.Ready && !item.localUri.isNullOrBlank() -> "复制时会直接使用本机原图，也可以只清理本机缓存保留同步记录。"
+    item.transferState == TransferState.Downloading -> "P2P 下载完成后，本页会从模糊缩略图自动切换为本机清晰原图。"
+    item.transferState == TransferState.DiscoveringPeer -> "正在根据 asset 查询可提供原图的设备。"
+    item.thumbnailUri != null && actions.copyThumbnail.enabled -> "可先复制缩略图；选择取回或仅下载后会写入本机缓存。"
+    else -> actions.primary.message
+  }
+
+private fun imageThumbnailDescription(item: ClipHistoryItem): String {
+  val dimensions =
+    if (item.thumbnailWidth != null && item.thumbnailHeight != null) {
+      "${item.thumbnailWidth} x ${item.thumbnailHeight}"
+    } else {
+      "尺寸未知"
+    }
+  val bytes = byteCountLabel(item.thumbnailByteCount)
+  val mime = item.thumbnailMimeType?.takeIf(String::isNotBlank) ?: "缩略图 MIME 未知"
+  return listOf(dimensions, bytes, mime).filter(String::isNotBlank).joinToString(" · ")
+}
+
+private fun byteCountLabel(bytes: Long?): String =
+  when {
+    bytes == null || bytes <= 0L -> ""
+    bytes < 1024L -> "$bytes B"
+    bytes < 1024L * 1024L -> "${bytes / 1024L} KB"
+    else -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+  }
+
+private fun shortIdentifier(value: String): String =
+  value
+    .removePrefix("blake3:")
+    .takeIf(String::isNotBlank)
+    ?.let { if (it.length <= 16) it else "${it.take(10)}...${it.takeLast(6)}" }
+    ?: "无"
 
 private fun historyDetailStatus(item: ClipHistoryItem): String =
   when {
