@@ -754,7 +754,8 @@ body {
 /* ============ Floating overlay screen ============ */
 .fab-stage {
   position: relative;
-  flex: 1;
+  height: 100%;
+  min-height: 640px;
   background:
     linear-gradient(180deg, #dfe7ec 0%, #c9d4da 100%);
   overflow: hidden;
@@ -941,6 +942,14 @@ body {
       <button class="tbtn" data-state="offline">离线</button>
       <button class="tbtn" data-state="error">错误</button>
     </div>
+    <div class="group">
+      <span class="lbl">悬浮球态</span>
+      <button class="tbtn active" data-fab-state="idle">空闲</button>
+      <button class="tbtn" data-fab-state="loading">加载</button>
+      <button class="tbtn" data-fab-state="copied">成功</button>
+      <button class="tbtn" data-fab-state="timeout">超时</button>
+      <button class="tbtn" data-fab-state="failed">失败</button>
+    </div>
   </div>
 </div>
 
@@ -1081,7 +1090,7 @@ function historyHeader(counts){
   </div>
 
   <div class="search-pill" id="searchPill">
-    ${ic('search')}<input placeholder="搜索文本、链接、文件名" />
+    ${ic('search')}<input id="historySearch" name="historySearch" aria-label="搜索文本、链接、文件名" placeholder="搜索文本、链接、文件名" />
   </div>
 
   <div class="filter-row" id="filterRow">
@@ -1162,9 +1171,11 @@ function mediaCard(d){
            <span style="font-size:11px;font-weight:900;color:#ea580c">${d.ext}</span>
          </div>
        </div>` : '';
-  const downloadAction = (d.payload==='ready')
-    ? actionPill('复制','copy','green')
-    : actionPill('下载','download','blue');
+  // OPT: 两个动作成对计算，文案绝不重复。
+  // ready(原图已在本机) → 复制原图 + 查看；远端/查找中 → 下载原图 + 复制缩略图。
+  const mediaActions = (d.payload==='ready')
+    ? actionPill('复制','copy','green') + actionPill('查看','image','blue')
+    : actionPill('下载','download','blue') + actionPill('缩略图','copy','green');
   const progress = d.payload==='finding' ? `<div class="media__progress"><i></i></div>` : '';
 
   return `
@@ -1178,8 +1189,7 @@ function mediaCard(d){
         <span class="media__clock">${d.time}</span>
       </div>
       <div class="media__actions">
-        ${actionPill('复制','copy','green')}
-        ${downloadAction}
+        ${mediaActions}
         ${progress}
       </div>
     </div>
@@ -1436,17 +1446,21 @@ function render(){
 }
 
 function syncToolbar(){
-  document.querySelectorAll('[data-screen-btn],[data-screen]').forEach(b=>{
-    if(b.dataset.screen!==undefined) b.classList.toggle('active', b.dataset.screen===S.screen);
+  // OPT: 收窄到 .tbtn，避免命中带 data-screen 的 #phone 外壳。
+  document.querySelectorAll('.tbtn[data-screen]').forEach(b=>{
+    b.classList.toggle('active', b.dataset.screen===S.screen);
   });
-  document.querySelectorAll('[data-state]').forEach(b=>{
+  document.querySelectorAll('.tbtn[data-state]').forEach(b=>{
     b.classList.toggle('active', b.dataset.state===S.historyState);
+  });
+  document.querySelectorAll('.tbtn[data-fab-state]').forEach(b=>{
+    b.classList.toggle('active', S.screen==='fab' && b.dataset.fabState===S.fabState);
   });
 }
 
 /* ===== Event delegation ===== */
 document.addEventListener('click', (e)=>{
-  const t = e.target.closest('[data-theme-btn],[data-screen],[data-state],[data-filter],[data-nav],[data-go-settings],[data-go-search],[data-go-sync],[data-id],[data-act],[data-switch],[data-fab-copy],#fabBall,#fabClose,#fabRetry,#fabOpen,#syncChip,#searchPill');
+  const t = e.target.closest('[data-theme-btn],[data-screen],[data-state],[data-fab-state],[data-filter],[data-nav],[data-go-settings],[data-go-search],[data-go-sync],[data-id],[data-act],[data-switch],[data-fab-copy],#fabBall,#fabClose,#fabRetry,#fabOpen,#syncChip,#searchPill');
   if(!t) return;
 
   // theme
@@ -1460,6 +1474,13 @@ document.addEventListener('click', (e)=>{
   if(t.dataset.screen){ S.screen = t.dataset.screen; render(); return; }
   // toolbar history state
   if(t.dataset.state){ S.historyState = t.dataset.state; if(S.screen!=='history'){S.screen='history';} render(); return; }
+  // toolbar fab state (jump straight to any of the 5 states, incl. timeout/failed)
+  if(t.dataset.fabState){
+    S.screen='fab';
+    if(t.dataset.fabState==='loading'){ runFabFlow(); }
+    else { S.fabState = t.dataset.fabState; render(); }
+    return;
+  }
   // filter chip
   if(t.dataset.filter){ S.filter = t.dataset.filter; render(); return; }
   // bottom nav
