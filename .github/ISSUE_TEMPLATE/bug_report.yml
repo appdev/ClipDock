@@ -1,5 +1,5 @@
-name: Bug report
-description: Report a reproducible ClipDock bug
+name: Bug report / 问题反馈
+description: Report a ClipDock bug / 反馈 ClipDock 问题
 title: "[Bug]: "
 labels:
   - bug
@@ -7,110 +7,50 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Before submitting, please reproduce the problem once and attach the ClipDock diagnostics report below.
+        请先复现一次问题，然后复制诊断信息。
+        Please reproduce the issue once, then copy the diagnostics report.
 
-        To copy diagnostics on macOS:
-        1. Reproduce the bug.
-        2. Do not copy anything else.
-        3. Open the ClipDock menu from the macOS menu bar.
-        4. Choose **Copy Clipboard Diagnostics**.
-        5. Paste the copied report into the required field below.
+        macOS 复制诊断信息 / Copy diagnostics on macOS:
+        1. 复现问题 / Reproduce the issue.
+        2. 不要再复制其他内容 / Do not copy anything else.
+        3. 打开菜单栏 ClipDock 菜单 / Open ClipDock from the macOS menu bar.
+        4. 选择“复制剪贴板诊断信息” / Choose "Copy Clipboard Diagnostics".
+        5. 粘贴到“诊断信息”字段 / Paste it into Diagnostics.
 
-        The diagnostics report is redacted. It records clipboard type metadata, sizes, and ClipDock's classification decision instead of full clipboard content.
-
-  - type: input
-    id: version
+  - type: textarea
+    id: problem
     attributes:
-      label: ClipDock version
-      description: For example, 0.1.12 (11).
-      placeholder: "0.1.12 (11)"
+      label: 问题描述 / Problem
+      placeholder: |
+        发生了什么？你期望是什么？
+        What happened? What did you expect?
     validations:
       required: true
 
   - type: dropdown
     id: platform
     attributes:
-      label: Affected area
-      description: Choose the area where the bug appears.
+      label: 平台 / Platform
       options:
-        - macOS app
-        - Android app
-        - Sync server
-        - Cross-device sync
-        - Website or documentation
-        - Other
-    validations:
-      required: true
-
-  - type: textarea
-    id: summary
-    attributes:
-      label: What happened?
-      description: Describe the user-visible problem.
-      placeholder: "After copying text from Word, ClipDock stores it as an image card."
-    validations:
-      required: true
-
-  - type: textarea
-    id: steps
-    attributes:
-      label: Steps to reproduce
-      description: List exact steps, including the source app and what was copied.
-      placeholder: |
-        1. Open Microsoft Word.
-        2. Copy ...
-        3. Open ClipDock.
-        4. See ...
-    validations:
-      required: true
-
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected behavior
-      placeholder: "ClipDock should store the copied content as text."
-    validations:
-      required: true
-
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual behavior
-      placeholder: "ClipDock stores the copied content as an image card."
+        - macOS
+        - Android
+        - Sync server / 同步服务器
+        - Cross-device sync / 跨设备同步
+        - Other / 其他
     validations:
       required: true
 
   - type: textarea
     id: diagnostics
     attributes:
-      label: ClipDock diagnostics report
-      description: Paste the report copied from **Copy Clipboard Diagnostics**. If the menu item is unavailable, explain why.
+      label: 诊断信息 / Diagnostics
+      description: 请粘贴“复制剪贴板诊断信息”的内容；如果没有这个菜单项，请说明。 / Paste the report from "Copy Clipboard Diagnostics". If the menu item is missing, tell us.
       placeholder: |
         ClipDock Clipboard Diagnostics
         generated_at=...
         app_version=...
-        pasteboard_types:
-        - ...
         reader:
         decision=...
-        latest_item:
-        status=...
       render: text
     validations:
       required: true
-
-  - type: textarea
-    id: screenshots
-    attributes:
-      label: Screenshots or screen recordings
-      description: Attach screenshots, recordings, or logs if they help explain the issue.
-    validations:
-      required: false
-
-  - type: textarea
-    id: notes
-    attributes:
-      label: Additional context
-      description: Add anything else that may help, such as source app version, sync setup, or whether the issue started after an update.
-    validations:
-      required: false
