@@ -1,0 +1,116 @@
+name: Bug report
+description: Report a reproducible ClipDock bug
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Before submitting, please reproduce the problem once and attach the ClipDock diagnostics report below.
+
+        To copy diagnostics on macOS:
+        1. Reproduce the bug.
+        2. Do not copy anything else.
+        3. Open the ClipDock menu from the macOS menu bar.
+        4. Choose **Copy Clipboard Diagnostics**.
+        5. Paste the copied report into the required field below.
+
+        The diagnostics report is redacted. It records clipboard type metadata, sizes, and ClipDock's classification decision instead of full clipboard content.
+
+  - type: input
+    id: version
+    attributes:
+      label: ClipDock version
+      description: For example, 0.1.12 (11).
+      placeholder: "0.1.12 (11)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Affected area
+      description: Choose the area where the bug appears.
+      options:
+        - macOS app
+        - Android app
+        - Sync server
+        - Cross-device sync
+        - Website or documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the user-visible problem.
+      placeholder: "After copying text from Word, ClipDock stores it as an image card."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List exact steps, including the source app and what was copied.
+      placeholder: |
+        1. Open Microsoft Word.
+        2. Copy ...
+        3. Open ClipDock.
+        4. See ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "ClipDock should store the copied content as text."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: "ClipDock stores the copied content as an image card."
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: ClipDock diagnostics report
+      description: Paste the report copied from **Copy Clipboard Diagnostics**. If the menu item is unavailable, explain why.
+      placeholder: |
+        ClipDock Clipboard Diagnostics
+        generated_at=...
+        app_version=...
+        pasteboard_types:
+        - ...
+        reader:
+        decision=...
+        latest_item:
+        status=...
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or screen recordings
+      description: Attach screenshots, recordings, or logs if they help explain the issue.
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Add anything else that may help, such as source app version, sync setup, or whether the issue started after an update.
+    validations:
+      required: false
