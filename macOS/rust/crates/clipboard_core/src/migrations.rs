@@ -80,6 +80,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "bidirectional_sync_state",
         sql: BIDIRECTIONAL_SYNC_STATE_SCHEMA,
     },
+    Migration {
+        version: 15,
+        name: "history_hidden_pinboard_items",
+        sql: HISTORY_HIDDEN_PINBOARD_ITEMS_SCHEMA,
+    },
 ];
 
 pub fn run_migrations(connection: &mut Connection) -> Result<()> {
@@ -826,4 +831,13 @@ CREATE TABLE IF NOT EXISTS sync_remote_assets (
     updated_at_ms INTEGER NOT NULL,
     PRIMARY KEY(sync_id, content_hash, kind)
 );
+"#;
+
+const HISTORY_HIDDEN_PINBOARD_ITEMS_SCHEMA: &str = r#"
+ALTER TABLE clipboard_items
+ADD COLUMN history_deleted_at_ms INTEGER;
+
+CREATE INDEX IF NOT EXISTS ix_clipboard_items_history_recent
+    ON clipboard_items(last_copied_at_ms DESC, id DESC)
+    WHERE deleted_at_ms IS NULL AND history_deleted_at_ms IS NULL;
 "#;

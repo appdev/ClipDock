@@ -1354,7 +1354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if pinboardID == nil {
+        if pinboardID == nil && !item.isPinned {
             pendingGlobalDeleteHashesByItemID[item.id] = item.contentHash
         }
         performItemMutation(.delete(itemID: item.id, pinboardID: pinboardID))
@@ -1368,7 +1368,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if pinboardID == nil {
             for item in items {
-                pendingGlobalDeleteHashesByItemID[item.id] = item.contentHash
+                if !item.isPinned {
+                    pendingGlobalDeleteHashesByItemID[item.id] = item.contentHash
+                }
             }
         }
         performItemBatchMutation(
@@ -1620,6 +1622,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .failure(let message):
             storageStatusText = AppLocalization.format("copyPath.status.message", defaultValue: "复制路径：%@", message)
+            refreshStatusText()
+        }
+    }
+
+    @objc private func copyClipboardDiagnostics(_ sender: Any?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let latestItem = await latestClipboardItemForDiagnostics()
+            let versionProvider = BundleAppVersionProvider()
+            let report = ClipboardDiagnosticsReport.make(
+                latestItem: latestItem,
+                appVersion: versionProvider.currentShortVersion(),
+                appBuild: versionProvider.currentBuildVersion()
+            )
+            copyDiagnosticsReportToPasteboard(report)
+        }
+    }
+
+    private func latestClipboardItemForDiagnostics() async -> ClipboardDiagnosticsLatestItem {
+        guard let appSupportURL else {
+            return .unavailable(reason: "app_support_unavailable")
+        }
+
+        let result = await databaseWorker.listItems(
+            client: rustCoreClient,
+            appSupportURL: appSupportURL,
+            query: ClipboardListQuery(
+                limit: 1,
+                offset: 0,
+                sourceAppID: nil,
+                pinboardID: nil,
+                normalizedSearch: ""
+            )
+        )
+        switch result {
+        case .success(let listResult):
+            guard let item = listResult.items.first else {
+                return .unavailable(reason: "history_empty")
+            }
+            return .item(item)
+
+        case .failure(let error):
+            return .unavailable(reason: "list_failed:\(error.code)")
+        }
+    }
+
+    private func copyDiagnosticsReportToPasteboard(_ report: String) {
+        let token = "self-diagnostics-\(UUID().uuidString)"
+        let startChangeCount = NSPasteboard.general.changeCount + 1
+
+        switch writeClipboardPayload(.text(report), token: token) {
+        case .success(let changeCount):
+            clipboardMonitor.markSelfWrite(
+                token: token,
+                from: startChangeCount,
+                through: changeCount
+            )
+            storageStatusText = AppLocalization.text("diagnostics.status.copied", defaultValue: "诊断：已复制剪贴板诊断信息")
+            refreshStatusText()
+
+        case .failure(let message):
+            storageStatusText = AppLocalization.format("diagnostics.status.message", defaultValue: "诊断：%@", message)
             refreshStatusText()
         }
     }
@@ -3438,6 +3502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.showPanel", defaultValue: "显示面板"), imageName: "eye", action: #selector(showPanel(_:)), key: "", modifiers: []))
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.hidePanel", defaultValue: "隐藏面板"), imageName: "eye.slash", action: #selector(hidePanel(_:)), key: "", modifiers: []))
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.preferencesEllipsis", defaultValue: "偏好设置…"), imageName: "gearshape", action: #selector(showPreferences(_:)), key: "", modifiers: []))
+        menu.addItem(makeMenuItem(title: AppLocalization.text("menu.copyClipboardDiagnostics", defaultValue: "复制剪贴板诊断信息"), imageName: "doc.text.magnifyingglass", action: #selector(copyClipboardDiagnostics(_:)), key: "", modifiers: []))
         menu.addItem(.separator())
         menu.addItem(makeMenuItem(title: AppLocalization.text("menu.quit", defaultValue: "退出"), imageName: "power", action: #selector(NSApplication.terminate(_:)), key: "", modifiers: []))
         statusItemMenu = menu
@@ -3731,6 +3796,19 @@ extension AppDelegate {
 
     var smokeStatusItemMenuAppearanceNameForRealFunctionQA: NSAppearance.Name? {
         statusItemMenu?.appearance?.name
+    }
+
+    var smokeStatusItemMenuItemsForRealFunctionQA: [(title: String, actionName: String?, targetIsSelf: Bool, hasImage: Bool)] {
+        statusItemMenu?.items
+            .filter { !$0.isSeparatorItem }
+            .map {
+                (
+                    title: $0.title,
+                    actionName: $0.action.map(NSStringFromSelector),
+                    targetIsSelf: ($0.target as AnyObject?) === self,
+                    hasImage: $0.image != nil
+                )
+            } ?? []
     }
 
     func smokeApplyNativeMenuAppearancesForRealFunctionQA() {

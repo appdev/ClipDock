@@ -62,6 +62,8 @@
 "copyPath.status.writtenToClipboard" = "Copy Path: Written to clipboard";
 "copyPlainText.status.message" = "Copy as Plain Text: %@";
 "copyPlainText.status.writtenToClipboard" = "Copy as Plain Text: Written to clipboard";
+"diagnostics.status.copied" = "Diagnostics: Clipboard diagnostics copied";
+"diagnostics.status.message" = "Diagnostics: %@";
 "database.historyReadFailed" = "Local history cannot be read right now";
 "database.unavailable" = "Database unavailable";
 "file.localPath" = "Local file path";
@@ -91,6 +93,7 @@
 "maintenance.reclaimedAndCleaned" = "Maintenance: Reclaimed %@ and cleaned %lld files";
 "maintenance.status.error" = "Maintenance: %@";
 "menu.aboutClipDock" = "About ClipDock";
+"menu.copyClipboardDiagnostics" = "Copy Clipboard Diagnostics";
 "menu.copy" = "Copy";
 "menu.cut" = "Cut";
 "menu.edit" = "Edit";

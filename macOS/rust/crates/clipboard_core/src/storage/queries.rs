@@ -130,6 +130,9 @@ impl ClipboardCore {
             filter_params.push(Value::Text(pinboard_id.to_string()));
         }
         sql.push_str(" WHERE i.deleted_at_ms IS NULL");
+        if pinboard_id.is_none() {
+            sql.push_str(" AND i.history_deleted_at_ms IS NULL");
+        }
         if pinboard_id.is_some() {
             sql.push_str(
                 r#"
@@ -267,6 +270,7 @@ impl ClipboardCore {
             FROM source_apps s
             INNER JOIN clipboard_items i ON i.source_app_id = s.id
             WHERE i.deleted_at_ms IS NULL
+                AND i.history_deleted_at_ms IS NULL
             GROUP BY s.id, s.bundle_id, s.name
             ORDER BY last_copied_at_ms DESC, s.name COLLATE NOCASE ASC
             LIMIT ?1 OFFSET ?2
@@ -531,20 +535,46 @@ impl ClipboardCore {
         let item_id = normalize_item_id(item_id.as_ref())?;
         let now = now_ms();
         let transaction = self.connection.transaction()?;
-        transaction.execute(
-            "DELETE FROM pinboard_items WHERE item_id = ?1",
-            params![item_id],
-        )?;
-        let affected_count = transaction.execute(
+        let has_active_pinboard = transaction.query_row(
             r#"
-            UPDATE clipboard_items
-            SET is_pinned = 0, deleted_at_ms = ?1, updated_at_ms = ?1
-            WHERE id = ?2 AND deleted_at_ms IS NULL
+            SELECT EXISTS(
+                SELECT 1
+                FROM pinboard_items pi_delete
+                INNER JOIN pinboards pb_delete ON pb_delete.id = pi_delete.pinboard_id
+                WHERE pi_delete.item_id = ?1
+                    AND pb_delete.deleted_at_ms IS NULL
+            )
             "#,
-            params![now, item_id],
-        )? as i64;
+            params![&item_id],
+            |row| row.get::<_, i64>(0),
+        )? == 1;
+        let affected_count = if has_active_pinboard {
+            transaction.execute(
+                r#"
+                UPDATE clipboard_items
+                SET history_deleted_at_ms = ?1, updated_at_ms = ?1
+                WHERE id = ?2
+                    AND deleted_at_ms IS NULL
+                    AND history_deleted_at_ms IS NULL
+                "#,
+                params![now, &item_id],
+            )? as i64
+        } else {
+            transaction.execute(
+                "DELETE FROM pinboard_items WHERE item_id = ?1",
+                params![&item_id],
+            )?;
+            transaction.execute(
+                r#"
+                UPDATE clipboard_items
+                SET is_pinned = 0, deleted_at_ms = ?1, updated_at_ms = ?1
+                WHERE id = ?2 AND deleted_at_ms IS NULL
+                "#,
+                params![now, &item_id],
+            )? as i64
+        };
         transaction.commit()?;
-        if affected_count > 0 {
+        if affected_count > 0 && !has_active_pinboard {
             self.purge_soft_deleted_items_and_assets()?;
         }
 
@@ -560,6 +590,7 @@ impl ClipboardCore {
             SET
                 last_copied_at_ms = ?1,
                 copy_count = copy_count + 1,
+                history_deleted_at_ms = NULL,
                 updated_at_ms = ?1
             WHERE id = ?2 AND deleted_at_ms IS NULL
             "#,
@@ -584,6 +615,7 @@ impl ClipboardCore {
                 FROM clipboard_items i
                 LEFT JOIN source_apps s ON s.id = i.source_app_id
                 WHERE i.deleted_at_ms IS NULL
+                    AND i.history_deleted_at_ms IS NULL
                     AND NOT EXISTS (
                         SELECT 1
                         FROM pinboard_items pi_clear
@@ -634,6 +666,9 @@ impl ClipboardCore {
             filter_params.push(Value::Text(pinboard_id.to_string()));
         }
         sql.push_str(" WHERE i.deleted_at_ms IS NULL");
+        if pinboard_id.is_none() {
+            sql.push_str(" AND i.history_deleted_at_ms IS NULL");
+        }
         if pinboard_id.is_some() {
             sql.push_str(
                 r#"
@@ -657,7 +692,9 @@ impl ClipboardCore {
             r#"
             SELECT COUNT(DISTINCT i.source_app_id)
             FROM clipboard_items i
-            WHERE i.deleted_at_ms IS NULL AND i.source_app_id IS NOT NULL
+            WHERE i.deleted_at_ms IS NULL
+                AND i.history_deleted_at_ms IS NULL
+                AND i.source_app_id IS NOT NULL
             "#,
             [],
             |row| row.get::<_, i64>(0),

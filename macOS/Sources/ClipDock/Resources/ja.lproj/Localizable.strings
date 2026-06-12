@@ -62,6 +62,8 @@
 "copyPath.status.writtenToClipboard" = "Copy Path: Written to clipboard";
 "copyPlainText.status.message" = "Copy as Plain Text: %@";
 "copyPlainText.status.writtenToClipboard" = "Copy as Plain Text: Written to clipboard";
+"diagnostics.status.copied" = "診断：クリップボード診断情報をコピーしました";
+"diagnostics.status.message" = "診断：%@";
 "database.historyReadFailed" = "ローカル履歴を現在読み取れません";
 "database.unavailable" = "データベースを利用できません";
 "file.localPath" = "ローカルファイルパス";
@@ -91,6 +93,7 @@
 "maintenance.reclaimedAndCleaned" = "メンテナンス：%@ を解放し、%lld 個のファイルを削除しました";
 "maintenance.status.error" = "Maintenance: %@";
 "menu.aboutClipDock" = "ClipDock について";
+"menu.copyClipboardDiagnostics" = "クリップボード診断情報をコピー";
 "menu.copy" = "コピー";
 "menu.cut" = "カット";
 "menu.edit" = "編集";

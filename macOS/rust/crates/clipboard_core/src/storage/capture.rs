@@ -95,6 +95,7 @@ impl ClipboardCore {
                         source_app_name = ?4,
                         source_confidence = ?5,
                         size_bytes = ?6,
+                        history_deleted_at_ms = NULL,
                         updated_at_ms = ?1
                     WHERE id = ?7
                     "#,
@@ -277,6 +278,7 @@ impl ClipboardCore {
                         size_bytes = ?8,
                         preview_state = 'ready',
                         payload_state = 'ready',
+                        history_deleted_at_ms = NULL,
                         updated_at_ms = ?3
                     WHERE id = ?9
                     "#,
@@ -435,6 +437,7 @@ impl ClipboardCore {
                         size_bytes = ?7,
                         preview_state = 'ready',
                         payload_state = 'ready',
+                        history_deleted_at_ms = NULL,
                         updated_at_ms = ?2
                     WHERE id = ?8
                     "#,
@@ -605,6 +608,7 @@ impl ClipboardCore {
                         source_confidence = ?7,
                         size_bytes = ?8,
                         preview_state = 'ready',
+                        history_deleted_at_ms = NULL,
                         updated_at_ms = ?3
                     WHERE id = ?9
                     "#,

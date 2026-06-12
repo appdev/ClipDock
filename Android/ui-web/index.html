@@ -1,0 +1,1526 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ClipDock Android · 交互原型 v6</title>
+<style>
+/* ============================================================
+   ClipDock Android UI 优化原型 v6
+   基底: macOS/.../MainScreen.kt 瀑布流实现 + ClipDockTokens.kt
+   颜色 token 与 ClipDockTokens.kt 1:1 对齐
+   ============================================================ */
+
+/* ---- Light tokens (LightClipDockTokens) ---- */
+:root,
+[data-theme="light"] {
+  --page-bg: #F6F8F9;
+  --surface: #FFFFFF;
+  --surface2: #F7FAFB;
+  --surface3: #EEF4F2;
+  --ink: #172033;
+  --muted: #697586;
+  --faint: #94A3B8;
+  --line: #DBE3EA;
+  --soft-line: rgba(148,163,184,0.28);
+  --accent: #18A67A;
+  --accent2: #2563EB;
+  --warn: #C77916;
+  --danger: #D54B6A;
+  --accent-soft: #E8F6F1;
+  --blue-soft: #E9F0FF;
+  --warn-soft: #FFF4DF;
+  --danger-soft: #FFF0F4;
+  --hero-banner: #10372E;
+  --history-banner: #101820;
+  --overlay-ball: #1C222D;
+  --overlay-glyph: #E5E7EB;
+  --panel-success: #15803D;
+  --panel-warn: #D97706;
+  --panel-danger: #DC2626;
+  --type-link: #2563EB;
+  --type-image: #0F766E;
+  --type-file: #D97706;
+  --type-color: #FFB300;
+  --type-rich: #16A34A;
+  --type-text: #475569;
+  --type-unknown: #64748B;
+  --media-bg: #101820;
+  --health-bg: #F1FBF7;
+  --shadow-card: 0 1px 2px rgba(23,32,51,0.04), 0 4px 16px rgba(23,32,51,0.06);
+  --shadow-pop: 0 8px 28px rgba(23,32,51,0.16);
+}
+
+/* ---- Dark tokens (DarkClipDockTokens) ---- */
+[data-theme="dark"] {
+  --page-bg: #0D1416;
+  --surface: #141D20;
+  --surface2: #101719;
+  --surface3: #172422;
+  --ink: #EEF6F3;
+  --muted: #9AA9B5;
+  --faint: #778694;
+  --line: #26343A;
+  --soft-line: rgba(148,163,184,0.18);
+  --accent: #35D39F;
+  --accent2: #73A5FF;
+  --warn: #F2B65E;
+  --danger: #FF7B99;
+  --accent-soft: rgba(53,211,159,0.15);
+  --blue-soft: rgba(115,165,255,0.15);
+  --warn-soft: rgba(242,182,94,0.14);
+  --danger-soft: rgba(255,123,153,0.14);
+  --hero-banner: #10372E;
+  --history-banner: #101820;
+  --overlay-ball: #1C222D;
+  --overlay-glyph: #E5E7EB;
+  --panel-success: #35D39F;
+  --panel-warn: #F2B65E;
+  --panel-danger: #FF7B99;
+  --type-link: #73A5FF;
+  --type-image: #35D39F;
+  --type-file: #F2B65E;
+  --type-color: #F2B65E;
+  --type-rich: #35D39F;
+  --type-text: #9AA9B5;
+  --type-unknown: #778694;
+  --media-bg: #0A0F12;
+  --health-bg: rgba(53,211,159,0.08);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.35);
+  --shadow-pop: 0 8px 28px rgba(0,0,0,0.5);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  font-family: -apple-system, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #1a1f24;
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 16px 60px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #20303a 0%, #14191e 55%, #0e1216 100%);
+}
+
+/* ============ Workbench layout ============ */
+.workbench-head {
+  width: 100%;
+  max-width: 1180px;
+  color: #cdd8e0;
+  margin-bottom: 22px;
+}
+.workbench-head h1 {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  color: #f1f6fa;
+}
+.workbench-head p { font-size: 13px; color: #8da0ad; margin-top: 6px; line-height: 1.6; }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 16px;
+}
+.toolbar .group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1d262c;
+  border: 1px solid #2c3941;
+  border-radius: 12px;
+  padding: 6px;
+}
+.toolbar .group > span.lbl {
+  font-size: 11px;
+  color: #7f93a1;
+  font-weight: 700;
+  padding: 0 6px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.tbtn {
+  border: none;
+  background: transparent;
+  color: #b6c4cd;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 7px 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .18s, color .18s, transform .12s;
+  white-space: nowrap;
+}
+.tbtn:hover { color: #e7eef3; }
+.tbtn:active { transform: scale(.95); }
+.tbtn.active { background: #18A67A; color: #fff; }
+.tbtn.active.amber { background: var(--warn); }
+
+.stage {
+  width: 100%;
+  max-width: 1180px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 40px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+/* ============ Phone frame ============ */
+.phone {
+  width: 384px;
+  height: 832px;
+  background: var(--page-bg);
+  border-radius: 46px;
+  border: 11px solid #05080a;
+  box-shadow: 0 30px 60px rgba(0,0,0,.45), 0 0 0 2px #1e272d;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: background .3s;
+}
+.phone__notch {
+  position: absolute;
+  top: 12px; left: 50%; transform: translateX(-50%);
+  width: 116px; height: 26px;
+  background: #05080a;
+  border-radius: 0 0 16px 16px;
+  z-index: 60;
+}
+.phone__label {
+  position: absolute;
+  top: -26px; left: 4px;
+  font-size: 12px; font-weight: 800; color: #8da0ad;
+  letter-spacing: .4px;
+}
+
+/* status bar */
+.statusbar {
+  height: 44px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0 22px 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.statusbar .right { display: flex; gap: 6px; align-items: center; }
+
+/* sync progress line */
+.sync-line {
+  height: 3px;
+  flex: 0 0 auto;
+  background: var(--surface3);
+  overflow: hidden;
+  display: none;
+}
+.phone[data-sync="syncing"] .sync-line { display: block; }
+.sync-line i {
+  display: block; height: 100%; width: 40%;
+  background: var(--accent);
+  border-radius: 3px;
+  animation: indeterminate 1.1s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+/* scroll body */
+.screen {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 14px 96px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.screen::-webkit-scrollbar { width: 5px; }
+.screen::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+/* ============ History top bar ============ */
+.h-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 9px;
+}
+.h-title {
+  font-size: 30px;
+  line-height: 34px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.sync-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform .12s, border-color .2s;
+}
+.sync-chip:active { transform: scale(.96); }
+.sync-chip .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+}
+.phone[data-conn="offline"] .sync-chip .dot { background: var(--faint); }
+.phone[data-conn="error"]   .sync-chip .dot { background: var(--danger); }
+.phone[data-sync="syncing"] .sync-chip .dot { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+
+.h-actions { display: flex; gap: 8px; align-items: center; }
+.round-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: transform .12s, background .2s, color .2s;
+}
+.round-btn:hover { color: var(--ink); }
+.round-btn:active { transform: scale(.9); }
+.round-btn svg { width: 22px; height: 22px; }
+
+/* ============ Search pill ============ */
+.search-pill {
+  margin-top: 14px;
+  height: 50px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 15px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: text;
+  transition: border-color .2s, box-shadow .2s;
+}
+.search-pill:focus-within,
+.search-pill.focused { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search-pill svg { width: 20px; height: 20px; flex: 0 0 auto; }
+.search-pill input {
+  border: none; background: transparent; outline: none;
+  font-size: 13px; color: var(--ink); flex: 1; font-family: inherit;
+}
+.search-pill input::placeholder { color: var(--muted); }
+
+/* ============ Filter row (OPT: scrollable, count badges, clear selected state) ============ */
+.filter-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.filter-row::-webkit-scrollbar { display: none; }
+.filter-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .18s, color .18s, border-color .18s, transform .12s;
+  white-space: nowrap;
+}
+.filter-chip:active { transform: scale(.94); }
+.filter-chip .cnt {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface3);
+  color: var(--faint);
+  transition: background .18s, color .18s;
+}
+.filter-chip[aria-selected="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
+}
+.filter-chip[aria-selected="true"] .cnt {
+  background: rgba(255,255,255,.18);
+  color: var(--surface);
+}
+
+/* ============ Health strip ============ */
+.health-strip {
+  margin-top: 12px;
+  height: 68px;
+  border-radius: 14px;
+  background: var(--health-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  display: flex;
+  align-items: stretch;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform .12s;
+}
+.health-strip:active { transform: scale(.99); }
+.health-cell {
+  flex: 1;
+  padding: 13px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  justify-content: center;
+  position: relative;
+}
+.health-cell + .health-cell::before {
+  content: "";
+  position: absolute; left: 0; top: 8px; bottom: 8px;
+  width: 1px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.health-cell .t {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 800; color: var(--ink);
+}
+.health-cell .t svg { width: 17px; height: 17px; color: var(--accent); }
+.health-cell .s { font-size: 12px; font-weight: 700; color: var(--muted); }
+
+/* ============ Staggered grid ============ */
+.grid {
+  margin-top: 14px;
+  column-count: 2;
+  column-gap: 10px;
+}
+.card {
+  break-inside: avoid;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  overflow: hidden;
+  cursor: pointer;
+  position: relative;
+  transition: transform .14s cubic-bezier(.2,.7,.3,1), box-shadow .2s, border-color .2s;
+  animation: cardIn .42s cubic-bezier(.2,.7,.3,1) both;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.card:active { transform: scale(.975); }
+.card.selected { border-color: color-mix(in srgb, var(--accent) 62%, transparent); }
+.card.selected::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  pointer-events: none;
+}
+
+/* text/link card */
+.card__pad { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.card__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.card__dot.link { background: var(--accent2); }
+.card__head { display: flex; align-items: center; justify-content: space-between; }
+.type-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 7px; border-radius: 7px;
+  font-size: 12px; font-weight: 800;
+}
+.clock { font-size: 11px; font-weight: 800; color: var(--faint); }
+.src-line {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 800; color: var(--faint);
+}
+.src-line svg { width: 13px; height: 13px; }
+.payload {
+  font-size: 16px; line-height: 22px; color: var(--ink);
+  word-break: break-word;
+}
+.payload.clamp8 { display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+.payload.clamp4 { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.payload .sec { display: block; margin-top: 5px; font-size: 14px; line-height: 20px; color: var(--muted); }
+.card__actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.action-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 800;
+  border: none; cursor: pointer;
+  transition: transform .12s, filter .15s;
+}
+.action-pill:active { transform: scale(.92); }
+.action-pill svg { width: 14px; height: 14px; }
+
+/* media card (image / file) */
+.card.media { background: var(--media-bg); }
+.media__inner {
+  position: relative;
+  width: 100%;
+  display: flex; align-items: flex-end;
+}
+.media__bg { position: absolute; inset: 0; }
+.media__img { width: 100%; display: block; }
+.media__scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(15,23,42,.6) 0%, rgba(15,23,42,.07) 38%, rgba(15,23,42,.72) 100%);
+}
+.media__top {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px;
+}
+.media__top .left { display: flex; align-items: center; gap: 6px; }
+.media__top .left svg { width: 15px; height: 15px; color: rgba(255,255,255,.92); }
+.media__clock { font-size: 11px; font-weight: 800; color: rgba(255,255,255,.82); }
+.media__actions {
+  position: relative;
+  padding: 10px;
+  display: flex; gap: 7px;
+  width: 100%;
+}
+/* OPT: state chip on media now distinct from action */
+.state-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 800;
+  backdrop-filter: blur(4px);
+}
+.state-chip svg { width: 12px; height: 12px; }
+.state-chip.remote { background: rgba(15,23,42,.55); color: #cdd8e0; }
+.state-chip.ready  { background: rgba(53,211,159,.22); color: #5ef0c0; }
+.state-chip.finding{ background: rgba(115,165,255,.22); color: #a9c6ff; }
+
+/* progress bar inside media (downloading) */
+.media__progress {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 3px; background: rgba(255,255,255,.18);
+  overflow: hidden;
+}
+.media__progress i {
+  display: block; height: 100%; width: 38%;
+  background: var(--accent2);
+  animation: indeterminate 1.1s ease-in-out infinite;
+}
+
+/* skeleton (loading state) */
+.skeleton .card__pad > *,
+.skel-box {
+  background: linear-gradient(100deg, var(--surface3) 30%, var(--surface2) 50%, var(--surface3) 70%);
+  background-size: 220% 100%;
+  animation: shimmer 1.3s linear infinite;
+  border-radius: 8px;
+  color: transparent !important;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -120% 0; } }
+.skel-line { height: 13px; margin-bottom: 8px; }
+.skel-line.w60 { width: 60%; } .skel-line.w90 { width: 90%; } .skel-line.w40 { width: 40%; }
+
+/* empty / offline / error banners */
+.empty {
+  margin-top: 60px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 0 24px;
+}
+.empty__icon {
+  width: 64px; height: 64px; border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--faint);
+}
+.empty__icon svg { width: 30px; height: 30px; }
+.empty h3 { font-size: 16px; font-weight: 800; color: var(--ink); }
+.empty p { font-size: 13px; color: var(--muted); line-height: 1.55; }
+.empty button {
+  margin-top: 4px;
+  height: 42px; padding: 0 22px;
+  border-radius: 12px; border: none;
+  background: var(--accent); color: #fff;
+  font-size: 14px; font-weight: 800; cursor: pointer;
+  transition: transform .12s, filter .15s;
+}
+.empty button:active { transform: scale(.95); }
+
+.banner {
+  margin-top: 12px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 700;
+}
+.banner svg { width: 20px; height: 20px; flex: 0 0 auto; }
+.banner.offline { background: var(--surface3); color: var(--muted); }
+.banner.error { background: var(--danger-soft); color: var(--danger); }
+.banner .grow { flex: 1; }
+.banner button {
+  border: none; background: transparent;
+  color: inherit; font-weight: 800; font-size: 13px;
+  cursor: pointer; text-decoration: underline;
+}
+
+/* loading more spinner */
+.load-more {
+  grid-column: 1 / -1;
+  display: flex; justify-content: center; padding: 14px;
+}
+.spinner {
+  width: 22px; height: 22px;
+  border: 2.5px solid var(--surface3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============ Bottom nav ============ */
+.bottom-nav {
+  position: absolute;
+  left: 14px; right: 14px; bottom: 10px;
+  height: 62px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  border-radius: 24px;
+  display: flex;
+  box-shadow: var(--shadow-pop);
+  z-index: 40;
+}
+.nav-item {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  color: var(--faint);
+  cursor: pointer;
+  font-size: 10.5px; font-weight: 800;
+  transition: color .2s;
+  position: relative;
+}
+.nav-item svg { width: 23px; height: 23px; transition: transform .2s; }
+.nav-item.active { color: var(--accent); }
+.nav-item.active svg { transform: translateY(-1px) scale(1.06); }
+.nav-item.active::before {
+  content: "";
+  position: absolute; top: 9px;
+  width: 30px; height: 30px; border-radius: 12px;
+  background: var(--accent-soft);
+  z-index: -1;
+}
+
+/* ============ Toast ============ */
+.toast-wrap {
+  position: absolute;
+  left: 0; right: 0; bottom: 86px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none;
+  z-index: 70;
+}
+.toast {
+  background: var(--ink);
+  color: var(--page-bg);
+  font-size: 13px; font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  display: flex; align-items: center; gap: 8px;
+  animation: toastIn .28s cubic-bezier(.2,.8,.3,1);
+}
+.toast svg { width: 16px; height: 16px; color: var(--accent); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ============ Detail sheet ============ */
+.scrim {
+  position: absolute; inset: 0;
+  background: rgba(6,13,13,.42);
+  z-index: 80;
+  opacity: 0;
+  transition: opacity .26s;
+  pointer-events: none;
+}
+.scrim.show { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: var(--surface);
+  border-radius: 26px 26px 0 0;
+  border: 1px solid var(--soft-line);
+  box-shadow: var(--shadow-pop);
+  z-index: 90;
+  transform: translateY(100%);
+  transition: transform .34s cubic-bezier(.2,.8,.25,1);
+  max-height: 86%;
+  display: flex; flex-direction: column;
+}
+.sheet.show { transform: translateY(0); }
+.sheet__grab {
+  width: 42px; height: 4px; border-radius: 999px;
+  background: var(--line);
+  margin: 12px auto 6px;
+  flex: 0 0 auto;
+}
+.sheet__scroll { overflow-y: auto; padding: 6px 16px 22px; }
+.sheet__title { font-size: 18px; font-weight: 800; color: var(--ink); }
+.sheet__sub { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+
+.detail-preview {
+  margin-top: 14px;
+  border-radius: 18px;
+  background: var(--surface2);
+  border: 1px solid var(--soft-line);
+  padding: 16px;
+  font-size: 15px; line-height: 23px; color: var(--ink);
+  word-break: break-word;
+  max-height: 220px; overflow: auto;
+}
+.detail-img {
+  margin-top: 14px;
+  height: 200px; border-radius: 18px;
+  background: var(--media-bg);
+  position: relative; overflow: hidden;
+  display: flex; align-items: flex-end;
+}
+.detail-img img { width: 100%; height: 100%; object-fit: cover; }
+.detail-img .tag {
+  position: absolute; left: 12px; bottom: 12px;
+  display: flex; align-items: center; gap: 7px;
+  color: #fff; font-size: 13px; font-weight: 800;
+}
+.detail-img .tag svg { width: 16px; height: 16px; }
+
+.detail-actions { display: flex; gap: 10px; margin-top: 14px; }
+.detail-tile {
+  flex: 1; height: 62px;
+  border-radius: 16px;
+  background: var(--surface2);
+  border: 1px solid var(--soft-line);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  cursor: pointer; color: var(--muted);
+  font-size: 12px; font-weight: 800;
+  transition: transform .12s, background .2s;
+}
+.detail-tile:active { transform: scale(.95); }
+.detail-tile svg { width: 23px; height: 23px; }
+.detail-tile.primary { background: var(--accent-soft); color: var(--accent); }
+.detail-tile.disabled { opacity: .5; cursor: not-allowed; }
+
+.meta-list {
+  margin-top: 14px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  overflow: hidden;
+}
+.meta-row {
+  display: flex; gap: 12px; align-items: center;
+  padding: 11px 14px;
+  min-height: 46px;
+}
+.meta-row + .meta-row { border-top: 1px solid var(--soft-line); }
+.meta-row .k { width: 84px; flex: 0 0 auto; font-size: 12px; font-weight: 800; color: var(--muted); }
+.meta-row .v { flex: 1; font-size: 13px; font-weight: 700; color: var(--ink); word-break: break-all; }
+.detail-danger {
+  margin-top: 14px;
+  height: 44px; border-radius: 14px;
+  background: var(--danger-soft); color: var(--danger);
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 13px; font-weight: 800; width: 100%;
+}
+.detail-danger svg { width: 17px; height: 17px; }
+
+/* ============ Floating overlay screen ============ */
+.fab-stage {
+  position: relative;
+  flex: 1;
+  background:
+    linear-gradient(180deg, #dfe7ec 0%, #c9d4da 100%);
+  overflow: hidden;
+}
+[data-theme="dark"] .fab-stage { background: linear-gradient(180deg,#1a2329 0%, #0f1518 100%); }
+.fab-wallpaper-app {
+  position: absolute;
+  width: 48px; height: 48px; border-radius: 13px;
+  background: rgba(255,255,255,.5);
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+[data-theme="dark"] .fab-wallpaper-app { background: rgba(255,255,255,.07); }
+
+.fab-ball {
+  position: absolute;
+  right: 0; top: 300px;
+  width: 56px; height: 62px;
+  background: var(--overlay-ball);
+  border-radius: 34px 0 0 34px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: -4px 4px 16px rgba(0,0,0,.3);
+  z-index: 10;
+  transition: opacity .3s, transform .18s;
+  opacity: .82;
+}
+.fab-ball.left { right: auto; left: 0; border-radius: 0 34px 34px 0; box-shadow: 4px 4px 16px rgba(0,0,0,.3); }
+.fab-ball:active { transform: scale(.92); }
+.fab-ball.loading { opacity: 1; }
+.fab-ball svg.glyph { width: 30px; height: 30px; color: var(--overlay-glyph); }
+.fab-ball.loading svg.glyph { color: var(--accent2); }
+.fab-ball .ring {
+  position: absolute; inset: 0;
+  display: none;
+}
+.fab-ball.loading .ring { display: block; animation: spin .9s linear infinite; }
+.fab-ball .ring circle {
+  fill: none; stroke: var(--accent2); stroke-width: 3; stroke-linecap: round;
+  stroke-dasharray: 60 200;
+}
+.fab-ball .badge {
+  position: absolute; bottom: 12px; right: 9px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent);
+}
+.fab-ball.left .badge { right: auto; left: 9px; }
+
+.fab-panel {
+  position: absolute;
+  right: 64px; top: 264px;
+  width: 300px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-pop);
+  border: 1px solid var(--soft-line);
+  padding: 12px;
+  z-index: 9;
+  transform-origin: right center;
+  animation: panelIn .26s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes panelIn { from { opacity: 0; transform: scale(.92) translateX(8px); } to { opacity: 1; transform: scale(1); } }
+.fab-panel.hidden { display: none; }
+.fab-panel__head { display: flex; align-items: flex-start; justify-content: space-between; }
+.fab-panel__state { font-size: 14px; font-weight: 800; }
+.fab-panel__state.ok { color: var(--panel-success); }
+.fab-panel__state.warn { color: var(--panel-warn); }
+.fab-panel__state.danger { color: var(--panel-danger); }
+.fab-panel__sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.fab-panel__close { color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 4px; }
+.fab-recent-label { font-size: 11px; font-weight: 800; color: var(--muted); margin: 10px 0 6px; }
+.fab-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 6px; border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.fab-row:hover { background: var(--surface2); }
+.fab-row__icon {
+  width: 28px; height: 28px; border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800; flex: 0 0 auto;
+}
+.fab-row__txt { flex: 1; min-width: 0; }
+.fab-row__t { font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fab-row__s { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fab-row__copy { font-size: 11px; font-weight: 800; color: var(--accent); }
+.fab-actions { display: flex; gap: 8px; margin-top: 10px; }
+.fab-actions button {
+  flex: 1; height: 38px; border-radius: 10px;
+  font-size: 13px; font-weight: 800; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface2); color: var(--ink);
+  transition: transform .12s;
+}
+.fab-actions button:active { transform: scale(.95); }
+.fab-actions button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+
+.fab-hint {
+  position: absolute; left: 14px; bottom: 14px; right: 14px;
+  background: rgba(16,24,32,.82);
+  color: #e7eef3;
+  border-radius: 14px;
+  padding: 11px 14px;
+  font-size: 12px; line-height: 1.5;
+  z-index: 8;
+  backdrop-filter: blur(6px);
+}
+.fab-hint b { color: #fff; }
+
+/* settings page */
+.set-group {
+  margin-top: 14px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--soft-line);
+  overflow: hidden;
+}
+.set-group__title { font-size: 11px; font-weight: 800; color: var(--muted); padding: 14px 14px 6px; text-transform: uppercase; letter-spacing: .4px; }
+.set-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 14px; min-height: 56px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.set-row:hover { background: var(--surface2); }
+.set-row + .set-row { border-top: 1px solid var(--soft-line); }
+.set-row__icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--surface3); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.set-row__icon svg { width: 19px; height: 19px; }
+.set-row__txt { flex: 1; }
+.set-row__t { font-size: 14px; font-weight: 700; color: var(--ink); }
+.set-row__s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.set-row__val { font-size: 13px; font-weight: 700; color: var(--muted); }
+.switch {
+  width: 44px; height: 26px; border-radius: 999px;
+  background: var(--line); position: relative; flex: 0 0 auto;
+  transition: background .2s; cursor: pointer;
+}
+.switch.on { background: var(--accent); }
+.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+.switch.on::after { transform: translateX(18px); }
+
+/* generic page heading inside screens */
+.page-h { font-size: 26px; font-weight: 800; color: var(--ink); }
+.page-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+/* hide screens that are not active */
+.view { display: none; }
+.view.active { display: block; }
+.fab-view { display: none; height: 100%; }
+.fab-view.active { display: block; }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="workbench-head">
+  <h1>ClipDock Android · 交互原型 v6</h1>
+  <p>基于当前实现（MainScreen.kt 瀑布流 + ClipDockTokens 配色）的优化原型。可切换亮/暗主题、切换屏幕状态、点击卡片查看详情、体验悬浮球四态流程。</p>
+  <div class="toolbar">
+    <div class="group">
+      <span class="lbl">主题</span>
+      <button class="tbtn active" data-theme-btn="light">亮色</button>
+      <button class="tbtn" data-theme-btn="dark">暗色</button>
+    </div>
+    <div class="group">
+      <span class="lbl">屏幕</span>
+      <button class="tbtn active" data-screen="history">历史</button>
+      <button class="tbtn" data-screen="settings">设置</button>
+      <button class="tbtn" data-screen="fab">悬浮球</button>
+    </div>
+    <div class="group">
+      <span class="lbl">历史态</span>
+      <button class="tbtn active" data-state="normal">正常</button>
+      <button class="tbtn" data-state="syncing">同步中</button>
+      <button class="tbtn" data-state="loading">骨架</button>
+      <button class="tbtn" data-state="empty">空</button>
+      <button class="tbtn" data-state="offline">离线</button>
+      <button class="tbtn" data-state="error">错误</button>
+    </div>
+  </div>
+</div>
+
+<div class="stage">
+  <!-- ============ PHONE ============ -->
+  <div class="phone" id="phone" data-screen="history" data-sync="idle" data-conn="online" data-theme="light">
+    <span class="phone__label">ClipDock · 主流程</span>
+    <div class="phone__notch"></div>
+
+    <div class="statusbar">
+      <span>22:44</span>
+      <span class="right">5G · 100%</span>
+    </div>
+    <div class="sync-line"><i></i></div>
+
+    <!-- screens get injected here -->
+    <div class="screen" id="screen"></div>
+
+    <!-- bottom nav -->
+    <div class="bottom-nav" id="bottomNav"></div>
+
+    <!-- toast -->
+    <div class="toast-wrap" id="toastWrap"></div>
+
+    <!-- detail sheet -->
+    <div class="scrim" id="scrim"></div>
+    <div class="sheet" id="sheet"><div class="sheet__grab"></div><div class="sheet__scroll" id="sheetScroll"></div></div>
+  </div>
+</div>
+
+<!-- SCRIPT_PLACEHOLDER -->
+<script>
+/* ===== Icon set (stroke-based, matches ClipDockSymbol style) ===== */
+const ICONS = {
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 10.76 7 14h10l-2-3.24V4h-4z"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>',
+  text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+  window: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
+  devices: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="11" rx="2"/><path d="M16 11h4a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-4M6 20h6"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7l-2-2z"/></svg>',
+  history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4M12 8v4l3 2"/></svg>',
+  cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-9 6 6 0 0 0-11.6-1.5A4 4 0 0 0 6.5 19z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9 17.5 20 6.5"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+  wifi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0"/><path d="M12 20h.01"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18 9 12l6-6"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>',
+  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5a2 2 0 0 0-1.8-1.1H7.3a2 2 0 0 0-1.8 1.1z"/></svg>',
+};
+function ic(name){ return ICONS[name] || ''; }
+</script>
+<script>
+/* ===== Tone color helpers (map ClipDockTone -> token pairs) ===== */
+const TONE = {
+  green:  { fg: 'var(--accent)',  bg: 'var(--accent-soft)' },
+  blue:   { fg: 'var(--accent2)', bg: 'var(--blue-soft)' },
+  amber:  { fg: 'var(--warn)',    bg: 'var(--warn-soft)' },
+  red:    { fg: 'var(--danger)',  bg: 'var(--danger-soft)' },
+  neutral:{ fg: 'var(--muted)',   bg: 'var(--surface3)' },
+};
+const TYPE_TONE = { text:'neutral', rich:'green', link:'blue', image:'green', file:'amber', color:'amber', unknown:'neutral' };
+const TYPE_LABEL = { text:'文本', rich:'富文本', link:'链接', image:'图片', file:'文件', color:'颜色', unknown:'未知' };
+
+/* ===== Mock dataset (mirrors ClipHistoryItem shape from MainScreen) ===== */
+const DATA = [
+  { id:'i1', type:'text', source:'macOS', time:'刚刚', selected:true,
+    body:'Build great things, even when no one is watching. 把每一次提交都当成作品来打磨。', chars:38 },
+  { id:'i2', type:'image', source:'macOS', time:'2 分钟前',
+    title:'Screenshot 2025-05-20.png', dim:'1920×1080', size:'1.2 MB',
+    img:'linear-gradient(135deg,#fb7185,#f59e0b 55%,#fde68a)', payload:'ready' },
+  { id:'i3', type:'link', source:'Chrome', time:'8 分钟前',
+    title:'Android Developers', body:'developer.android.com', site:'developer.android.com', chars:31 },
+  { id:'i4', type:'file', source:'macOS', time:'14 分钟前',
+    title:'physical-fixed-file.txt', ext:'TXT', size:'2.0 MB', payload:'remote' },
+  { id:'i5', type:'image', source:'iPhone', time:'21 分钟前',
+    title:'IMG_20250505.jpg', dim:'3024×4032', size:'3.4 MB',
+    img:'linear-gradient(135deg,#34d399,#22d3ee 60%,#2563eb)', payload:'finding' },
+  { id:'i6', type:'color', source:'Figma', time:'30 分钟前',
+    title:'#18A67A', body:'ClipDock 主题绿', swatch:'#18A67A' },
+  { id:'i7', type:'text', source:'Notes', time:'1 小时前',
+    body:'会议要点:\n1. 先确认瀑布流方向\n2. 优化筛选 chip 选中态\n3. 状态与动作 chip 分层', chars:46 },
+  { id:'i8', type:'file', source:'macOS', time:'2 小时前',
+    title:'notes.md', ext:'MD', size:'12 KB', payload:'ready' },
+  { id:'i9', type:'rich', source:'Word', time:'3 小时前',
+    body:'季度汇报（富文本）— 含加粗与列表样式，复制时保留格式。', chars:27 },
+  { id:'i10', type:'link', source:'Safari', time:'昨天',
+    title:'ClipDock 官网', body:'clipdock.app', site:'clipdock.app', chars:20 },
+];
+
+function countByType(){
+  const c = { all: DATA.length, text:0, link:0, image:0, file:0 };
+  DATA.forEach(d=>{
+    if(d.type==='text'||d.type==='rich'||d.type==='color') c.text++;
+    else if(c[d.type]!==undefined) c[d.type]++;
+  });
+  return c;
+}
+</script>
+<script>
+/* ===== State ===== */
+const S = { screen:'history', historyState:'normal', filter:'all', fabState:'idle', edge:'right' };
+
+/* ===== Small builders ===== */
+function typePill(type){
+  const t = TONE[TYPE_TONE[type]];
+  return `<span class="type-pill" style="color:${t.fg};background:${t.bg}">${TYPE_LABEL[type]}</span>`;
+}
+function actionPill(label, icon, tone){
+  const t = TONE[tone];
+  return `<button class="action-pill" style="color:${t.fg};background:${t.bg}" data-act="${label}">${ic(icon)}${label}</button>`;
+}
+
+/* ===== History header block (shared across states) ===== */
+function historyHeader(counts){
+  const filters = [['all','全部'],['text','文本'],['link','链接'],['image','图片'],['file','文件']];
+  return `
+  <div class="h-topbar">
+    <div>
+      <div class="h-title">剪贴板</div>
+      <div class="sync-chip" id="syncChip">
+        <span class="dot"></span><span id="syncChipText">已同步 · 刚刚</span>
+      </div>
+    </div>
+    <div class="h-actions">
+      <button class="round-btn" data-go-search title="搜索">${ic('search')}</button>
+      <button class="round-btn" data-go-settings title="设置">${ic('settings')}</button>
+    </div>
+  </div>
+
+  <div class="search-pill" id="searchPill">
+    ${ic('search')}<input placeholder="搜索文本、链接、文件名" />
+  </div>
+
+  <div class="filter-row" id="filterRow">
+    ${filters.map(([k,label])=>`
+      <button class="filter-chip" data-filter="${k}" aria-selected="${S.filter===k}">
+        ${label}<span class="cnt">${counts[k]??0}</span>
+      </button>`).join('')}
+  </div>
+
+  <div class="health-strip" data-go-sync>
+    <div class="health-cell">
+      <div class="t">${ic('cloud')}同步正常</div>
+      <div class="s">连接稳定</div>
+    </div>
+    <div class="health-cell">
+      <div class="t">${ic('devices')}在线设备</div>
+      <div class="s">3 台</div>
+    </div>
+    <div class="health-cell">
+      <div class="t">${ic('cloud')}待上传</div>
+      <div class="s">0 项</div>
+    </div>
+  </div>`;
+}
+
+/* ===== Cards ===== */
+function textCard(d){
+  const isLink = d.type==='link';
+  const dotCls = isLink ? 'card__dot link' : 'card__dot';
+  let payloadHtml = '';
+  if(isLink){
+    payloadHtml = `<div class="payload clamp4">${esc(d.title||d.body)}<span class="sec">${esc(d.site||d.body)}</span></div>`;
+  } else if(d.type==='color'){
+    payloadHtml = `<div style="display:flex;align-items:center;gap:10px">
+        <span style="width:40px;height:40px;border-radius:10px;border:1px solid var(--soft-line);background:${d.swatch}"></span>
+        <div class="payload" style="font-weight:800;font-family:monospace">${esc(d.title)}<span class="sec" style="font-family:inherit">${esc(d.body)}</span></div>
+      </div>`;
+  } else {
+    payloadHtml = `<div class="payload clamp8">${esc(d.body).replace(/\n/g,'<br>')}</div>`;
+  }
+  const second = isLink
+    ? actionPill('分享','share','blue')
+    : actionPill('固定','pin','neutral');
+  return `
+  <div class="card ${d.selected?'selected':''}" data-id="${d.id}">
+    <div class="card__pad">
+      <div class="card__head">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span class="${dotCls}"></span>${typePill(d.type)}
+        </div>
+        <span class="clock">${d.time}</span>
+      </div>
+      <div class="src-line">${ic('window')}${esc(d.source)}</div>
+      ${payloadHtml}
+      <div class="card__actions">
+        ${actionPill('复制','copy','green')}
+        ${second}
+      </div>
+    </div>
+  </div>`;
+}
+
+function mediaCard(d){
+  const isFile = d.type==='file';
+  const h = isFile ? 150 : (d.id==='i5' ? 210 : 178);
+  // OPT: state chip distinct from copy/download action
+  let stateChip = '';
+  if(d.payload==='remote') stateChip = `<span class="state-chip remote">${ic('cloud')}远程</span>`;
+  else if(d.payload==='ready') stateChip = `<span class="state-chip ready">${ic('check')}已就绪</span>`;
+  else if(d.payload==='finding') stateChip = `<span class="state-chip finding">${ic('download')}查找设备</span>`;
+
+  const bg = isFile
+    ? `background:linear-gradient(135deg,#fdba74,#fb923c 60%,#ea580c)`
+    : `background:${d.img}`;
+  const fileGlyph = isFile
+    ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+         <div style="width:64px;height:78px;border-radius:10px;background:rgba(255,255,255,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;box-shadow:0 6px 18px rgba(0,0,0,.25)">
+           <span style="font-size:11px;font-weight:900;color:#ea580c">${d.ext}</span>
+         </div>
+       </div>` : '';
+  const downloadAction = (d.payload==='ready')
+    ? actionPill('复制','copy','green')
+    : actionPill('下载','download','blue');
+  const progress = d.payload==='finding' ? `<div class="media__progress"><i></i></div>` : '';
+
+  return `
+  <div class="card media" data-id="${d.id}">
+    <div class="media__inner" style="height:${h}px">
+      <div class="media__bg" style="${bg}"></div>
+      ${fileGlyph}
+      <div class="media__scrim"></div>
+      <div class="media__top">
+        <div class="left">${ic(isFile?'file':'image')}${stateChip}</div>
+        <span class="media__clock">${d.time}</span>
+      </div>
+      <div class="media__actions">
+        ${actionPill('复制','copy','green')}
+        ${downloadAction}
+        ${progress}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderCard(d){
+  return (d.type==='image'||d.type==='file') ? mediaCard(d) : textCard(d);
+}
+
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+<script>
+/* ===== Screen renderers ===== */
+function renderHistory(){
+  const counts = countByType();
+  let items = DATA;
+  if(S.filter==='text') items = DATA.filter(d=>['text','rich','color'].includes(d.type));
+  else if(S.filter!=='all') items = DATA.filter(d=>d.type===S.filter);
+
+  let inner;
+  if(S.historyState==='loading'){
+    inner = `<div class="grid">${Array(4).fill(0).map(()=>`
+      <div class="card skeleton"><div class="card__pad">
+        <div class="skel-line w40"></div><div class="skel-line w90"></div>
+        <div class="skel-line w90"></div><div class="skel-line w60"></div>
+      </div></div>`).join('')}</div>`;
+  } else if(S.historyState==='empty'){
+    inner = emptyBlock('暂无同步记录','点击同步拉取最近剪贴板历史。','立即同步','sync');
+  } else if(S.historyState==='error'){
+    inner = `<div class="banner error">${ic('alert')}<span class="grow">同步失败 · unauthorized（令牌失效）</span><button data-go-settings>去设置</button></div>`
+      + `<div class="grid">${items.map(renderCard).join('')}</div>`;
+  } else {
+    let banner = '';
+    if(S.historyState==='offline'){
+      banner = `<div class="banner offline">${ic('cloud')}<span class="grow">当前离线 · 展示缓存记录</span><button data-go-sync>重连</button></div>`;
+    }
+    const more = `<div class="load-more"><div class="spinner"></div></div>`;
+    inner = banner + `<div class="grid">${items.map(renderCard).join('')}</div>` + (S.historyState==='normal'?more:'');
+  }
+
+  return historyHeader(counts) + inner;
+}
+
+function emptyBlock(title, sub, btn, act){
+  return `<div class="empty">
+    <div class="empty__icon">${ic('inbox')}</div>
+    <h3>${title}</h3><p>${sub}</p>
+    <button data-go-${act}>${btn}</button>
+  </div>`;
+}
+
+function renderSettings(){
+  const row = (icon,t,s,right) => `
+    <div class="set-row">
+      <div class="set-row__icon">${ic(icon)}</div>
+      <div class="set-row__txt"><div class="set-row__t">${t}</div><div class="set-row__s">${s}</div></div>
+      ${right}
+    </div>`;
+  const sw = (on) => `<div class="switch ${on?'on':''}" data-switch></div>`;
+  const val = (v) => `<div class="set-row__val">${v}</div>`;
+  return `
+    <div class="page-h">设置</div>
+    <div class="page-sub">服务器、同步、下载与权限</div>
+
+    <div class="set-group">
+      <div class="set-group__title">服务器</div>
+      ${row('cloud','服务端地址','https://sync.clipdock.app', val('可连接'))}
+      ${row('devices','同步空间','sync_8f3a · 已加入', val('查看'))}
+    </div>
+
+    <div class="set-group">
+      <div class="set-group__title">完整下载 / P2P</div>
+      ${row('download','P2P 下载','点对点取回原图与文件', sw(true))}
+      ${row('wifi','仅 Wi-Fi 下载','移动网络不自动取回大文件', sw(false))}
+    </div>
+
+    <div class="set-group">
+      <div class="set-group__title">悬浮球与权限</div>
+      ${row('bolt','全局悬浮球','一键同步并复制最新内容', sw(true))}
+      ${row('lock','加密','端到端密钥', val('未启用'))}
+    </div>`;
+}
+
+function bottomNav(){
+  const items = [['history','历史','history'],['devices','设备','devices'],['files','文件','folder'],['settings','设置','settings']];
+  const active = (S.screen==='settings')?'settings':(S.screen==='history'?'history':S.screen);
+  return items.map(([k,label,icon])=>`
+    <div class="nav-item ${active===k?'active':''}" data-nav="${k}">
+      ${ic(icon)}<span>${label}</span>
+    </div>`).join('');
+}
+</script>
+<script>
+/* ===== Floating ball screen (own full-bleed stage, replaces .screen) ===== */
+function renderFab(){
+  // wallpaper app grid
+  let apps = '';
+  for(let r=0;r<5;r++) for(let c=0;c<4;c++){
+    apps += `<div class="fab-wallpaper-app" style="left:${22+c*88}px;top:${70+r*92}px"></div>`;
+  }
+  const loading = S.fabState==='loading';
+  const edgeCls = S.edge==='left'?'left':'';
+  const ballLeft = S.edge==='left';
+
+  let panel = '<div class="fab-panel hidden"></div>';
+  if(['copied','timeout','failed'].includes(S.fabState)){
+    panel = fabPanel(S.fabState);
+  }
+
+  const ring = `<svg class="ring" viewBox="0 0 56 56"><circle cx="28" cy="28" r="25"/></svg>`;
+  const ballStyle = ballPos();
+  return `
+    <div class="fab-stage">
+      ${apps}
+      ${panel}
+      <div class="fab-ball ${loading?'loading':''} ${edgeCls}" id="fabBall" style="${ballStyle}">
+        ${ring}
+        ${ic('copy').replace('<svg','<svg class="glyph"')}
+        <span class="badge"></span>
+      </div>
+      <div class="fab-hint">
+        ${fabHintText()}
+      </div>
+    </div>`;
+}
+function ballPos(){
+  const side = S.edge==='left' ? 'left:0' : 'right:0';
+  const top = (S.fabState==='copied'||S.fabState==='timeout'||S.fabState==='failed') ? 264 : 300;
+  return `${side};top:${top}px`;
+}
+function fabHintText(){
+  switch(S.fabState){
+    case 'idle': return '<b>① 空闲态</b> · 贴边停靠，降低不透明度。点击悬浮球开始一键同步并复制。';
+    case 'loading': return '<b>② 加载态</b> · 仅悬浮球显示进度环，不弹面板。同步并选出最新可用项。';
+    case 'copied': return '<b>③ 成功</b> · 已写入系统剪贴板，弹出紧凑面板展示最近记录作为备选。';
+    case 'timeout': return '<b>④ 超时</b> · 剪贴板未更改，提供重试 / 打开主应用。';
+    case 'failed': return '<b>④ 失败</b> · 同步失败，剪贴板保持不变，可重试。';
+  }
+  return '';
+}
+function fabPanel(kind){
+  const map = {
+    copied:{cls:'ok', title:'已复制最新内容', sub:'已写入系统剪贴板'},
+    timeout:{cls:'warn', title:'同步超时', sub:'剪贴板未更改'},
+    failed:{cls:'danger', title:'同步失败', sub:'剪贴板未更改'},
+  }[kind];
+  const recent = DATA.slice(0,5).map(d=>{
+    const t = TONE[TYPE_TONE[d.type]];
+    const primary = d.type==='image'?'[图片]':(d.title||d.body||'').split('\n')[0];
+    return `<div class="fab-row" data-fab-copy>
+        <div class="fab-row__icon" style="color:${t.fg};background:${t.bg}">${TYPE_LABEL[d.type][0]}</div>
+        <div class="fab-row__txt"><div class="fab-row__t">${esc(primary)}</div><div class="fab-row__s">${TYPE_LABEL[d.type]} · ${d.time}</div></div>
+        <span class="fab-row__copy">复制</span>
+      </div>`;
+  }).join('');
+  const actions = (kind==='copied') ? '' :
+    `<div class="fab-actions"><button id="fabRetry">重试</button><button class="primary" id="fabOpen">打开主应用</button></div>`;
+  return `
+    <div class="fab-panel" style="${S.edge==='left'?'left:64px;right:auto':''}">
+      <div class="fab-panel__head">
+        <div><div class="fab-panel__state ${map.cls}">${map.title}</div><div class="fab-panel__sub">${map.sub}</div></div>
+        <span class="fab-panel__close" id="fabClose">×</span>
+      </div>
+      <div class="fab-recent-label">最近记录</div>
+      ${recent}
+      ${actions}
+    </div>`;
+}
+</script>
+<script>
+/* ===== Detail sheet ===== */
+function openDetail(id){
+  const d = DATA.find(x=>x.id===id);
+  if(!d) return;
+  const scroll = document.getElementById('sheetScroll');
+  scroll.innerHTML = detailContent(d);
+  document.getElementById('scrim').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+function closeDetail(){
+  document.getElementById('scrim').classList.remove('show');
+  document.getElementById('sheet').classList.remove('show');
+}
+function detailContent(d){
+  const isMedia = d.type==='image'||d.type==='file';
+  let preview;
+  if(d.type==='image'){
+    preview = `<div class="detail-img"><div style="position:absolute;inset:0;background:${d.img}"></div>
+      <div class="tag">${ic('image')}图片预览 · ${d.payload==='ready'?'本机可复制':'原图在远端'}</div></div>`;
+  } else if(d.type==='file'){
+    preview = `<div class="detail-img"><div style="position:absolute;inset:0;background:linear-gradient(135deg,#fdba74,#ea580c)"></div>
+      <div class="tag">${ic('file')}${d.ext} · ${d.size}</div></div>`;
+  } else if(d.type==='color'){
+    preview = `<div class="detail-img" style="background:${d.swatch}"><div class="tag" style="font-family:monospace">${d.title}</div></div>`;
+  } else {
+    preview = `<div class="detail-preview">${esc(d.body||d.title).replace(/\n/g,'<br>')}</div>`;
+  }
+  const primaryLabel = (d.payload==='remote'||d.payload==='finding') ? '下载并复制' : '复制';
+  const primaryIcon = (d.payload==='remote'||d.payload==='finding') ? 'download' : 'copy';
+  const meta = [
+    ['来源', d.source],
+    ['类型', TYPE_LABEL[d.type]],
+    d.dim ? ['尺寸', d.dim] : null,
+    d.size ? ['大小', d.size] : null,
+    d.chars ? ['内容长度', d.chars+' 个字符'] : null,
+    ['同步空间', 'sync_8f3a'],
+  ].filter(Boolean);
+  return `
+    <div class="sheet__title">${TYPE_LABEL[d.type]}详情</div>
+    <div class="sheet__sub">${d.source} · ${d.time}</div>
+    ${preview}
+    <div class="detail-actions">
+      <div class="detail-tile primary" data-act="${primaryLabel}">${ic(primaryIcon)}<span>${primaryLabel}</span></div>
+      <div class="detail-tile disabled">${ic('pin')}<span>固定</span></div>
+      <div class="detail-tile disabled">${ic('share')}<span>分享</span></div>
+    </div>
+    <div class="meta-list">
+      ${meta.map(([k,v])=>`<div class="meta-row"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join('')}
+    </div>
+    <button class="detail-danger" data-act="删除">${ic('trash')}删除这条历史</button>`;
+}
+
+/* ===== Toast ===== */
+let toastTimer;
+function toast(msg){
+  const wrap = document.getElementById('toastWrap');
+  wrap.innerHTML = `<div class="toast">${ic('check')}${esc(msg)}</div>`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ wrap.innerHTML=''; }, 1800);
+}
+
+/* ===== Main render ===== */
+function render(){
+  const phone = document.getElementById('phone');
+  const screen = document.getElementById('screen');
+  const nav = document.getElementById('bottomNav');
+
+  phone.dataset.screen = S.screen;
+  phone.dataset.sync = (S.screen==='history' && S.historyState==='syncing') ? 'syncing' : 'idle';
+  phone.dataset.conn = S.historyState==='offline' ? 'offline' : (S.historyState==='error' ? 'error' : 'online');
+
+  if(S.screen==='fab'){
+    screen.style.padding = '0';
+    screen.innerHTML = renderFab();
+    nav.style.display = 'none';
+  } else {
+    screen.style.padding = '';
+    nav.style.display = 'flex';
+    screen.innerHTML = (S.screen==='settings') ? renderSettings() : renderHistory();
+    nav.innerHTML = bottomNav();
+  }
+  syncToolbar();
+}
+
+function syncToolbar(){
+  document.querySelectorAll('[data-screen-btn],[data-screen]').forEach(b=>{
+    if(b.dataset.screen!==undefined) b.classList.toggle('active', b.dataset.screen===S.screen);
+  });
+  document.querySelectorAll('[data-state]').forEach(b=>{
+    b.classList.toggle('active', b.dataset.state===S.historyState);
+  });
+}
+
+/* ===== Event delegation ===== */
+document.addEventListener('click', (e)=>{
+  const t = e.target.closest('[data-theme-btn],[data-screen],[data-state],[data-filter],[data-nav],[data-go-settings],[data-go-search],[data-go-sync],[data-id],[data-act],[data-switch],[data-fab-copy],#fabBall,#fabClose,#fabRetry,#fabOpen,#syncChip,#searchPill');
+  if(!t) return;
+
+  // theme
+  if(t.dataset.themeBtn){
+    document.body.dataset.theme = t.dataset.themeBtn;
+    document.getElementById('phone').dataset.theme = t.dataset.themeBtn;
+    document.querySelectorAll('[data-theme-btn]').forEach(b=>b.classList.toggle('active', b===t));
+    return;
+  }
+  // toolbar screen
+  if(t.dataset.screen){ S.screen = t.dataset.screen; render(); return; }
+  // toolbar history state
+  if(t.dataset.state){ S.historyState = t.dataset.state; if(S.screen!=='history'){S.screen='history';} render(); return; }
+  // filter chip
+  if(t.dataset.filter){ S.filter = t.dataset.filter; render(); return; }
+  // bottom nav
+  if(t.dataset.nav){
+    S.screen = (t.dataset.nav==='history'||t.dataset.nav==='settings') ? t.dataset.nav : 'history';
+    if(t.dataset.nav==='settings') S.screen='settings';
+    render();
+    return;
+  }
+  if(t.hasAttribute('data-go-settings')){ S.screen='settings'; render(); return; }
+  if(t.hasAttribute('data-go-search')){ document.getElementById('searchPill')?.classList.add('focused'); document.querySelector('#searchPill input')?.focus(); return; }
+  if(t.hasAttribute('data-go-sync')){ triggerSync(); return; }
+  if(t.id==='syncChip'){ triggerSync(); return; }
+
+  // card actions (stop before opening detail)
+  if(t.dataset.act){
+    e.stopPropagation();
+    const label = t.dataset.act;
+    if(label==='删除'){ toast('已删除该记录'); closeDetail(); return; }
+    if(label==='下载'||label==='下载并复制'){ toast('开始取回原图…'); return; }
+    toast(label==='复制'?'已复制到剪贴板':label+'成功');
+    return;
+  }
+  // open detail
+  if(t.dataset.id){ openDetail(t.dataset.id); return; }
+  // settings switch
+  if(t.hasAttribute('data-switch')){ t.classList.toggle('on'); return; }
+
+  // ===== fab interactions =====
+  if(t.id==='fabBall'){ runFabFlow(); return; }
+  if(t.id==='fabClose'){ S.fabState='idle'; render(); return; }
+  if(t.id==='fabRetry'){ runFabFlow(); return; }
+  if(t.id==='fabOpen'){ S.fabState='idle'; S.screen='history'; render(); toast('已打开主应用'); return; }
+  if(t.hasAttribute('data-fab-copy')){ toast('已复制该记录'); S.fabState='idle'; render(); return; }
+});
+
+// scrim closes detail
+document.getElementById('scrim').addEventListener('click', closeDetail);
+
+/* ===== Sync simulation ===== */
+function triggerSync(){
+  S.historyState='syncing';
+  render();
+  document.getElementById('syncChipText') && (document.getElementById('syncChipText').textContent='正在同步…');
+  setTimeout(()=>{ S.historyState='normal'; render(); toast('同步完成'); }, 1600);
+}
+
+/* ===== Fab flow: idle -> loading -> copied ===== */
+function runFabFlow(){
+  S.fabState='loading'; render();
+  setTimeout(()=>{ S.fabState='copied'; render(); }, 1500);
+}
+
+/* ===== Boot ===== */
+render();
+</script>
+
+
+
+
+
+
+</body>
+</html>

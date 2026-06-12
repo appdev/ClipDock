@@ -7,6 +7,14 @@ name: Build release artifacts
         description: "Release tag. Defaults to v<release version>."
         required: false
         type: string
+      artifact_scope:
+        description: "Artifacts to build"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
       publish_release:
         description: "Create or update the GitHub Release"
         required: true
@@ -169,6 +177,7 @@ jobs:
 
   build-android-app:
     name: Build Android app APK
+    if: ${{ inputs.artifact_scope == 'all' }}
     needs: metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -304,6 +313,7 @@ jobs:
 
   build-server:
     name: Build server ${{ matrix.artifact_label }}
+    if: ${{ inputs.artifact_scope == 'all' }}
     needs: metadata
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -359,7 +369,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    if: ${{ inputs.publish_release }}
+    if: ${{ inputs.publish_release && inputs.artifact_scope == 'all' }}
     needs:
       - metadata
       - build-android-app
@@ -439,3 +449,84 @@ jobs:
             release-artifacts/**/*.apk
             release-artifacts/**/*.dmg
             release-artifacts/**/*.tar.gz
+
+  publish-macos-release:
+    name: Publish macOS GitHub Release
+    if: ${{ inputs.publish_release && inputs.artifact_scope == 'macos' }}
+    needs:
+      - metadata
+      - build-macos-app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download macOS release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-artifacts
+
+      - name: Generate release notes from commits
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_BUILD: ${{ needs.metadata.outputs.build }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_NOTES: release-notes.md
+        run: |
+          set -euo pipefail
+
+          target_commit="$GITHUB_SHA"
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" >/dev/null; then
+            target_commit="$(git rev-list -n 1 "$RELEASE_TAG")"
+            previous_tag="$(git describe --tags --abbrev=0 "$RELEASE_TAG^" 2>/dev/null || true)"
+          else
+            previous_tag="$(git describe --tags --abbrev=0 "$target_commit" 2>/dev/null || true)"
+          fi
+
+          if [[ -n "$previous_tag" ]]; then
+            commit_range="$previous_tag..$target_commit"
+          else
+            commit_range="$target_commit"
+          fi
+
+          {
+            echo "## ClipDock $RELEASE_VERSION"
+            echo
+            echo "- Build: $RELEASE_BUILD"
+            echo "- Commit: $target_commit"
+            echo "- Scope: macOS"
+            if [[ -n "$previous_tag" ]]; then
+              echo "- Changes since: $previous_tag"
+            fi
+            echo
+            echo "## Commits"
+            echo
+          } > "$RELEASE_NOTES"
+
+          commit_count="$(git rev-list --count "$commit_range" 2>/dev/null || true)"
+          if [[ "${commit_count:-0}" =~ ^[0-9]+$ && "$commit_count" -gt 0 ]]; then
+            git log --format="- %s (%h)" --reverse "$commit_range" >> "$RELEASE_NOTES"
+          else
+            git log -1 --format="- %s (%h)" "$target_commit" >> "$RELEASE_NOTES"
+          fi
+
+          cat "$RELEASE_NOTES"
+
+      - name: Publish macOS GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.metadata.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ClipDock ${{ needs.metadata.outputs.version }}
+          body_path: release-notes.md
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: |
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*release-manifest.txt

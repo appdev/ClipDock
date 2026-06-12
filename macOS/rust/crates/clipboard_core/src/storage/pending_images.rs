@@ -630,6 +630,7 @@ fn merge_pending_image_into_duplicate(
             source_app_name = ?4,
             source_confidence = ?5,
             payload_state = 'ready',
+            history_deleted_at_ms = NULL,
             updated_at_ms = ?6
         WHERE id = ?7 AND deleted_at_ms IS NULL
         "#,

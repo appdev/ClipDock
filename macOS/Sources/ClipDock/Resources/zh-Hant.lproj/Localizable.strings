@@ -62,6 +62,8 @@
 "copyPath.status.writtenToClipboard" = "Copy Path: Written to clipboard";
 "copyPlainText.status.message" = "Copy as Plain Text: %@";
 "copyPlainText.status.writtenToClipboard" = "Copy as Plain Text: Written to clipboard";
+"diagnostics.status.copied" = "診斷：已複製剪貼板診斷資訊";
+"diagnostics.status.message" = "診斷：%@";
 "database.historyReadFailed" = "本機歷史暫時無法讀取";
 "database.unavailable" = "資料庫不可用";
 "file.localPath" = "本機檔案路徑";
@@ -91,6 +93,7 @@
 "maintenance.reclaimedAndCleaned" = "維護：釋放 %@，清理 %lld 個檔案";
 "maintenance.status.error" = "Maintenance: %@";
 "menu.aboutClipDock" = "關於 ClipDock";
+"menu.copyClipboardDiagnostics" = "複製剪貼板診斷資訊";
 "menu.copy" = "複製";
 "menu.cut" = "剪下";
 "menu.edit" = "編輯";

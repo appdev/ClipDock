@@ -644,6 +644,7 @@ fn upsert_remote_item(
                     preview_state = ?10,
                     payload_state = ?11,
                     deleted_at_ms = NULL,
+                    history_deleted_at_ms = NULL,
                     updated_at_ms = ?7
                 WHERE id = ?12
                 "#,

@@ -432,6 +432,12 @@ struct PanelRuntimeSeamTests {
 
         #expect(delegate.smokeStatusItemUsesManualMenuForRealFunctionQA)
         #expect(delegate.smokeStatusItemMenuAppearanceNameForRealFunctionQA == ClipDockNativeMenuAppearance.systemAppearanceName())
+        #expect(delegate.smokeStatusItemMenuItemsForRealFunctionQA.contains {
+            $0.title == "复制剪贴板诊断信息"
+                && $0.actionName == "copyClipboardDiagnostics:"
+                && $0.targetIsSelf
+                && $0.hasImage
+        })
     }
 
     @Test

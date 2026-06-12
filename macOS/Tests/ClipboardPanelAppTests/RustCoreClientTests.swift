@@ -53,7 +53,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 14)
+        #expect(value.schemaVersion == 15)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -744,7 +744,8 @@ struct RustCoreClientTests {
         #expect(deleteResult.affectedCount == 1)
         #expect(afterDelete.totalCount == 1)
         #expect(afterDelete.items.first?.id != first.itemId)
-        #expect(defaultPinboardAfterDelete.totalCount == 0)
+        #expect(defaultPinboardAfterDelete.totalCount == 1)
+        #expect(defaultPinboardAfterDelete.items.first?.id == first.itemId)
     }
 
     @Test
@@ -856,7 +857,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 14)
+        #expect(result.schemaVersion == 15)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.general.copyCompletionHUDEnabled)

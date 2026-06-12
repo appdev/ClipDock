@@ -227,6 +227,45 @@ fn v14_schema_allows_remote_only_payload_state_and_sync_tables() {
 }
 
 #[test]
+fn v15_schema_adds_history_deleted_marker_for_pinboard_retention() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join(DATABASE_FILE_NAME);
+    let mut connection = Connection::open(&db_path).expect("open v14 db");
+    apply_migrations_through(&mut connection, 14);
+    drop(connection);
+
+    let core = ClipboardCore::open(temp_dir.path()).expect("migrate v15 db");
+    let column: (String, i64, Option<String>) = core
+        .connection
+        .query_row(
+            r#"
+            SELECT type, "notnull", dflt_value
+            FROM pragma_table_info('clipboard_items')
+            WHERE name = 'history_deleted_at_ms'
+            "#,
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let index_count: i64 = core
+        .connection
+        .query_row(
+            r#"
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'index'
+                AND name = 'ix_clipboard_items_history_recent'
+            "#,
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    assert_eq!(column, ("INTEGER".to_string(), 0, None));
+    assert_eq!(index_count, 1);
+}
+
+#[test]
 fn sync_apply_events_inserts_remote_text_and_advances_cursor() {
     let (_, mut core) = open_temp_core();
     let content_hash = sync_hash_for_test('b');
@@ -3008,7 +3047,7 @@ fn list_source_apps_and_filter_items_by_source_app_id() {
 }
 
 #[test]
-fn item_management_pins_and_deletes_single_item() {
+fn deleting_pinned_item_from_history_keeps_pinboard_item() {
     let (_, mut core) = open_temp_core();
     let pinned = core
         .capture_text(CaptureTextRequest {
@@ -3062,7 +3101,16 @@ fn item_management_pins_and_deletes_single_item() {
     let page_after_delete = core
         .list_items(ItemQuery::default(), PageRequest::default())
         .unwrap();
-    let deleted_item_count: i64 = core
+    let pinned_page_after_delete = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(DEFAULT_PINBOARD_ID.to_string()),
+                ..ItemQuery::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    let retained_item_count: i64 = core
         .connection
         .query_row(
             "SELECT COUNT(*) FROM clipboard_items WHERE id = ?1",
@@ -3070,10 +3118,53 @@ fn item_management_pins_and_deletes_single_item() {
             |row| row.get(0),
         )
         .unwrap();
+    let membership_count: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM pinboard_items WHERE item_id = ?1",
+            params![pinned.item_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let history_deleted_at_ms: Option<i64> = core
+        .connection
+        .query_row(
+            "SELECT history_deleted_at_ms FROM clipboard_items WHERE id = ?1",
+            params![pinned.item_id],
+            |row| row.get(0),
+        )
+        .unwrap();
 
     assert_eq!(delete_result.affected_count, 1);
     assert_eq!(page_after_delete.total_count, 1);
-    assert_eq!(deleted_item_count, 0);
+    assert_eq!(page_after_delete.items[0].id, regular.item_id);
+    assert_eq!(pinned_page_after_delete.total_count, 1);
+    assert_eq!(pinned_page_after_delete.items[0].id, pinned.item_id);
+    assert_eq!(retained_item_count, 1);
+    assert_eq!(membership_count, 1);
+    assert!(history_deleted_at_ms.is_some());
+
+    core.capture_text(CaptureTextRequest {
+        text: "Pinned management sample".to_string(),
+        detected_link: None,
+        display_rtf_relative_path: None,
+        display_rtf_mime_type: None,
+        display_rtf_byte_count: 0,
+        source_bundle_id: Some("com.apple.TextEdit".to_string()),
+        source_app_name: Some("TextEdit".to_string()),
+        source_bundle_path: None,
+        source_icon_relative_path: None,
+        source_confidence: SourceConfidence::High,
+        pasteboard_change_count: 3,
+        self_write_token: None,
+    })
+    .unwrap();
+    let page_after_recapture = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+
+    assert_eq!(page_after_recapture.total_count, 2);
+    assert_eq!(page_after_recapture.items[0].id, pinned.item_id);
 }
 
 #[test]
