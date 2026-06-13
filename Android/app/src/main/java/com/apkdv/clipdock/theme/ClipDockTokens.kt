@@ -31,6 +31,8 @@ data class ClipDockColorTokens(
   val heroBannerIconContainer: Color,
   val historySyncBanner: Color,
   val overlayBall: Color,
+  val overlayDock: Color,
+  val overlayDockHandle: Color,
   val overlayGlyph: Color,
   val overlayPanelSuccess: Color,
   val overlayPanelWarn: Color,
@@ -42,6 +44,8 @@ data class ClipDockColorTokens(
   val typeRichText: Color,
   val typeText: Color,
   val typeUnknown: Color,
+  val mediaBg: Color,
+  val healthBg: Color,
   val success: Color = accent,
 )
 
@@ -98,6 +102,8 @@ val LightClipDockTokens =
         heroBannerIconContainer = Color(0x2EFFFFFF),
         historySyncBanner = Color(0xFF101820),
         overlayBall = Color(0xFF1C222D),
+        overlayDock = Color(0xF53C4654),
+        overlayDockHandle = Color(0xF2424E5E),
         overlayGlyph = Color(0xFFE5E7EB),
         overlayPanelSuccess = Color(0xFF15803D),
         overlayPanelWarn = Color(0xFFD97706),
@@ -109,6 +115,8 @@ val LightClipDockTokens =
         typeRichText = Color(0xFF16A34A),
         typeText = Color(0xFF475569),
         typeUnknown = Color(0xFF64748B),
+        mediaBg = Color(0xFF101820),
+        healthBg = Color(0xFFF1FBF7),
       ),
   )
 
@@ -139,6 +147,8 @@ val DarkClipDockTokens =
         heroBannerIconContainer = Color(0x2EFFFFFF),
         historySyncBanner = Color(0xFF101820),
         overlayBall = Color(0xFF1C222D),
+        overlayDock = Color(0xF53C4654),
+        overlayDockHandle = Color(0xF2424E5E),
         overlayGlyph = Color(0xFFE5E7EB),
         overlayPanelSuccess = Color(0xFF35D39F),
         overlayPanelWarn = Color(0xFFF2B65E),
@@ -150,6 +160,8 @@ val DarkClipDockTokens =
         typeRichText = Color(0xFF35D39F),
         typeText = Color(0xFF9AA9B5),
         typeUnknown = Color(0xFF778694),
+        mediaBg = Color(0xFF0A0F12),
+        healthBg = Color(0x1435D39F),
       ),
   )
 

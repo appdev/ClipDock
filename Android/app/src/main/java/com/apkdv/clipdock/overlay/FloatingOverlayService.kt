@@ -26,8 +26,10 @@ import com.apkdv.clipdock.data.QuickCopyResult
 import com.apkdv.clipdock.theme.ClipDockTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -42,6 +44,8 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
   private var params: WindowManager.LayoutParams? = null
   private var uiState = FloatingOverlayUiState()
   private var ballSizePx = 0
+  private var collapsedY = 0
+  private var statusClearJob: Job? = null
 
   override val lifecycle: Lifecycle
     get() = lifecycleRegistry
@@ -92,9 +96,10 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         PixelFormat.TRANSLUCENT,
       )
-    layoutParams.gravity = Gravity.TOP or Gravity.START
-    layoutParams.x = screenWidth() - ballSizePx - 12.dpToPx()
-    layoutParams.y = ((screenHeight() - ballSizePx) * 0.35f).roundToInt()
+    collapsedY = ((screenHeight() - ballSizePx) * 0.35f).roundToInt()
+    layoutParams.gravity = Gravity.TOP or Gravity.END
+    layoutParams.x = 0
+    layoutParams.y = collapsedY
     params = layoutParams
 
     composeView =
@@ -105,13 +110,15 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
           ClipDockTheme(dynamicColor = false) {
             FloatingOverlayContent(
               state = uiState,
-              onBallClick = ::startQuickCopy,
-              onDrag = ::moveBy,
-              onDragEnd = ::snapToNearestEdge,
-              onClosePanel = { updateUi(uiState.copy(panel = FloatingPanelState.Hidden)) },
-              onRetry = ::startQuickCopy,
-              onOpenApp = ::openApp,
+              onHandleTap = ::startQuickCopy,
+              onHandleExpand = ::expandDock,
+              onHandleMove = ::moveBy,
+              onHandleMoveEnd = ::persistVerticalPosition,
+              onCollapse = ::collapseDock,
+              onSync = ::startQuickCopy,
               onCopyItem = ::copyFallbackItem,
+              onSelectItem = ::toggleSelectItem,
+              onOpenApp = { openApp(); collapseDock() },
             )
           }
         }
@@ -127,7 +134,6 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
           stopSelf()
           return@collectLatest
         }
-        applyOverlayPreferences(state)
         updateUi(
           uiState.copy(
             recentItems = state.items.take(5),
@@ -136,6 +142,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
             idleOpacityPercent = state.overlayIdleOpacityPercent,
           ),
         )
+        applyOverlayPreferences(state)
       }
     }
   }
@@ -143,6 +150,7 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
   private fun startQuickCopy() {
     if (uiState.loading) return
     val repository = (application as ClipDockApplication).repository
+    statusClearJob?.cancel()
     updateUi(uiState.copy(loading = true, panel = FloatingPanelState.Hidden))
     serviceScope.launch {
       val result = repository.quickSyncAndCopy(timeoutMillis = 8_000)
@@ -153,7 +161,30 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
           is QuickCopyResult.Failed -> FloatingPanelState.Failed(result.latest, result.message)
         }
       updateUi(uiState.copy(loading = false, panel = panel, recentItems = repository.state.value.items.take(5)))
+      if (!uiState.expanded) {
+        statusClearJob =
+          serviceScope.launch {
+            delay(1800)
+            updateUi(uiState.copy(panel = FloatingPanelState.Hidden))
+          }
+      }
     }
+  }
+
+  private fun expandDock() {
+    if (uiState.expanded) return
+    updateUi(uiState.copy(expanded = true, panel = FloatingPanelState.Hidden, selectedItemId = null))
+    applyWindowForState()
+  }
+
+  private fun collapseDock() {
+    if (!uiState.expanded) return
+    updateUi(uiState.copy(expanded = false, selectedItemId = null, panel = FloatingPanelState.Hidden))
+    applyWindowForState()
+  }
+
+  private fun toggleSelectItem(item: ClipHistoryItem) {
+    updateUi(uiState.copy(selectedItemId = if (uiState.selectedItemId == item.stableId) null else item.stableId))
   }
 
   private fun copyFallbackItem(item: ClipHistoryItem) {
@@ -170,43 +201,42 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
   }
 
   private fun moveBy(dx: Float, dy: Float) {
-    val layoutParams = params ?: return
-    layoutParams.x = (layoutParams.x + dx.roundToInt()).coerceIn(0, screenWidth() - ballSizePx)
-    layoutParams.y = (layoutParams.y + dy.roundToInt()).coerceIn(24.dpToPx(), screenHeight() - ballSizePx - 24.dpToPx())
-    composeView?.let { windowManager.updateViewLayout(it, layoutParams) }
+    if (uiState.expanded) return
+    val minY = 24.dpToPx()
+    val maxY = (screenHeight() - ballSizePx - minY).coerceAtLeast(minY)
+    collapsedY = (collapsedY + dy.roundToInt()).coerceIn(minY, maxY)
+    applyWindowForState()
   }
 
-  private fun snapToNearestEdge() {
-    val layoutParams = params ?: return
-    val edge =
-      if (layoutParams.x + ballSizePx / 2 < screenWidth() / 2) {
-        FloatingOverlayEdge.Left
-      } else {
-        FloatingOverlayEdge.Right
-      }
-    layoutParams.x = if (edge == FloatingOverlayEdge.Left) 0 else screenWidth() - ballSizePx
-    composeView?.let { windowManager.updateViewLayout(it, layoutParams) }
-    updateUi(uiState.copy(edge = edge))
+  private fun persistVerticalPosition() {
+    val minY = 24.dpToPx()
+    val availableHeight = (screenHeight() - ballSizePx - minY).coerceAtLeast(1)
     val repository = (application as ClipDockApplication).repository
-    repository.setOverlaySnapEdge(edge.toPreferenceEdge())
-    val availableHeight = (screenHeight() - ballSizePx - 24.dpToPx()).coerceAtLeast(1)
-    repository.setOverlayVerticalFraction((layoutParams.y - 24.dpToPx()).toFloat() / availableHeight.toFloat())
+    repository.setOverlayVerticalFraction(((collapsedY - minY).toFloat() / availableHeight.toFloat()).coerceIn(0f, 1f))
+  }
+
+  private fun applyWindowForState() {
+    val layoutParams = params ?: return
+    val edgeGravity = if (uiState.edge == FloatingOverlayEdge.Right) Gravity.END else Gravity.START
+    if (uiState.expanded) {
+      layoutParams.gravity = Gravity.CENTER_VERTICAL or edgeGravity
+      layoutParams.x = 0
+      layoutParams.y = 0
+    } else {
+      layoutParams.gravity = Gravity.TOP or edgeGravity
+      layoutParams.x = 0
+      layoutParams.y = collapsedY
+    }
+    composeView?.let { windowManager.updateViewLayout(it, layoutParams) }
   }
 
   private fun applyOverlayPreferences(state: ClipDockUiState) {
-    val layoutParams = params ?: return
-    val nextSizePx = state.overlaySizeDp.dpToPx()
-    val nextEdge = state.overlaySnapEdge.toFloatingEdge()
-    val sizeChanged = nextSizePx != ballSizePx
-    val edgeChanged = nextEdge != uiState.edge
-    ballSizePx = nextSizePx
-    if (sizeChanged || edgeChanged) {
-      layoutParams.x = if (nextEdge == FloatingOverlayEdge.Left) 0 else screenWidth() - ballSizePx
-    }
+    if (params == null) return
+    ballSizePx = state.overlaySizeDp.dpToPx()
     val minY = 24.dpToPx()
     val availableHeight = (screenHeight() - ballSizePx - minY).coerceAtLeast(1)
-    layoutParams.y = (minY + availableHeight * state.overlayVerticalFraction).roundToInt().coerceIn(minY, minY + availableHeight)
-    composeView?.let { windowManager.updateViewLayout(it, layoutParams) }
+    collapsedY = (minY + availableHeight * state.overlayVerticalFraction).roundToInt().coerceIn(minY, minY + availableHeight)
+    applyWindowForState()
   }
 
   private fun updateUi(next: FloatingOverlayUiState) {
@@ -215,25 +245,19 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
       ClipDockTheme(dynamicColor = false) {
         FloatingOverlayContent(
           state = uiState,
-          onBallClick = ::startQuickCopy,
-          onDrag = ::moveBy,
-          onDragEnd = ::snapToNearestEdge,
-          onClosePanel = { updateUi(uiState.copy(panel = FloatingPanelState.Hidden)) },
-          onRetry = ::startQuickCopy,
-          onOpenApp = ::openApp,
+          onHandleTap = ::startQuickCopy,
+          onHandleExpand = ::expandDock,
+          onHandleMove = ::moveBy,
+          onHandleMoveEnd = ::persistVerticalPosition,
+          onCollapse = ::collapseDock,
+          onSync = ::startQuickCopy,
           onCopyItem = ::copyFallbackItem,
+          onSelectItem = ::toggleSelectItem,
+          onOpenApp = { openApp(); collapseDock() },
         )
       }
     }
   }
-
-  private fun screenWidth(): Int =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      windowManager.currentWindowMetrics.bounds.width()
-    } else {
-      @Suppress("DEPRECATION")
-      resources.displayMetrics.widthPixels
-    }
 
   private fun screenHeight(): Int =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -248,8 +272,10 @@ class FloatingOverlayService : Service(), LifecycleOwner, SavedStateRegistryOwne
 
 data class FloatingOverlayUiState(
   val loading: Boolean = false,
+  val expanded: Boolean = false,
   val panel: FloatingPanelState = FloatingPanelState.Hidden,
   val recentItems: List<ClipHistoryItem> = emptyList(),
+  val selectedItemId: String? = null,
   val edge: FloatingOverlayEdge = FloatingOverlayEdge.Right,
   val sizeDp: Int = 64,
   val idleOpacityPercent: Int = 78,
@@ -271,10 +297,4 @@ private fun OverlaySnapEdge.toFloatingEdge(): FloatingOverlayEdge =
   when (this) {
     OverlaySnapEdge.Left -> FloatingOverlayEdge.Left
     OverlaySnapEdge.Right -> FloatingOverlayEdge.Right
-  }
-
-private fun FloatingOverlayEdge.toPreferenceEdge(): OverlaySnapEdge =
-  when (this) {
-    FloatingOverlayEdge.Left -> OverlaySnapEdge.Left
-    FloatingOverlayEdge.Right -> OverlaySnapEdge.Right
   }

@@ -17,6 +17,8 @@ enum class MainDestination(val label: String) {
 enum class SettingsDetailDestination {
   KeepAlive,
   FloatingBall,
+  Pairing,
+  ServerAdvanced,
 }
 
 @Serializable
