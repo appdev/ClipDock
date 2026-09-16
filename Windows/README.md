@@ -2,7 +2,7 @@
 
 Created on 2026-06-05 by Codex.
 
-This directory contains the first Tauri implementation pass for the ClipDock panel. The goal is to reproduce the existing macOS bottom-panel UI and interaction model with a cross-platform shell, while keeping native clipboard capture, file previews, and server/database integration for later phases.
+This directory contains the first Tauri implementation pass for the ClipDock panel. The goal is to reproduce the existing macOS bottom-panel UI and interaction model with a cross-platform shell, with native clipboard capture and local history powered by the shared Rust storage core.
 
 ## Commands
 

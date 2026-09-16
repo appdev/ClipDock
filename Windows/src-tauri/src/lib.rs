@@ -2,7 +2,6 @@ mod clipboard_bridge;
 mod commands;
 mod core_state;
 mod native_assets;
-mod sync;
 mod tray;
 
 use core_state::CoreState;
@@ -222,13 +221,6 @@ pub fn run() {
             commands::capture_clipboard_image,
             commands::get_preferences,
             commands::update_preferences,
-            sync::sync_create_space,
-            sync::sync_join_space,
-            sync::sync_pull_now,
-            sync::sync_push_now,
-            sync::sync_status,
-            sync::sync_list_devices,
-            sync::sync_disable
         ])
         .setup(|app| {
             let core_state = CoreState::initialize(app.handle())
@@ -238,8 +230,6 @@ pub fn run() {
             tray::setup_tray(app)?;
             configure_initial_panel_window(app.handle())?;
             start_clipboard_event_monitor(app.handle().clone());
-            sync::start_sync_poll_loop(app.handle().clone());
-            sync::start_realtime_loop(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

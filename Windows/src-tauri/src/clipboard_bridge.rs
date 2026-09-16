@@ -1,26 +1,11 @@
-use clipboard_core::{
-    CaptureImageRequest, CaptureTextRequest, SourceConfidence, SyncLocalPendingRequest,
-};
+use clipboard_core::{CaptureImageRequest, CaptureTextRequest, SourceConfidence};
 use image::{ImageReader, RgbaImage};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::{borrow::Cow, fs, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
 use crate::core_state::CoreState;
-
-/// Monotonic counter for generating unique client event ids per capture.
-static EVENT_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn next_client_event_id() -> String {
-    let counter = EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0);
-    format!("win-{now_ms}-{counter}")
-}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,7 +70,7 @@ pub fn read_clipboard_snapshot(app: AppHandle) -> Result<Option<ClipboardSnapsho
 }
 
 /// Persist a freshly detected clipboard snapshot into the shared
-/// `clipboard_core` database so history survives restarts and feeds sync.
+/// `clipboard_core` database so history survives restarts.
 ///
 /// Best-effort: failures are logged but never interrupt the capture pipeline,
 /// since the live UI event is emitted regardless. Re-copying existing content
@@ -129,26 +114,9 @@ fn persist_text_snapshot(state: &CoreState, snapshot: &ClipboardSnapshot) -> Res
     };
 
     state.with_core(|core| {
-        let result = core
-            .capture_text(request)
+        core.capture_text(request)
             .map_err(|error| error.to_string())?;
 
-        // If sync is configured, mark this capture for upload so the
-        // background pusher propagates it to other devices.
-        let prefs = core.get_preferences().map_err(|error| error.to_string())?;
-        if prefs.sync.enabled {
-            if let Some(sync_id) = prefs.sync.sync_id.filter(|value| !value.is_empty()) {
-                core.mark_sync_local_pending(SyncLocalPendingRequest {
-                    sync_id,
-                    // Capture stores a bare blake3 hex; the sync API expects
-                    // the `blake3:`-prefixed wire form.
-                    content_hash: format!("blake3:{}", result.content_hash),
-                    item_id: Some(result.item_id.clone()),
-                    client_event_id: next_client_event_id(),
-                })
-                .map_err(|error| error.to_string())?;
-            }
-        }
         Ok(())
     })
 }
@@ -191,22 +159,9 @@ fn persist_image_snapshot(state: &CoreState, snapshot: &ClipboardSnapshot) -> Re
     };
 
     state.with_core(|core| {
-        let result = core
-            .capture_image(request)
+        core.capture_image(request)
             .map_err(|error| error.to_string())?;
 
-        let prefs = core.get_preferences().map_err(|error| error.to_string())?;
-        if prefs.sync.enabled {
-            if let Some(sync_id) = prefs.sync.sync_id.filter(|value| !value.is_empty()) {
-                core.mark_sync_local_pending(SyncLocalPendingRequest {
-                    sync_id,
-                    content_hash: format!("blake3:{}", result.content_hash),
-                    item_id: Some(result.item_id.clone()),
-                    client_event_id: next_client_event_id(),
-                })
-                .map_err(|error| error.to_string())?;
-            }
-        }
         Ok(())
     })
 }

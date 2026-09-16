@@ -56,7 +56,6 @@ public struct PanelItemCardViewState: Equatable, Sendable {
     public let footnoteText: String
     public let commandIndexText: String?
     public let isSelected: Bool
-    public let syncStatus: PanelItemSyncStatus
     public let preview: PanelCardPreviewState
     public let assetRequest: PanelCardAssetRequest
 
@@ -70,7 +69,6 @@ public struct PanelItemCardViewState: Equatable, Sendable {
         footnoteText: String,
         commandIndexText: String? = nil,
         isSelected: Bool,
-        syncStatus: PanelItemSyncStatus = .none,
         preview: PanelCardPreviewState,
         assetRequest: PanelCardAssetRequest
     ) {
@@ -83,7 +81,6 @@ public struct PanelItemCardViewState: Equatable, Sendable {
         self.footnoteText = footnoteText
         self.commandIndexText = commandIndexText
         self.isSelected = isSelected
-        self.syncStatus = syncStatus
         self.preview = preview
         self.assetRequest = assetRequest
     }
@@ -94,7 +91,6 @@ public enum PanelItemCardViewStateAdapter {
         for item: RustClipboardItemSummary,
         selectedItemID: String?,
         selectedItemIDs: Set<String> = [],
-        syncStatus: PanelItemSyncStatus = .none,
         relativeTimeFormatter: (Int64) -> String = PanelItemCardViewStateAdapter.defaultRelativeTimeText(from:)
     ) -> PanelItemCardViewState {
         let imageFileVisual = ClipboardFileVisualClassifier.singleImageFileVisual(for: item)
@@ -115,7 +111,6 @@ public enum PanelItemCardViewStateAdapter {
             footnoteText: presentation.footnoteText,
             commandIndexText: nil,
             isSelected: isSelected,
-            syncStatus: syncStatus,
             preview: previewState(
                 item: item,
                 presentation: presentation,
@@ -242,7 +237,6 @@ public enum PanelItemCardViewStateAdapter {
             footnoteText: state.footnoteText,
             commandIndexText: commandIndexText,
             isSelected: isSelected,
-            syncStatus: state.syncStatus,
             preview: state.preview,
             assetRequest: state.assetRequest
         )

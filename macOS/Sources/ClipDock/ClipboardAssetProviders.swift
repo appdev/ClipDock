@@ -681,13 +681,6 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
     private let fileStemFactory: PlatformAssetFileStemFactory
     private let encoder: ClipboardWebPEncoding
 
-    private enum SyncThumbnailPolicy {
-        static let normalTargetBytes = 262_144
-        static let detailTargetBytes = 393_216
-        static let maxBytes = 786_432
-        static let mimeType = "image/webp"
-    }
-
     init(
         appSupportURL: URL,
         fileManager: FileManager = .default,
@@ -964,70 +957,6 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         } catch {
             removeFileIfExists(pendingImage.stagingPayloadURL)
             return .failure(.assetWriteFailed)
-        }
-    }
-
-    func syncThumbnailUpload(for pendingImage: ClipboardPendingImageAsset) -> SyncOutboxThumbnailUpload? {
-        guard pendingImage.thumbnailWidth > 0,
-              pendingImage.thumbnailHeight > 0,
-              pendingImage.thumbnailByteCount > 0,
-              pendingImage.thumbnailByteCount <= SyncThumbnailPolicy.maxBytes else {
-            return nil
-        }
-
-        if pendingImage.thumbnailByteCount <= SyncThumbnailPolicy.normalTargetBytes {
-            return SyncOutboxThumbnailUpload(
-                filePath: pendingImage.thumbnailRelativePath,
-                mimeType: SyncThumbnailPolicy.mimeType,
-                byteCount: pendingImage.thumbnailByteCount,
-                width: pendingImage.thumbnailWidth,
-                height: pendingImage.thumbnailHeight
-            )
-        }
-
-        let thumbnailURL = directories.appSupportURL
-            .appendingPathComponent(pendingImage.thumbnailRelativePath, isDirectory: false)
-        let fileStem = URL(fileURLWithPath: pendingImage.thumbnailRelativePath)
-            .deletingPathExtension()
-            .lastPathComponent
-        let syncDirectoryURL = directories.imageThumbnailDirectoryURL
-            .appendingPathComponent("sync-upload", isDirectory: true)
-        let stagingDirectoryURL = directories.appSupportURL
-            .appendingPathComponent(".staging", isDirectory: true)
-            .appendingPathComponent("sync-thumbnails", isDirectory: true)
-        let relativePath = "thumbnails/sync-upload/\(fileStem).webp"
-        let destinationURL = syncDirectoryURL.appendingPathComponent("\(fileStem).webp")
-        let stagingURL = stagingDirectoryURL.appendingPathComponent("\(fileStem).webp")
-
-        do {
-            let rgba = try renderRGBA(fromAssetURL: thumbnailURL)
-            guard let encoded = encoder.encodeAdaptiveThumbnailWebP(
-                rgba.data,
-                width: rgba.width,
-                height: rgba.height,
-                normalTargetBytes: SyncThumbnailPolicy.normalTargetBytes,
-                detailTargetBytes: SyncThumbnailPolicy.detailTargetBytes,
-                maxBytes: SyncThumbnailPolicy.maxBytes
-            ), !encoded.data.isEmpty else {
-                return nil
-            }
-            try fileManager.createDirectory(at: syncDirectoryURL, withIntermediateDirectories: true)
-            try fileManager.createDirectory(at: stagingDirectoryURL, withIntermediateDirectories: true)
-            try encoded.data.write(to: stagingURL, options: .atomic)
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                try fileManager.removeItem(at: destinationURL)
-            }
-            try fileManager.moveItem(at: stagingURL, to: destinationURL)
-            return SyncOutboxThumbnailUpload(
-                filePath: relativePath,
-                mimeType: SyncThumbnailPolicy.mimeType,
-                byteCount: encoded.data.count,
-                width: encoded.width,
-                height: encoded.height
-            )
-        } catch {
-            removeFileIfExists(stagingURL)
-            return nil
         }
     }
 

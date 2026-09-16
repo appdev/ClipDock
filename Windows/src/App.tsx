@@ -122,7 +122,6 @@ function PanelApp() {
   const capturedClipboardKeysRef = useRef<Set<string>>(new Set());
   const selfWriteClipboardKeyRef = useRef<string | null>(null);
   const clipboardPollInFlightRef = useRef(false);
-  const pendingGlobalDeleteHashesRef = useRef<Map<string, string>>(new Map());
 
   const filteredItems = useMemo(() => {
     const normalizedSearch = searchText.trim().toLocaleLowerCase();
@@ -194,21 +193,6 @@ function PanelApp() {
         else unlisteners.push(unlisten);
       })
       .catch((error) => console.error("Failed to listen copy-diagnostics", error));
-    listen("clipdock://sync-applied", () => {
-      // Remote changes landed in the database; reload to show synced items.
-      loadStoredPanelItems()
-        .then((storedItems) => {
-          if (!cancelled && storedItems.length > 0) {
-            setItems(storedItems);
-          }
-        })
-        .catch((error) => console.error("Failed to reload after sync", error));
-    })
-      .then((unlisten) => {
-        if (cancelled) unlisten();
-        else unlisteners.push(unlisten);
-      })
-      .catch((error) => console.error("Failed to listen sync-applied", error));
     return () => {
       cancelled = true;
       unlisteners.forEach((unlisten) => unlisten());
@@ -562,11 +546,6 @@ function PanelApp() {
   }
 
   function deleteItem(item: ClipItem) {
-    // Only track global deletes for non-pinned items (sync behavior)
-    if (!item.isPinned) {
-      const contentHash = hashItemContent(item);
-      pendingGlobalDeleteHashesRef.current.set(item.id, contentHash);
-    }
     setItems((currentItems) => deletePanelItem(currentItems, item.id));
     setContextMenu(null);
     showPanelShortcutToast(`已删除 · ${item.title}`);
@@ -1181,16 +1160,4 @@ function getItemKindDistribution(items: ClipItem[]): string {
   return Object.entries(distribution)
     .map(([kind, count]) => `  ${kind}: ${count}`)
     .join("\n");
-}
-
-function hashItemContent(item: ClipItem): string {
-  // Simple content hash for local tracking (not cryptographic)
-  const content = `${item.id}:${item.kind}:${item.title}`;
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return `hash-${Math.abs(hash).toString(16)}`;
 }

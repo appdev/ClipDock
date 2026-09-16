@@ -1,7 +1,6 @@
-pub use clipdock_sync_contract::{
-    THUMBNAIL_DETAIL_TARGET_BYTES as DETAIL_TARGET_BYTES, THUMBNAIL_MAX_BYTES as MAX_BYTES,
-    THUMBNAIL_NORMAL_TARGET_BYTES as NORMAL_TARGET_BYTES,
-};
+pub const NORMAL_TARGET_BYTES: usize = 262_144;
+pub const DETAIL_TARGET_BYTES: usize = 393_216;
+pub const MAX_BYTES: usize = 786_432;
 
 pub const CANDIDATES: &[(u32, u8)] = &[
     (420, 92),

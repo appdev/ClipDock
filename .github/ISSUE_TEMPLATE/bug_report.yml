@@ -33,9 +33,6 @@ body:
       label: 平台 / Platform
       options:
         - macOS
-        - Android
-        - Sync server / 同步服务器
-        - Cross-device sync / 跨设备同步
         - Other / 其他
     validations:
       required: true

@@ -8,7 +8,6 @@ import {
   Minus,
   Monitor,
   Plus,
-  RefreshCw,
   Settings,
   X
 } from "lucide-react";
@@ -16,21 +15,12 @@ import type { LucideIcon } from "lucide-react";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useMemo, useState } from "react";
 import {
-  createSyncSpace,
-  disableSync,
-  fetchSyncStatus,
-  joinSyncSpace,
-  syncPullNow,
-  type SyncStatus
-} from "./syncApi";
-import {
   formatKeyboardShortcut,
   modifierDisplayName,
   shortcutFromKeyboardEvent
 } from "./shortcutPresenter";
 import type {
   AppearanceMode,
-  DownloadPathMode,
   KeyboardShortcut,
   ModifierKey,
   PlainTextModifier,
@@ -56,12 +46,6 @@ const preferenceSections: PreferenceSectionDefinition[] = [
     title: "General",
     subtitle: "Startup, menu bar, paste behavior, copy HUD, theme, previews, and retention",
     icon: Settings
-  },
-  {
-    id: "sync",
-    title: "同步",
-    subtitle: "连接自托管服务端并配置 P2P 元数据登记",
-    icon: RefreshCw
   },
   {
     id: "rules",
@@ -184,9 +168,6 @@ export function PreferencesApp() {
               preferences={preferences}
               updatePreferences={updatePreferences}
             />
-          )}
-          {selectedSection === "sync" && (
-            <PreferenceSyncSection preferences={preferences} updatePreferences={updatePreferences} />
           )}
           {selectedSection === "rules" && (
             <PreferenceRulesSection
@@ -370,271 +351,6 @@ function PreferenceGeneralSection({
   );
 }
 
-function PreferenceSyncSection({
-  preferences,
-  updatePreferences
-}: {
-  preferences: PreferencesState;
-  updatePreferences: UpdatePreferences;
-}) {
-  const sync = preferences.sync;
-  const [pairingCode, setPairingCode] = useState("");
-  const [joinCode, setJoinCode] = useState("");
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [syncBusy, setSyncBusy] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-
-  const refreshSyncStatus = () => {
-    void fetchSyncStatus()
-      .then((status) => setSyncStatus(status))
-      .catch((error) => console.error("Failed to fetch sync status", error));
-  };
-
-  useEffect(() => {
-    refreshSyncStatus();
-  }, []);
-
-  const handleCreateSpace = async () => {
-    setSyncBusy(true);
-    setSyncMessage(null);
-    try {
-      const result = await createSyncSpace(sync.serverUrl, sync.deviceName || "Windows PC");
-      setPairingCode(result.pairingCode);
-      setSyncMessage(`已创建同步空间，配对码：${result.pairingCode}`);
-      updatePreferences((current) => ({
-        ...current,
-        sync: { ...current.sync, syncSpaceJoined: true, enabled: true }
-      }));
-      refreshSyncStatus();
-    } catch (error) {
-      setSyncMessage(`创建失败：${error}`);
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
-  const handleJoinSpace = async () => {
-    if (joinCode.trim().length === 0) {
-      setSyncMessage("请输入同步码");
-      return;
-    }
-    setSyncBusy(true);
-    setSyncMessage(null);
-    try {
-      const report = await joinSyncSpace(
-        sync.serverUrl,
-        joinCode.trim().toUpperCase(),
-        sync.deviceName || "Windows PC"
-      );
-      setSyncMessage(`已加入同步空间，初始同步 ${report.appliedEvents} 条事件`);
-      updatePreferences((current) => ({
-        ...current,
-        sync: { ...current.sync, syncSpaceJoined: true, enabled: true }
-      }));
-      refreshSyncStatus();
-    } catch (error) {
-      setSyncMessage(`加入失败：${error}`);
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
-  const handleSyncNow = async () => {
-    setSyncBusy(true);
-    setSyncMessage(null);
-    try {
-      const report = await syncPullNow();
-      setSyncMessage(`同步完成，应用 ${report.appliedEvents} 条事件`);
-      refreshSyncStatus();
-    } catch (error) {
-      setSyncMessage(`同步失败：${error}`);
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
-  return (
-    <div className="preferences-section-stack">
-      <PreferenceSectionGroup title="服务端">
-        <PreferenceRow title="启用同步" detail="开启后使用自托管服务端同步剪贴板元数据">
-          <SwitchControl
-            checked={sync.enabled}
-            onChange={(enabled) => {
-              updatePreferences((current) => ({
-                ...current,
-                sync: { ...current.sync, enabled }
-              }));
-              if (!enabled) {
-                void disableSync().catch((error) =>
-                  console.error("Failed to disable sync", error)
-                );
-              }
-            }}
-          />
-        </PreferenceRow>
-        <PreferenceDivider />
-        <PreferenceStackedRow title="服务端地址" detail="例如 http://127.0.0.1:8787">
-          <TextInput
-            value={sync.serverUrl}
-            placeholder="https://clipdock.example.com"
-            onChange={(serverUrl) =>
-              updatePreferences((current) => ({
-                ...current,
-                sync: { ...current.sync, serverUrl }
-              }))
-            }
-          />
-        </PreferenceStackedRow>
-        <PreferenceDivider />
-        <PreferenceStackedRow title="本机名称" detail="创建或加入同步时登记到服务端">
-          <TextInput
-            value={sync.deviceName}
-            placeholder="Windows PC"
-            onChange={(deviceName) =>
-              updatePreferences((current) => ({
-                ...current,
-                sync: { ...current.sync, deviceName }
-              }))
-            }
-          />
-        </PreferenceStackedRow>
-        <PreferenceDivider />
-        <PreferenceRow
-          title="P2P 元数据登记"
-          detail="向服务端上报本机 P2P endpoint，供其他端按需选择下载路径"
-        >
-          <SwitchControl
-            checked={sync.p2pEnabled}
-            onChange={(p2pEnabled) =>
-              updatePreferences((current) => ({
-                ...current,
-                sync: { ...current.sync, p2pEnabled }
-              }))
-            }
-          />
-        </PreferenceRow>
-      </PreferenceSectionGroup>
-
-      <PreferenceSectionGroup title="同步空间">
-        <PreferenceRow
-          title="当前同步空间"
-          detail={
-            syncStatus?.joined
-              ? `已加入 · 游标 ${syncStatus.cursor}`
-              : sync.syncSpaceJoined
-                ? "当前设备已加入一个同步空间"
-                : "尚未加入同步"
-          }
-        >
-          <div className="preference-pill-row">
-            <PreferenceValuePill
-              text={syncStatus?.joined ?? sync.syncSpaceJoined ? "已加入" : "未加入"}
-              prominent
-            />
-            <PreferenceValuePill
-              text={(syncStatus?.enabled ?? sync.enabled) ? "已启用" : "未启用"}
-            />
-          </div>
-        </PreferenceRow>
-        <PreferenceDivider />
-        <PreferenceStackedRow
-          title="当前设备"
-          detail={
-            sync.syncSpaceJoined
-              ? "其他设备会看到这个本机名称"
-              : "创建或加入同步后显示在同步空间中"
-          }
-        >
-          <PreferenceInlineValue value={sync.deviceName || "Windows PC"} />
-        </PreferenceStackedRow>
-        <PreferenceDivider />
-        <PreferenceStackedRow
-          title="同步操作"
-          detail="创建新同步空间，或输入其他设备分享的五位同步码加入"
-        >
-          <div className="preference-action-row">
-            <button
-              className="preference-push-button"
-              type="button"
-              disabled={syncBusy || !sync.serverUrl}
-              onClick={() => void handleCreateSpace()}
-            >
-              创建同步空间
-            </button>
-            <input
-              className="preference-code-input"
-              maxLength={5}
-              placeholder="同步码"
-              value={joinCode}
-              onChange={(event) => setJoinCode(event.target.value.toUpperCase())}
-            />
-            <button
-              className="preference-push-button"
-              type="button"
-              disabled={syncBusy || !sync.serverUrl}
-              onClick={() => void handleJoinSpace()}
-            >
-              加入
-            </button>
-          </div>
-          {pairingCode && (
-            <PreferenceInlineValue value={`配对码：${pairingCode}（分享给其他设备加入）`} />
-          )}
-          {syncMessage && <PreferenceStatusLabel text={syncMessage} />}
-        </PreferenceStackedRow>
-        <PreferenceDivider />
-        <PreferenceStackedRow title="立即同步" detail="推送本机待同步项并拉取其他设备的更新">
-          <div className="preference-status-row">
-            <PreferenceStatusLabel
-              text={
-                syncStatus?.joined
-                  ? `游标 ${syncStatus.cursor} · 快照 ${syncStatus.snapshotSeq}`
-                  : sync.serverUrl
-                    ? "已配置服务端"
-                    : "尚未检查连接"
-              }
-            />
-            <button
-              className="preference-push-button"
-              type="button"
-              disabled={syncBusy || !syncStatus?.joined}
-              onClick={() => void handleSyncNow()}
-            >
-              立即同步
-            </button>
-          </div>
-        </PreferenceStackedRow>
-      </PreferenceSectionGroup>
-
-      <PreferenceSectionGroup title="下载路径偏好">
-        <PreferenceStackedRow
-          title="优先局域网 / P2P"
-          detail="下载真实文件时按偏好选择 P2P 或服务端路径"
-        >
-          <SegmentedControl<DownloadPathMode>
-            width={300}
-            value={sync.downloadPathMode}
-            options={[
-              { label: "自动", value: "auto" },
-              { label: "仅 P2P", value: "p2p_only" },
-              { label: "仅服务端", value: "server_only" }
-            ]}
-            onChange={(downloadPathMode) =>
-              updatePreferences((current) => ({
-                ...current,
-                sync: { ...current.sync, downloadPathMode }
-              }))
-            }
-          />
-        </PreferenceStackedRow>
-        <PreferenceDivider />
-        <PreferenceRow title="当前路径质量" detail="尚未测速；下载时会比较可用路径并按偏好选择">
-          <PreferenceValuePill text={downloadPathLabel(sync.downloadPathMode)} prominent />
-        </PreferenceRow>
-      </PreferenceSectionGroup>
-    </div>
-  );
-}
 
 function PreferenceRulesSection({
   preferences,
@@ -1184,16 +900,6 @@ function retentionDetail(days: RetentionDays): string {
   }
 }
 
-function downloadPathLabel(mode: DownloadPathMode): string {
-  switch (mode) {
-    case "p2p_only":
-      return "仅 P2P";
-    case "server_only":
-      return "仅服务端";
-    case "auto":
-      return "自动选择";
-  }
-}
 
 function applicationNameFromIdentifier(identifier: string): string {
   const fileName = identifier.split(/[\\/]/).filter(Boolean).at(-1) ?? identifier;

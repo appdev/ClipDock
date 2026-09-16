@@ -62,7 +62,7 @@ function writePreferences(preferences: PreferencesState) {
   window.localStorage.setItem(preferencesStorageKey, JSON.stringify(preferences));
 }
 
-function mergePreferences(value: unknown): PreferencesState {
+export function mergePreferences(value: unknown): PreferencesState {
   const defaults = makeDefaultPreferencesState();
   if (!value || typeof value !== "object") {
     return defaults;
@@ -71,7 +71,6 @@ function mergePreferences(value: unknown): PreferencesState {
   const candidate = value as Partial<PreferencesState>;
   return {
     ...defaults,
-    ...candidate,
     general: {
       ...defaults.general,
       ...candidate.general
@@ -87,10 +86,6 @@ function mergePreferences(value: unknown): PreferencesState {
     history: {
       ...defaults.history,
       ...candidate.history
-    },
-    sync: {
-      ...defaults.sync,
-      ...candidate.sync
     },
     rules: {
       ...defaults.rules,

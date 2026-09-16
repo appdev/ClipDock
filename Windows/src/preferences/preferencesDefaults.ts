@@ -35,14 +35,6 @@ export const defaultPreferencesState: PreferencesState = {
   history: {
     retentionDays: 30
   },
-  sync: {
-    enabled: false,
-    serverUrl: "",
-    deviceName: "Windows PC",
-    p2pEnabled: true,
-    syncSpaceJoined: false,
-    downloadPathMode: "auto"
-  },
   rules: {
     accessibilityPermissionRequested: false,
     webPreviewEnabled: false,

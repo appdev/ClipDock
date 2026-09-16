@@ -2,7 +2,6 @@ import Foundation
 
 public enum PreferencesSceneSection: String, CaseIterable, Equatable, Sendable {
     case general
-    case sync
     case appearance
     case history
     case shortcuts
@@ -12,7 +11,6 @@ public enum PreferencesSceneSection: String, CaseIterable, Equatable, Sendable {
     public static var allCases: [PreferencesSceneSection] {
         [
             .general,
-            .sync,
             .rules,
             .shortcuts,
             .about
@@ -196,8 +194,6 @@ public final class PreferencesSceneController {
         switch section {
         case .history:
             return .general
-        case .sync:
-            return .sync
         default:
             return section
         }

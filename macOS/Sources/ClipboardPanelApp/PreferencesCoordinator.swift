@@ -12,7 +12,7 @@ public struct PreferencesSystemError: LocalizedError, Equatable, Sendable {
     }
 }
 
-public struct PreferencesSyncResult: Equatable, Sendable {
+public struct PreferencesApplyResult: Equatable, Sendable {
     public let preferences: RustPreferencesDocument
     public let launchAtLoginState: LaunchAtLoginPresentation
     public let accessibilityPermissionState: AccessibilityPermissionPresentation
@@ -71,7 +71,6 @@ public final class PreferencesCoordinator {
     private let setLaunchAtLoginEnabled: (Bool) -> Result<LaunchAtLoginPresentation, PreferencesSystemError>
     private let currentAccessibilityPermissionState: () -> AccessibilityPermissionPresentation
     private let openAccessibilitySettings: () -> Void
-    private let currentDeviceName: () -> String
 
     public private(set) var currentPreferences = RustPreferencesDocument()
 
@@ -81,8 +80,7 @@ public final class PreferencesCoordinator {
         currentLaunchAtLoginState: @escaping () -> LaunchAtLoginPresentation,
         setLaunchAtLoginEnabled: @escaping (Bool) -> Result<LaunchAtLoginPresentation, PreferencesSystemError>,
         currentAccessibilityPermissionState: @escaping () -> AccessibilityPermissionPresentation,
-        openAccessibilitySettings: @escaping () -> Void,
-        currentDeviceName: @escaping () -> String = { RustSyncPreferences.defaultDeviceName() }
+        openAccessibilitySettings: @escaping () -> Void
     ) {
         self.loadPreferencesOperation = loadPreferencesOperation
         self.savePreferencesOperation = savePreferencesOperation
@@ -90,24 +88,22 @@ public final class PreferencesCoordinator {
         self.setLaunchAtLoginEnabled = setLaunchAtLoginEnabled
         self.currentAccessibilityPermissionState = currentAccessibilityPermissionState
         self.openAccessibilitySettings = openAccessibilitySettings
-        self.currentDeviceName = currentDeviceName
     }
 
-    public func load() -> Result<PreferencesSyncResult, RustCoreError> {
+    public func load() -> Result<PreferencesApplyResult, RustCoreError> {
         switch loadPreferencesOperation() {
         case .success(let result):
-            let deviceNameReconciliation = reconcileDefaultSyncDeviceName(result.preferences)
             let reconciliation = reconcileLaunchAtLoginPreference(
-                deviceNameReconciliation.preferences,
+                result.preferences,
                 applyRequestedChange: false
             )
 
-            if reconciliation.preferences != result.preferences || deviceNameReconciliation.didChange {
+            if reconciliation.preferences != result.preferences {
                 _ = savePreferencesOperation(reconciliation.preferences)
             }
 
             currentPreferences = reconciliation.preferences
-            return .success(PreferencesSyncResult(
+            return .success(PreferencesApplyResult(
                 preferences: reconciliation.preferences,
                 launchAtLoginState: reconciliation.launchAtLoginState,
                 accessibilityPermissionState: currentAccessibilityPermissionState(),
@@ -122,7 +118,7 @@ public final class PreferencesCoordinator {
 
     public func persist(
         _ preferences: RustPreferencesDocument
-    ) -> Result<PreferencesSyncResult, RustCoreError> {
+    ) -> Result<PreferencesApplyResult, RustCoreError> {
         let launchAtLoginChanged =
             preferences.general.launchAtLogin != currentPreferences.general.launchAtLogin
         let reconciliation = reconcileLaunchAtLoginPreference(
@@ -133,7 +129,7 @@ public final class PreferencesCoordinator {
         switch savePreferencesOperation(reconciliation.preferences) {
         case .success(let result):
             currentPreferences = result.preferences
-            return .success(PreferencesSyncResult(
+            return .success(PreferencesApplyResult(
                 preferences: result.preferences,
                 launchAtLoginState: reconciliation.launchAtLoginState,
                 accessibilityPermissionState: currentAccessibilityPermissionState(),
@@ -211,29 +207,4 @@ public final class PreferencesCoordinator {
         }
     }
 
-    private func reconcileDefaultSyncDeviceName(
-        _ preferences: RustPreferencesDocument
-    ) -> (preferences: RustPreferencesDocument, didChange: Bool) {
-        var resolvedPreferences = preferences
-        guard preferences.sync.syncID == nil,
-              preferences.sync.deviceID == nil else {
-            return (resolvedPreferences, false)
-        }
-
-        let currentName = currentDeviceName().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !currentName.isEmpty else {
-            return (resolvedPreferences, false)
-        }
-
-        let storedName = preferences.sync.deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard storedName.isEmpty || storedName == "Mac" else {
-            return (resolvedPreferences, false)
-        }
-        guard storedName != currentName else {
-            return (resolvedPreferences, false)
-        }
-
-        resolvedPreferences.sync.deviceName = currentName
-        return (resolvedPreferences, true)
-    }
 }

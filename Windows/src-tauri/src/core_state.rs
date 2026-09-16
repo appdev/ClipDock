@@ -9,8 +9,7 @@ use tauri::{AppHandle, Manager};
 /// `ClipboardCore` owns a synchronous `rusqlite` connection, so it is guarded
 /// by a `Mutex`. Tauri commands acquire the lock for the duration of a single
 /// storage operation. The same crate (and therefore the same schema, content
-/// hashing, and sync-apply logic) backs the macOS client, which keeps the two
-/// platforms byte-for-byte compatible for cross-device sync.
+/// hashing, and local history logic) also backs the macOS client.
 pub struct CoreState {
     core: Mutex<ClipboardCore>,
     root_dir: PathBuf,

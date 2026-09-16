@@ -6,7 +6,6 @@ struct PreferencesCoordinatorTests {
     func sceneSectionsExposeSettingsNavigationOrder() {
         #expect(PreferencesSceneSection.allCases == [
             .general,
-            .sync,
             .rules,
             .shortcuts,
             .about
@@ -135,105 +134,6 @@ struct PreferencesCoordinatorTests {
         #expect(savedPreferences.count == 1)
         #expect(savedPreferences[0].general.launchAtLogin == false)
         #expect(!result.shouldRefreshList)
-    }
-
-    @Test
-    @MainActor
-    func loadReplacesUnpairedDefaultSyncDeviceNameWithCurrentDeviceName() throws {
-        var savedPreferences: [RustPreferencesDocument] = []
-        var preferences = RustPreferencesDocument()
-        preferences.sync.deviceName = "Mac"
-        let coordinator = PreferencesCoordinator(
-            loadPreferencesOperation: {
-                .success(RustPreferencesResult(
-                    schemaVersion: 1,
-                    preferences: preferences
-                ))
-            },
-            savePreferencesOperation: { preferences in
-                savedPreferences.append(preferences)
-                return .success(RustPreferencesResult(
-                    schemaVersion: 1,
-                    preferences: preferences
-                ))
-            },
-            currentLaunchAtLoginState: {
-                LaunchAtLoginPresentation(
-                    isOn: false,
-                    canChange: true,
-                    detail: "登录后自动启动"
-                )
-            },
-            setLaunchAtLoginEnabled: { _ in
-                .failure(PreferencesSystemError(message: "unused"))
-            },
-            currentAccessibilityPermissionState: {
-                AccessibilityPermissionPresentation(
-                    isTrusted: true,
-                    detail: "已允许",
-                    actionTitle: "重新检查",
-                    canOpenSettings: true
-                )
-            },
-            openAccessibilitySettings: {},
-            currentDeviceName: { "Ying MacBook Pro" }
-        )
-
-        let result = try coordinator.load().get()
-
-        #expect(result.preferences.sync.deviceName == "Ying MacBook Pro")
-        #expect(savedPreferences.count == 1)
-        #expect(savedPreferences[0].sync.deviceName == "Ying MacBook Pro")
-    }
-
-    @Test
-    @MainActor
-    func loadKeepsPairedSyncDeviceName() throws {
-        var savedPreferences: [RustPreferencesDocument] = []
-        var preferences = RustPreferencesDocument()
-        preferences.sync.syncID = "sync_a"
-        preferences.sync.deviceID = "dev_a"
-        preferences.sync.deviceName = "Mac"
-        let coordinator = PreferencesCoordinator(
-            loadPreferencesOperation: {
-                .success(RustPreferencesResult(
-                    schemaVersion: 1,
-                    preferences: preferences
-                ))
-            },
-            savePreferencesOperation: { preferences in
-                savedPreferences.append(preferences)
-                return .success(RustPreferencesResult(
-                    schemaVersion: 1,
-                    preferences: preferences
-                ))
-            },
-            currentLaunchAtLoginState: {
-                LaunchAtLoginPresentation(
-                    isOn: false,
-                    canChange: true,
-                    detail: "登录后自动启动"
-                )
-            },
-            setLaunchAtLoginEnabled: { _ in
-                .failure(PreferencesSystemError(message: "unused"))
-            },
-            currentAccessibilityPermissionState: {
-                AccessibilityPermissionPresentation(
-                    isTrusted: true,
-                    detail: "已允许",
-                    actionTitle: "重新检查",
-                    canOpenSettings: true
-                )
-            },
-            openAccessibilitySettings: {},
-            currentDeviceName: { "Ying MacBook Pro" }
-        )
-
-        let result = try coordinator.load().get()
-
-        #expect(result.preferences.sync.deviceName == "Mac")
-        #expect(savedPreferences.isEmpty)
     }
 
     @Test

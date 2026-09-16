@@ -1,4 +1,4 @@
-export type PreferenceSectionId = "general" | "sync" | "rules" | "shortcuts" | "about";
+export type PreferenceSectionId = "general" | "rules" | "shortcuts" | "about";
 
 export type ModifierKey = "command" | "option" | "control" | "shift";
 
@@ -10,7 +10,6 @@ export type AppearanceMode = "system" | "light" | "dark";
 
 export type RetentionDays = 1 | 7 | 30 | 365 | "forever";
 
-export type DownloadPathMode = "auto" | "p2p_only" | "server_only";
 
 export type KeyboardShortcut = {
   keyCode: number;
@@ -43,14 +42,6 @@ export type HistoryPreferences = {
   retentionDays: RetentionDays;
 };
 
-export type SyncPreferences = {
-  enabled: boolean;
-  serverUrl: string;
-  deviceName: string;
-  p2pEnabled: boolean;
-  syncSpaceJoined: boolean;
-  downloadPathMode: DownloadPathMode;
-};
 
 export type RulePreferences = {
   accessibilityPermissionRequested: boolean;
@@ -68,7 +59,6 @@ export type PreferencesState = {
   shortcuts: ShortcutPreferences;
   appearance: AppearancePreferences;
   history: HistoryPreferences;
-  sync: SyncPreferences;
   rules: RulePreferences;
   about: AboutPreferences;
 };

@@ -17,6 +17,5 @@ enum PanelRuntimeAction {
     case deletePinboard(pinboardID: String)
     case deleteItem(RustClipboardItemSummary, pinboardID: String?)
     case deleteItems([RustClipboardItemSummary], pinboardID: String?)
-    case retrySync(contentHash: String)
     case loadMore
 }

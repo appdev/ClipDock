@@ -62,87 +62,6 @@ public struct RustItemManagementResult: Equatable, Sendable {
     public let affectedCount: Int64
 }
 
-public struct RustSyncProgressResult: Equatable, Sendable {
-    public let cursor: Int64
-    public let snapshotSeq: Int64
-}
-
-public struct RustSyncApplyResult: Equatable, Sendable {
-    public let cursor: Int64
-    public let snapshotSeq: Int64
-    public let changedItemIds: [String]
-}
-
-public struct RustP2PNodeResult: Equatable, Sendable {
-    public let endpointID: String
-    public let relayURL: String?
-    public let directAddresses: [String]
-
-    public init(endpointID: String, relayURL: String? = nil, directAddresses: [String] = []) {
-        self.endpointID = endpointID
-        self.relayURL = relayURL
-        self.directAddresses = directAddresses
-    }
-}
-
-public struct RustP2PProvideResult: Equatable, Sendable {
-    public let assetID: String
-    public let blobHash: String
-    public let blobTicket: String
-    public let byteCount: Int64
-
-    public init(assetID: String, blobHash: String, blobTicket: String, byteCount: Int64) {
-        self.assetID = assetID
-        self.blobHash = blobHash
-        self.blobTicket = blobTicket
-        self.byteCount = byteCount
-    }
-}
-
-public struct RustP2PDownloadResult: Equatable, Sendable {
-    public let outputPath: String
-    public let blobHash: String
-    public let localBytes: Int64
-    public let downloadedBytes: Int64
-    public let elapsedMs: Int64
-
-    public init(
-        outputPath: String,
-        blobHash: String,
-        localBytes: Int64,
-        downloadedBytes: Int64,
-        elapsedMs: Int64
-    ) {
-        self.outputPath = outputPath
-        self.blobHash = blobHash
-        self.localBytes = localBytes
-        self.downloadedBytes = downloadedBytes
-        self.elapsedMs = elapsedMs
-    }
-}
-
-public struct RustP2PProbeResult: Equatable, Sendable {
-    public let reachable: Bool
-    public let remoteNodeID: String
-    public let pathType: String
-    public let connectMs: Int64
-    public let rttMs: Int64
-
-    public init(
-        reachable: Bool,
-        remoteNodeID: String,
-        pathType: String,
-        connectMs: Int64,
-        rttMs: Int64
-    ) {
-        self.reachable = reachable
-        self.remoteNodeID = remoteNodeID
-        self.pathType = pathType
-        self.connectMs = connectMs
-        self.rttMs = rttMs
-    }
-}
-
 public struct RustSvgRasterizeResult: Equatable, Sendable {
     public let pngData: Data
     public let width: Int
@@ -159,7 +78,6 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
     public var history: RustHistoryPreferences
     public var appearance: RustAppearancePreferences
     public var linkPreview: RustLinkPreviewPreferences
-    public var sync: RustSyncPreferences
     public var shortcuts: RustShortcutsPreferences
     public var ignoreList: RustIgnoreListPreferences
 
@@ -168,7 +86,6 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         history: RustHistoryPreferences = RustHistoryPreferences(),
         appearance: RustAppearancePreferences = RustAppearancePreferences(),
         linkPreview: RustLinkPreviewPreferences = RustLinkPreviewPreferences(),
-        sync: RustSyncPreferences = RustSyncPreferences(),
         shortcuts: RustShortcutsPreferences = RustShortcutsPreferences(),
         ignoreList: RustIgnoreListPreferences = RustIgnoreListPreferences()
     ) {
@@ -176,7 +93,6 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         self.history = history
         self.appearance = appearance
         self.linkPreview = linkPreview
-        self.sync = sync
         self.shortcuts = shortcuts
         self.ignoreList = ignoreList
     }
@@ -186,7 +102,6 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         case history
         case appearance
         case linkPreview = "link_preview"
-        case sync
         case shortcuts
         case ignoreList = "ignore_list"
     }
@@ -197,7 +112,6 @@ public struct RustPreferencesDocument: Equatable, Codable, Sendable {
         self.history = try container.decodeIfPresent(RustHistoryPreferences.self, forKey: .history) ?? RustHistoryPreferences()
         self.appearance = try container.decodeIfPresent(RustAppearancePreferences.self, forKey: .appearance) ?? RustAppearancePreferences()
         self.linkPreview = try container.decodeIfPresent(RustLinkPreviewPreferences.self, forKey: .linkPreview) ?? RustLinkPreviewPreferences()
-        self.sync = try container.decodeIfPresent(RustSyncPreferences.self, forKey: .sync) ?? RustSyncPreferences()
         self.shortcuts = try container.decodeIfPresent(RustShortcutsPreferences.self, forKey: .shortcuts) ?? RustShortcutsPreferences()
         self.ignoreList = try container.decodeIfPresent(RustIgnoreListPreferences.self, forKey: .ignoreList) ?? RustIgnoreListPreferences()
     }
@@ -305,70 +219,6 @@ public struct RustAppearancePreferences: Equatable, Codable, Sendable {
         case mode
         case itemDensity = "item_density"
         case previewPopoverEnabled = "preview_popover_enabled"
-    }
-}
-
-public struct RustSyncPreferences: Equatable, Codable, Sendable {
-    public var enabled: Bool
-    public var serverURL: String
-    public var syncID: String?
-    public var deviceID: String?
-    public var deviceToken: String?
-    public var deviceName: String
-    public var p2pEnabled: Bool
-    public var downloadPathMode: String
-    public var endpointID: String?
-
-    public init(
-        enabled: Bool = false,
-        serverURL: String = "",
-        syncID: String? = nil,
-        deviceID: String? = nil,
-        deviceToken: String? = nil,
-        deviceName: String = RustSyncPreferences.defaultDeviceName(),
-        p2pEnabled: Bool = true,
-        downloadPathMode: String = "auto",
-        endpointID: String? = nil
-    ) {
-        self.enabled = enabled
-        self.serverURL = serverURL
-        self.syncID = syncID
-        self.deviceID = deviceID
-        self.deviceToken = deviceToken
-        self.deviceName = deviceName
-        self.p2pEnabled = p2pEnabled
-        self.downloadPathMode = downloadPathMode
-        self.endpointID = endpointID
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case enabled
-        case serverURL = "server_url"
-        case syncID = "sync_id"
-        case deviceID = "device_id"
-        case deviceToken = "device_token"
-        case deviceName = "device_name"
-        case p2pEnabled = "p2p_enabled"
-        case downloadPathMode = "download_path_mode"
-        case endpointID = "endpoint_id"
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
-        self.serverURL = try container.decodeIfPresent(String.self, forKey: .serverURL) ?? ""
-        self.syncID = try container.decodeIfPresent(String.self, forKey: .syncID)
-        self.deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID)
-        self.deviceToken = try container.decodeIfPresent(String.self, forKey: .deviceToken)
-        self.deviceName = try container.decodeIfPresent(String.self, forKey: .deviceName)
-            ?? RustSyncPreferences.defaultDeviceName()
-        self.p2pEnabled = try container.decodeIfPresent(Bool.self, forKey: .p2pEnabled) ?? true
-        self.downloadPathMode = try container.decodeIfPresent(String.self, forKey: .downloadPathMode) ?? "auto"
-        self.endpointID = try container.decodeIfPresent(String.self, forKey: .endpointID)
-    }
-
-    public static func defaultDeviceName() -> String {
-        Host.current().localizedName ?? "Mac"
     }
 }
 
@@ -1334,176 +1184,6 @@ public struct RustCaptureFilesRequest: Equatable, Sendable {
 
 public typealias RustCaptureFilesResult = RustCaptureTextResult
 
-public struct RustSyncLocalPendingRequest: Equatable, Encodable, Sendable {
-    public let syncID: String
-    public let contentHash: String
-    public let itemID: String?
-    public let clientEventID: String
-
-    public init(syncID: String, contentHash: String, itemID: String?, clientEventID: String) {
-        self.syncID = syncID
-        self.contentHash = contentHash
-        self.itemID = itemID
-        self.clientEventID = clientEventID
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case syncID = "sync_id"
-        case contentHash = "content_hash"
-        case itemID = "item_id"
-        case clientEventID = "client_event_id"
-    }
-}
-
-public struct RustSyncApplyEventsRequest: Equatable, Encodable, Sendable {
-    public let syncID: String
-    public let deviceID: String
-    public let events: [RustSyncEventRecord]
-    public let nextCursor: Int64
-
-    public init(syncID: String, deviceID: String, events: [RustSyncEventRecord], nextCursor: Int64) {
-        self.syncID = syncID
-        self.deviceID = deviceID
-        self.events = events
-        self.nextCursor = nextCursor
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case syncID = "sync_id"
-        case deviceID = "device_id"
-        case events
-        case nextCursor = "next_cursor"
-    }
-}
-
-public struct RustSyncEventRecord: Equatable, Encodable, Sendable {
-    public let serverSeq: Int64
-    public let deviceID: String
-    public let clientEventID: String
-    public let eventType: String
-    public let contentHash: String
-    public let itemType: String?
-    public let payload: [String: SyncEventPayloadValue]?
-    public let copyCountDelta: Int64?
-    public let createdAtMs: Int64
-
-    public init(
-        serverSeq: Int64,
-        deviceID: String,
-        clientEventID: String,
-        eventType: String,
-        contentHash: String,
-        itemType: String?,
-        payload: [String: SyncEventPayloadValue]?,
-        copyCountDelta: Int64?,
-        createdAtMs: Int64
-    ) {
-        self.serverSeq = serverSeq
-        self.deviceID = deviceID
-        self.clientEventID = clientEventID
-        self.eventType = eventType
-        self.contentHash = contentHash
-        self.itemType = itemType
-        self.payload = payload
-        self.copyCountDelta = copyCountDelta
-        self.createdAtMs = createdAtMs
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case serverSeq = "server_seq"
-        case deviceID = "device_id"
-        case clientEventID = "client_event_id"
-        case eventType = "type"
-        case contentHash = "content_hash"
-        case itemType = "item_type"
-        case payload
-        case copyCountDelta = "copy_count_delta"
-        case createdAtMs = "created_at_ms"
-    }
-}
-
-public struct RustSyncApplySnapshotRequest: Equatable, Encodable, Sendable {
-    public let syncID: String
-    public let deviceID: String
-    public let snapshotSeq: Int64
-    public let items: [RustSyncSnapshotItemRecord]
-    public let tombstones: [RustSyncSnapshotTombstoneRecord]
-
-    public init(
-        syncID: String,
-        deviceID: String,
-        snapshotSeq: Int64,
-        items: [RustSyncSnapshotItemRecord],
-        tombstones: [RustSyncSnapshotTombstoneRecord]
-    ) {
-        self.syncID = syncID
-        self.deviceID = deviceID
-        self.snapshotSeq = snapshotSeq
-        self.items = items
-        self.tombstones = tombstones
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case syncID = "sync_id"
-        case deviceID = "device_id"
-        case snapshotSeq = "snapshot_seq"
-        case items
-        case tombstones
-    }
-}
-
-public struct RustSyncSnapshotItemRecord: Equatable, Encodable, Sendable {
-    public let contentHash: String
-    public let itemType: String
-    public let payload: [String: SyncEventPayloadValue]
-    public let copyCount: Int64
-    public let updatedAtMs: Int64
-    public let lastServerSeq: Int64
-
-    public init(
-        contentHash: String,
-        itemType: String,
-        payload: [String: SyncEventPayloadValue],
-        copyCount: Int64,
-        updatedAtMs: Int64,
-        lastServerSeq: Int64
-    ) {
-        self.contentHash = contentHash
-        self.itemType = itemType
-        self.payload = payload
-        self.copyCount = copyCount
-        self.updatedAtMs = updatedAtMs
-        self.lastServerSeq = lastServerSeq
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case contentHash = "content_hash"
-        case itemType = "item_type"
-        case payload
-        case copyCount = "copy_count"
-        case updatedAtMs = "updated_at_ms"
-        case lastServerSeq = "last_server_seq"
-    }
-}
-
-public struct RustSyncSnapshotTombstoneRecord: Equatable, Encodable, Sendable {
-    public let contentHash: String
-    public let deletedAtMs: Int64
-    public let lastServerSeq: Int64
-
-    public init(contentHash: String, deletedAtMs: Int64, lastServerSeq: Int64) {
-        self.contentHash = contentHash
-        self.deletedAtMs = deletedAtMs
-        self.lastServerSeq = lastServerSeq
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case contentHash = "content_hash"
-        case deletedAtMs = "deleted_at_ms"
-        case lastServerSeq = "last_server_seq"
-    }
-}
-
 public struct RustCoreError: Error, Equatable, Sendable {
     public let code: String
     public let messageKey: String
@@ -1938,69 +1618,6 @@ public struct RustCoreClient: Sendable {
         }
     }
 
-    public func getSyncProgress(
-        appSupportDirectory: URL,
-        syncID: String,
-        deviceID: String
-    ) -> Result<RustSyncProgressResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            let result = get_sync_progress(appSupportPath, syncID, deviceID)
-            guard result.ok else {
-                return .failure(Self.makeError(
-                    code: result.error_code.toString(),
-                    messageKey: result.message_key.toString()
-                ))
-            }
-            return .success(RustSyncProgressResult(
-                cursor: result.cursor,
-                snapshotSeq: result.snapshot_seq
-            ))
-        }
-    }
-
-    public func markSyncLocalPending(
-        appSupportDirectory: URL,
-        request: RustSyncLocalPendingRequest
-    ) -> Result<RustItemManagementResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            switch Self.encodeBridgeJSON(request) {
-            case .success(let json):
-                let result = mark_sync_local_pending(appSupportPath, json)
-                return decodeItemManagementResult(result)
-            case .failure(let error):
-                return .failure(error)
-            }
-        }
-    }
-
-    public func applySyncEvents(
-        appSupportDirectory: URL,
-        request: RustSyncApplyEventsRequest
-    ) -> Result<RustSyncApplyResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            switch Self.encodeBridgeJSON(request) {
-            case .success(let json):
-                return decodeSyncApplyResult(apply_sync_events(appSupportPath, json))
-            case .failure(let error):
-                return .failure(error)
-            }
-        }
-    }
-
-    public func applySyncSnapshot(
-        appSupportDirectory: URL,
-        request: RustSyncApplySnapshotRequest
-    ) -> Result<RustSyncApplyResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            switch Self.encodeBridgeJSON(request) {
-            case .success(let json):
-                return decodeSyncApplyResult(apply_sync_snapshot(appSupportPath, json))
-            case .failure(let error):
-                return .failure(error)
-            }
-        }
-    }
-
     public func claimLinkMetadataFetchBatch(
         appSupportDirectory: URL,
         limit: Int64 = 3,
@@ -2080,90 +1697,6 @@ public struct RustCoreClient: Sendable {
         }
     }
 
-    public func startP2PNode(
-        appSupportDirectory: URL,
-        timeoutMs: Int64 = 10_000
-    ) -> Result<RustP2PNodeResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            decodeP2PNodeResult(start_p2p_node(appSupportPath, timeoutMs))
-        }
-    }
-
-    public func stopP2PNode(
-        timeoutMs: Int64 = 5_000
-    ) -> Result<RustP2PNodeResult, RustCoreError> {
-        decodeP2PNodeResult(stop_p2p_node(timeoutMs))
-    }
-
-    public func provideP2PFile(
-        appSupportDirectory: URL,
-        fileURL: URL,
-        timeoutMs: Int64 = 30_000
-    ) -> Result<RustP2PProvideResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            let result = provide_p2p_file(appSupportPath, fileURL.path, timeoutMs)
-            guard result.ok else {
-                return .failure(Self.makeError(
-                    code: result.error_code.toString(),
-                    messageKey: result.message_key.toString()
-                ))
-            }
-            return .success(RustP2PProvideResult(
-                assetID: result.asset_id.toString(),
-                blobHash: result.blob_hash.toString(),
-                blobTicket: result.blob_ticket.toString(),
-                byteCount: result.byte_count
-            ))
-        }
-    }
-
-    public func downloadP2PFile(
-        appSupportDirectory: URL,
-        blobTicket: String,
-        outputURL: URL,
-        timeoutMs: Int64 = 60_000
-    ) -> Result<RustP2PDownloadResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            let result = download_p2p_file(appSupportPath, blobTicket, outputURL.path, timeoutMs)
-            guard result.ok else {
-                return .failure(Self.makeError(
-                    code: result.error_code.toString(),
-                    messageKey: result.message_key.toString()
-                ))
-            }
-            return .success(RustP2PDownloadResult(
-                outputPath: result.output_path.toString(),
-                blobHash: result.blob_hash.toString(),
-                localBytes: result.local_bytes,
-                downloadedBytes: result.downloaded_bytes,
-                elapsedMs: result.elapsed_ms
-            ))
-        }
-    }
-
-    public func probeP2PTicket(
-        appSupportDirectory: URL,
-        blobTicket: String,
-        timeoutMs: Int64 = 10_000
-    ) -> Result<RustP2PProbeResult, RustCoreError> {
-        withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
-            let result = probe_p2p_ticket(appSupportPath, blobTicket, timeoutMs)
-            guard result.ok else {
-                return .failure(Self.makeError(
-                    code: result.error_code.toString(),
-                    messageKey: result.message_key.toString()
-                ))
-            }
-            return .success(RustP2PProbeResult(
-                reachable: result.reachable,
-                remoteNodeID: result.remote_node_id.toString(),
-                pathType: result.path_type.toString(),
-                connectMs: result.connect_ms,
-                rttMs: result.rtt_ms
-            ))
-        }
-    }
-
     private func decodePreferencesResult(
         _ result: CorePreferencesResult
     ) -> Result<RustPreferencesResult, RustCoreError> {
@@ -2185,56 +1718,6 @@ public struct RustCoreClient: Sendable {
                     preferences: preferences
                 )
             )
-        case .failure(let error):
-            return .failure(error)
-        }
-    }
-
-    private func decodeP2PNodeResult(
-        _ result: CoreP2PNodeResult
-    ) -> Result<RustP2PNodeResult, RustCoreError> {
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-        let directAddressesJSON = result.direct_addresses_json.toString()
-        let directAddresses: [String]
-        if directAddressesJSON.isEmpty {
-            directAddresses = []
-        } else {
-            switch Self.decodeBridgeJSON(directAddressesJSON, as: [String].self) {
-            case .success(let value):
-                directAddresses = value
-            case .failure(let error):
-                return .failure(error)
-            }
-        }
-        let relayURL = result.relay_url.toString()
-        return .success(RustP2PNodeResult(
-            endpointID: result.endpoint_id.toString(),
-            relayURL: relayURL.isEmpty ? nil : relayURL,
-            directAddresses: directAddresses
-        ))
-    }
-
-    private func decodeSyncApplyResult(
-        _ result: CoreSyncApplyResult
-    ) -> Result<RustSyncApplyResult, RustCoreError> {
-        guard result.ok else {
-            return .failure(Self.makeError(
-                code: result.error_code.toString(),
-                messageKey: result.message_key.toString()
-            ))
-        }
-        switch Self.decodeBridgeJSON(result.changed_item_ids_json.toString(), as: [String].self) {
-        case .success(let changedItemIds):
-            return .success(RustSyncApplyResult(
-                cursor: result.cursor,
-                snapshotSeq: result.snapshot_seq,
-                changedItemIds: changedItemIds
-            ))
         case .failure(let error):
             return .failure(error)
         }

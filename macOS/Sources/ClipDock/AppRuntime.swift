@@ -339,7 +339,6 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     var onRuntimeAction: ((PanelRuntimeAction) -> Void)?
-    var syncStatusProvider: (RustClipboardItemSummary) -> PanelItemSyncStatus = { _ in .none }
     var onHeightResizeBegan: (() -> Void)?
     var onHeightResizeChanged: ((CGFloat) -> Void)?
     var onHeightResizeEnded: (() -> Void)?
@@ -1606,14 +1605,6 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         }
     }
 
-    func setSyncStatusProvider(_ provider: @escaping (RustClipboardItemSummary) -> PanelItemSyncStatus) {
-        syncStatusProvider = provider
-    }
-
-    func refreshSyncStatusDecorations() {
-        renderCurrentItems(scrollSelectedItem: false, preserveScrollPosition: true)
-    }
-
     private func shouldEmitLoadMoreForCurrentThreshold(reachedLoadMoreThreshold: Bool) -> Bool {
         guard reachedLoadMoreThreshold else { return false }
         let viewState = panelViewState()
@@ -2822,8 +2813,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 toolTip: nil,
                 onSelect: nil,
                 onDoubleClick: nil,
-                onContextMenu: nil,
-                onRetrySync: nil
+                onContextMenu: nil
             )
         )
     }
@@ -2838,8 +2828,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 toolTip: callbacks.toolTip,
                 onSelect: callbacks.onSelect,
                 onDoubleClick: callbacks.onDoubleClick,
-                onContextMenu: callbacks.onContextMenu,
-                onRetrySync: callbacks.onRetrySync
+                onContextMenu: callbacks.onContextMenu
             )
         )
     }
@@ -2848,8 +2837,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         PanelItemCardViewStateAdapter.makeViewState(
             for: item,
             selectedItemID: panelViewState().selectedItemID,
-            selectedItemIDs: panelViewState().selectedItemIDs,
-            syncStatus: syncStatusProvider(item)
+            selectedItemIDs: panelViewState().selectedItemIDs
         )
     }
 
@@ -2859,8 +2847,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         toolTip: String?,
         onSelect: (NSEvent) -> Void,
         onDoubleClick: () -> Void,
-        onContextMenu: (NSEvent) -> Void,
-        onRetrySync: () -> Void
+        onContextMenu: (NSEvent) -> Void
     ) {
         (
             toolTip: nil,
@@ -2872,9 +2859,6 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             },
             onContextMenu: { [weak self] event in
                 self?.showManagementMenu(for: item, event: event)
-            },
-            onRetrySync: { [weak self] in
-                self?.onRuntimeAction?(.retrySync(contentHash: item.contentHash))
             }
         )
     }

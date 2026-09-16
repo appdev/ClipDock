@@ -1,5 +1,5 @@
 //! System tray icon and menu. Provides quick access to panel visibility,
-//! manual sync, preferences, diagnostics, and quit. Menu items that need the
+//! preferences, diagnostics, and quit. Menu items that need the
 //! webview (preferences, diagnostics) emit events the frontend handles; the
 //! rest act directly on the backend.
 
@@ -14,10 +14,14 @@ pub const EVENT_COPY_DIAGNOSTICS: &str = "clipdock://copy-diagnostics";
 pub fn setup_tray(app: &App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show_panel", "显示面板", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide_panel", "隐藏面板", true, None::<&str>)?;
-    let sync_now = MenuItem::with_id(app, "sync_now", "立即同步", true, None::<&str>)?;
     let preferences = MenuItem::with_id(app, "preferences", "偏好设置…", true, None::<&str>)?;
-    let diagnostics =
-        MenuItem::with_id(app, "copy_diagnostics", "复制剪贴板诊断信息", true, None::<&str>)?;
+    let diagnostics = MenuItem::with_id(
+        app,
+        "copy_diagnostics",
+        "复制剪贴板诊断信息",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -26,7 +30,6 @@ pub fn setup_tray(app: &App) -> tauri::Result<()> {
             &show,
             &hide,
             &PredefinedMenuItem::separator(app)?,
-            &sync_now,
             &preferences,
             &diagnostics,
             &PredefinedMenuItem::separator(app)?,
@@ -59,9 +62,6 @@ fn handle_menu_event(app: &tauri::AppHandle, id: &str) {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
             }
-        }
-        "sync_now" => {
-            crate::sync::trigger_sync_now(app.clone());
         }
         "preferences" => {
             let _ = app.emit(EVENT_OPEN_PREFERENCES, ());

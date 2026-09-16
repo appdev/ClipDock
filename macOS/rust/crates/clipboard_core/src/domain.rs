@@ -261,138 +261,6 @@ pub struct SourceAppPage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncProgress {
-    pub sync_id: String,
-    pub device_id: String,
-    pub cursor: i64,
-    pub snapshot_seq: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncLocalPendingRequest {
-    pub sync_id: String,
-    pub content_hash: String,
-    pub item_id: Option<String>,
-    pub client_event_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncApplyEventsRequest {
-    pub sync_id: String,
-    pub device_id: String,
-    pub events: Vec<SyncEventRecord>,
-    pub next_cursor: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncEventRecord {
-    pub server_seq: i64,
-    pub device_id: String,
-    pub client_event_id: String,
-    #[serde(rename = "type")]
-    pub event_type: String,
-    pub content_hash: String,
-    pub item_type: Option<String>,
-    pub payload: Option<serde_json::Value>,
-    pub copy_count_delta: Option<i64>,
-    pub created_at_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncApplySnapshotRequest {
-    pub sync_id: String,
-    pub device_id: String,
-    pub snapshot_seq: i64,
-    pub items: Vec<SyncSnapshotItemRecord>,
-    pub tombstones: Vec<SyncSnapshotTombstoneRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncSnapshotItemRecord {
-    pub content_hash: String,
-    pub item_type: String,
-    pub payload: serde_json::Value,
-    pub copy_count: i64,
-    pub updated_at_ms: i64,
-    pub last_server_seq: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncSnapshotTombstoneRecord {
-    pub content_hash: String,
-    pub deleted_at_ms: i64,
-    pub last_server_seq: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncApplyOutcome {
-    pub cursor: i64,
-    pub snapshot_seq: i64,
-    pub changed_item_ids: Vec<String>,
-}
-
-/// A locally captured item that is pending upload to the sync server, already
-/// shaped into the wire payload other devices expect. Asset-backed types
-/// (image, file) are excluded until P2P/server asset transfer is wired up.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncPendingEvent {
-    pub content_hash: String,
-    pub item_type: String,
-    pub payload: serde_json::Value,
-    pub copy_count_delta: i64,
-    pub client_event_id: String,
-}
-
-/// Acknowledgement that a pending event was accepted by the server, used to
-/// transition its local state from `local_pending_upload` to `synced_local`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncUploadedEvent {
-    pub content_hash: String,
-    pub server_seq: i64,
-}
-
-/// A synced remote image whose full-resolution payload has not been fetched
-/// over P2P yet. `source_payload_json` carries the event payload (including the
-/// blob ticket) the client uses to download it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncPendingPayload {
-    pub item_id: String,
-    pub content_hash: String,
-    pub asset_id: String,
-    pub mime_type: String,
-    pub source_payload_json: String,
-}
-
-/// A synced remote image whose thumbnail has not yet been downloaded locally.
-/// The client fetches `digest` from the server and calls
-/// `attach_remote_thumbnail` to make it display.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncPendingThumbnail {
-    pub item_id: String,
-    pub content_hash: String,
-    pub digest: String,
-    pub mime_type: String,
-    pub width: i64,
-    pub height: i64,
-}
-
-/// A locally captured image pending upload. Unlike text, image events require
-/// a thumbnail to be generated and uploaded before the event can be built, so
-/// these are surfaced separately with the payload asset location.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncPendingImage {
-    pub content_hash: String,
-    pub item_id: String,
-    pub summary: String,
-    pub payload_relative_path: String,
-    pub width: i64,
-    pub height: i64,
-    pub byte_count: i64,
-    pub mime_type: String,
-    pub client_event_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PinboardSummary {
     pub id: String,
     pub title: String,
@@ -643,8 +511,6 @@ pub struct PreferencesDocument {
     #[serde(default)]
     pub link_preview: LinkPreviewPreferences,
     #[serde(default)]
-    pub sync: SyncPreferences,
-    #[serde(default)]
     pub shortcuts: ShortcutsPreferences,
     #[serde(default)]
     pub ignore_list: IgnoreListPreferences,
@@ -657,7 +523,6 @@ impl Default for PreferencesDocument {
             history: HistoryPreferences::default(),
             appearance: AppearancePreferences::default(),
             link_preview: LinkPreviewPreferences::default(),
-            sync: SyncPreferences::default(),
             shortcuts: ShortcutsPreferences::default(),
             ignore_list: IgnoreListPreferences::default(),
         }
@@ -681,20 +546,6 @@ impl PreferencesDocument {
             &["compact", "standard"],
             "standard",
         );
-        self.sync.server_url = normalize_single_line_string(self.sync.server_url, 512);
-        self.sync.sync_id = normalize_optional_single_line_string(self.sync.sync_id, 256);
-        self.sync.device_id = normalize_optional_single_line_string(self.sync.device_id, 256);
-        self.sync.device_token = normalize_optional_single_line_string(self.sync.device_token, 512);
-        self.sync.device_name = normalize_single_line_string(self.sync.device_name, 120);
-        if self.sync.device_name.is_empty() {
-            self.sync.device_name = default_sync_device_name();
-        }
-        self.sync.download_path_mode = normalized_choice(
-            &self.sync.download_path_mode,
-            &["auto", "p2p_only", "server_only"],
-            "auto",
-        );
-        self.sync.endpoint_id = normalize_optional_single_line_string(self.sync.endpoint_id, 256);
         self.shortcuts.open_panel = normalize_optional_keyboard_shortcut(
             self.shortcuts.open_panel,
             default_open_panel_shortcut(),
@@ -855,44 +706,6 @@ impl Default for LinkPreviewPreferences {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncPreferences {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub server_url: String,
-    #[serde(default)]
-    pub sync_id: Option<String>,
-    #[serde(default)]
-    pub device_id: Option<String>,
-    #[serde(default)]
-    pub device_token: Option<String>,
-    #[serde(default = "default_sync_device_name")]
-    pub device_name: String,
-    #[serde(default = "default_true")]
-    pub p2p_enabled: bool,
-    #[serde(default = "default_sync_download_path_mode")]
-    pub download_path_mode: String,
-    #[serde(default)]
-    pub endpoint_id: Option<String>,
-}
-
-impl Default for SyncPreferences {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            server_url: String::new(),
-            sync_id: None,
-            device_id: None,
-            device_token: None,
-            device_name: default_sync_device_name(),
-            p2p_enabled: true,
-            download_path_mode: default_sync_download_path_mode(),
-            endpoint_id: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IgnoreListPreferences {
     #[serde(default = "default_ignored_app_identifiers")]
     pub ignored_app_identifiers: Vec<String>,
@@ -941,14 +754,6 @@ fn default_appearance_mode() -> String {
 
 fn default_item_density() -> String {
     "standard".to_string()
-}
-
-fn default_sync_device_name() -> String {
-    "Mac".to_string()
-}
-
-fn default_sync_download_path_mode() -> String {
-    "auto".to_string()
 }
 
 fn default_open_panel_shortcut() -> KeyboardShortcut {
@@ -1104,22 +909,4 @@ fn normalize_string_list(
     }
 
     normalized_values
-}
-
-fn normalize_single_line_string(value: String, maximum_length: usize) -> String {
-    value
-        .trim()
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(maximum_length)
-        .collect()
-}
-
-fn normalize_optional_single_line_string(
-    value: Option<String>,
-    maximum_length: usize,
-) -> Option<String> {
-    value
-        .map(|value| normalize_single_line_string(value, maximum_length))
-        .filter(|value| !value.is_empty())
 }

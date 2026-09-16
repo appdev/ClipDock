@@ -48,20 +48,17 @@ struct PanelItemCollectionCallbacks {
     let onSelect: ((NSEvent) -> Void)?
     let onDoubleClick: (() -> Void)?
     let onContextMenu: ((NSEvent) -> Void)?
-    let onRetrySync: (() -> Void)?
 
     init(
         toolTip: String?,
         onSelect: ((NSEvent) -> Void)?,
         onDoubleClick: (() -> Void)?,
-        onContextMenu: ((NSEvent) -> Void)?,
-        onRetrySync: (() -> Void)? = nil
+        onContextMenu: ((NSEvent) -> Void)?
     ) {
         self.toolTip = toolTip
         self.onSelect = onSelect
         self.onDoubleClick = onDoubleClick
         self.onContextMenu = onContextMenu
-        self.onRetrySync = onRetrySync
     }
 }
 
@@ -123,8 +120,7 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
             toolTip: entry.callbacks.toolTip,
             onSelect: entry.callbacks.onSelect,
             onDoubleClick: entry.callbacks.onDoubleClick,
-            onContextMenu: entry.callbacks.onContextMenu,
-            onRetrySync: entry.callbacks.onRetrySync
+            onContextMenu: entry.callbacks.onContextMenu
         )
         let rootView = renderedCard.view
         rootView.translatesAutoresizingMaskIntoConstraints = false

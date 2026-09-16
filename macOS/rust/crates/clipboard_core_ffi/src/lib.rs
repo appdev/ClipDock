@@ -5,14 +5,9 @@ use clipboard_core::{
     FailPendingImagePayloadRequest, ItemManagementResult, ItemQuery, LinkMetadataFetchCandidate,
     LinkMetadataState, MaintenanceResult, PageRequest, PendingImageCaptureResult,
     PendingImageCompletionResult, PinboardPage, PreferencesDocument, RecoverPendingImagesRequest,
-    SourceConfidence, SyncApplyEventsRequest, SyncApplyOutcome, SyncApplySnapshotRequest,
-    SyncLocalPendingRequest, SyncProgress,
+    SourceConfidence,
 };
 use serde::Deserialize;
-
-// P2P blob transport lives in the shared `clipdock_p2p` crate so the Windows
-// client uses the exact same iroh-blobs transfer logic.
-use clipdock_p2p as p2p_node;
 
 #[swift_bridge::bridge]
 mod ffi {
@@ -96,26 +91,6 @@ mod ffi {
     }
 
     #[swift_bridge(swift_repr = "struct")]
-    struct CoreSyncProgressResult {
-        ok: bool,
-        cursor: i64,
-        snapshot_seq: i64,
-        progress_json: String,
-        error_code: String,
-        message_key: String,
-    }
-
-    #[swift_bridge(swift_repr = "struct")]
-    struct CoreSyncApplyResult {
-        ok: bool,
-        cursor: i64,
-        snapshot_seq: i64,
-        changed_item_ids_json: String,
-        error_code: String,
-        message_key: String,
-    }
-
-    #[swift_bridge(swift_repr = "struct")]
     struct CoreWebPEncodeResult {
         ok: bool,
         bytes: Vec<u8>,
@@ -158,51 +133,6 @@ mod ffi {
     struct CorePendingImageResult {
         ok: bool,
         result_json: String,
-        error_code: String,
-        message_key: String,
-    }
-
-    #[swift_bridge(swift_repr = "struct")]
-    struct CoreP2PNodeResult {
-        ok: bool,
-        endpoint_id: String,
-        relay_url: String,
-        direct_addresses_json: String,
-        error_code: String,
-        message_key: String,
-    }
-
-    #[swift_bridge(swift_repr = "struct")]
-    struct CoreP2PProvideResult {
-        ok: bool,
-        asset_id: String,
-        blob_hash: String,
-        blob_ticket: String,
-        byte_count: i64,
-        error_code: String,
-        message_key: String,
-    }
-
-    #[swift_bridge(swift_repr = "struct")]
-    struct CoreP2PDownloadResult {
-        ok: bool,
-        output_path: String,
-        blob_hash: String,
-        local_bytes: i64,
-        downloaded_bytes: i64,
-        elapsed_ms: i64,
-        error_code: String,
-        message_key: String,
-    }
-
-    #[swift_bridge(swift_repr = "struct")]
-    struct CoreP2PProbeResult {
-        ok: bool,
-        reachable: bool,
-        remote_node_id: String,
-        path_type: String,
-        connect_ms: i64,
-        rtt_ms: i64,
         error_code: String,
         message_key: String,
     }
@@ -287,20 +217,6 @@ mod ffi {
             source_app_id: String,
             search_text: String,
         ) -> CoreItemManagementResult;
-        fn get_sync_progress(
-            app_support_dir: String,
-            sync_id: String,
-            device_id: String,
-        ) -> CoreSyncProgressResult;
-        fn mark_sync_local_pending(
-            app_support_dir: String,
-            request_json: String,
-        ) -> CoreItemManagementResult;
-        fn apply_sync_events(app_support_dir: String, request_json: String) -> CoreSyncApplyResult;
-        fn apply_sync_snapshot(
-            app_support_dir: String,
-            request_json: String,
-        ) -> CoreSyncApplyResult;
         fn claim_link_metadata_fetch_batch(
             app_support_dir: String,
             limit: i64,
@@ -387,119 +303,6 @@ mod ffi {
             pasteboard_change_count: i64,
             self_write_token: String,
         ) -> CoreCaptureResult;
-        fn start_p2p_node(app_support_dir: String, timeout_ms: i64) -> CoreP2PNodeResult;
-        fn stop_p2p_node(timeout_ms: i64) -> CoreP2PNodeResult;
-        fn provide_p2p_file(
-            app_support_dir: String,
-            file_path: String,
-            timeout_ms: i64,
-        ) -> CoreP2PProvideResult;
-        fn download_p2p_file(
-            app_support_dir: String,
-            blob_ticket: String,
-            output_path: String,
-            timeout_ms: i64,
-        ) -> CoreP2PDownloadResult;
-        fn probe_p2p_ticket(
-            app_support_dir: String,
-            blob_ticket: String,
-            timeout_ms: i64,
-        ) -> CoreP2PProbeResult;
-    }
-}
-
-fn start_p2p_node(app_support_dir: String, timeout_ms: i64) -> ffi::CoreP2PNodeResult {
-    p2p_node_result(p2p_node::start_node(app_support_dir, timeout_ms))
-}
-
-fn stop_p2p_node(timeout_ms: i64) -> ffi::CoreP2PNodeResult {
-    p2p_node_result(p2p_node::stop_node(timeout_ms))
-}
-
-fn provide_p2p_file(
-    app_support_dir: String,
-    file_path: String,
-    timeout_ms: i64,
-) -> ffi::CoreP2PProvideResult {
-    p2p_provide_result(p2p_node::provide_file(
-        app_support_dir,
-        file_path,
-        timeout_ms,
-    ))
-}
-
-fn download_p2p_file(
-    app_support_dir: String,
-    blob_ticket: String,
-    output_path: String,
-    timeout_ms: i64,
-) -> ffi::CoreP2PDownloadResult {
-    p2p_download_result(p2p_node::download_file(
-        app_support_dir,
-        blob_ticket,
-        output_path,
-        timeout_ms,
-    ))
-}
-
-fn probe_p2p_ticket(
-    app_support_dir: String,
-    blob_ticket: String,
-    timeout_ms: i64,
-) -> ffi::CoreP2PProbeResult {
-    p2p_probe_result(p2p_node::probe_ticket(
-        app_support_dir,
-        blob_ticket,
-        timeout_ms,
-    ))
-}
-
-fn p2p_node_result(result: p2p_node::P2PNodeOutcome) -> ffi::CoreP2PNodeResult {
-    ffi::CoreP2PNodeResult {
-        ok: result.ok,
-        endpoint_id: result.endpoint_id,
-        relay_url: result.relay_url,
-        direct_addresses_json: result.direct_addresses_json,
-        error_code: result.error_code,
-        message_key: result.message_key,
-    }
-}
-
-fn p2p_provide_result(result: p2p_node::P2PProvideOutcome) -> ffi::CoreP2PProvideResult {
-    ffi::CoreP2PProvideResult {
-        ok: result.ok,
-        asset_id: result.asset_id,
-        blob_hash: result.blob_hash,
-        blob_ticket: result.blob_ticket,
-        byte_count: result.byte_count,
-        error_code: result.error_code,
-        message_key: result.message_key,
-    }
-}
-
-fn p2p_download_result(result: p2p_node::P2PDownloadOutcome) -> ffi::CoreP2PDownloadResult {
-    ffi::CoreP2PDownloadResult {
-        ok: result.ok,
-        output_path: result.output_path,
-        blob_hash: result.blob_hash,
-        local_bytes: result.local_bytes,
-        downloaded_bytes: result.downloaded_bytes,
-        elapsed_ms: result.elapsed_ms,
-        error_code: result.error_code,
-        message_key: result.message_key,
-    }
-}
-
-fn p2p_probe_result(result: p2p_node::P2PProbeOutcome) -> ffi::CoreP2PProbeResult {
-    ffi::CoreP2PProbeResult {
-        ok: result.ok,
-        reachable: result.reachable,
-        remote_node_id: result.remote_node_id,
-        path_type: result.path_type,
-        connect_ms: result.connect_ms,
-        rtt_ms: result.rtt_ms,
-        error_code: result.error_code,
-        message_key: result.message_key,
     }
 }
 
@@ -727,101 +530,6 @@ fn clear_items(
     }
 }
 
-fn get_sync_progress(
-    app_support_dir: String,
-    sync_id: String,
-    device_id: String,
-) -> ffi::CoreSyncProgressResult {
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.get_sync_progress(sync_id, device_id))
-    {
-        Ok(progress) => sync_progress_result(progress),
-        Err(error) => ffi::CoreSyncProgressResult {
-            ok: false,
-            cursor: 0,
-            snapshot_seq: 0,
-            progress_json: "{}".to_string(),
-            error_code: error.code.as_str().to_string(),
-            message_key: error.message_key().to_string(),
-        },
-    }
-}
-
-fn mark_sync_local_pending(
-    app_support_dir: String,
-    request_json: String,
-) -> ffi::CoreItemManagementResult {
-    let request = match serde_json::from_str::<SyncLocalPendingRequest>(&request_json) {
-        Ok(request) => request,
-        Err(_) => return invalid_item_management_input(),
-    };
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.mark_sync_local_pending(request))
-    {
-        Ok(result) => item_management_result(result),
-        Err(error) => item_management_error_result(error),
-    }
-}
-
-fn apply_sync_events(app_support_dir: String, request_json: String) -> ffi::CoreSyncApplyResult {
-    let request = match serde_json::from_str::<SyncApplyEventsRequest>(&request_json) {
-        Ok(request) => request,
-        Err(_) => return sync_apply_error("invalid_input", "clipboard.error.invalid_input"),
-    };
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.apply_sync_events(request))
-    {
-        Ok(outcome) => sync_apply_result(outcome),
-        Err(error) => sync_apply_error(error.code.as_str(), error.message_key()),
-    }
-}
-
-fn apply_sync_snapshot(app_support_dir: String, request_json: String) -> ffi::CoreSyncApplyResult {
-    let request = match serde_json::from_str::<SyncApplySnapshotRequest>(&request_json) {
-        Ok(request) => request,
-        Err(_) => return sync_apply_error("invalid_input", "clipboard.error.invalid_input"),
-    };
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.apply_sync_snapshot(request))
-    {
-        Ok(outcome) => sync_apply_result(outcome),
-        Err(error) => sync_apply_error(error.code.as_str(), error.message_key()),
-    }
-}
-
-fn sync_progress_result(progress: SyncProgress) -> ffi::CoreSyncProgressResult {
-    ffi::CoreSyncProgressResult {
-        ok: true,
-        cursor: progress.cursor,
-        snapshot_seq: progress.snapshot_seq,
-        progress_json: serde_json::to_string(&progress).unwrap_or_else(|_| "{}".to_string()),
-        error_code: String::new(),
-        message_key: String::new(),
-    }
-}
-
-fn sync_apply_result(outcome: SyncApplyOutcome) -> ffi::CoreSyncApplyResult {
-    ffi::CoreSyncApplyResult {
-        ok: true,
-        cursor: outcome.cursor,
-        snapshot_seq: outcome.snapshot_seq,
-        changed_item_ids_json: serde_json::to_string(&outcome.changed_item_ids)
-            .unwrap_or_else(|_| "[]".to_string()),
-        error_code: String::new(),
-        message_key: String::new(),
-    }
-}
-
-fn sync_apply_error(error_code: &str, message_key: &str) -> ffi::CoreSyncApplyResult {
-    ffi::CoreSyncApplyResult {
-        ok: false,
-        cursor: 0,
-        snapshot_seq: 0,
-        changed_item_ids_json: "[]".to_string(),
-        error_code: error_code.to_string(),
-        message_key: message_key.to_string(),
-    }
-}
-
 fn claim_link_metadata_fetch_batch(
     app_support_dir: String,
     limit: i64,
@@ -910,15 +618,6 @@ fn item_management_error_result(error: clipboard_core::CoreError) -> ffi::CoreIt
         affected_count: 0,
         error_code: error.code.as_str().to_string(),
         message_key: error.message_key().to_string(),
-    }
-}
-
-fn invalid_item_management_input() -> ffi::CoreItemManagementResult {
-    ffi::CoreItemManagementResult {
-        ok: false,
-        affected_count: 0,
-        error_code: "invalid_input".to_string(),
-        message_key: "clipboard.error.invalid_input".to_string(),
     }
 }
 
@@ -1666,8 +1365,6 @@ fn parse_item_type(value: &str) -> Option<ClipboardItemType> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clipboard_core::{ItemQuery, PageRequest};
-    use serde_json::json;
 
     #[test]
     fn rasterizes_static_svg_to_png() {
@@ -1711,49 +1408,5 @@ mod tests {
         assert!(result.ok, "{}", result.error_code);
         assert_eq!(result.width, 128);
         assert_eq!(result.height, 128);
-    }
-
-    #[test]
-    fn apply_sync_events_bridge_inserts_remote_text() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let content_hash = "b".repeat(64);
-        let created_at_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
-        let request = json!({
-            "sync_id": "sync_main",
-            "device_id": "dev_mac",
-            "events": [{
-                "server_seq": 1,
-                "device_id": "dev_android",
-                "client_event_id": "android-1",
-                "type": "item_upsert",
-                "content_hash": format!("blake3:{content_hash}"),
-                "item_type": "text",
-                "payload": {
-                    "text": "remote bridge text",
-                    "source_app_name": "Android"
-                },
-                "copy_count_delta": 1,
-                "created_at_ms": created_at_ms
-            }],
-            "next_cursor": 1
-        });
-        let request_json = request.to_string();
-        let temp_path = temp_dir.path().to_string_lossy().into_owned();
-        let result = apply_sync_events(temp_path.clone(), request_json);
-
-        assert!(result.ok, "{}", result.error_code);
-        assert_eq!(result.cursor, 1);
-        let core = clipboard_core::ClipboardCore::open(temp_path).unwrap();
-        let page = core
-            .list_items(ItemQuery::default(), PageRequest::default())
-            .unwrap();
-        assert_eq!(page.total_count, 1);
-        assert_eq!(
-            page.items[0].primary_text.as_deref(),
-            Some("remote bridge text")
-        );
     }
 }

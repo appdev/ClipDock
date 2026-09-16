@@ -4,6 +4,17 @@ import Testing
 
 struct RustCoreClientTests {
     @Test
+    func legacySyncPreferencesDecodeWithoutRestoringSyncConfiguration() throws {
+        let data = Data(#"{"appearance":{"mode":"dark","item_density":"standard","preview_popover_enabled":true},"sync":{"enabled":true,"server_url":"https://example.invalid"}}"#.utf8)
+        let preferences = try JSONDecoder().decode(RustPreferencesDocument.self, from: data)
+
+        #expect(preferences.appearance.mode == "dark")
+        let encoded = try JSONEncoder().encode(preferences)
+        let document = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(document["sync"] == nil)
+    }
+
+    @Test
     func rustCoreClientIsSendable() {
         func requireSendable<T: Sendable>(_: T.Type) {}
         requireSendable(RustCoreClient.self)
@@ -53,7 +64,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 15)
+        #expect(value.schemaVersion == 16)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -71,51 +82,6 @@ struct RustCoreClientTests {
         #expect(value.totalCount == 0)
         #expect(!value.hasMore)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
-    }
-
-    @Test
-    func appliesRemoteSyncEventThroughSwiftBridgeBinding() throws {
-        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let client = RustCoreClient()
-        let contentHash = String(repeating: "b", count: 64)
-        let eventTimeMs = Int64(Date().timeIntervalSince1970 * 1000)
-
-        let request = RustSyncApplyEventsRequest(
-            syncID: "sync_main",
-            deviceID: "dev_mac",
-            events: [
-                RustSyncEventRecord(
-                    serverSeq: 1,
-                    deviceID: "dev_android",
-                    clientEventID: "android-1",
-                    eventType: "item_upsert",
-                    contentHash: "blake3:\(contentHash)",
-                    itemType: "text",
-                    payload: [
-                        "text": .string("remote bridge text"),
-                        "source_app_name": .string("Android")
-                    ],
-                    copyCountDelta: 1,
-                    createdAtMs: eventTimeMs
-                )
-            ],
-            nextCursor: 1
-        )
-        let result = try client.applySyncEvents(
-            appSupportDirectory: tempDirectory,
-            request: request
-        ).get()
-        let page = try client.listItems(appSupportDirectory: tempDirectory).get()
-        let progress = try client.getSyncProgress(
-            appSupportDirectory: tempDirectory,
-            syncID: "sync_main",
-            deviceID: "dev_mac"
-        ).get()
-        #expect(result.cursor == 1)
-        #expect(result.changedItemIds == ["item_\(String(contentHash.prefix(24)))"])
-        #expect(progress.cursor == 1)
-        #expect(page.items.first?.primaryText == "remote bridge text")
     }
 
     @Test
@@ -857,7 +823,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 15)
+        #expect(result.schemaVersion == 16)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.general.copyCompletionHUDEnabled)
@@ -870,15 +836,6 @@ struct RustCoreClientTests {
         #expect(result.preferences.appearance.itemDensity == "standard")
         #expect(result.preferences.appearance.previewPopoverEnabled)
         #expect(result.preferences.linkPreview.webPreviewEnabled)
-        #expect(!result.preferences.sync.enabled)
-        #expect(result.preferences.sync.serverURL.isEmpty)
-        #expect(result.preferences.sync.syncID == nil)
-        #expect(result.preferences.sync.deviceID == nil)
-        #expect(result.preferences.sync.deviceToken == nil)
-        #expect(result.preferences.sync.deviceName == "Mac")
-        #expect(result.preferences.sync.p2pEnabled)
-        #expect(result.preferences.sync.downloadPathMode == "auto")
-        #expect(result.preferences.sync.endpointID == nil)
         #expect(result.preferences.shortcuts.openPanel?.keyCode == 7)
         #expect(result.preferences.shortcuts.openPanel?.modifiers == ["command", "shift"])
         #expect(result.preferences.shortcuts.previousPinboard?.keyCode == 123)
@@ -911,15 +868,6 @@ struct RustCoreClientTests {
         preferences.appearance.itemDensity = "compact"
         preferences.appearance.previewPopoverEnabled = false
         preferences.linkPreview.webPreviewEnabled = false
-        preferences.sync.enabled = true
-        preferences.sync.serverURL = " http://127.0.0.1:8787\n "
-        preferences.sync.syncID = " sync_a\n "
-        preferences.sync.deviceID = " dev_a\t "
-        preferences.sync.deviceToken = " cds_token\n "
-        preferences.sync.deviceName = " MacBook Pro\n "
-        preferences.sync.p2pEnabled = false
-        preferences.sync.downloadPathMode = "lan_first"
-        preferences.sync.endpointID = " endpoint_a\n "
         preferences.shortcuts.openPanel = RustKeyboardShortcut(
             keyCode: 11,
             modifiers: ["shift", "cmd", "alt", "command", "ignored"]
@@ -958,15 +906,6 @@ struct RustCoreClientTests {
         #expect(saved.preferences.appearance.itemDensity == "compact")
         #expect(!saved.preferences.appearance.previewPopoverEnabled)
         #expect(!saved.preferences.linkPreview.webPreviewEnabled)
-        #expect(saved.preferences.sync.enabled)
-        #expect(saved.preferences.sync.serverURL == "http://127.0.0.1:8787")
-        #expect(saved.preferences.sync.syncID == "sync_a")
-        #expect(saved.preferences.sync.deviceID == "dev_a")
-        #expect(saved.preferences.sync.deviceToken == "cds_token")
-        #expect(saved.preferences.sync.deviceName == "MacBook Pro")
-        #expect(!saved.preferences.sync.p2pEnabled)
-        #expect(saved.preferences.sync.downloadPathMode == "auto")
-        #expect(saved.preferences.sync.endpointID == "endpoint_a")
         #expect(saved.preferences.shortcuts.openPanel?.keyCode == 11)
         #expect(saved.preferences.shortcuts.openPanel?.modifiers == ["command", "option", "shift"])
         #expect(saved.preferences.shortcuts.quickPasteModifier == "control")
@@ -1034,7 +973,6 @@ struct RustCoreClientTests {
         #expect(preferences.ignoreList == RustIgnoreListPreferences())
         #expect(preferences.general.copyCompletionHUDEnabled)
         #expect(preferences.general.externalCopySoundEnabled)
-        #expect(preferences.sync == RustSyncPreferences())
         #expect(preferences.ignoreList.ignoredAppIdentifiers == RustIgnoreListPreferences.defaultIgnoredAppIdentifiers)
         #expect(preferences.shortcuts == RustShortcutsPreferences())
         #expect(!preferences.shortcuts.pasteDirectlyToTarget)

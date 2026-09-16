@@ -532,14 +532,6 @@ final class FloatingPanelController {
         contentView.updateLoadingMoreState(isLoading)
     }
 
-    func setSyncStatusProvider(_ provider: @escaping (RustClipboardItemSummary) -> PanelItemSyncStatus) {
-        contentView.setSyncStatusProvider(provider)
-    }
-
-    func refreshSyncStatusDecorations() {
-        contentView.refreshSyncStatusDecorations()
-    }
-
     func refreshPanelContentLayout() {
         contentView.updatePanelHeight(preferredHeight)
     }

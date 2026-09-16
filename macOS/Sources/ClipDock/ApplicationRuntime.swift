@@ -73,46 +73,6 @@ enum StatusItemClickAction: Equatable {
     case showMenu
 }
 
-private enum RuntimeSyncSettingsError: Error, Equatable {
-    case missingServerURL
-    case missingDeviceName
-    case missingPairingCode
-    case missingToken
-}
-
-private struct RuntimeSyncP2PNodeState: Sendable {
-    let node: RustP2PNodeResult?
-    let failureSummary: String?
-
-    static let disabled = RuntimeSyncP2PNodeState(node: nil, failureSummary: nil)
-}
-
-private struct RuntimeSyncP2PRegisteredProvider: Codable, Sendable {
-    let assetID: String
-    let kind: String
-    let byteCount: Int64?
-    let mimeType: String?
-    let blobTicket: String
-}
-
-private struct RuntimeSyncPushConfiguration: Sendable {
-    let serverURL: String
-    let token: String
-    let appSupportURL: URL
-    let preferences: RustPreferencesDocument
-}
-
-private enum RuntimeSyncOutboxError: Error, Equatable {
-    case invalidAssetKind(String)
-    case assetFileUnavailable(String)
-    case assetMetadataMismatch(String)
-}
-
-private struct RuntimePreparedSyncPushEvent: Sendable {
-    let pushEvent: SyncPushEvent
-    let followUpEvent: SyncOutboxEvent?
-}
-
 enum StatusItemClickActionPlanner {
     static func action(for eventType: NSEvent.EventType?) -> StatusItemClickAction {
         switch eventType {
@@ -165,11 +125,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sourceApplicationTracker = SourceApplicationTracker()
     private let clipboardMonitor = ClipboardMonitor()
     private let updateCoordinator = AppUpdateCoordinator()
-    private let syncServerClient = SyncServerClient()
-    private lazy var syncP2PAssetTransferService = SyncP2PAssetTransferService(
-        rustClient: rustCoreClient,
-        metadataClient: syncServerClient
-    )
     private let commandVKeystrokeSender: CommandVKeystrokeSending = SystemCommandVKeystrokeSender()
     private let databaseWorker = ClipboardCoreDatabaseWorker()
     private let captureRegistrationPipeline = ClipboardCaptureRegistrationPipeline()
@@ -197,17 +152,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastPanelToggleUptime: TimeInterval = 0
     private var directInsertTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
-    private var syncEndpointReportTask: Task<Void, Never>?
-    private var syncOutboxDrainTask: Task<Void, Never>?
-    private var syncOutboxDrainFireAtMs: Int64?
-    private var lastSyncEndpointReportSignature: String?
-    private var syncEventOutbox: SyncEventOutbox?
-    private var syncInboundCoordinator: SyncInboundCoordinator?
-    private var syncOutboxPausedForAuthFailure = false
-    private var syncCardStatusesByContentHash: [String: PanelItemSyncStatus] = [:]
-    private var pendingGlobalDeleteHashesByItemID: [String: String] = [:]
-    private var syncP2PRegisteredProviders: [String: RuntimeSyncP2PRegisteredProvider] = [:]
-    private var syncP2PProviderRegistryLoaded = false
     private let delegateInitUptime = ClipDockPerformanceLog.mark()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -257,10 +201,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startupTask?.cancel()
         captureRegistrationPipeline.cancel()
         directInsertTask?.cancel()
-        syncEndpointReportTask?.cancel()
-        syncOutboxDrainTask?.cancel()
-        syncOutboxDrainFireAtMs = nil
-        syncInboundCoordinator?.stop()
         Task { [linkMetadataCoordinator] in
             await linkMetadataCoordinator?.stop()
         }
@@ -423,8 +363,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureCoordinators(for appSupportURL: URL) {
-        configureSyncOutbox(for: appSupportURL)
-        configureSyncInboundCoordinator()
 
         let client = rustCoreClient
         let databaseWorker = databaseWorker
@@ -492,7 +430,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let pinboardID {
                     self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
                 } else {
-                    self?.enqueueCompletedGlobalDeleteSyncEvent(for: mutation)
                     self?.panelController.invalidateCachedListPages()
                 }
                 self?.refreshPinboards()
@@ -511,7 +448,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let pinboardID {
                     self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
                 } else {
-                    self?.enqueueCompletedGlobalDeleteSyncEvents(for: result.successfulRequests)
                     self?.panelController.invalidateCachedListPages()
                 }
                 self?.refreshPinboards()
@@ -634,563 +570,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func configureSyncOutbox(for appSupportURL: URL) {
-        let outbox = SyncEventOutbox(
-            fileURL: appSupportURL.appendingPathComponent("sync-outbox.json", isDirectory: false)
-        )
-        syncEventOutbox = outbox
-        syncOutboxPausedForAuthFailure = false
-
-        Task { @MainActor [weak self, outbox] in
-            _ = await outbox.load(nowMs: SyncOutboxClock.nowMs())
-            await self?.refreshSyncCardStatusesFromOutbox()
-            if let self {
-                self.synchronizeSyncInbound(preferences: self.currentPreferences)
-            }
-            try? await Task.sleep(nanoseconds: SyncOutboxTiming.startupScanDelayMs)
-            self?.scheduleSyncOutboxDrain(afterNanoseconds: 0)
-        }
-    }
-
-    private func configureSyncInboundCoordinator() {
-        syncInboundCoordinator = SyncInboundCoordinator(
-            rustClient: rustCoreClient,
-            syncClient: syncServerClient,
-            onItemsChanged: { [weak self] _ in
-                guard let self else { return }
-                self.panelController.invalidateCachedListPages()
-                self.refreshClipboardList()
-                self.refreshPinboards()
-            }
-        )
-    }
-
-    private func handleSyncPreferencesChanged(_ preferences: RustPreferencesDocument) {
-        if preferences.sync.enabled,
-           preferences.sync.serverURL.nonEmptyString != nil,
-           preferences.sync.deviceToken?.nonEmptyString != nil {
-            syncOutboxPausedForAuthFailure = false
-            scheduleSyncOutboxDrain(afterNanoseconds: 0)
-        } else {
-            syncOutboxDrainTask?.cancel()
-            syncOutboxDrainTask = nil
-            syncOutboxDrainFireAtMs = nil
-        }
-        synchronizeSyncInbound(preferences: preferences)
-    }
-
-    private func synchronizeSyncInbound(preferences: RustPreferencesDocument) {
-        guard let syncInboundCoordinator else { return }
-        guard let configuration = syncInboundConfiguration(preferences: preferences) else {
-            syncInboundCoordinator.stop()
-            return
-        }
-
-        Task { @MainActor [weak self, syncInboundCoordinator, configuration] in
-            let events = await self?.syncEventOutbox?.allEvents() ?? []
-            syncInboundCoordinator.backfillPendingOutbox(events, configuration: configuration)
-            syncInboundCoordinator.start(configuration: configuration)
-        }
-    }
-
-    private func syncInboundConfiguration(preferences: RustPreferencesDocument) -> SyncInboundConfiguration? {
-        guard preferences.sync.enabled,
-              let appSupportURL,
-              let serverURL = preferences.sync.serverURL.nonEmptyString,
-              let token = preferences.sync.deviceToken?.nonEmptyString,
-              let syncID = preferences.sync.syncID?.nonEmptyString,
-              let deviceID = preferences.sync.deviceID?.nonEmptyString else {
-            return nil
-        }
-        return SyncInboundConfiguration(
-            serverURL: serverURL,
-            token: token,
-            syncID: syncID,
-            deviceID: deviceID,
-            appSupportURL: appSupportURL
-        )
-    }
-
-    private func currentSyncPushConfiguration() -> RuntimeSyncPushConfiguration? {
-        guard currentPreferences.sync.enabled,
-              let appSupportURL,
-              let serverURL = currentPreferences.sync.serverURL.nonEmptyString,
-              let token = currentPreferences.sync.deviceToken?.nonEmptyString else {
-            return nil
-        }
-        return RuntimeSyncPushConfiguration(
-            serverURL: serverURL,
-            token: token,
-            appSupportURL: appSupportURL,
-            preferences: currentPreferences
-        )
-    }
-
-    private func enqueueSyncCandidateIfNeeded(_ candidate: ClipboardSyncCandidate?) {
-        guard let candidate,
-              syncEventOutbox != nil,
-              currentSyncPushConfiguration() != nil else {
-            return
-        }
-
-        let nowMs = SyncOutboxClock.nowMs()
-        let event = SyncOutboxEvent(
-            type: "item_upsert",
-            contentHash: candidate.contentHash,
-            itemType: candidate.itemType,
-            payload: candidate.payload,
-            copyCountDelta: candidate.copyCountDelta,
-            createdAt: nowMs,
-            nextAttemptAt: nowMs + SyncOutboxTiming.initialAttemptDelayMs,
-            assetRegistration: candidate.assetRegistration,
-            thumbnailUpload: candidate.thumbnailUpload
-        )
-
-        Task { @MainActor [weak self] in
-            guard let self,
-                  let outbox = self.syncEventOutbox else { return }
-            _ = await outbox.enqueue(event)
-            self.markSyncLocalPending(event: event, itemID: candidate.itemId)
-            await self.refreshSyncCardStatusesFromOutbox()
-            self.scheduleSyncOutboxDrain(afterNanoseconds: UInt64(SyncOutboxTiming.initialAttemptDelayMs) * 1_000_000)
-        }
-    }
-
-    private func enqueueSyncDeleteIfNeeded(contentHash: String) {
-        guard syncEventOutbox != nil,
-              currentSyncPushConfiguration() != nil,
-              contentHash.nonEmptyString != nil else {
-            return
-        }
-
-        let nowMs = SyncOutboxClock.nowMs()
-        let event = SyncOutboxEvent(
-            type: "item_delete",
-            contentHash: contentHash,
-            itemType: nil,
-            payload: nil,
-            copyCountDelta: nil,
-            createdAt: nowMs,
-            nextAttemptAt: nowMs + SyncOutboxTiming.initialAttemptDelayMs
-        )
-
-        Task { @MainActor [weak self] in
-            guard let self,
-                  let outbox = self.syncEventOutbox else { return }
-            _ = await outbox.enqueue(event)
-            self.markSyncLocalPending(event: event, itemID: nil)
-            self.scheduleSyncOutboxDrain(afterNanoseconds: UInt64(SyncOutboxTiming.initialAttemptDelayMs) * 1_000_000)
-        }
-    }
-
-    private func markSyncLocalPending(event: SyncOutboxEvent, itemID: String?) {
-        guard let configuration = syncInboundConfiguration(preferences: currentPreferences) else { return }
-        _ = rustCoreClient.markSyncLocalPending(
-            appSupportDirectory: configuration.appSupportURL,
-            request: RustSyncLocalPendingRequest(
-                syncID: configuration.syncID,
-                contentHash: event.contentHash,
-                itemID: itemID,
-                clientEventID: event.clientEventId
-            )
-        )
-    }
-
-    private func retrySync(contentHash: String) {
-        guard let outbox = syncEventOutbox else { return }
-        Task { @MainActor [weak self, outbox] in
-            guard let self else { return }
-            let changed = await outbox.forceRetryUpserts(
-                contentHash: contentHash,
-                nowMs: SyncOutboxClock.nowMs()
-            )
-            await self.refreshSyncCardStatusesFromOutbox()
-            guard changed else { return }
-            self.syncOutboxPausedForAuthFailure = false
-            self.scheduleSyncOutboxDrain(afterNanoseconds: 0)
-        }
-    }
-
-    private func scheduleSyncOutboxDrain(afterNanoseconds delayNanoseconds: UInt64?) {
-        guard syncEventOutbox != nil,
-              !syncOutboxPausedForAuthFailure else {
-            return
-        }
-
-        let delayNanoseconds = delayNanoseconds ?? 0
-        let targetFireAtMs = SyncOutboxClock.nowMs() + Int64(delayNanoseconds / 1_000_000)
-        if let existingFireAtMs = syncOutboxDrainFireAtMs,
-           existingFireAtMs <= targetFireAtMs,
-           syncOutboxDrainTask != nil {
-            return
-        }
-
-        syncOutboxDrainTask?.cancel()
-        syncOutboxDrainFireAtMs = targetFireAtMs
-        syncOutboxDrainTask = Task { @MainActor [weak self] in
-            if delayNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: delayNanoseconds)
-            }
-            guard !Task.isCancelled else { return }
-            self?.syncOutboxDrainTask = nil
-            self?.syncOutboxDrainFireAtMs = nil
-            await self?.drainSyncOutbox()
-        }
-    }
-
-    private func drainSyncOutbox() async {
-        guard let outbox = syncEventOutbox,
-              let configuration = currentSyncPushConfiguration(),
-              !syncOutboxPausedForAuthFailure else {
-            await refreshSyncCardStatusesFromOutbox()
-            return
-        }
-
-        guard let sendUnit = await outbox.nextDueSendUnit(nowMs: SyncOutboxClock.nowMs(), maxNormalBatchSize: 50) else {
-            await refreshSyncCardStatusesFromOutbox()
-            await scheduleNextSyncOutboxDrainIfNeeded()
-            return
-        }
-        await refreshSyncCardStatusesFromOutbox()
-
-        let minimumSpinnerUntilMs = SyncOutboxClock.nowMs() + 300
-        var pushEvents: [SyncPushEvent] = []
-        var followUpEvents: [SyncOutboxEvent] = []
-        var providerFailedEventIDs = Set<String>()
-
-        for event in sendUnit.events {
-            do {
-                let prepared = try await preparedPushEvent(from: event, configuration: configuration)
-                pushEvents.append(prepared.pushEvent)
-                if let followUpEvent = prepared.followUpEvent {
-                    followUpEvents.append(followUpEvent)
-                }
-            } catch {
-                providerFailedEventIDs.insert(event.clientEventId)
-                ClipDockPerformanceLog.event(
-                    "sync.outbox.prepareFailed",
-                    detail: "event=\(event.clientEventId) error=\(syncErrorSummary(error))"
-                )
-            }
-        }
-
-        if !providerFailedEventIDs.isEmpty {
-            await outbox.fail(
-                clientEventIds: providerFailedEventIDs,
-                nowMs: SyncOutboxClock.nowMs()
-            )
-            await refreshSyncCardStatusesFromOutbox()
-        }
-
-        guard !pushEvents.isEmpty else {
-            await scheduleNextSyncOutboxDrainIfNeeded()
-            return
-        }
-
-        do {
-            _ = try await syncServerClient.pushEvents(
-                serverURL: configuration.serverURL,
-                token: configuration.token,
-                events: pushEvents
-            )
-            await waitForMinimumSpinnerDisplay(untilMs: minimumSpinnerUntilMs)
-            let completedIDs = Set(pushEvents.map(\.clientEventId))
-            if followUpEvents.isEmpty {
-                await outbox.complete(clientEventIds: completedIDs)
-            } else {
-                do {
-                    try await outbox.completeAndEnqueueAtomically(
-                        clientEventIds: completedIDs,
-                        followUpEvents: followUpEvents
-                    )
-                } catch {
-                    await outbox.fail(
-                        clientEventIds: completedIDs,
-                        nowMs: SyncOutboxClock.nowMs()
-                    )
-                    ClipDockPerformanceLog.event(
-                        "sync.outbox.completeAndEnqueueFailed",
-                        detail: "events=\(completedIDs.count) followUps=\(followUpEvents.count) error=\(syncErrorSummary(error))"
-                    )
-                }
-            }
-            await refreshSyncCardStatusesFromOutbox()
-        } catch {
-            await waitForMinimumSpinnerDisplay(untilMs: minimumSpinnerUntilMs)
-            let failedIDs = Set(pushEvents.map(\.clientEventId))
-            if sendUnit.kind == .payloadAssetUpdate,
-               syncPayloadAssetUpdateErrorIsTerminal(error) {
-                await outbox.complete(clientEventIds: failedIDs)
-            } else {
-                let retryOverride = retryDelayOverrideMs(forSyncPushError: error)
-                await outbox.fail(
-                    clientEventIds: failedIDs,
-                    nowMs: SyncOutboxClock.nowMs(),
-                    retryDelayOverrideMs: retryOverride
-                )
-            }
-            if syncPushErrorRequiresAuthPause(error) {
-                syncOutboxPausedForAuthFailure = true
-            }
-            ClipDockPerformanceLog.event(
-                "sync.outbox.pushFailed",
-                detail: "events=\(failedIDs.count) error=\(syncErrorSummary(error))"
-            )
-            await refreshSyncCardStatusesFromOutbox()
-        }
-
-        await scheduleNextSyncOutboxDrainIfNeeded()
-    }
-
-    private func preparedPushEvent(
-        from event: SyncOutboxEvent,
-        configuration: RuntimeSyncPushConfiguration
-    ) async throws -> RuntimePreparedSyncPushEvent {
-        var payload = event.payload
-        if event.type == "item_upsert" {
-            payload = try await payloadWithUploadedThumbnail(
-                event: event,
-                payload: payload,
-                configuration: configuration
-            )
-            let hasThumbnail = payload?["thumbnail_digest"] != nil
-            if event.assetRegistration != nil,
-               payload?["payload_asset_id"] == nil {
-                do {
-                    payload = try await payloadWithRegisteredAsset(
-                        event: event,
-                        payload: payload,
-                        configuration: configuration
-                    )
-                } catch {
-                    guard event.itemType == "image", hasThumbnail else {
-                        throw error
-                    }
-                    return RuntimePreparedSyncPushEvent(
-                        pushEvent: pushEvent(from: event, payload: payload),
-                        followUpEvent: payloadAssetFollowUpEvent(from: event)
-                    )
-                }
-            }
-        } else if event.type == "item_payload_asset_update" {
-            payload = try await payloadWithRegisteredAsset(
-                event: event,
-                payload: payload,
-                configuration: configuration,
-                forceRegistration: true
-            )
-        }
-
-        return RuntimePreparedSyncPushEvent(
-            pushEvent: pushEvent(from: event, payload: payload),
-            followUpEvent: nil
-        )
-    }
-
-    private func pushEvent(
-        from event: SyncOutboxEvent,
-        payload: [String: SyncEventPayloadValue]?
-    ) -> SyncPushEvent {
-        SyncPushEvent(
-            clientEventId: event.clientEventId,
-            eventType: event.type,
-            contentHash: event.contentHash,
-            itemType: event.itemType,
-            payload: payload,
-            copyCountDelta: event.copyCountDelta
-        )
-    }
-
-    private func payloadWithUploadedThumbnail(
-        event: SyncOutboxEvent,
-        payload: [String: SyncEventPayloadValue]?,
-        configuration: RuntimeSyncPushConfiguration
-    ) async throws -> [String: SyncEventPayloadValue]? {
-        guard event.itemType == "image",
-              payload?["thumbnail_digest"] == nil,
-              let thumbnailUpload = event.thumbnailUpload else {
-            return payload
-        }
-
-        let fileURL = syncAssetFileURL(
-            from: thumbnailUpload.filePath,
-            appSupportURL: configuration.appSupportURL
-        )
-        let data: Data
-        do {
-            data = try Data(contentsOf: fileURL)
-        } catch {
-            throw RuntimeSyncOutboxError.assetFileUnavailable(thumbnailUpload.filePath)
-        }
-        guard data.count == thumbnailUpload.byteCount else {
-            throw RuntimeSyncOutboxError.assetMetadataMismatch(thumbnailUpload.filePath)
-        }
-        let digest = "blake3:\(rustCoreClient.blake3Digest(bytes: data))"
-        let uploaded = try await syncServerClient.uploadAsset(
-            serverURL: configuration.serverURL,
-            token: configuration.token,
-            digest: digest,
-            kind: "thumbnail",
-            mimeType: thumbnailUpload.mimeType,
-            width: thumbnailUpload.width,
-            height: thumbnailUpload.height,
-            bytes: data
-        )
-        guard uploaded.digest == digest,
-              uploaded.kind == "thumbnail",
-              uploaded.mimeType == thumbnailUpload.mimeType,
-              uploaded.sizeBytes == Int64(thumbnailUpload.byteCount),
-              uploaded.width == Int64(thumbnailUpload.width),
-              uploaded.height == Int64(thumbnailUpload.height) else {
-            throw RuntimeSyncOutboxError.assetMetadataMismatch(thumbnailUpload.filePath)
-        }
-
-        var resolvedPayload = payload ?? [:]
-        resolvedPayload["thumbnail_digest"] = .string(digest)
-        resolvedPayload["thumbnail_mime_type"] = .string(thumbnailUpload.mimeType)
-        resolvedPayload["thumbnail_byte_count"] = .int(Int64(thumbnailUpload.byteCount))
-        resolvedPayload["thumbnail_width"] = .int(Int64(thumbnailUpload.width))
-        resolvedPayload["thumbnail_height"] = .int(Int64(thumbnailUpload.height))
-        await syncEventOutbox?.updatePayload(
-            clientEventId: event.clientEventId,
-            payload: resolvedPayload
-        )
-        return resolvedPayload
-    }
-
-    private func payloadWithRegisteredAsset(
-        event: SyncOutboxEvent,
-        payload: [String: SyncEventPayloadValue]?,
-        configuration: RuntimeSyncPushConfiguration,
-        forceRegistration: Bool = false
-    ) async throws -> [String: SyncEventPayloadValue]? {
-        guard let assetRegistration = event.assetRegistration else {
-            return payload
-        }
-        if !forceRegistration, payload?["payload_asset_id"] != nil {
-            return payload
-        }
-
-        let kind = try syncP2PAssetKind(from: assetRegistration.kind)
-        let fileURL = syncAssetFileURL(
-            from: assetRegistration.filePath,
-            appSupportURL: configuration.appSupportURL
-        )
-        let registration = try await registerSyncP2PProvider(
-            fileURL: fileURL,
-            kind: kind,
-            mimeType: assetRegistration.mimeType,
-            preferences: configuration.preferences
-        )
-        var resolvedPayload = payload ?? [:]
-        resolvedPayload["payload_asset_id"] = .string(registration.provided.assetID)
-        resolvedPayload["asset_id"] = .string(registration.provided.assetID)
-        if event.type == "item_upsert", resolvedPayload["byte_count"] == nil {
-            resolvedPayload["byte_count"] = .int(registration.provided.byteCount)
-        }
-        await syncEventOutbox?.updatePayload(
-            clientEventId: event.clientEventId,
-            payload: resolvedPayload
-        )
-        return resolvedPayload
-    }
-
-    private func payloadAssetFollowUpEvent(from event: SyncOutboxEvent) -> SyncOutboxEvent {
-        let nowMs = SyncOutboxClock.nowMs()
-        return SyncOutboxEvent(
-            type: "item_payload_asset_update",
-            contentHash: event.contentHash,
-            itemType: "image",
-            payload: nil,
-            copyCountDelta: nil,
-            createdAt: nowMs,
-            nextAttemptAt: nowMs,
-            assetRegistration: event.assetRegistration
-        )
-    }
-
-    private func syncP2PAssetKind(from rawValue: String) throws -> SyncP2PAssetKind {
-        guard let kind = SyncP2PAssetKind(rawValue: rawValue) else {
-            throw RuntimeSyncOutboxError.invalidAssetKind(rawValue)
-        }
-        return kind
-    }
-
-    private func syncAssetFileURL(from path: String, appSupportURL: URL) -> URL {
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-        return appSupportURL.appendingPathComponent(path, isDirectory: false)
-    }
-
-    private func waitForMinimumSpinnerDisplay(untilMs minimumUntilMs: Int64) async {
-        let remainingMs = minimumUntilMs - SyncOutboxClock.nowMs()
-        guard remainingMs > 0 else { return }
-        try? await Task.sleep(nanoseconds: UInt64(remainingMs) * 1_000_000)
-    }
-
-    private func scheduleNextSyncOutboxDrainIfNeeded() async {
-        guard let outbox = syncEventOutbox,
-              !syncOutboxPausedForAuthFailure else { return }
-        let delay = await outbox.nextDelayNanoseconds(nowMs: SyncOutboxClock.nowMs())
-        if let delay {
-            scheduleSyncOutboxDrain(afterNanoseconds: delay)
-        }
-    }
-
-    private func refreshSyncCardStatusesFromOutbox() async {
-        let statuses = await syncEventOutbox?.itemStatusesByContentHash() ?? [:]
-        guard statuses != syncCardStatusesByContentHash else { return }
-        syncCardStatusesByContentHash = statuses
-        panelController.refreshSyncStatusDecorations()
-    }
-
-    private func clearSyncOutboxForDisconnectedSync() async {
-        syncOutboxDrainTask?.cancel()
-        syncOutboxDrainTask = nil
-        syncOutboxDrainFireAtMs = nil
-        syncOutboxPausedForAuthFailure = false
-        syncInboundCoordinator?.stop()
-        await syncEventOutbox?.clearAll()
-        await refreshSyncCardStatusesFromOutbox()
-    }
-
-    private func syncPushErrorRequiresAuthPause(_ error: Error) -> Bool {
-        guard let clientError = error as? SyncServerClientError,
-              case .httpStatus(let status, _) = clientError else {
-            return false
-        }
-        return status == 401 || status == 403
-    }
-
-    private func retryDelayOverrideMs(forSyncPushError error: Error) -> Int64? {
-        guard let clientError = error as? SyncServerClientError,
-              case .httpStatus(let status, let code) = clientError,
-              status == 409,
-              code == "item_deleted" else {
-            return nil
-        }
-        return SyncOutboxTiming.retryAfterItemDeletedConflictMs
-    }
-
-    private func syncPayloadAssetUpdateErrorIsTerminal(_ error: Error) -> Bool {
-        guard let clientError = error as? SyncServerClientError,
-              case .httpStatus(_, let code) = clientError else {
-            return false
-        }
-        return [
-            "payload_asset_update_must_be_single_event",
-            "payload_asset_update_copy_count_delta_not_allowed",
-            "payload_asset_update_invalid_item_type",
-            "invalid_payload_asset_update_payload",
-            "payload_asset_update_item_missing",
-            "payload_asset_update_item_deleted",
-            "payload_asset_update_item_type_mismatch",
-            "payload_asset_update_provider_wrong_device",
-            "payload_asset_update_provider_wrong_kind"
-        ].contains(code)
-    }
-
     private func shouldAcceptPanelToggle() -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
         guard now - lastPanelToggleUptime > PanelToggleDebounce.duplicateEventInterval else {
@@ -1276,14 +655,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.deleteItem(item, pinboardID: pinboardID)
             case .deleteItems(let items, let pinboardID):
                 self?.deleteItems(items, pinboardID: pinboardID)
-            case .retrySync(let contentHash):
-                self?.retrySync(contentHash: contentHash)
             case .loadMore:
                 self?.loadMoreClipboardItems()
             }
-        }
-        panelController.setSyncStatusProvider { [weak self] item in
-            self?.syncCardStatusesByContentHash[item.contentHash] ?? .none
         }
         preferencesController.onPreferencesChanged = { [weak self] preferences in
             self?.persistPreferences(preferences)
@@ -1299,36 +673,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         preferencesController.onAutomaticUpdateChecksChanged = { [weak self] isEnabled in
             self?.updateCoordinator.setAutomaticChecksEnabled(isEnabled)
-        }
-        preferencesController.onCreateSyncRequested = { [weak self] preferences in
-            guard let self else {
-                return SyncSettingsActionResult(preferences: nil, statusText: AppLocalization.text("sync.status.runtimeUnavailable", defaultValue: "同步：运行时不可用"), isError: true)
-            }
-            return await self.createSync(from: preferences)
-        }
-        preferencesController.onCreateSyncInviteRequested = { [weak self] preferences in
-            guard let self else {
-                return SyncSettingsActionResult(preferences: nil, statusText: AppLocalization.text("sync.status.runtimeUnavailable", defaultValue: "同步：运行时不可用"), isError: true)
-            }
-            return await self.createSyncInvite(from: preferences)
-        }
-        preferencesController.onJoinSyncRequested = { [weak self] preferences, pairingCode in
-            guard let self else {
-                return SyncSettingsActionResult(preferences: nil, statusText: AppLocalization.text("sync.status.runtimeUnavailable", defaultValue: "同步：运行时不可用"), isError: true)
-            }
-            return await self.joinSync(from: preferences, pairingCode: pairingCode)
-        }
-        preferencesController.onTestSyncRequested = { [weak self] preferences in
-            guard let self else {
-                return SyncSettingsActionResult(preferences: nil, statusText: AppLocalization.text("sync.status.runtimeUnavailable", defaultValue: "同步：运行时不可用"), isError: true)
-            }
-            return await self.testSyncConnection(from: preferences)
-        }
-        preferencesController.onDisconnectSyncRequested = { [weak self] preferences in
-            guard let self else {
-                return SyncSettingsActionResult(preferences: nil, statusText: AppLocalization.text("sync.status.runtimeUnavailable", defaultValue: "同步：运行时不可用"), isError: true)
-            }
-            return await self.disconnectSync(from: preferences)
         }
         updateCoordinator.onSettingsUpdateStatusChanged = { [weak self] status in
             self?.preferencesController.updateAppUpdateStatus(status)
@@ -1381,9 +725,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if pinboardID == nil && !item.isPinned {
-            pendingGlobalDeleteHashesByItemID[item.id] = item.contentHash
-        }
         performItemMutation(.delete(itemID: item.id, pinboardID: pinboardID))
     }
 
@@ -1393,32 +734,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        if pinboardID == nil {
-            for item in items {
-                if !item.isPinned {
-                    pendingGlobalDeleteHashesByItemID[item.id] = item.contentHash
-                }
-            }
-        }
         performItemBatchMutation(
             items.map { .delete(itemID: $0.id, pinboardID: pinboardID) },
             summaryKind: .delete(pinboardID: pinboardID)
         )
-    }
-
-    private func enqueueCompletedGlobalDeleteSyncEvent(for mutation: ClipboardItemMutationRequest) {
-        guard case .delete(let itemID, let pinboardID) = mutation,
-              pinboardID == nil,
-              let contentHash = pendingGlobalDeleteHashesByItemID.removeValue(forKey: itemID) else {
-            return
-        }
-        enqueueSyncDeleteIfNeeded(contentHash: contentHash)
-    }
-
-    private func enqueueCompletedGlobalDeleteSyncEvents(for mutations: [ClipboardItemMutationRequest]) {
-        for mutation in mutations {
-            enqueueCompletedGlobalDeleteSyncEvent(for: mutation)
-        }
     }
 
     private func performItemMutation(_ mutation: ClipboardItemMutationRequest) {
@@ -2336,509 +1655,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func createSync(from preferences: RustPreferencesDocument) async -> SyncSettingsActionResult {
-        do {
-            guard preferences.sync.syncID?.nonEmptyString == nil,
-                  preferences.sync.deviceID?.nonEmptyString == nil else {
-                return SyncSettingsActionResult(
-                    preferences: nil,
-                    statusText: AppLocalization.text("sync.status.alreadyCreated", defaultValue: "同步：已创建，请先断开当前同步"),
-                    isError: false
-                )
-            }
-            let settings = try preparedSyncSettings(from: preferences)
-            let result = try await syncServerClient.createSync(
-                serverURL: settings.serverURL,
-                deviceName: settings.deviceName
-            )
-
-            var nextPreferences = preferences
-            nextPreferences.sync.enabled = true
-            nextPreferences.sync.serverURL = settings.serverURL
-            nextPreferences.sync.syncID = result.syncID
-            nextPreferences.sync.deviceID = result.deviceID
-            nextPreferences.sync.deviceToken = result.token
-            nextPreferences.sync.deviceName = settings.deviceName
-            nextPreferences.sync.endpointID = settings.endpointID
-
-            let p2pNodeState = await startSyncP2PNodeIfNeeded(preferences: nextPreferences)
-            if let node = p2pNodeState.node {
-                nextPreferences.sync.endpointID = node.endpointID
-            }
-
-            guard let savedPreferences = persistPreferences(nextPreferences) else {
-                return SyncSettingsActionResult(
-                    preferences: nil,
-                    statusText: AppLocalization.text("sync.status.preferenceSaveFailed", defaultValue: "同步：偏好保存失败"),
-                    isError: true
-                )
-            }
-
-            let endpointStatus = await reportSyncEndpointStatus(
-                preferences: savedPreferences,
-                token: result.token,
-                p2pNodeState: p2pNodeState
-            )
-            return SyncSettingsActionResult(
-                preferences: savedPreferences,
-                statusText: AppLocalization.text("sync.status.created", defaultValue: "同步：已创建，请在其他设备输入配对码") + endpointStatus,
-                pairingCode: result.pairingCode,
-                pairingExpiresAtMs: result.pairingExpiresAtMs
-            )
-        } catch {
-            return SyncSettingsActionResult(preferences: nil, statusText: syncStatusText(for: error), isError: true)
-        }
-    }
-
-    private func createSyncInvite(from preferences: RustPreferencesDocument) async -> SyncSettingsActionResult {
-        do {
-            let settings = try preparedSyncSettings(from: preferences)
-            let token = try syncDeviceToken(from: preferences)
-            let result = try await syncServerClient.createInvite(
-                serverURL: settings.serverURL,
-                token: token
-            )
-            return SyncSettingsActionResult(
-                preferences: nil,
-                statusText: AppLocalization.text("sync.status.inviteCreated", defaultValue: "同步：已生成新的配对码"),
-                pairingCode: result.pairingCode,
-                pairingExpiresAtMs: result.pairingExpiresAtMs
-            )
-        } catch {
-            return SyncSettingsActionResult(preferences: nil, statusText: syncStatusText(for: error), isError: true)
-        }
-    }
-
-    private func joinSync(
-        from preferences: RustPreferencesDocument,
-        pairingCode: String
-    ) async -> SyncSettingsActionResult {
-        do {
-            let settings = try preparedSyncSettings(from: preferences)
-            let code = normalizedPairingCode(pairingCode)
-            guard !code.isEmpty else {
-                throw RuntimeSyncSettingsError.missingPairingCode
-            }
-            let result = try await syncServerClient.joinSync(
-                serverURL: settings.serverURL,
-                pairingCode: code,
-                deviceName: settings.deviceName
-            )
-
-            var nextPreferences = preferences
-            nextPreferences.sync.enabled = true
-            nextPreferences.sync.serverURL = settings.serverURL
-            nextPreferences.sync.syncID = result.syncID
-            nextPreferences.sync.deviceID = result.deviceID
-            nextPreferences.sync.deviceToken = result.token
-            nextPreferences.sync.deviceName = settings.deviceName
-            nextPreferences.sync.endpointID = settings.endpointID
-
-            let p2pNodeState = await startSyncP2PNodeIfNeeded(preferences: nextPreferences)
-            if let node = p2pNodeState.node {
-                nextPreferences.sync.endpointID = node.endpointID
-            }
-
-            guard let savedPreferences = persistPreferences(nextPreferences) else {
-                return SyncSettingsActionResult(
-                    preferences: nil,
-                    statusText: AppLocalization.text("sync.status.preferenceSaveFailed", defaultValue: "同步：偏好保存失败"),
-                    isError: true
-                )
-            }
-
-            let endpointStatus = await reportSyncEndpointStatus(
-                preferences: savedPreferences,
-                token: result.token,
-                p2pNodeState: p2pNodeState
-            )
-            return SyncSettingsActionResult(
-                preferences: savedPreferences,
-                statusText: AppLocalization.text("sync.status.joined", defaultValue: "同步：已加入") + endpointStatus,
-                clearsPairingCode: true
-            )
-        } catch {
-            return SyncSettingsActionResult(preferences: nil, statusText: syncStatusText(for: error), isError: true)
-        }
-    }
-
-    private func testSyncConnection(from preferences: RustPreferencesDocument) async -> SyncSettingsActionResult {
-        do {
-            let settings = try preparedSyncSettings(from: preferences)
-            let token = try syncDeviceToken(from: preferences)
-            let info = try await syncServerClient.info(serverURL: settings.serverURL, token: token)
-
-            var nextPreferences = preferences
-            nextPreferences.sync.enabled = true
-            nextPreferences.sync.serverURL = settings.serverURL
-            nextPreferences.sync.syncID = info.syncID
-            nextPreferences.sync.deviceID = info.deviceID
-            nextPreferences.sync.deviceToken = token
-            nextPreferences.sync.deviceName = info.deviceName
-            nextPreferences.sync.endpointID = settings.endpointID
-
-            let p2pNodeState = await startSyncP2PNodeIfNeeded(preferences: nextPreferences)
-            if let node = p2pNodeState.node {
-                nextPreferences.sync.endpointID = node.endpointID
-            }
-
-            guard let savedPreferences = persistPreferences(nextPreferences) else {
-                return SyncSettingsActionResult(
-                    preferences: nil,
-                    statusText: AppLocalization.text("sync.status.preferenceSaveFailed", defaultValue: "同步：偏好保存失败"),
-                    isError: true
-                )
-            }
-
-            let endpointStatus = await reportSyncEndpointStatus(
-                preferences: savedPreferences,
-                token: token,
-                p2pNodeState: p2pNodeState
-            )
-            return SyncSettingsActionResult(
-                preferences: savedPreferences,
-                statusText: AppLocalization.format("sync.status.connected", defaultValue: "同步：连接正常，P2P %@", info.p2pTransport) + endpointStatus
-            )
-        } catch {
-            return SyncSettingsActionResult(preferences: nil, statusText: syncStatusText(for: error), isError: true)
-        }
-    }
-
-    private func disconnectSync(from preferences: RustPreferencesDocument) async -> SyncSettingsActionResult {
-        lastSyncEndpointReportSignature = nil
-        syncEndpointReportTask?.cancel()
-        syncP2PRegisteredProviders.removeAll()
-        persistSyncP2PRegisteredProviders()
-        removeSyncP2PProviderRegistry()
-        await clearSyncOutboxForDisconnectedSync()
-
-        var nextPreferences = preferences
-        nextPreferences.sync.enabled = false
-        nextPreferences.sync.syncID = nil
-        nextPreferences.sync.deviceID = nil
-        nextPreferences.sync.deviceToken = nil
-        nextPreferences.sync.endpointID = nil
-
-        let savedPreferences = persistPreferences(nextPreferences) ?? nextPreferences
-        return SyncSettingsActionResult(
-            preferences: savedPreferences,
-            statusText: AppLocalization.text("sync.status.disconnected", defaultValue: "同步：已断开"),
-            clearsPairingCode: true
-        )
-    }
-
-    private func preparedSyncSettings(
-        from preferences: RustPreferencesDocument
-    ) throws -> (serverURL: String, deviceName: String, endpointID: String?) {
-        let serverURL = preferences.sync.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !serverURL.isEmpty else {
-            throw RuntimeSyncSettingsError.missingServerURL
-        }
-
-        var deviceName = preferences.sync.deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if (deviceName.isEmpty || deviceName == "Mac"),
-           preferences.sync.syncID == nil,
-           preferences.sync.deviceID == nil {
-            deviceName = RustSyncPreferences.defaultDeviceName()
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard !deviceName.isEmpty else {
-            throw RuntimeSyncSettingsError.missingDeviceName
-        }
-
-        let endpointID = preferences.sync.endpointID?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nonEmptyString
-        return (serverURL, deviceName, endpointID)
-    }
-
-    private func normalizedPairingCode(_ pairingCode: String) -> String {
-        pairingCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-    }
-
-    private func syncDeviceToken(from preferences: RustPreferencesDocument) throws -> String {
-        guard let token = preferences.sync.deviceToken?.nonEmptyString else {
-            throw RuntimeSyncSettingsError.missingToken
-        }
-        return token
-    }
-
-    private func reportSyncEndpointStatus(
-        preferences: RustPreferencesDocument,
-        token: String,
-        p2pNodeState: RuntimeSyncP2PNodeState? = nil
-    ) async -> String {
-        if let failureSummary = p2pNodeState?.failureSummary {
-            return AppLocalization.format(
-                "sync.status.p2pStartFailedSuffix",
-                defaultValue: "，P2P 启动失败：%@",
-                failureSummary
-            )
-        }
-        guard preferences.sync.enabled,
-              preferences.sync.p2pEnabled,
-              !preferences.sync.serverURL.isEmpty else {
-            return ""
-        }
-
-        let resolvedP2PNodeState: RuntimeSyncP2PNodeState
-        if let providedP2PNodeState = p2pNodeState {
-            resolvedP2PNodeState = providedP2PNodeState
-        } else {
-            resolvedP2PNodeState = await startSyncP2PNodeIfNeeded(preferences: preferences)
-        }
-        if let failureSummary = resolvedP2PNodeState.failureSummary {
-            return AppLocalization.format(
-                "sync.status.p2pStartFailedSuffix",
-                defaultValue: "，P2P 启动失败：%@",
-                failureSummary
-            )
-        }
-        let endpointID = resolvedP2PNodeState.node?.endpointID
-            ?? preferences.sync.endpointID?.nonEmptyString
-        guard let endpointID else { return "" }
-
-        do {
-            _ = try await syncServerClient.reportEndpoint(
-                serverURL: preferences.sync.serverURL,
-                token: token,
-                endpointID: endpointID,
-                relayURL: resolvedP2PNodeState.node?.relayURL,
-                directAddresses: resolvedP2PNodeState.node?.directAddresses ?? [],
-                pathType: "available"
-            )
-            lastSyncEndpointReportSignature = syncEndpointReportSignature(preferences: preferences)
-            return AppLocalization.text("sync.status.endpointRegisteredSuffix", defaultValue: "，P2P endpoint 已登记")
-        } catch {
-            return AppLocalization.format(
-                "sync.status.endpointRegisterFailedSuffix",
-                defaultValue: "，P2P endpoint 登记失败：%@",
-                syncErrorSummary(error)
-            )
-        }
-    }
-
-    private var syncP2PProviderRegistryURL: URL? {
-        appSupportURL?.appendingPathComponent("sync-p2p-providers.json", isDirectory: false)
-    }
-
-    private func loadSyncP2PRegisteredProvidersIfNeeded() {
-        guard !syncP2PProviderRegistryLoaded else { return }
-        syncP2PProviderRegistryLoaded = true
-        guard let registryURL = syncP2PProviderRegistryURL,
-              FileManager.default.fileExists(atPath: registryURL.path) else {
-            return
-        }
-
-        do {
-            let data = try Data(contentsOf: registryURL)
-            let providers = try JSONDecoder().decode([RuntimeSyncP2PRegisteredProvider].self, from: data)
-            for provider in providers where !provider.assetID.isEmpty && !provider.blobTicket.isEmpty {
-                syncP2PRegisteredProviders[provider.assetID] = provider
-            }
-            ClipDockPerformanceLog.event(
-                "sync.p2pProvider.registryLoaded",
-                detail: "count=\(providers.count)"
-            )
-        } catch {
-            ClipDockPerformanceLog.event(
-                "sync.p2pProvider.registryLoadFailed",
-                detail: syncErrorSummary(error)
-            )
-        }
-    }
-
-    private func persistSyncP2PRegisteredProviders() {
-        guard let registryURL = syncP2PProviderRegistryURL else { return }
-        do {
-            try FileManager.default.createDirectory(
-                at: registryURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let providers = syncP2PRegisteredProviders.values.sorted { $0.assetID < $1.assetID }
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(providers)
-            try data.write(to: registryURL, options: [.atomic])
-        } catch {
-            ClipDockPerformanceLog.event(
-                "sync.p2pProvider.registryPersistFailed",
-                detail: syncErrorSummary(error)
-            )
-        }
-    }
-
-    private func removeSyncP2PProviderRegistry() {
-        guard let registryURL = syncP2PProviderRegistryURL else { return }
-        do {
-            if FileManager.default.fileExists(atPath: registryURL.path) {
-                try FileManager.default.removeItem(at: registryURL)
-            }
-        } catch {
-            ClipDockPerformanceLog.event(
-                "sync.p2pProvider.registryRemoveFailed",
-                detail: syncErrorSummary(error)
-            )
-        }
-    }
-
-    private func scheduleSyncEndpointReport(preferences: RustPreferencesDocument) {
-        guard preferences.sync.enabled,
-              preferences.sync.p2pEnabled,
-              let signature = syncEndpointReportSignature(preferences: preferences),
-              signature != lastSyncEndpointReportSignature || syncEndpointReportTask == nil else {
-            if !preferences.sync.enabled || !preferences.sync.p2pEnabled {
-                syncEndpointReportTask?.cancel()
-                lastSyncEndpointReportSignature = nil
-            }
-            return
-        }
-
-        lastSyncEndpointReportSignature = signature
-        syncEndpointReportTask?.cancel()
-        let serverURL = preferences.sync.serverURL
-        let endpointID = preferences.sync.endpointID
-        guard let token = preferences.sync.deviceToken?.nonEmptyString else {
-            syncEndpointReportTask = nil
-            lastSyncEndpointReportSignature = nil
-            return
-        }
-        let appSupportURL = appSupportURL
-        let rustCoreClient = rustCoreClient
-        let syncServerClient = syncServerClient
-        syncEndpointReportTask = Task {
-            [weak self, serverURL, endpointID, token, appSupportURL, rustCoreClient, syncServerClient] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                var resolvedEndpointID = endpointID?.nonEmptyString
-                var relayURL: String?
-                var directAddresses: [String] = []
-                if let appSupportURL,
-                   case .success(let node) = await Task.detached(priority: .utility, operation: {
-                       rustCoreClient.startP2PNode(appSupportDirectory: appSupportURL)
-                   }).value {
-                    resolvedEndpointID = node.endpointID
-                    relayURL = node.relayURL
-                    directAddresses = node.directAddresses
-                }
-                if let resolvedEndpointID {
-                    _ = try? await syncServerClient.reportEndpoint(
-                        serverURL: serverURL,
-                        token: token,
-                        endpointID: resolvedEndpointID,
-                        relayURL: relayURL,
-                        directAddresses: directAddresses,
-                        pathType: "available"
-                    )
-                }
-
-                let providers = Array(self.syncP2PRegisteredProviders.values)
-                for provider in providers {
-                    _ = try? await syncServerClient.upsertAssetProvider(
-                        serverURL: serverURL,
-                        token: token,
-                        assetID: provider.assetID,
-                        kind: provider.kind,
-                        byteCount: provider.byteCount,
-                        mimeType: provider.mimeType,
-                        blobTicket: provider.blobTicket,
-                        availability: "online"
-                    )
-                }
-
-                do {
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
-                } catch {
-                    return
-                }
-            }
-        }
-    }
-
-    private func syncEndpointReportSignature(preferences: RustPreferencesDocument) -> String? {
-        let serverURL = preferences.sync.serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !serverURL.isEmpty,
-              let deviceID = preferences.sync.deviceID?.nonEmptyString else {
-            return nil
-        }
-        let endpointID = preferences.sync.endpointID?.nonEmptyString ?? "pending"
-        return "\(serverURL)|\(deviceID)|\(endpointID)"
-    }
-
-    private func startSyncP2PNodeIfNeeded(
-        preferences: RustPreferencesDocument
-    ) async -> RuntimeSyncP2PNodeState {
-        guard preferences.sync.enabled,
-              preferences.sync.p2pEnabled,
-              appSupportURL != nil else {
-            return .disabled
-        }
-        guard let appSupportURL else {
-            return .disabled
-        }
-        let rustCoreClient = rustCoreClient
-        let result = await Task.detached(priority: .utility) {
-            rustCoreClient.startP2PNode(appSupportDirectory: appSupportURL)
-        }.value
-        switch result {
-        case .success(let node):
-            return RuntimeSyncP2PNodeState(node: node, failureSummary: nil)
-        case .failure(let error):
-            return RuntimeSyncP2PNodeState(node: nil, failureSummary: syncErrorSummary(error))
-        }
-    }
-
-    private func syncStatusText(for error: Error) -> String {
-        AppLocalization.format("sync.status.error", defaultValue: "同步：%@", syncErrorSummary(error))
-    }
-
-    private func syncErrorSummary(_ error: Error) -> String {
-        if let settingsError = error as? RuntimeSyncSettingsError {
-            switch settingsError {
-            case .missingServerURL:
-                return AppLocalization.text("sync.error.missingServerURL", defaultValue: "请输入服务端地址")
-            case .missingDeviceName:
-                return AppLocalization.text("sync.error.missingDeviceName", defaultValue: "请输入本机名称")
-            case .missingPairingCode:
-                return AppLocalization.text("sync.error.missingPairingCode", defaultValue: "请输入 5 位同步码")
-            case .missingToken:
-                return AppLocalization.text("sync.error.missingToken", defaultValue: "缺少设备凭证，请重新创建或加入")
-            }
-        }
-
-        if let clientError = error as? SyncServerClientError {
-            switch clientError {
-            case .invalidBaseURL:
-                return AppLocalization.text("sync.error.invalidBaseURL", defaultValue: "服务端地址无效")
-            case .invalidResponse:
-                return AppLocalization.text("sync.error.invalidResponse", defaultValue: "服务端响应无效")
-            case .httpStatus(let status, let code):
-                return AppLocalization.format("sync.error.httpStatus", defaultValue: "服务端返回 %lld %@", Int64(status), code)
-            case .missingToken:
-                return AppLocalization.text("sync.error.missingToken", defaultValue: "缺少设备凭证，请重新创建或加入")
-            }
-        }
-
-        if let outboxError = error as? RuntimeSyncOutboxError {
-            switch outboxError {
-            case .invalidAssetKind(let kind):
-                return AppLocalization.format("sync.error.invalidAssetKind", defaultValue: "同步资产类型无效：%@", kind)
-            case .assetFileUnavailable(let path):
-                return AppLocalization.format("sync.error.assetFileUnavailable", defaultValue: "同步资产文件不可用：%@", path)
-            case .assetMetadataMismatch(let path):
-                return AppLocalization.format("sync.error.assetMetadataMismatch", defaultValue: "同步资产元数据不匹配：%@", path)
-            }
-        }
-
-        if let rustError = error as? RustCoreError {
-            return rustError.messageKey.isEmpty ? rustError.code : rustError.messageKey
-        }
-
-        return error.localizedDescription
-    }
-
     private func applyPreferencesState(
-        _ result: PreferencesSyncResult,
+        _ result: PreferencesApplyResult,
         updatePreferencesController: Bool
     ) {
         currentPreferences = result.preferences
@@ -2854,9 +1672,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { [linkMetadataCoordinator, preferences = result.preferences] in
             await linkMetadataCoordinator?.apply(preferences: preferences)
         }
-        loadSyncP2PRegisteredProvidersIfNeeded()
-        scheduleSyncEndpointReport(preferences: result.preferences)
-        handleSyncPreferencesChanged(result.preferences)
         if updatePreferencesController {
             preferencesController.updatePreferences(result.preferences)
         }
@@ -2974,7 +1789,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
 
-        enqueueSyncCandidateIfNeeded(result.syncCandidate)
     }
 
     private func captureClipboardText(
@@ -3110,8 +1924,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.schedulePendingImageCompletion(
                         image,
                         pendingImage: pendingImage,
-                        pendingCapture: pendingCapture,
-                        source: source
+                        pendingCapture: pendingCapture
                     )
 
                 case .failure(let error):
@@ -3136,10 +1949,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func schedulePendingImageCompletion(
         _ image: CapturedClipboardImage,
         pendingImage: ClipboardImageAssetProvider.PendingImageAsset,
-        pendingCapture: RustPendingImageCaptureResult,
-        source: ClipboardCaptureSource?
+        pendingCapture: RustPendingImageCaptureResult
     ) {
-        Task { @MainActor [weak self, image, pendingImage, pendingCapture, source] in
+        Task { @MainActor [weak self, image, pendingImage, pendingCapture] in
             guard let self,
                   let imageAssetProvider = self.imageAssetProvider,
                   let captureCoordinator = self.captureCoordinator
@@ -3160,19 +1972,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch captureCoordinator.completePendingImagePayload(payload.completedImage) {
                 case .success(let result):
                     self.applyCaptureResult(self.captureHandlingResult(for: result))
-                    if result.status == "ready" {
-                        let thumbnailUpload = await Task.detached(priority: .utility) {
-                            imageAssetProvider.syncThumbnailUpload(for: pendingImage.pendingImage)
-                        }.value
-                        self.enqueueSyncCandidateIfNeeded(self.syncCandidateForCompletedPendingImage(
-                            result: result,
-                            pendingCapture: pendingCapture,
-                            pendingImage: pendingImage.pendingImage,
-                            completedImage: payload.completedImage,
-                            thumbnailUpload: thumbnailUpload,
-                            source: source
-                        ))
-                    }
 
                 case .failure(let error):
                     self.failPendingImageCompletion(
@@ -3230,57 +2029,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func syncCandidateForCompletedPendingImage(
-        result: RustPendingImageCompletionResult,
-        pendingCapture: RustPendingImageCaptureResult,
-        pendingImage: ClipboardPendingImageAsset,
-        completedImage: ClipboardCompletedPendingImageAsset,
-        thumbnailUpload: SyncOutboxThumbnailUpload?,
-        source: ClipboardCaptureSource?
-    ) -> ClipboardSyncCandidate? {
-        let contentHash = result.contentHash?.nonEmptyString ?? pendingCapture.contentHash
-        let itemID = result.effectiveItemId?.nonEmptyString
-            ?? result.itemId?.nonEmptyString
-            ?? pendingCapture.itemId
-        let fileName = pendingImage.reservedPayloadRelativePath.lastPathComponentFallback(defaultValue: "image")
-        return ClipboardSyncCandidate(
-            itemId: itemID,
-            contentHash: contentHash,
-            itemType: "image",
-            payload: syncPayload(
-                [
-                    "file_name": .string(fileName),
-                    "summary": .string(fileName),
-                    "mime_type": .string(completedImage.mimeType),
-                    "byte_count": .int(Int64(completedImage.byteCount)),
-                    "width": .int(Int64(completedImage.width)),
-                    "height": .int(Int64(completedImage.height))
-                ],
-                source: source
-            ),
-            assetRegistration: SyncOutboxAssetRegistration(
-                filePath: pendingImage.reservedPayloadRelativePath,
-                kind: SyncP2PAssetKind.imagePayload.rawValue,
-                mimeType: completedImage.mimeType
-            ),
-            thumbnailUpload: thumbnailUpload
-        )
-    }
-
-    private func syncPayload(
-        _ values: [String: SyncEventPayloadValue],
-        source: ClipboardCaptureSource?
-    ) -> [String: SyncEventPayloadValue] {
-        var payload = values
-        if let appName = source?.appName?.nonEmptyString {
-            payload["source_app_name"] = .string(appName)
-        }
-        if let bundleId = source?.bundleId?.nonEmptyString {
-            payload["source_bundle_id"] = .string(bundleId)
-        }
-        return payload
-    }
-
     private func captureClipboardFiles(_ files: CapturedClipboardFiles, changeCount: Int) {
         let preferences = currentPreferences
         let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
@@ -3318,119 +2066,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 source: source
             )
             self.applyCaptureResult(captureResult)
-        }
-    }
-
-    private static func syncP2PRegularFileCandidate(
-        from files: CapturedClipboardFiles
-    ) -> (url: URL, mimeType: String?)? {
-        guard files.urls.count == 1,
-              let url = files.urls.first,
-              url.isFileURL else {
-            return nil
-        }
-        if files.fileItems.first?.isDirectory == true {
-            return nil
-        }
-        return (
-            url.standardizedFileURL,
-            syncP2PMimeType(
-                for: files.fileItems.first?.contentType,
-                fileURL: url
-            )
-        )
-    }
-
-    private static func syncP2PMimeType(
-        for contentType: String?,
-        fileURL: URL
-    ) -> String? {
-        if let contentType = contentType?.nonEmptyString {
-            if contentType.contains("/") {
-                return contentType
-            }
-            if let mimeType = UTType(contentType)?.preferredMIMEType {
-                return mimeType
-            }
-        }
-
-        let fileExtension = fileURL.pathExtension.nonEmptyString
-        guard let fileExtension,
-              let mimeType = UTType(filenameExtension: fileExtension)?.preferredMIMEType
-        else {
-            return nil
-        }
-        return mimeType
-    }
-
-    private func registerSyncP2PProvider(
-        fileURL: URL,
-        kind: SyncP2PAssetKind,
-        mimeType: String?,
-        preferences: RustPreferencesDocument
-    ) async throws -> SyncP2PAssetRegistrationResult {
-        guard preferences.sync.enabled,
-              preferences.sync.p2pEnabled,
-              let appSupportURL,
-              let token = preferences.sync.deviceToken?.nonEmptyString else {
-            throw SyncP2PAssetTransferError.p2pDisabled
-        }
-
-        let configuration = SyncP2PTransferConfiguration(
-            serverURL: preferences.sync.serverURL,
-            token: token,
-            currentDeviceID: preferences.sync.deviceID,
-            appSupportDirectory: appSupportURL,
-            p2pEnabled: preferences.sync.p2pEnabled
-        )
-        let result = try await syncP2PAssetTransferService.registerLocalProvider(
-            configuration: configuration,
-            fileURL: fileURL,
-            kind: kind,
-            mimeType: mimeType
-        )
-        syncP2PRegisteredProviders[result.provided.assetID] = RuntimeSyncP2PRegisteredProvider(
-            assetID: result.provided.assetID,
-            kind: kind.rawValue,
-            byteCount: result.provided.byteCount,
-            mimeType: mimeType,
-            blobTicket: result.provided.blobTicket
-        )
-        persistSyncP2PRegisteredProviders()
-        scheduleSyncEndpointReport(preferences: currentPreferences)
-        ClipDockPerformanceLog.event(
-            "sync.p2pProvider.registered",
-            detail: "assetID=\(result.provided.assetID) kind=\(kind.rawValue)"
-        )
-        return result
-    }
-
-    private func registerSyncP2PProviderIfNeeded(
-        fileURL: URL,
-        kind: SyncP2PAssetKind,
-        mimeType: String?,
-        preferences: RustPreferencesDocument
-    ) {
-        guard preferences.sync.enabled,
-              preferences.sync.p2pEnabled,
-              preferences.sync.deviceToken?.nonEmptyString != nil else {
-            return
-        }
-
-        Task(priority: .utility) {
-            do {
-                _ = try await self.registerSyncP2PProvider(
-                    fileURL: fileURL,
-                    kind: kind,
-                    mimeType: mimeType,
-                    preferences: preferences
-                )
-            } catch {
-                ClipDockPerformanceLog.event(
-                    "sync.p2pProvider.registerFailed",
-                    detail: "kind=\(kind.rawValue) error=\(syncErrorSummary(error))"
-                )
-            }
         }
     }
 
@@ -3756,47 +2391,6 @@ extension AppDelegate {
         configureCoordinators(for: appSupportURL)
     }
 
-    func smokePersistSyncP2PProviderForQA(
-        assetID: String,
-        kind: String,
-        byteCount: Int64?,
-        mimeType: String?,
-        blobTicket: String
-    ) {
-        syncP2PProviderRegistryLoaded = true
-        syncP2PRegisteredProviders[assetID] = RuntimeSyncP2PRegisteredProvider(
-            assetID: assetID,
-            kind: kind,
-            byteCount: byteCount,
-            mimeType: mimeType,
-            blobTicket: blobTicket
-        )
-        persistSyncP2PRegisteredProviders()
-    }
-
-    func smokeReloadSyncP2PProviderBlobTicketsForQA() -> [String: String] {
-        syncP2PRegisteredProviders.removeAll()
-        syncP2PProviderRegistryLoaded = false
-        loadSyncP2PRegisteredProvidersIfNeeded()
-        return Dictionary(
-            uniqueKeysWithValues: syncP2PRegisteredProviders.values.map { provider in
-                (provider.assetID, provider.blobTicket)
-            }
-        )
-    }
-
-    func smokeRemoveSyncP2PProviderRegistryForQA() {
-        syncP2PRegisteredProviders.removeAll()
-        removeSyncP2PProviderRegistry()
-    }
-
-    func smokeResolveSyncP2PMimeTypeForQA(
-        contentType: String?,
-        fileURL: URL
-    ) -> String? {
-        Self.syncP2PMimeType(for: contentType, fileURL: fileURL)
-    }
-
     func smokeConfigureStatusItemForRealFunctionQA() {
         configureStatusItem()
     }
@@ -3915,11 +2509,6 @@ extension AppDelegate {
         deleteItem(item, pinboardID: nil)
     }
 
-    func smokeSyncOutboxEventsForRealFunctionQA() async -> [SyncOutboxEvent] {
-        guard let syncEventOutbox else { return [] }
-        return await syncEventOutbox.allEvents()
-    }
-
     func smokeStoredItems() throws -> [RustClipboardItemSummary] {
         guard let appSupportURL else {
             throw NSError(
@@ -4021,16 +2610,5 @@ extension AppDelegate {
 private func fourCharCode(_ string: String) -> OSType {
     string.utf8.reduce(0) { result, character in
         (result << 8) + OSType(character)
-    }
-}
-
-private extension String {
-    var nonEmptyString: String? {
-        let value = trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
-
-    func lastPathComponentFallback(defaultValue: String) -> String {
-        (self as NSString).lastPathComponent.nonEmptyString ?? defaultValue
     }
 }

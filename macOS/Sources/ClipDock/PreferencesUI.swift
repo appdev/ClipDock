@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 
 enum PreferenceSection: Int, CaseIterable, Hashable {
     case general
-    case sync
     case appearance
     case history
     case shortcuts
@@ -17,7 +16,6 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
     static var allCases: [PreferenceSection] {
         [
             .general,
-            .sync,
             .rules,
             .shortcuts,
             .about
@@ -28,8 +26,6 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
         switch self {
         case .general:
             return AppLocalization.text("preferences.section.general", defaultValue: "通用")
-        case .sync:
-            return AppLocalization.text("preferences.section.sync", defaultValue: "同步")
         case .appearance:
             return AppLocalization.text("preferences.section.appearance", defaultValue: "外观")
         case .history:
@@ -47,8 +43,6 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
         switch self {
         case .general:
             return AppLocalization.text("preferences.section.general.subtitle", defaultValue: "启动、菜单栏、粘贴项目、复制提示、主题、预览与保留策略")
-        case .sync:
-            return AppLocalization.text("preferences.section.sync.subtitle", defaultValue: "连接自托管服务端并配置 P2P 元数据登记")
         case .appearance:
             return AppLocalization.text("preferences.section.appearance.subtitle", defaultValue: "主题与预览浮层")
         case .history:
@@ -66,8 +60,6 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
         switch self {
         case .general:
             return "gearshape"
-        case .sync:
-            return "arrow.triangle.2.circlepath"
         case .appearance:
             return "paintpalette"
         case .history:
@@ -468,36 +460,6 @@ final class PreferencesWindowController: NSWindowController {
         }
     }
 
-    var onCreateSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)? {
-        didSet {
-            viewModel.onCreateSyncRequested = onCreateSyncRequested
-        }
-    }
-
-    var onCreateSyncInviteRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)? {
-        didSet {
-            viewModel.onCreateSyncInviteRequested = onCreateSyncInviteRequested
-        }
-    }
-
-    var onJoinSyncRequested: ((RustPreferencesDocument, String) async -> SyncSettingsActionResult)? {
-        didSet {
-            viewModel.onJoinSyncRequested = onJoinSyncRequested
-        }
-    }
-
-    var onTestSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)? {
-        didSet {
-            viewModel.onTestSyncRequested = onTestSyncRequested
-        }
-    }
-
-    var onDisconnectSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)? {
-        didSet {
-            viewModel.onDisconnectSyncRequested = onDisconnectSyncRequested
-        }
-    }
-
     init() {
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Layout.defaultWindowSize),
@@ -568,10 +530,6 @@ final class PreferencesWindowController: NSWindowController {
         viewModel.updateAutomaticUpdateChecksEnabled(isEnabled)
     }
 
-    func updateSyncStatusText(_ statusText: String) {
-        viewModel.updateSyncStatusText(statusText)
-    }
-
     func exerciseForSmoke() {
         PreferenceSection.allCases.forEach { section in
             viewModel.selectSection(section)
@@ -621,22 +579,6 @@ final class PreferencesWindowController: NSWindowController {
             updateStatus: viewModel.updateStatus,
             automaticUpdateChecksEnabled: viewModel.automaticUpdateChecksEnabled
         )
-    }
-
-    func preferencesSyncSmokeSnapshot() -> PreferencesSyncSmokeSnapshot {
-        viewModel.syncSmokeSnapshot()
-    }
-
-    func smokeApplySyncActionResultForQA(_ result: SyncSettingsActionResult) {
-        viewModel.applySyncActionResultForQA(result)
-    }
-
-    func smokeCreateSyncForQA() {
-        viewModel.createSync()
-    }
-
-    func smokeRefreshPairingCodeForQA() {
-        viewModel.refreshPairingCode()
     }
 
     func smokeOpenVersionUpdateForQA() {
@@ -694,11 +636,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     @Published private(set) var state = PreferencesSceneState()
     @Published private(set) var updateStatus: AppUpdateSettingsStatus = .idle
     @Published private(set) var automaticUpdateChecksEnabled = true
-    @Published private(set) var syncStatusText = AppLocalization.text("sync.status.notChecked", defaultValue: "尚未检查连接")
-    @Published private(set) var syncStatusIsError = false
-    @Published private(set) var isSyncActionInFlight = false
-    @Published private(set) var syncPairingCode: String?
-    @Published private(set) var syncPairingExpiresAtMs: Int64?
 
     private let sceneController = PreferencesSceneController()
     private var pendingDeferredRender = false
@@ -708,11 +645,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     var onUpdateReleaseRequested: ((AppUpdateRelease) -> Void)?
     var onAutomaticUpdateChecksChanged: ((Bool) -> Void)?
     var onAppearanceModeChanged: (() -> Void)?
-    var onCreateSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
-    var onCreateSyncInviteRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
-    var onJoinSyncRequested: ((RustPreferencesDocument, String) async -> SyncSettingsActionResult)?
-    var onTestSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
-    var onDisconnectSyncRequested: ((RustPreferencesDocument) async -> SyncSettingsActionResult)?
 
     var selectedSection: PreferenceSection {
         preferenceSection(for: state.selectedSection)
@@ -753,11 +685,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         automaticUpdateChecksEnabled = isEnabled
     }
 
-    func updateSyncStatusText(_ statusText: String) {
-        syncStatusText = statusText
-        syncStatusIsError = false
-    }
-
     var versionUpdatePresentation: PreferencesVersionUpdatePresentation {
         PreferencesVersionUpdatePresentation.make(
             status: updateStatus,
@@ -774,88 +701,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         guard automaticUpdateChecksEnabled != isEnabled else { return }
         automaticUpdateChecksEnabled = isEnabled
         onAutomaticUpdateChecksChanged?(isEnabled)
-    }
-
-    func createSync() {
-        guard !isSyncActionInFlight, let onCreateSyncRequested else { return }
-        guard !hasCurrentSyncRegistration else {
-            syncStatusText = AppLocalization.text("sync.status.alreadyCreated", defaultValue: "同步：已创建，请先断开当前同步")
-            syncStatusIsError = false
-            return
-        }
-        isSyncActionInFlight = true
-        syncPairingCode = nil
-        syncPairingExpiresAtMs = nil
-        syncStatusText = AppLocalization.text("sync.status.creating", defaultValue: "正在创建同步")
-        syncStatusIsError = false
-        let preferences = state.preferences
-        Task { @MainActor [weak self] in
-            let result = await onCreateSyncRequested(preferences)
-            self?.completeSyncAction(result)
-        }
-    }
-
-    func refreshPairingCode() {
-        guard !isSyncActionInFlight, let onCreateSyncInviteRequested else { return }
-        guard hasCurrentSyncRegistration else {
-            syncStatusText = AppLocalization.text("sync.status.notJoined", defaultValue: "同步：尚未加入同步空间")
-            syncStatusIsError = true
-            return
-        }
-        isSyncActionInFlight = true
-        syncStatusText = AppLocalization.text("sync.status.creatingInvite", defaultValue: "正在生成配对码")
-        syncStatusIsError = false
-        let preferences = state.preferences
-        Task { @MainActor [weak self] in
-            let result = await onCreateSyncInviteRequested(preferences)
-            self?.completeSyncAction(result)
-        }
-    }
-
-    func joinSync(pairingCode: String) {
-        guard !isSyncActionInFlight, let onJoinSyncRequested else { return }
-        let code = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard code.count == 5 else {
-            syncStatusText = AppLocalization.text("sync.status.missingPairingCode", defaultValue: "请输入 5 位同步码")
-            syncStatusIsError = true
-            return
-        }
-        isSyncActionInFlight = true
-        syncPairingCode = nil
-        syncPairingExpiresAtMs = nil
-        syncStatusText = AppLocalization.text("sync.status.joining", defaultValue: "正在加入同步")
-        syncStatusIsError = false
-        let preferences = state.preferences
-        Task { @MainActor [weak self] in
-            let result = await onJoinSyncRequested(preferences, code)
-            self?.completeSyncAction(result)
-        }
-    }
-
-    func testSyncConnection() {
-        guard !isSyncActionInFlight, let onTestSyncRequested else { return }
-        isSyncActionInFlight = true
-        syncStatusText = AppLocalization.text("sync.status.testing", defaultValue: "正在检查连接")
-        syncStatusIsError = false
-        let preferences = state.preferences
-        Task { @MainActor [weak self] in
-            let result = await onTestSyncRequested(preferences)
-            self?.completeSyncAction(result)
-        }
-    }
-
-    func disconnectSync() {
-        guard !isSyncActionInFlight, let onDisconnectSyncRequested else { return }
-        isSyncActionInFlight = true
-        syncPairingCode = nil
-        syncPairingExpiresAtMs = nil
-        syncStatusText = AppLocalization.text("sync.status.disconnecting", defaultValue: "正在断开同步")
-        syncStatusIsError = false
-        let preferences = state.preferences
-        Task { @MainActor [weak self] in
-            let result = await onDisconnectSyncRequested(preferences)
-            self?.completeSyncAction(result)
-        }
     }
 
     func persist(_ update: (inout RustPreferencesDocument) -> Void) {
@@ -895,21 +740,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
             $0.shortcuts.quickPasteModifier = defaults.quickPasteModifier
             $0.shortcuts.plainTextModifier = defaults.plainTextModifier
         }
-    }
-
-    func syncSmokeSnapshot() -> PreferencesSyncSmokeSnapshot {
-        PreferencesSyncSmokeSnapshot(
-            pairingCode: syncPairingCode,
-            pairingExpiresAtMs: syncPairingExpiresAtMs,
-            statusText: syncStatusText,
-            statusIsError: syncStatusIsError,
-            isActionInFlight: isSyncActionInFlight,
-            hasSyncRegistration: hasCurrentSyncRegistration
-        )
-    }
-
-    func applySyncActionResultForQA(_ result: SyncSettingsActionResult) {
-        completeSyncAction(result)
     }
 
     func addIgnoredApplications(at urls: [URL]) {
@@ -955,28 +785,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         }
     }
 
-    private func completeSyncAction(_ result: SyncSettingsActionResult) {
-        if let preferences = result.preferences {
-            apply(sceneController.updatePreferences(preferences))
-        }
-        if result.clearsPairingCode {
-            syncPairingCode = nil
-            syncPairingExpiresAtMs = nil
-        }
-        if let pairingCode = result.pairingCode {
-            syncPairingCode = pairingCode
-            syncPairingExpiresAtMs = result.pairingExpiresAtMs
-        }
-        syncStatusText = result.statusText
-        syncStatusIsError = result.isError
-        isSyncActionInFlight = false
-    }
-
-    private var hasCurrentSyncRegistration: Bool {
-        let sync = state.preferences.sync
-        return sync.syncID?.isEmpty == false || sync.deviceID?.isEmpty == false
-    }
-
     private func scheduleDeferredRender() {
         guard !pendingDeferredRender else { return }
         pendingDeferredRender = true
@@ -992,8 +800,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         switch section {
         case .general:
             return .general
-        case .sync:
-            return .sync
         case .appearance:
             return .general
         case .history:
@@ -1011,8 +817,6 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         switch section {
         case .general:
             return .general
-        case .sync:
-            return .sync
         case .appearance:
             return .general
         case .history:
@@ -1059,40 +863,6 @@ struct PreferencesVersionUpdateSmokeSnapshot: Equatable {
     let presentation: PreferencesVersionUpdatePresentation
     let updateStatus: AppUpdateSettingsStatus
     let automaticUpdateChecksEnabled: Bool
-}
-
-struct PreferencesSyncSmokeSnapshot: Equatable {
-    let pairingCode: String?
-    let pairingExpiresAtMs: Int64?
-    let statusText: String
-    let statusIsError: Bool
-    let isActionInFlight: Bool
-    let hasSyncRegistration: Bool
-}
-
-struct SyncSettingsActionResult: Equatable {
-    let preferences: RustPreferencesDocument?
-    let statusText: String
-    let pairingCode: String?
-    let pairingExpiresAtMs: Int64?
-    let clearsPairingCode: Bool
-    let isError: Bool
-
-    init(
-        preferences: RustPreferencesDocument?,
-        statusText: String,
-        pairingCode: String? = nil,
-        pairingExpiresAtMs: Int64? = nil,
-        clearsPairingCode: Bool = false,
-        isError: Bool = false
-    ) {
-        self.preferences = preferences
-        self.statusText = statusText
-        self.pairingCode = pairingCode
-        self.pairingExpiresAtMs = pairingExpiresAtMs
-        self.clearsPairingCode = clearsPairingCode
-        self.isError = isError
-    }
 }
 
 struct PreferencesVersionUpdatePresentation: Equatable {
@@ -1514,8 +1284,6 @@ private struct PreferencesContent: View {
         switch model.selectedSection {
         case .general, .appearance:
             PreferenceGeneralSection(model: model)
-        case .sync:
-            PreferenceSyncSection(model: model)
         case .history:
             PreferenceGeneralSection(model: model)
         case .shortcuts:
@@ -1742,363 +1510,6 @@ private struct PreferenceGeneralSection: View {
     }
 }
 
-private struct PreferenceSyncSection: View {
-    @ObservedObject var model: PreferencesSwiftUIViewModel
-    @State private var pairingCode = ""
-
-    private var sync: RustSyncPreferences {
-        model.state.preferences.sync
-    }
-
-    private var hasServerURL: Bool {
-        !sync.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var hasDeviceName: Bool {
-        !sync.deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var canStartSyncAction: Bool {
-        hasServerURL && hasDeviceName && !model.isSyncActionInFlight
-    }
-
-    private var canCreateSyncAction: Bool {
-        canStartSyncAction && !hasSyncSpace
-    }
-
-    private var canRefreshPairingCodeAction: Bool {
-        canStartSyncAction && sync.deviceID?.isEmpty == false
-    }
-
-    private var canTestOrDisconnect: Bool {
-        canStartSyncAction && sync.deviceID?.isEmpty == false
-    }
-
-    private var hasSyncSpace: Bool {
-        sync.syncID?.isEmpty == false
-    }
-
-    private var syncSpaceDetail: String {
-        hasSyncSpace
-            ? AppLocalization.text("preferences.sync.currentSpace.joinedDetail", defaultValue: "当前设备已加入一个同步空间")
-            : AppLocalization.text("preferences.sync.currentSpace.empty", defaultValue: "尚未加入同步")
-    }
-
-    private var syncSpaceState: String {
-        hasSyncSpace
-            ? AppLocalization.text("sync.state.joined", defaultValue: "已加入")
-            : AppLocalization.text("sync.state.notJoined", defaultValue: "未加入")
-    }
-
-    private var deviceDetail: String {
-        hasSyncSpace
-            ? AppLocalization.text("preferences.sync.currentDevice.joinedDetail", defaultValue: "其他设备会看到这个本机名称")
-            : AppLocalization.text("preferences.sync.currentDevice.unregistered", defaultValue: "创建或加入同步后显示在同步空间中")
-    }
-
-    private var normalizedDownloadPathMode: String {
-        switch sync.downloadPathMode {
-        case "p2p_only", "server_only":
-            return sync.downloadPathMode
-        default:
-            return "auto"
-        }
-    }
-
-    private var downloadPathQualityValue: String {
-        switch normalizedDownloadPathMode {
-        case "p2p_only":
-            return AppLocalization.text("sync.pathQuality.p2pOnly", defaultValue: "仅 P2P")
-        case "server_only":
-            return AppLocalization.text("sync.pathQuality.serverOnly", defaultValue: "仅服务端")
-        default:
-            return AppLocalization.text("sync.pathQuality.auto", defaultValue: "自动选择")
-        }
-    }
-
-    private var connectionStatusText: String {
-        if model.isSyncActionInFlight {
-            return model.syncStatusText
-        }
-        if model.syncStatusIsError {
-            return model.syncStatusText
-        }
-        if canTestOrDisconnect,
-           model.syncStatusText == AppLocalization.text("sync.status.notChecked", defaultValue: "尚未检查连接") {
-            return AppLocalization.text("sync.status.configured", defaultValue: "已配置服务端")
-        }
-        return model.syncStatusText
-    }
-
-    private var shouldShowSyncActionFeedback: Bool {
-        model.isSyncActionInFlight || model.syncStatusIsError
-    }
-
-    private var pairingCodeIsValid: Bool {
-        pairingCode.count == 5
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.sync.server", defaultValue: "服务端")) {
-                PreferenceRow(
-                    title: AppLocalization.text("preferences.sync.enabled.title", defaultValue: "启用同步"),
-                    detail: AppLocalization.text("preferences.sync.enabled.detail", defaultValue: "开启后使用自托管服务端同步剪贴板元数据")
-                ) {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { sync.enabled },
-                            set: { isOn in model.persist { $0.sync.enabled = isOn } }
-                        )
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                }
-                PreferenceDivider()
-                PreferenceStackedRow(
-                    title: AppLocalization.text("preferences.sync.serverURL.title", defaultValue: "服务端地址"),
-                    detail: AppLocalization.text("preferences.sync.serverURL.detail", defaultValue: "例如 http://127.0.0.1:8787")
-                ) {
-                    PreferenceTextInputField(
-                        value: sync.serverURL,
-                        placeholder: "https://clipdock.example.com",
-                        width: nil
-                    ) { value in
-                        model.persist { $0.sync.serverURL = value }
-                    }
-                }
-                PreferenceDivider()
-                PreferenceStackedRow(
-                    title: AppLocalization.text("preferences.sync.deviceName.title", defaultValue: "本机名称"),
-                    detail: AppLocalization.text("preferences.sync.deviceName.detail", defaultValue: "创建或加入同步时登记到服务端")
-                ) {
-                    PreferenceTextInputField(
-                        value: sync.deviceName,
-                        placeholder: Host.current().localizedName ?? "Mac",
-                        width: nil
-                    ) { value in
-                        model.persist { $0.sync.deviceName = value }
-                    }
-                }
-                PreferenceDivider()
-                PreferenceRow(
-                    title: AppLocalization.text("preferences.sync.p2pEnabled.title", defaultValue: "P2P 元数据登记"),
-                    detail: AppLocalization.text("preferences.sync.p2pEnabled.detail", defaultValue: "向服务端上报本机 P2P endpoint，供其他端按需选择下载路径")
-                ) {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { sync.p2pEnabled },
-                            set: { isOn in model.persist { $0.sync.p2pEnabled = isOn } }
-                        )
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                }
-            }
-
-            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.sync.space", defaultValue: "同步空间")) {
-                if let createdPairingCode = model.syncPairingCode {
-                    PreferencePairingCodeCard(
-                        code: createdPairingCode,
-                        expiresAtMs: model.syncPairingExpiresAtMs,
-                        isRefreshDisabled: !canRefreshPairingCodeAction,
-                        onRefresh: {
-                            model.refreshPairingCode()
-                        }
-                    )
-                    PreferenceDivider()
-                }
-                PreferenceRow(
-                    title: AppLocalization.text("preferences.sync.currentSpace.title", defaultValue: "当前同步空间"),
-                    detail: syncSpaceDetail
-                ) {
-                    HStack(spacing: 8) {
-                        PreferenceValuePill(syncSpaceState, isProminent: hasSyncSpace)
-                        PreferenceValuePill(
-                            sync.enabled
-                                ? AppLocalization.text("sync.state.enabled", defaultValue: "已启用")
-                                : AppLocalization.text("sync.state.disabled", defaultValue: "未启用")
-                        )
-                    }
-                }
-                PreferenceDivider()
-                PreferenceStackedRow(
-                    title: AppLocalization.text("preferences.sync.currentDevice.title", defaultValue: "当前设备"),
-                    detail: deviceDetail
-                ) {
-                    PreferenceInlineValue(sync.deviceName)
-                }
-                PreferenceDivider()
-                PreferenceStackedRow(
-                    title: AppLocalization.text("preferences.sync.actions.title", defaultValue: "同步操作"),
-                    detail: AppLocalization.text("preferences.sync.actions.detail", defaultValue: "创建新同步空间，或输入其他设备分享的五位同步码加入")
-                ) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        syncActionControls
-                        if shouldShowSyncActionFeedback {
-                            PreferenceActionFeedback(
-                                text: model.syncStatusText,
-                                isError: model.syncStatusIsError,
-                                isProgress: model.isSyncActionInFlight
-                            )
-                        }
-                    }
-                }
-                PreferenceDivider()
-                PreferenceStackedRow(
-                    title: AppLocalization.text("preferences.sync.status.title", defaultValue: "连接状态"),
-                    detail: AppLocalization.text("preferences.sync.status.detail", defaultValue: "测试当前服务端地址和设备凭据是否可用")
-                ) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 12) {
-                            PreferenceStatusLabel(
-                                text: connectionStatusText,
-                                isActive: canTestOrDisconnect || model.isSyncActionInFlight,
-                                isError: model.syncStatusIsError
-                            )
-                            Spacer(minLength: 12)
-                            syncStatusActions
-                        }
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            PreferenceStatusLabel(
-                                text: connectionStatusText,
-                                isActive: canTestOrDisconnect || model.isSyncActionInFlight,
-                                isError: model.syncStatusIsError
-                            )
-                            syncStatusActions
-                        }
-                    }
-                }
-            }
-
-            PreferenceSectionGroup(title: AppLocalization.text("preferences.group.sync.path", defaultValue: "下载路径偏好")) {
-                PreferenceStackedRow(
-                    title: AppLocalization.text("preferences.sync.downloadPath.title", defaultValue: "优先局域网 / P2P"),
-                    detail: AppLocalization.text("preferences.sync.downloadPath.detail", defaultValue: "下载真实文件时按偏好选择 P2P 或服务端路径")
-                ) {
-                    Picker(
-                        "",
-                        selection: Binding(
-                            get: { normalizedDownloadPathMode },
-                            set: { mode in model.persist { $0.sync.downloadPathMode = mode } }
-                        )
-                    ) {
-                        Text(AppLocalization.text("sync.downloadPath.auto", defaultValue: "自动")).tag("auto")
-                        Text(AppLocalization.text("sync.downloadPath.p2pOnly", defaultValue: "仅 P2P")).tag("p2p_only")
-                        Text(AppLocalization.text("sync.downloadPath.serverOnly", defaultValue: "仅服务端")).tag("server_only")
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(width: 300)
-                }
-                PreferenceDivider()
-                PreferenceRow(
-                    title: AppLocalization.text("preferences.sync.pathQuality.title", defaultValue: "当前路径质量"),
-                    detail: AppLocalization.text("preferences.sync.pathQuality.detail", defaultValue: "尚未测速；下载时会比较可用路径并按偏好选择")
-                ) {
-                    PreferenceValuePill(downloadPathQualityValue, isProminent: normalizedDownloadPathMode == "auto")
-                }
-            }
-        }
-        .onChange(of: pairingCode) { value in
-            let normalized = Self.normalizedPairingCode(value)
-            if normalized != value {
-                pairingCode = normalized
-            }
-        }
-    }
-
-    private var syncActionControls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                createSyncButton
-                if hasSyncSpace && model.syncPairingCode == nil {
-                    refreshPairingCodeButton
-                }
-                pairingCodeField
-                joinSyncButton
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    createSyncButton
-                    if hasSyncSpace && model.syncPairingCode == nil {
-                        refreshPairingCodeButton
-                    }
-                }
-                HStack(spacing: 10) {
-                    pairingCodeField
-                    joinSyncButton
-                }
-            }
-        }
-    }
-
-    private var syncStatusActions: some View {
-        HStack(spacing: 8) {
-            Button {
-                model.testSyncConnection()
-            } label: {
-                Label(AppLocalization.text("sync.action.test", defaultValue: "测试连接"), systemImage: "checkmark.circle")
-            }
-            .disabled(!canTestOrDisconnect)
-
-            Button {
-                model.disconnectSync()
-            } label: {
-                Label(AppLocalization.text("sync.action.disconnect", defaultValue: "断开同步"), systemImage: "xmark.circle")
-            }
-            .disabled(!canTestOrDisconnect)
-        }
-    }
-
-    private var createSyncButton: some View {
-        Button {
-            model.createSync()
-        } label: {
-            Label(AppLocalization.text("sync.action.create", defaultValue: "创建同步"), systemImage: "plus.circle")
-        }
-        .disabled(!canCreateSyncAction)
-    }
-
-    private var refreshPairingCodeButton: some View {
-        Button {
-            model.refreshPairingCode()
-        } label: {
-            Label(AppLocalization.text("sync.action.generatePairingCode", defaultValue: "生成配对码"), systemImage: "arrow.clockwise")
-        }
-        .disabled(!canRefreshPairingCodeAction)
-    }
-
-    private var joinSyncButton: some View {
-        Button {
-            model.joinSync(pairingCode: pairingCode)
-        } label: {
-            Label(AppLocalization.text("sync.action.join", defaultValue: "加入同步"), systemImage: "person.badge.plus")
-        }
-        .disabled(!canStartSyncAction || !pairingCodeIsValid)
-    }
-
-    private var pairingCodeField: some View {
-        TextField(AppLocalization.text("sync.pairingCode.placeholder", defaultValue: "输入 5 位随机码"), text: $pairingCode)
-            .textFieldStyle(.roundedBorder)
-            .font(.system(size: 13, weight: .medium, design: .monospaced))
-            .frame(width: 142)
-            .onSubmit {
-                model.joinSync(pairingCode: pairingCode)
-            }
-    }
-
-    private static func normalizedPairingCode(_ value: String) -> String {
-        String(value.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(5))
-    }
-}
-
 private struct PreferenceInlineValue: View {
     let value: String
     @Environment(\.colorScheme) private var colorScheme
@@ -2128,172 +1539,6 @@ private struct PreferenceInlineValue: View {
     }
 }
 
-private struct PreferencePairingCodeCard: View {
-    let code: String
-    let expiresAtMs: Int64?
-    let isRefreshDisabled: Bool
-    let onRefresh: () -> Void
-    @State private var didCopy = false
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var colors: PreferencesThemeValues {
-        PreferencesThemeValues(colorScheme: colorScheme)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(AppLocalization.text("sync.pairing.created.title", defaultValue: "同步空间创建成功"))
-                        .font(.system(size: 14.5, weight: .semibold))
-                        .foregroundStyle(colors.primaryText)
-                    Text(AppLocalization.text("sync.pairing.created.detail", defaultValue: "请在其他设备上使用配对码加入此空间"))
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(colors.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            PreferenceDivider()
-                .padding(.horizontal, -22)
-
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(AppLocalization.text("sync.pairing.code.title", defaultValue: "配对码"))
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(colors.secondaryText)
-                    Text(code)
-                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(colors.primaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                }
-                .layoutPriority(1)
-
-                Button {
-                    copyCode()
-                } label: {
-                    Label(
-                        didCopy
-                            ? AppLocalization.text("sync.action.copied", defaultValue: "已复制")
-                            : AppLocalization.text("sync.action.copy", defaultValue: "复制"),
-                        systemImage: didCopy ? "checkmark" : "doc.on.doc"
-                    )
-                }
-                .controlSize(.small)
-                .help(AppLocalization.text("sync.action.copyPairingCode.help", defaultValue: "复制配对码"))
-            }
-
-            TimelineView(.periodic(from: Date(), by: 10)) { context in
-                let isExpired = pairingCodeIsExpired(at: context.date)
-                HStack(alignment: .center, spacing: 10) {
-                    Text(pairingExpiryText(at: context.date))
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(isExpired ? Color.red : colors.secondaryText)
-
-                    Button {
-                        onRefresh()
-                    } label: {
-                        Label(
-                            isExpired
-                                ? AppLocalization.text("sync.action.refreshPairingCode", defaultValue: "刷新配对码")
-                                : AppLocalization.text("sync.action.regeneratePairingCode", defaultValue: "重新生成"),
-                            systemImage: "arrow.clockwise"
-                        )
-                    }
-                    .controlSize(.small)
-                    .disabled(isRefreshDisabled)
-                    .help(AppLocalization.text("sync.action.refreshPairingCode.help", defaultValue: "生成一个新的配对码"))
-                }
-            }
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func copyCode() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(code, forType: .string)
-        didCopy = true
-    }
-
-    private func pairingCodeIsExpired(at date: Date) -> Bool {
-        guard let expiresAtMs else { return false }
-        let nowMs = Int64(date.timeIntervalSince1970 * 1000)
-        return expiresAtMs <= nowMs
-    }
-
-    private func pairingExpiryText(at date: Date) -> String {
-        guard let expiresAtMs else {
-            return AppLocalization.text("sync.pairing.expiryFallback", defaultValue: "约 10 分钟内有效")
-        }
-        let nowMs = Int64(date.timeIntervalSince1970 * 1000)
-        let remainingSeconds = max(0, (expiresAtMs - nowMs) / 1000)
-        guard remainingSeconds > 0 else {
-            return AppLocalization.text("sync.pairing.expired", defaultValue: "已过期")
-        }
-        let remainingMinutes = max(1, Int((remainingSeconds + 59) / 60))
-        return AppLocalization.format(
-            "sync.pairing.expiresInMinutes",
-            defaultValue: "约 %lld 分钟后过期",
-            Int64(remainingMinutes)
-        )
-    }
-}
-
-private struct PreferenceActionFeedback: View {
-    let text: String
-    let isError: Bool
-    let isProgress: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var colors: PreferencesThemeValues {
-        PreferencesThemeValues(colorScheme: colorScheme)
-    }
-
-    private var accent: Color {
-        isError ? Color(nsColor: .systemRed) : Color.accentColor
-    }
-
-    private var iconName: String {
-        if isError {
-            return "exclamationmark.triangle.fill"
-        }
-        if isProgress {
-            return "arrow.triangle.2.circlepath"
-        }
-        return "checkmark.circle.fill"
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 7) {
-            Image(systemName: iconName)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(accent)
-                .frame(width: 15, height: 18)
-
-            Text(text)
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(isError ? accent : colors.secondaryText)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(accent.opacity(isError ? 0.12 : 0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(accent.opacity(isError ? 0.35 : 0.22), lineWidth: 0.7)
-        )
-    }
-}
 
 private struct PreferenceStatusLabel: View {
     let text: String
@@ -3748,55 +2993,6 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                     ])
                 ]
             )
-        case .sync:
-            return makeContentPage(
-                title: section.title,
-                subtitle: section.subtitle,
-                sections: [
-                    makeSection(title: AppLocalization.text("preferences.group.sync.server", defaultValue: "服务端"), rows: [
-                        makeSettingRow(
-                            title: AppLocalization.text("preferences.sync.enabled.title", defaultValue: "启用同步"),
-                            detail: AppLocalization.text("preferences.sync.enabled.detail", defaultValue: "开启后使用自托管服务端同步剪贴板元数据"),
-                            control: makeSwitch(isOn: preferences.sync.enabled) { [weak self] isOn in
-                                self?.persist { $0.sync.enabled = isOn }
-                            }
-                        ),
-                        makeTextInputRow(
-                            title: AppLocalization.text("preferences.sync.serverURL.title", defaultValue: "服务端地址"),
-                            detail: AppLocalization.text("preferences.sync.serverURL.detail", defaultValue: "例如 http://127.0.0.1:8787"),
-                            value: preferences.sync.serverURL
-                        ) { [weak self] value in
-                            self?.persist { $0.sync.serverURL = value }
-                        },
-                        makeTextInputRow(
-                            title: AppLocalization.text("preferences.sync.deviceName.title", defaultValue: "本机名称"),
-                            detail: AppLocalization.text("preferences.sync.deviceName.detail", defaultValue: "创建或加入同步时登记到服务端"),
-                            value: preferences.sync.deviceName
-                        ) { [weak self] value in
-                            self?.persist { $0.sync.deviceName = value }
-                        },
-                        makeSettingRow(
-                            title: AppLocalization.text("preferences.sync.p2pEnabled.title", defaultValue: "P2P 元数据登记"),
-                            detail: AppLocalization.text("preferences.sync.p2pEnabled.detail", defaultValue: "向服务端上报本机 P2P endpoint，供其他端按需选择下载路径"),
-                            control: makeSwitch(isOn: preferences.sync.p2pEnabled) { [weak self] isOn in
-                                self?.persist { $0.sync.p2pEnabled = isOn }
-                            }
-                        )
-                    ]),
-                    makeSection(title: AppLocalization.text("preferences.group.sync.pairing", defaultValue: "配对"), rows: [
-                        makeSettingRow(
-                            title: AppLocalization.text("preferences.sync.currentSpace.title", defaultValue: "当前同步空间"),
-                            detail: preferences.sync.syncID ?? AppLocalization.text("preferences.sync.currentSpace.empty", defaultValue: "尚未加入同步"),
-                            control: makeShortcutPill(preferences.sync.enabled ? AppLocalization.text("sync.state.enabled", defaultValue: "已启用") : AppLocalization.text("sync.state.disabled", defaultValue: "未启用"))
-                        ),
-                        makeSettingRow(
-                            title: AppLocalization.text("preferences.sync.currentDevice.title", defaultValue: "当前设备"),
-                            detail: preferences.sync.deviceID ?? preferences.sync.deviceName,
-                            control: makeShortcutPill(preferences.sync.endpointID ?? AppLocalization.text("sync.endpoint.none", defaultValue: "无 endpoint"))
-                        )
-                    ])
-                ]
-            )
         case .appearance:
             return makeContentPage(
                 title: section.title,
@@ -4286,8 +3482,6 @@ private final class LegacyPreferencesWindowController: NSWindowController {
         switch section {
         case .general:
             return .general
-        case .sync:
-            return .sync
         case .appearance:
             return .appearance
         case .history:
@@ -4305,8 +3499,6 @@ private final class LegacyPreferencesWindowController: NSWindowController {
         switch section {
         case .general:
             return .general
-        case .sync:
-            return .sync
         case .appearance:
             return .appearance
         case .history:

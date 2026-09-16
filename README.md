@@ -5,14 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>把复制过的内容留在手边，找回、预览、固定、同步、复用。</strong>
+  <strong>把复制过的内容留在手边，找回、预览、固定、复用。</strong>
 </p>
 
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black">
   <img alt="Local-first" src="https://img.shields.io/badge/local--first-yes-brightgreen">
-  <img alt="Self-hosted sync" src="https://img.shields.io/badge/self--hosted-sync-blue">
-  <img alt="P2P transfer" src="https://img.shields.io/badge/P2P-iroh--blobs-violet">
   <img alt="Open source" src="https://img.shields.io/badge/open%20source-yes-blue">
 </p>
 
@@ -31,7 +29,7 @@ ClipDock 是一款本地优先的 macOS 剪贴板工具。复制过的文本、�
 
 它不是一个需要长期停留的管理后台，而是贴近日常工作的一层剪贴坞：呼出、扫读、预览、取用，然后收起。
 
-新版本开始支持跨设备使用。你可以运行自己的同步服务端，用 5 位配对码把其他设备加入同一个同步空间；文字和记录走同步服务，图片、文件这类大内容再通过 P2P 按需下载。服务端只负责认证、事件和 P2P 协调，不托管你的完整大文件。
+剪贴板历史保存在各自的桌面设备上，无需账号或同步服务器。
 
 ## 为什么需要它
 
@@ -57,15 +55,6 @@ ClipDock 是一款本地优先的 macOS 剪贴板工具。复制过的文本、�
 - **固定常用资料**<br>
   常用话术、资料链接、设计参考、发布内容可以固定到 Pinboard，不会被临时复制记录淹没。
 
-- **本地优先，可选同步**<br>
-  剪贴板历史默认留在本机。需要多设备时，再接入你自己的 ClipDock Sync Server，把记录同步到同一个空间。
-
-- **配对码加入设备**<br>
-  在 macOS 创建同步空间后，其他 Mac 或 Android 设备可以用一次性 5 位配对码加入；加入后使用设备凭证访问，不需要公共账号系统。
-
-- **P2P 按需传输大内容**<br>
-  完整图片、文件等大内容可以通过 `iroh-blobs` 从可用设备下载；服务端只登记谁能提供内容和怎样连接，不中转大文件本身。
-
 ## 更自然的剪贴板
 
 剪贴板历史不应该变成另一套“待整理系统”。ClipDock 更适合那些高频跨应用的日常场景：写文档、做研发、整理资料、对接客户、准备发布内容、沉淀团队素材。
@@ -86,22 +75,9 @@ Pinboard 适合放那些“不是临时复制，但也不值得专门建库”�
 
 设置页只服务主流程，不抢占主流程。通用行为、隐私规则、键盘快捷键和关于信息都在独立页面里，日常使用仍然围绕剪贴坞、预览和 Pinboard 展开。
 
-## 同步与 P2P
-
-ClipDock 的同步设计坚持三件事：自托管、按空间隔离、本地优先。
-
-- **自托管 Sync Server**：`Server/` 提供 Rust/Axum 同步服务，负责创建同步空间、配对设备、保存事件日志、返回快照，并存储小型预览资产。
-- **一次性配对码**：通过 `POST /v2/sync/create` 创建同步空间，再用短期 5 位配对码让新设备加入；设备 token 只以哈希形式保存在服务端。
-- **事件与快照同步**：剪贴板条目通过 `item_upsert` / `item_delete` 事件同步，支持 cursor 拉取、幂等重放和 tombstone 删除传播。
-- **P2P 协调**：设备向服务端报告 P2P endpoint 和 asset provider，其他设备只会在同一同步空间里看到这些来源。
-- **大内容按需走 P2P**：图片、文件等完整内容由设备通过 `iroh-blobs` 下载；服务端不运行 Iroh，也不负责 NAT 穿透或大文件字节中转。
-- **Android 端**：`Android/` 已包含加入同步空间、拉取快照/事件、P2P 下载图片与文件、悬浮球取用等能力。
-
 ## 隐私
 
-ClipDock 默认只在本地工作。只有你明确启用同步并配置服务端地址后，它才会把同步事件发送到对应服务端。
-
-同步服务端按同步空间隔离数据。知道服务端 URL 并不能读取已有内容；设备必须先创建同步空间，或通过有效配对码加入。P2P endpoint 和 provider 记录也只在同一同步空间内可见。
+剪贴板历史保存在本机。链接预览和更新检查可能访问网络；剪贴板记录不会上传进行跨设备同步。
 
 ## 安装
 
@@ -122,8 +98,7 @@ ClipDock 选择开源，是因为剪贴板工具足够贴近日常工作和个�
 ### 项目结构
 
 - `macOS/`：主 macOS 应用，Swift UI 与 AppKit 运行时在 `macOS/Sources/ClipDock`，可复用面板逻辑在 `macOS/Sources/ClipboardPanelApp`，Rust FFI core 在 `macOS/rust`。
-- `Server/`：自托管同步服务端，协议文档在 `Server/docs/protocol-v2.md`。
-- `Android/`：Android 端，包含同步空间配置、快照/事件拉取、P2P 下载和悬浮球入口。
+- `Windows/`：Tauri 桌面客户端，共用 Rust 本地存储核心。
 - `docs/`：GitHub Pages 官网目录，包含产品首页、安装帮助页、站点 manifest、CNAME 和页面资产。
 
 ### 环境要求
@@ -132,7 +107,6 @@ ClipDock 选择开源，是因为剪贴板工具足够贴近日常工作和个�
 - Xcode 命令行工具
 - Swift 6.1 工具链
 - Rust stable 工具链
-- Android Studio / Android SDK（开发 Android 端时）
 
 ### 从源码运行 macOS 应用
 
@@ -144,19 +118,9 @@ swift run ClipDock
 
 源码 executable 和发布产品都命名为 `ClipDock`。
 
-### 运行自托管同步服务端
-
-```bash
-cd Server
-cargo run -- --bind 127.0.0.1:8787
-```
-
-服务端部署边界和 API 细节见 [Server/README.md](Server/README.md) 与 [Server/docs/protocol-v2.md](Server/docs/protocol-v2.md)。
-
 ### 常用验证
 
 ```bash
 cd macOS && swift test
 cd macOS && cargo test --manifest-path rust/Cargo.toml
-cd Server && cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings
 ```

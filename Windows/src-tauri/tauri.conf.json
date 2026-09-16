@@ -48,7 +48,7 @@
     "active": true,
     "targets": ["nsis", "msi", "app", "dmg"],
     "category": "Productivity",
-    "shortDescription": "ClipDock clipboard panel with cross-device sync",
+    "shortDescription": "ClipDock local clipboard history panel",
     "icon": ["icons/icon.png", "icons/icon.ico"]
   }
 }

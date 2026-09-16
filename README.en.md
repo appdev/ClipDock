@@ -5,14 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>Recall, preview, pin, sync, and reuse clipboard history on macOS.</strong>
+  <strong>Recall, preview, pin, and reuse clipboard history on macOS.</strong>
 </p>
 
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black">
   <img alt="Local-first" src="https://img.shields.io/badge/local--first-yes-brightgreen">
-  <img alt="Self-hosted sync" src="https://img.shields.io/badge/self--hosted-sync-blue">
-  <img alt="P2P transfer" src="https://img.shields.io/badge/P2P-iroh--blobs-violet">
   <img alt="Open source" src="https://img.shields.io/badge/open%20source-yes-blue">
 </p>
 
@@ -31,7 +29,7 @@ ClipDock is a local-first clipboard shelf for macOS. It keeps recent text, links
 
 The app is built around a simple habit: bring up the shelf, recognize the right item, preview it if needed, and reuse it without switching into a heavy management window.
 
-Recent builds add cross-device capability: run your own ClipDock Sync Server, join devices to the same sync space with a 5-character pairing code, and let large image/file payloads move over an on-demand P2P path while the server handles authentication, event sync, and P2P coordination metadata.
+Clipboard history is stored locally on each desktop. No account or sync server is required.
 
 ## Why ClipDock
 
@@ -57,15 +55,6 @@ Most clipboard work is small but frequent: a paragraph from a document, a link f
 - **Pin reusable material**<br>
   Save important clips into Pinboards so they do not get buried in short-lived clipboard history.
 
-- **Stay local first, sync when needed**<br>
-  Clipboard history starts on your device. When you need multiple devices, connect to your own ClipDock Sync Server and sync clipboard events inside one sync space.
-
-- **Pair devices with short codes**<br>
-  Create a sync space on macOS, then let another Mac or Android client join with a one-time 5-character pairing code. Joined devices use device tokens, without a public account system.
-
-- **Move large payloads over P2P**<br>
-  Full images, files, and other large payloads can be downloaded through `iroh-blobs` P2P. The server registers endpoints, providers, and path quality; it does not relay the large payload bytes.
-
 ## A More Natural Clipboard
 
 Clipboard history should feel like part of the desktop, not a separate place you have to manage. ClipDock stays low, visual, and quick enough for daily use across writing, development, research, design, communication, and documentation.
@@ -86,22 +75,9 @@ Pinboards separate durable material from short-lived history. Product notes, des
 
 Settings support the workflow without becoming the product surface. General behavior, privacy rules, keyboard shortcuts, and about information are kept in focused pages behind the main shelf.
 
-## Sync And P2P
-
-ClipDock sync is self-hosted, sync-space scoped, and local-first:
-
-- **Self-hosted Sync Server**: `Server/` contains the Rust/Axum service for sync-space creation, device pairing, event logs, snapshots, and small preview assets.
-- **One-time pairing codes**: clients create a sync space with `POST /v2/sync/create`, then use short-lived 5-character codes to join new devices. Device tokens are stored as hashes on the server.
-- **Event and snapshot sync**: clipboard items sync through `item_upsert` / `item_delete` events with cursor pulls, idempotent replay, and tombstone propagation.
-- **P2P coordination metadata**: devices report P2P endpoints and asset providers to the server so peers in the same sync space can discover available sources.
-- **Real payloads are downloaded on demand**: full images and files are fetched by clients through `iroh-blobs`. The server does not run Iroh, perform NAT traversal, or relay large payload bytes.
-- **Android client**: `Android/` includes sync-space joining, snapshot/event pull, P2P image/file downloads, and a floating overlay entry point.
-
 ## Privacy
 
-ClipDock starts locally. A client sends sync events only after you explicitly enable sync and configure a server URL.
-
-Sync data is scoped by sync space. Knowing the server URL is not enough to read existing data; a device must create a sync space or join one with a valid pairing code. P2P endpoint and provider records are visible only inside the same sync space.
+Clipboard history stays on your device. Link previews and update checks may access the network; clipboard records are not uploaded for cross-device synchronization.
 
 ## Install
 
@@ -126,7 +102,6 @@ ClipDock is open source because clipboard tools are personal infrastructure. You
 - Xcode command line tools
 - Swift 6.1 toolchain
 - Rust stable toolchain
-- Android Studio / Android SDK when working on the Android client
 
 ### Run The macOS App From Source
 
@@ -138,19 +113,9 @@ swift run ClipDock
 
 The source executable and release product are both named `ClipDock`.
 
-### Run The Self-hosted Sync Server
-
-```bash
-cd Server
-cargo run -- --bind 127.0.0.1:8787
-```
-
-See [Server/README.md](Server/README.md) and [Server/docs/protocol-v2.md](Server/docs/protocol-v2.md) for deployment boundaries and API details.
-
 ### Common Verification
 
 ```bash
 cd macOS && swift test
 cd macOS && cargo test --manifest-path rust/Cargo.toml
-cd Server && cargo fmt --check && cargo test && cargo clippy --all-targets -- -D warnings
 ```
