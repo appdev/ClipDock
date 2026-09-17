@@ -1,6 +1,6 @@
 # ClipDock Windows Panel — Changelog
 
-## Unreleased
+## 0.2.1
 
 - Remove cross-device sync and P2P transfer, including preferences and tray actions. Clipboard history remains local; existing local records and downloaded files are preserved.
 
