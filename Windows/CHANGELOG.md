@@ -1,5 +1,11 @@
 # ClipDock Windows Panel — Changelog
 
+## 0.2.2
+
+- Update the shared storage core to schema 18, preserving custom card titles in clipboard history and making them searchable.
+- Keep the existing Windows panel interactions. Inline card renaming is currently available only in the macOS app.
+- Opening an existing database upgrades it automatically; restoring an older app requires a pre-upgrade database backup.
+
 ## 0.2.1
 
 - Remove cross-device sync and P2P transfer, including preferences and tray actions. Clipboard history remains local; existing local records and downloaded files are preserved.
