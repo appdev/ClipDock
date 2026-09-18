@@ -354,6 +354,7 @@ final class FloatingPanelController {
         restoresFocusAfterWindowOrderOut: Bool,
         afterHidden: (() -> Void)? = nil
     ) {
+        contentView.finishCardRenameBeforeHiding()
         let hideStart = ClipDockPerformanceLog.mark()
         let wasPresented = isPanelPresented
         guard wasPresented || panel.isVisible else {

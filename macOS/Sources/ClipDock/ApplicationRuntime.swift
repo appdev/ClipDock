@@ -421,7 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         listCoordinator.onMutationCompleted = { [weak self] mutation, _ in
             switch mutation {
-            case .recordCopied:
+            case .rename, .recordCopied:
                 self?.panelController.invalidateCachedListPages()
             case .setPinboardMembership(_, let pinboardID, _):
                 self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
@@ -639,6 +639,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.copyItemsAsPlainTextToPasteboard(items)
             case .copyPath(let pathText):
                 self?.copyPathToPasteboard(pathText)
+            case .renameItem(let itemID, let title, let completion):
+                self?.performItemMutation(.rename(itemID: itemID, title: title), completion: completion)
             case .setPinboardMembership(let item, let pinboardID, let isMember):
                 self?.setPinboardMembership(item, pinboardID: pinboardID, isMember: isMember)
             case .setPinboardMembershipBatch(let items, let pinboardID, let isMember):
@@ -740,13 +742,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func performItemMutation(_ mutation: ClipboardItemMutationRequest) {
+    private func performItemMutation(_ mutation: ClipboardItemMutationRequest, completion: ((Bool) -> Void)? = nil) {
         guard let listCoordinator else {
+            completion?(false)
             updateStorageStatus(AppLocalization.text("item.status.storageUninitialized", defaultValue: "条目：存储未初始化"))
             return
         }
 
-        listCoordinator.performMutation(mutation)
+        listCoordinator.performMutation(mutation, completion: completion)
     }
 
     private func performItemBatchMutation(

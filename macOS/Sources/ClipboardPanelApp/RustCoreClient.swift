@@ -563,6 +563,7 @@ public struct RustCompleteLinkMetadataFetchRequest: Equatable, Encodable, Sendab
 
 public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let id: String
+    public let customTitle: String?
     public let itemType: String
     public let summary: String
     public let primaryText: String?
@@ -605,9 +606,11 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         previewState: String,
         payloadState: String = "ready",
         fileItems: [RustClipboardFileItemSummary] = [],
-        linkMetadata: RustLinkMetadataSummary? = nil
+        linkMetadata: RustLinkMetadataSummary? = nil,
+        customTitle: String? = nil
     ) {
         self.id = id
+        self.customTitle = customTitle
         self.itemType = itemType
         self.summary = summary
         self.primaryText = primaryText
@@ -656,7 +659,8 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
                 [RustClipboardFileItemSummary].self,
                 forKey: .fileItems
             ) ?? [],
-            linkMetadata: try container.decodeIfPresent(RustLinkMetadataSummary.self, forKey: .linkMetadata)
+            linkMetadata: try container.decodeIfPresent(RustLinkMetadataSummary.self, forKey: .linkMetadata),
+            customTitle: try container.decodeIfPresent(String.self, forKey: .customTitle)
         )
     }
 
@@ -665,6 +669,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         case itemType = "item_type"
         case summary
         case primaryText = "primary_text"
+        case customTitle = "custom_title"
         case contentHash = "content_hash"
         case sourceAppId = "source_app_id"
         case sourceAppName = "source_app_name"
@@ -1538,6 +1543,16 @@ public struct RustCoreClient: Sendable {
         withPreparedAppSupportDirectory(appSupportDirectory) { appSupportPath in
             let result = rename_pinboard(appSupportPath, pinboardId, title)
             return decodeItemManagementResult(result)
+        }
+    }
+
+    public func renameItem(
+        appSupportDirectory: URL,
+        itemId: String,
+        title: String
+    ) -> Result<RustItemManagementResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { path in
+            decodeItemManagementResult(rename_item(path, itemId, title))
         }
     }
 

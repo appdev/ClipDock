@@ -85,6 +85,7 @@ impl ClipboardCore {
         {
             Some((item_id, copy_count)) => {
                 let next_copy_count = copy_count + 1;
+                remove_search_index(&transaction, &item_id)?;
                 transaction.execute(
                     r#"
                     UPDATE clipboard_items
@@ -264,6 +265,7 @@ impl ClipboardCore {
         {
             Some((item_id, copy_count)) => {
                 let next_copy_count = copy_count + 1;
+                remove_search_index(&transaction, &item_id)?;
                 transaction.execute(
                     r#"
                     UPDATE clipboard_items
@@ -424,6 +426,7 @@ impl ClipboardCore {
         {
             Some((item_id, copy_count)) => {
                 let next_copy_count = copy_count + 1;
+                remove_search_index(&transaction, &item_id)?;
                 transaction.execute(
                     r#"
                     UPDATE clipboard_items
@@ -595,6 +598,7 @@ impl ClipboardCore {
         {
             Some((item_id, copy_count)) => {
                 let next_copy_count = copy_count + 1;
+                remove_search_index(&transaction, &item_id)?;
                 transaction.execute(
                     r#"
                     UPDATE clipboard_items
@@ -1142,21 +1146,33 @@ pub(super) fn record_capture_event(
 pub(super) fn update_search_index(
     transaction: &Transaction<'_>,
     item_id: &str,
-    summary: &str,
-    primary_text: &str,
-    source_app_name: &str,
+    _summary: &str,
+    _primary_text: &str,
+    _source_app_name: &str,
 ) -> Result<()> {
-    let rowid = transaction.query_row(
-        "SELECT rowid FROM clipboard_items WHERE id = ?1",
-        params![item_id],
-        |row| row.get::<_, i64>(0),
-    )?;
+    insert_search_index(transaction, item_id)
+}
+
+pub(super) fn remove_search_index(transaction: &Transaction<'_>, item_id: &str) -> Result<()> {
     transaction.execute(
         r#"
-        INSERT OR REPLACE INTO clipboard_items_fts (rowid, summary, primary_text, source_app_name)
-        VALUES (?1, ?2, ?3, ?4)
+        INSERT INTO clipboard_items_fts(clipboard_items_fts, rowid, summary, primary_text, source_app_name, custom_title)
+        SELECT 'delete', rowid, summary, primary_text, source_app_name, custom_title
+        FROM clipboard_items WHERE id = ?1
         "#,
-        params![rowid, summary, primary_text, source_app_name],
+        params![item_id],
+    )?;
+    Ok(())
+}
+
+pub(super) fn insert_search_index(transaction: &Transaction<'_>, item_id: &str) -> Result<()> {
+    transaction.execute(
+        r#"
+        INSERT INTO clipboard_items_fts (rowid, summary, primary_text, source_app_name, custom_title)
+        SELECT rowid, summary, primary_text, source_app_name, custom_title
+        FROM clipboard_items WHERE id = ?1
+        "#,
+        params![item_id],
     )?;
     Ok(())
 }

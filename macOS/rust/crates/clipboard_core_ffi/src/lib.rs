@@ -202,6 +202,7 @@ mod ffi {
             is_member: bool,
         ) -> CoreItemManagementResult;
         fn delete_item(app_support_dir: String, item_id: String) -> CoreItemManagementResult;
+        fn rename_item(app_support_dir: String, item_id: String, title: String) -> CoreItemManagementResult;
         fn record_item_copied(app_support_dir: String, item_id: String)
             -> CoreItemManagementResult;
         fn update_source_app_icon_header_color(
@@ -525,6 +526,15 @@ fn clear_items(
     };
 
     match ClipboardCore::open(app_support_dir).and_then(|mut core| core.clear_items(query)) {
+        Ok(result) => item_management_result(result),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn rename_item(app_support_dir: String, item_id: String, title: String) -> ffi::CoreItemManagementResult {
+    match ClipboardCore::open(app_support_dir)
+        .and_then(|mut core| core.rename_item(item_id, title))
+    {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }

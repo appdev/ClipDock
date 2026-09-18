@@ -281,7 +281,8 @@ final class PanelItemCardRenderer {
             }
         }
 
-        let typeHeaderLabel = NSTextField(labelWithString: state.typeText)
+        let typeHeaderLabel = NSTextField(labelWithString: state.titleText)
+        typeHeaderLabel.toolTip = state.titleText
         typeHeaderLabel.identifier = NSUserInterfaceItemIdentifier("PanelCardTypeLabel")
         typeHeaderLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         typeHeaderLabel.textColor = headerTextColor(isSelected: state.isSelected)
@@ -529,7 +530,8 @@ final class PanelItemCardRenderer {
 
             headerTextStack.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: metrics.cardInset),
             headerTextStack.centerYAnchor.constraint(equalTo: headerView.centerYAnchor, constant: -1),
-            headerTextStack.trailingAnchor.constraint(lessThanOrEqualTo: iconView.leadingAnchor, constant: -10),
+            headerTextStack.trailingAnchor.constraint(equalTo: iconView.leadingAnchor, constant: -10),
+            typeHeaderLabel.trailingAnchor.constraint(equalTo: headerTextStack.trailingAnchor),
 
             iconView.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -7),
             iconView.topAnchor.constraint(equalTo: headerView.topAnchor, constant: 5),

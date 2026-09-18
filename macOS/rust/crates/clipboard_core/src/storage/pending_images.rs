@@ -577,6 +577,7 @@ fn complete_pending_image_item(
         "#,
         params![format_id, item_id, IMAGE_WEBP_MIME_TYPE, byte_count],
     )?;
+    super::capture::remove_search_index(transaction, item_id)?;
     transaction.execute(
         r#"
         UPDATE clipboard_items

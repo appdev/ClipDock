@@ -55,6 +55,7 @@
 "pinboard.status.notFound" = "Pinboard: Not found";
 "pinboard.status.removed" = "Pinboard: Removed";
 "pinboard.status.renamed" = "Pinboard: Renamed";
+"item.status.renamed" = "Item: Renamed";
 "pinboard.status.renaming" = "Pinboard: Renaming...";
 "pinboard.status.storageUninitialized" = "Pinboard: Storage uninitialized";
 "pinboard.status.updatingColor" = "Pinboard: Updating color...";

@@ -525,6 +525,35 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func searchTextAndInsertionPointAreVerticallyCentered() async throws {
+        let controller = FloatingPanelController()
+        let contentView = controller.smokeContentView
+        controller.show()
+        defer { controller.hide() }
+        let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent(".codex/artifacts")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for (name, text) in [("placeholder", ""), ("chinese", "这个是"), ("english", "Search ClipDock")] {
+            contentView.smokeOpenSearch(text: text)
+            #expect(await waitForMainActor { contentView.smokeFirstResponderIsSearchField && abs(contentView.smokeSearchFieldAlpha - 1) < 0.01 })
+            contentView.layoutSubtreeIfNeeded()
+            let field = contentView.smokeSearchField
+            let bar = try #require(field.superview)
+            let editor = try #require(field.currentEditor() as? NSTextView)
+            let editorFrame = editor.convert(editor.bounds, to: bar)
+            #expect(abs(editorFrame.midY - bar.bounds.midY) <= 0.5)
+            #expect(abs(field.frame.height - ceil(field.intrinsicContentSize.height)) <= 0.5)
+            #expect(field.alignment == .left)
+            let bitmap = try #require(bar.bitmapImageRepForCachingDisplay(in: bar.bounds))
+            bar.cacheDisplay(in: bar.bounds, to: bitmap)
+            try #require(bitmap.representation(using: .png, properties: [:]))
+                .write(to: directory.appendingPathComponent("search-centered-\(name).png"))
+        }
+    }
+
+    @Test
+    @MainActor
     func printableKeyStartsSearchFocusesFieldAndEmitsDebouncedQuery() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -567,7 +596,7 @@ struct PanelRuntimeSeamTests {
             abs(contentView.smokeSearchFieldWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldInnerWidth - 330) < 0.5
                 && abs(contentView.smokeSearchFieldHeight - 32) < 0.5
-                && abs(contentView.smokeSearchInputFieldHeight - 22) < 0.5
+                && abs(contentView.smokeSearchInputFieldHeight - ceil(contentView.smokeSearchField.intrinsicContentSize.height)) < 0.5
                 && abs(contentView.smokeSearchInputFieldVerticalCenterOffset) < 0.5
                 && abs(contentView.smokeSearchFieldFontPointSize - 14) < 0.1
                 && contentView.smokeSearchFieldFontWeight <= NSFont.Weight.regular.rawValue + 0.05
@@ -1821,7 +1850,7 @@ struct PanelRuntimeSeamTests {
         )
 
         let items = contentView.smokeManagementMenuItems(itemID: item.id)
-        #expect(items.map(\.title) == ["复制", "复制路径", "删除", "固定", "预览"])
+        #expect(items.map(\.title) == ["复制", "复制路径", "重命名", "删除", "固定", "预览"])
         #expect(items.allSatisfy { $0.hasImage })
         #expect(contentView.smokePerformManagementAction(itemID: item.id, title: "复制路径"))
         #expect(copiedPathText == payloadURL.standardizedFileURL.path)
@@ -1850,7 +1879,7 @@ struct PanelRuntimeSeamTests {
         )
 
         let items = contentView.smokeManagementMenuItems(itemID: item.id)
-        #expect(items.map(\.title) == ["复制", "复制路径", "删除", "固定", "预览"])
+        #expect(items.map(\.title) == ["复制", "复制路径", "重命名", "删除", "固定", "预览"])
         #expect(items.allSatisfy { $0.hasImage })
         #expect(contentView.smokePerformManagementAction(itemID: item.id, title: "复制路径"))
         #expect(copiedPathText == "\(firstImagePath)\n\(secondImagePath)")
@@ -1871,7 +1900,7 @@ struct PanelRuntimeSeamTests {
         )
 
         let items = contentView.smokeManagementMenuItems(itemID: item.id)
-        #expect(items.map(\.title) == ["复制", "删除", "固定", "预览"])
+        #expect(items.map(\.title) == ["复制", "重命名", "删除", "固定", "预览"])
         #expect(items.allSatisfy { $0.hasImage })
         #expect(!contentView.smokePerformManagementAction(itemID: item.id, title: "复制路径"))
     }
@@ -1902,9 +1931,9 @@ struct PanelRuntimeSeamTests {
         let richTextMenuItems = contentView.smokeManagementMenuItems(itemID: richTextItem.id)
         let linkMenuItems = contentView.smokeManagementMenuItems(itemID: linkItem.id)
 
-        #expect(textMenuItems.map(\.title) == ["复制", "复制为纯文本", "删除", "固定", "预览"])
-        #expect(richTextMenuItems.map(\.title) == ["复制", "复制为纯文本", "删除", "固定", "预览"])
-        #expect(linkMenuItems.map(\.title) == ["复制", "删除", "固定", "预览"])
+        #expect(textMenuItems.map(\.title) == ["复制", "复制为纯文本", "重命名", "删除", "固定", "预览"])
+        #expect(richTextMenuItems.map(\.title) == ["复制", "复制为纯文本", "重命名", "删除", "固定", "预览"])
+        #expect(linkMenuItems.map(\.title) == ["复制", "重命名", "删除", "固定", "预览"])
         #expect(textMenuItems.first(where: { $0.title == "复制为纯文本" })?.hasImage == true)
         #expect(richTextMenuItems.first(where: { $0.title == "复制为纯文本" })?.hasImage == true)
         #expect(contentView.smokePerformManagementAction(itemID: richTextItem.id, title: "复制为纯文本"))

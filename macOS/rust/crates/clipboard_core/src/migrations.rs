@@ -90,7 +90,32 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "sync_item_uploaded_copy_count",
         sql: SYNC_ITEM_UPLOADED_COPY_COUNT_SCHEMA,
     },
+    Migration {
+        version: 17,
+        name: "repair_incremental_search_index",
+        sql: "INSERT INTO clipboard_items_fts(clipboard_items_fts) VALUES('rebuild');",
+    },
+    Migration {
+        version: 18,
+        name: "card_custom_titles",
+        sql: CARD_CUSTOM_TITLES_SCHEMA,
+    },
 ];
+
+const CARD_CUSTOM_TITLES_SCHEMA: &str = r#"
+ALTER TABLE clipboard_items ADD COLUMN custom_title TEXT;
+DROP TABLE clipboard_items_fts;
+CREATE VIRTUAL TABLE clipboard_items_fts USING fts5(
+    summary,
+    primary_text,
+    source_app_name,
+    custom_title,
+    content = 'clipboard_items',
+    content_rowid = 'rowid',
+    tokenize = 'simple disable_stopword'
+);
+INSERT INTO clipboard_items_fts(clipboard_items_fts) VALUES('rebuild');
+"#;
 
 const SYNC_ITEM_UPLOADED_COPY_COUNT_SCHEMA: &str = r#"
 ALTER TABLE sync_item_state

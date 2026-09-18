@@ -64,7 +64,7 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
-        #expect(value.schemaVersion == 16)
+        #expect(value.schemaVersion == 18)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: tempDirectory.appendingPathComponent("clipboard.sqlite").path))
@@ -823,7 +823,7 @@ struct RustCoreClientTests {
 
         let result = try client.getPreferences(appSupportDirectory: tempDirectory).get()
 
-        #expect(result.schemaVersion == 16)
+        #expect(result.schemaVersion == 18)
         #expect(result.preferences.general.defaultPanelHeight == 320)
         #expect(result.preferences.general.showMenuBarItem)
         #expect(result.preferences.general.copyCompletionHUDEnabled)

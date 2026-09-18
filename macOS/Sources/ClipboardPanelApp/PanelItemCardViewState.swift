@@ -49,9 +49,10 @@ public enum PanelCardPreviewState: Equatable, Sendable {
 public struct PanelItemCardViewState: Equatable, Sendable {
     public let itemID: String?
     public let sourceAppName: String
-    public let relativeTimeText: String
+    public var relativeTimeText: String
     public let symbolName: String
     public let typeText: String
+    public var titleText: String
     public let summaryText: String
     public let footnoteText: String
     public let commandIndexText: String?
@@ -70,13 +71,15 @@ public struct PanelItemCardViewState: Equatable, Sendable {
         commandIndexText: String? = nil,
         isSelected: Bool,
         preview: PanelCardPreviewState,
-        assetRequest: PanelCardAssetRequest
+        assetRequest: PanelCardAssetRequest,
+        titleText: String? = nil
     ) {
         self.itemID = itemID
         self.sourceAppName = sourceAppName
         self.relativeTimeText = relativeTimeText
         self.symbolName = symbolName
         self.typeText = typeText
+        self.titleText = titleText ?? typeText
         self.summaryText = summaryText
         self.footnoteText = footnoteText
         self.commandIndexText = commandIndexText
@@ -126,7 +129,8 @@ public enum PanelItemCardViewStateAdapter {
                 payloadAssetPath: item.payloadAssetPath,
                 primaryText: item.primaryText,
                 fileCount: PanelItemCardPresenter.fileCount(for: item)
-            )
+            ),
+            titleText: item.customTitle ?? presentation.displayType
         )
     }
 
@@ -238,7 +242,8 @@ public enum PanelItemCardViewStateAdapter {
             commandIndexText: commandIndexText,
             isSelected: isSelected,
             preview: state.preview,
-            assetRequest: state.assetRequest
+            assetRequest: state.assetRequest,
+            titleText: state.titleText
         )
     }
 

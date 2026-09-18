@@ -107,6 +107,7 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
             hostedCard.onSelect = entry.callbacks.onSelect
             hostedCard.onDoubleClick = entry.callbacks.onDoubleClick
             hostedCard.onContextMenu = entry.callbacks.onContextMenu
+            hostedCard.updateHeaderText(title: entry.state.titleText, relativeTime: entry.state.relativeTimeText)
             hostedCard.applySelection(entry.state.isSelected)
             hostedCard.setCommandIndexText(entry.state.commandIndexText)
             updateLayoutMetrics(metrics)
@@ -196,11 +197,16 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
     }
 
     private static func reusableIdentityState(_ state: PanelItemCardViewState) -> PanelItemCardViewState {
-        PanelItemCardViewStateAdapter.stateBySettingTransientDecorations(
+        var identity = PanelItemCardViewStateAdapter.stateBySettingTransientDecorations(
             state,
             isSelected: false,
             commandIndexText: nil
         )
+        // Header text does not invalidate the card's body or loaded assets,
+        // including a relative-time tick while a rename is being persisted.
+        identity.titleText = ""
+        identity.relativeTimeText = ""
+        return identity
     }
 }
 
@@ -306,10 +312,21 @@ final class PanelItemCollectionSurface: NSObject,
     }
 
     func reconcile(entries: [PanelItemCollectionEntry]) {
+        let hasSameOrder = self.entries.map(\.id) == entries.map(\.id)
         self.entries = entries
         rebuildIndexes()
         updateCollectionFrameWidth()
-        collectionView.reloadData()
+        if hasSameOrder {
+            let renderer = rendererProvider()
+            // Include prefetched cells, which can become visible without another
+            // itemForRepresentedObjectAt callback.
+            for cell in liveCells.compactMap(\.cell) {
+                guard let itemID = cell.itemID, let entry = entriesByID[itemID] else { continue }
+                cell.configure(entry: entry, renderer: renderer, metrics: metrics)
+            }
+        } else {
+            collectionView.reloadData()
+        }
         hasRenderedContent = true
     }
 

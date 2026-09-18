@@ -55,6 +55,7 @@
 "pinboard.status.notFound" = "Pinboard：見つかりません";
 "pinboard.status.removed" = "Pinboard：削除しました";
 "pinboard.status.renamed" = "Pinboard：名前を変更しました";
+"item.status.renamed" = "項目：名前を変更しました";
 "pinboard.status.renaming" = "Pinboard：名前を変更中…";
 "pinboard.status.storageUninitialized" = "Pinboard：ストレージが初期化されていません";
 "pinboard.status.updatingColor" = "Pinboard：カラーを更新中…";

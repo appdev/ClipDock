@@ -25,6 +25,34 @@ const PINBOARD_COLOR_CODES: [i64; 7] = [
 ];
 
 impl ClipboardCore {
+    /// Rename metadata without changing the captured payload or its ordering.
+    pub fn rename_item(
+        &mut self,
+        item_id: impl AsRef<str>,
+        title: impl AsRef<str>,
+    ) -> Result<ItemManagementResult> {
+        let item_id = normalize_item_id(item_id.as_ref())?;
+        let title = title.as_ref().trim();
+        let title = if title.is_empty() { None } else { Some(title) };
+        let transaction = self.connection.transaction()?;
+        let exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM clipboard_items WHERE id = ?1 AND deleted_at_ms IS NULL)",
+            [&item_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Ok(ItemManagementResult { affected_count: 0 });
+        }
+        super::capture::remove_search_index(&transaction, &item_id)?;
+        transaction.execute(
+            "UPDATE clipboard_items SET custom_title = ?1 WHERE id = ?2",
+            params![title, item_id],
+        )?;
+        super::capture::insert_search_index(&transaction, &item_id)?;
+        transaction.commit()?;
+        Ok(ItemManagementResult { affected_count: 1 })
+    }
+
     pub fn list_items(&self, query: ItemQuery, page: PageRequest) -> Result<ItemPage> {
         let page = page.normalized();
         let total_count = self.active_item_count(&query)?;
@@ -105,7 +133,8 @@ impl ClipboardCore {
                 lm.icon_relative_path,
                 lm.image_relative_path,
                 lm.metadata_state,
-                lm.fetched_at_ms
+                lm.fetched_at_ms,
+                i.custom_title
             FROM clipboard_items i
             LEFT JOIN source_apps s ON s.id = i.source_app_id
             LEFT JOIN source_app_icons ic ON ic.id = (
@@ -746,6 +775,7 @@ fn append_query_filters(
             i.summary LIKE ? ESCAPE '\'
             OR COALESCE(i.primary_text, '') LIKE ? ESCAPE '\'
             OR COALESCE(s.name, i.source_app_name, '') LIKE ? ESCAPE '\'
+            OR COALESCE(i.custom_title, '') LIKE ? ESCAPE '\'
             )
             "#,
         );
@@ -753,6 +783,7 @@ fn append_query_filters(
             params.push(Value::Text(fts_query));
         }
         let like_query = make_like_query(search_text);
+        params.push(Value::Text(like_query.clone()));
         params.push(Value::Text(like_query.clone()));
         params.push(Value::Text(like_query.clone()));
         params.push(Value::Text(like_query));
@@ -1010,6 +1041,7 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
 
     Ok(ClipboardItemSummary {
         id: row.get(0)?,
+        custom_title: row.get(28)?,
         item_type: ClipboardItemType::from_storage(&item_type),
         summary: row.get(2)?,
         primary_text: row.get(3)?,

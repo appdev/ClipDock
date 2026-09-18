@@ -22,6 +22,215 @@ fn open_temp_core() -> (TempDir, ClipboardCore) {
     (temp_dir, core)
 }
 
+#[test]
+fn card_rename_persists_without_changing_content_or_copy_order() {
+    let (root, mut core) = open_temp_core();
+    let id = core
+        .capture_text(text_capture_request("Synthetic body", 1))
+        .unwrap()
+        .item_id;
+    let mut expected = core.get_item(&id).unwrap().unwrap();
+    assert_eq!(
+        core.rename_item(&id, "  测试重命名 📝  ")
+            .unwrap()
+            .affected_count,
+        1
+    );
+    expected.custom_title = Some("测试重命名 📝".into());
+    assert_eq!(core.get_item(&id).unwrap().unwrap(), expected);
+    drop(core);
+    let core = ClipboardCore::open(root.path()).unwrap();
+    assert_eq!(core.get_item(&id).unwrap().unwrap(), expected);
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(page.items[0].custom_title, expected.custom_title);
+}
+
+#[test]
+fn card_rename_search_updates_chinese_pinyin_and_literal_fallback() {
+    let (_root, mut core) = open_temp_core();
+    let id = core
+        .capture_text(text_capture_request("Unchanged body", 1))
+        .unwrap()
+        .item_id;
+    core.rename_item(&id, "测试重命名").unwrap();
+    for search in ["测试", "ces", "ceshi"] {
+        let page = core
+            .list_items(
+                ItemQuery {
+                    search_text: Some(search.into()),
+                    ..Default::default()
+                },
+                PageRequest::default(),
+            )
+            .unwrap();
+        assert_eq!(page.total_count, 1, "query: {search}");
+        assert_eq!(page.items[0].id, id);
+    }
+    core.rename_item(&id, "NewTitle 100%_ready").unwrap();
+    for (search, expected) in [
+        ("测试", 0),
+        ("ceshi", 0),
+        ("NewTitle", 1),
+        ("100%_", 1),
+        ("Unchanged", 1),
+    ] {
+        let page = core
+            .list_items(
+                ItemQuery {
+                    search_text: Some(search.into()),
+                    ..Default::default()
+                },
+                PageRequest::default(),
+            )
+            .unwrap();
+        assert_eq!(page.total_count, expected, "query: {search}");
+    }
+    core.rename_item(&id, " \n\t ").unwrap();
+    assert_eq!(core.get_item(&id).unwrap().unwrap().custom_title, None);
+    assert_eq!(
+        core.list_items(
+            ItemQuery {
+                search_text: Some("NewTitle".into()),
+                ..Default::default()
+            },
+            PageRequest::default()
+        )
+        .unwrap()
+        .total_count,
+        0
+    );
+    core.connection.execute("INSERT INTO clipboard_items_fts(clipboard_items_fts, rank) VALUES('integrity-check', 1)", []).unwrap();
+}
+
+#[test]
+fn card_rename_survives_duplicate_capture_pinboard_and_maintenance() {
+    let (_root, mut core) = open_temp_core();
+    let id = core
+        .capture_text(text_capture_request("Repeated body", 1))
+        .unwrap()
+        .item_id;
+    core.rename_item(&id, "Retained title").unwrap();
+    core.set_item_pinboard_membership(&id, super::DEFAULT_PINBOARD_ID, true)
+        .unwrap();
+    let duplicate = core
+        .capture_text(text_capture_request("Repeated body", 2))
+        .unwrap();
+    assert_eq!(duplicate.item_id, id);
+    assert!(!duplicate.inserted);
+    assert_eq!(
+        core.get_item(&id).unwrap().unwrap().custom_title.as_deref(),
+        Some("Retained title")
+    );
+    let page = core
+        .list_items(
+            ItemQuery {
+                pinboard_id: Some(super::DEFAULT_PINBOARD_ID.into()),
+                search_text: Some("Retained".into()),
+                ..Default::default()
+            },
+            PageRequest::default(),
+        )
+        .unwrap();
+    assert_eq!(page.total_count, 1);
+    core.set_item_pinboard_membership(&id, super::DEFAULT_PINBOARD_ID, false)
+        .unwrap();
+    core.delete_item(&id).unwrap();
+    assert_eq!(core.rename_item(&id, "Missing").unwrap().affected_count, 0);
+    core.run_maintenance().unwrap();
+    core.connection.execute("INSERT INTO clipboard_items_fts(clipboard_items_fts, rank) VALUES('integrity-check', 1)", []).unwrap();
+}
+
+#[test]
+fn card_rename_failure_rolls_back_title_and_search_index() {
+    let (_root, mut core) = open_temp_core();
+    let id = core
+        .capture_text(text_capture_request("Atomic body", 1))
+        .unwrap()
+        .item_id;
+    core.rename_item(&id, "OriginalTitle").unwrap();
+    core.connection.execute_batch("CREATE TRIGGER reject_rename BEFORE UPDATE OF custom_title ON clipboard_items BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;").unwrap();
+    assert!(core.rename_item(&id, "RejectedTitle").is_err());
+    assert_eq!(
+        core.get_item(&id).unwrap().unwrap().custom_title.as_deref(),
+        Some("OriginalTitle")
+    );
+    assert_eq!(
+        core.list_items(
+            ItemQuery {
+                search_text: Some("OriginalTitle".into()),
+                ..Default::default()
+            },
+            PageRequest::default()
+        )
+        .unwrap()
+        .total_count,
+        1
+    );
+    core.connection.execute("INSERT INTO clipboard_items_fts(clipboard_items_fts, rank) VALUES('integrity-check', 1)", []).unwrap();
+    assert_eq!(
+        core.rename_item("missing", "title").unwrap().affected_count,
+        0
+    );
+    assert_eq!(
+        core.rename_item(" ", "title").unwrap_err().code,
+        CoreErrorCode::InvalidInput
+    );
+}
+
+#[test]
+fn card_rename_migration_preserves_v17_rows_and_search() {
+    let root = TempDir::new().unwrap();
+    let mut connection = Connection::open(root.path().join(DATABASE_FILE_NAME)).unwrap();
+    apply_migrations_through(&mut connection, 17);
+    connection.execute("INSERT INTO clipboard_items (id, type, summary, primary_text, content_hash, first_copied_at_ms, last_copied_at_ms, created_at_ms, updated_at_ms) VALUES ('legacy-rename', 'text', 'Legacy body', 'Legacy body', 'legacy-rename-hash', ?1, ?1, ?1, ?1)", [now_ms()]).unwrap();
+    drop(connection);
+    let mut core = ClipboardCore::open(root.path()).unwrap();
+    assert_eq!(
+        core.get_item("legacy-rename")
+            .unwrap()
+            .unwrap()
+            .custom_title,
+        None
+    );
+    assert_eq!(
+        core.list_items(
+            ItemQuery {
+                search_text: Some("Legacy".into()),
+                ..Default::default()
+            },
+            PageRequest::default()
+        )
+        .unwrap()
+        .total_count,
+        1
+    );
+    core.rename_item("legacy-rename", "MigratedTitle").unwrap();
+    assert_eq!(
+        core.list_items(
+            ItemQuery {
+                search_text: Some("MigratedTitle".into()),
+                ..Default::default()
+            },
+            PageRequest::default()
+        )
+        .unwrap()
+        .total_count,
+        1
+    );
+}
+
+trait RenameTestLookup {
+    fn get_item(&self, id: &str) -> crate::Result<Option<crate::ClipboardItemSummary>>;
+}
+impl RenameTestLookup for ClipboardCore {
+    fn get_item(&self, id: &str) -> crate::Result<Option<crate::ClipboardItemSummary>> {
+        Ok(self.list_items(ItemQuery::default(), PageRequest::default())?.items
+            .into_iter().find(|item| item.id == id))
+    }
+}
+
 fn capture_pending_link(core: &mut ClipboardCore, text: &str, url: &str) -> CaptureResult {
     let host = url
         .trim_start_matches("https://")

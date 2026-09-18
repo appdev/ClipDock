@@ -55,6 +55,7 @@
 "pinboard.status.notFound" = "Pinboard：找不到";
 "pinboard.status.removed" = "Pinboard：已移除";
 "pinboard.status.renamed" = "Pinboard：已重新命名";
+"item.status.renamed" = "項目：已重新命名";
 "pinboard.status.renaming" = "Pinboard：正在重新命名…";
 "pinboard.status.storageUninitialized" = "Pinboard：儲存未初始化";
 "pinboard.status.updatingColor" = "Pinboard：正在更新色彩…";

@@ -339,7 +339,7 @@ final class ClipboardItemCardBox: NSBox {
     var onDoubleClick: (() -> Void)?
     var onContextMenu: ((NSEvent) -> Void)?
     private weak var selectionHeaderView: NSView?
-    private weak var typeHeaderLabel: NSTextField?
+    private(set) weak var typeHeaderLabel: NSTextField?
     private weak var timeLabel: NSTextField?
     private weak var commandIndexLabel: NSTextField?
     private weak var commandIndexBackgroundView: NSView?
@@ -413,6 +413,12 @@ final class ClipboardItemCardBox: NSBox {
         commandIndexLabel = label
         commandIndexBackgroundView = backgroundView
         setCommandIndexText(nil)
+    }
+
+    func updateHeaderText(title: String, relativeTime: String) {
+        typeHeaderLabel?.stringValue = title
+        typeHeaderLabel?.toolTip = title
+        timeLabel?.stringValue = relativeTime
     }
 
     func setCommandIndexText(_ text: String?) {

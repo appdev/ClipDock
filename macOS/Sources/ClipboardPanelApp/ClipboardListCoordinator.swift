@@ -95,6 +95,7 @@ public struct ClipboardListUpdate: Sendable {
 }
 
 public enum ClipboardItemMutationRequest: Sendable, Equatable {
+    case rename(itemID: String, title: String)
     case setPinboardMembership(itemID: String, pinboardID: String, isMember: Bool)
     case delete(itemID: String, pinboardID: String?)
     case recordCopied(itemID: String)
@@ -188,6 +189,8 @@ public actor ClipboardCoreDatabaseWorker {
         mutation: ClipboardItemMutationRequest
     ) -> Result<RustItemManagementResult, RustCoreError> {
         switch mutation {
+        case .rename(let itemID, let title):
+            client.renameItem(appSupportDirectory: appSupportURL, itemId: itemID, title: title)
         case .setPinboardMembership(let itemID, let pinboardID, let isMember):
             client.setItemPinboardMembership(
                 appSupportDirectory: appSupportURL,
@@ -434,7 +437,7 @@ public final class ClipboardListCoordinator {
         }
     }
 
-    public func performMutation(_ mutation: ClipboardItemMutationRequest) {
+    public func performMutation(_ mutation: ClipboardItemMutationRequest, completion: ((Bool) -> Void)? = nil) {
         let mutationPerformer = self.mutationPerformer
 
         prepareForMutation()
@@ -445,11 +448,13 @@ public final class ClipboardListCoordinator {
 
             switch result {
             case .success(let mutationResult):
+                completion?(mutationResult.affectedCount > 0)
                 self.onStatusTextChanged?(self.statusText(for: mutation, result: mutationResult))
                 self.onMutationCompleted?(mutation, mutationResult)
                 self.refreshAfterMutationIfNeeded(mutation)
 
             case .failure(let error):
+                completion?(false)
                 self.onStatusTextChanged?(AppLocalization.format("item.status.error", defaultValue: "条目：%@", error.code))
             }
         }
@@ -571,6 +576,8 @@ public final class ClipboardListCoordinator {
 
     private func refreshAfterMutationIfNeeded(_ mutation: ClipboardItemMutationRequest) {
         switch mutation {
+        case .rename:
+            refreshLoadedWindow(preserveScrollPositionOnStructuralChange: true)
         case .setPinboardMembership:
             guard currentPinboardID != nil else { return }
             refreshLoadedWindow()
@@ -595,7 +602,7 @@ public final class ClipboardListCoordinator {
                 return currentPinboardID == pinboardID
             }
             return true
-        case .recordCopied, .clear:
+        case .rename, .recordCopied, .clear:
             return true
         }
     }
@@ -781,6 +788,10 @@ public final class ClipboardListCoordinator {
         result: RustItemManagementResult
     ) -> String {
         switch mutation {
+        case .rename:
+            return result.affectedCount > 0
+                ? AppLocalization.text("item.status.renamed", defaultValue: "条目：已重命名")
+                : AppLocalization.text("item.status.notFound", defaultValue: "条目：未找到")
         case .setPinboardMembership(_, _, let isMember):
             return result.affectedCount > 0
                 ? (isMember

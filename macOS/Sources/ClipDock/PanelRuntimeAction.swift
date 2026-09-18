@@ -9,6 +9,7 @@ enum PanelRuntimeAction {
     case copyItemAsPlainText(RustClipboardItemSummary)
     case copyItemsAsPlainText([RustClipboardItemSummary])
     case copyPath(String)
+    case renameItem(itemID: String, title: String, completion: (Bool) -> Void)
     case setPinboardMembership(RustClipboardItemSummary, pinboardID: String, isMember: Bool)
     case setPinboardMembershipBatch([RustClipboardItemSummary], pinboardID: String, isMember: Bool)
     case createPinboard(title: String, colorCode: Int64)

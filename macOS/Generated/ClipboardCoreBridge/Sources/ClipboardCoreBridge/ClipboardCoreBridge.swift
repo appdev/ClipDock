@@ -53,6 +53,9 @@ public func set_item_pinboard_membership<GenericIntoRustString: IntoRustString>(
 public func delete_item<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString) -> CoreItemManagementResult {
     __swift_bridge__$delete_item({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
+public func rename_item<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString, _ title: GenericIntoRustString) -> CoreItemManagementResult {
+    __swift_bridge__$rename_item({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = title.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
 public func record_item_copied<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString) -> CoreItemManagementResult {
     __swift_bridge__$record_item_copied({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }

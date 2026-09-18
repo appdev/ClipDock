@@ -220,6 +220,8 @@ pub struct ClipboardFileItemSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClipboardItemSummary {
     pub id: String,
+    #[serde(default)]
+    pub custom_title: Option<String>,
     pub item_type: ClipboardItemType,
     pub summary: String,
     pub primary_text: Option<String>,

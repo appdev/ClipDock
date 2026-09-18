@@ -2156,7 +2156,7 @@ final class PanelInteractionSmokeProbe {
                 self?.pinboardRequest = (item.id, pinboardID, isMember)
             case .setPinboardMembershipBatch(let items, let pinboardID, let isMember):
                 self?.pinboardRequest = (items.first?.id ?? "", pinboardID, isMember)
-            case .createPinboard, .renamePinboard, .updatePinboardColor, .deletePinboard:
+            case .renameItem, .createPinboard, .renamePinboard, .updatePinboardColor, .deletePinboard:
                 break
             case .deleteItem(let item, _):
                 self?.deletedItemID = item.id

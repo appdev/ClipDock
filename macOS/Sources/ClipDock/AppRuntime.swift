@@ -214,7 +214,6 @@ private final class PanelSearchBarView: NSView {
         static let iconSide: CGFloat = 17
         static let textLeading: CGFloat = 38
         static let textTrailing: CGFloat = 38
-        static let textFieldHeight: CGFloat = 22
         static let clearSide: CGFloat = 18
         static let clearTrailing: CGFloat = 10
     }
@@ -288,7 +287,9 @@ private final class PanelSearchBarView: NSView {
             searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.textLeading),
             searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.textTrailing),
             searchField.centerYAnchor.constraint(equalTo: centerYAnchor),
-            searchField.heightAnchor.constraint(equalToConstant: Metrics.textFieldHeight)
+            // Center the natural text/editor height, not an oversized cell whose
+            // glyphs and insertion point are aligned to its top edge.
+            searchField.heightAnchor.constraint(equalToConstant: ceil(searchField.intrinsicContentSize.height))
         ])
     }
 
@@ -549,6 +550,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private var pinboardFilters: [PinboardFilterEntry] = []
     private var pendingCreatedPinboardSourceIDs: Set<String>?
     private weak var activeRenameField: NSTextField?
+    private var cardRenameSession: PanelCardRenameSession?
+    private struct PendingCardTitle {
+        let token: UUID
+        let title: String
+        var isPersisted = false
+    }
+    private var pendingCardTitles: [String: PendingCardTitle] = [:]
+    private var cardRenameLayoutSuspensionDepth = 0
     private weak var activeRenameButton: PinboardChipButton?
     private var activeRenamePinboardID: String?
     private var activeRenameOriginalTitle: String?
@@ -624,6 +633,77 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             page.hasRenderedContent = false
         }
         renderCurrentItems(scrollSelectedItem: false, preserveScrollPosition: true)
+    }
+
+    override func layout() {
+        super.layout()
+        if cardRenameSession != nil {
+            itemBandContainerView.layoutSubtreeIfNeeded()
+        }
+        updateCardRenameAnchor()
+    }
+
+    private func updateCardRenameAnchor() {
+        guard cardRenameLayoutSuspensionDepth == 0 else { return }
+        guard let session = cardRenameSession else { return }
+        guard interactionController.item(withID: session.itemID) != nil else {
+            session.finish(commit: false)
+            return
+        }
+        guard activeListPage.itemIsFullyVisible(session.itemID) else {
+            session.finish(commit: true)
+            return
+        }
+        // NSCollectionView may prefetch while its new cells are being installed.
+        guard let label = itemBandCardView(forItemID: session.itemID)?.typeHeaderLabel else { return }
+        session.updateAnchor(label)
+    }
+
+    func finishCardRenameBeforeHiding() {
+        cardRenameSession?.finish(commit: true)
+    }
+
+    private func beginCardRename(itemID: String) {
+        guard panelViewState().selectedItemIDs.count == 1,
+              let item = interactionController.item(withID: itemID) else { return }
+        cardRenameSession?.finish(commit: true)
+        cancelInlinePinboardRename()
+        closePreviewPopover()
+        activeListPage.scrollItemIntoView(itemID: itemID)
+        layoutSubtreeIfNeeded()
+        guard let label = itemBandCardView(forItemID: itemID)?.typeHeaderLabel,
+              let window else { return }
+        let session = PanelCardRenameSession(
+            itemID: itemID, title: pendingCardTitles[itemID]?.title ?? item.customTitle ?? label.stringValue,
+            label: label, host: self
+        ) { [weak self] title in
+            guard let self else { return }
+            self.cardRenameSession = nil
+            if let title {
+                let token = UUID()
+                self.pendingCardTitles[itemID] = PendingCardTitle(token: token, title: title)
+                self.refreshCardTitles()
+                self.onRuntimeAction?(.renameItem(itemID: itemID, title: title, completion: { [weak self] succeeded in
+                    guard let self, self.pendingCardTitles[itemID]?.token == token else { return }
+                    if succeeded {
+                        // Keep the draft through any stale UI updates until a
+                        // database result contains the saved name.
+                        self.pendingCardTitles[itemID]?.isPersisted = true
+                    } else {
+                        self.pendingCardTitles.removeValue(forKey: itemID)
+                        self.refreshCardTitles()
+                    }
+                }))
+            }
+        }
+        cardRenameSession = session
+        window.makeKey()
+        session.focus()
+    }
+
+    private func refreshCardTitles() {
+        activeListPage.reconcile(entries: currentItems().map(makeItemEntry))
+        updateCardRenameAnchor()
     }
 
     func updateBackgroundHostState(_ state: BackgroundHostState) {
@@ -850,6 +930,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func canStartSearchFromPrintableKey() -> Bool {
         guard !hasBlockingPanelOperation,
               !previewPopoverController.isShown,
+              cardRenameSession == nil,
               activeRenameField == nil
         else {
             return false
@@ -880,6 +961,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         currentPanelHeight = panelHeight
         let itemSide = itemSideLength(for: panelHeight)
         activeListPage.updatePanelHeight(itemSide)
+        if cardRenameSession != nil {
+            layoutSubtreeIfNeeded()
+            updateCardRenameAnchor()
+        }
     }
 
     var hasRenderedNonEmptyListContent: Bool {
@@ -898,6 +983,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func handleItemBandScrollDidChange() {
+        updateCardRenameAnchor()
         activeListPage.savedScrollOrigin = activeListPage.saveScrollOrigin()
         let reachedLoadMoreThreshold = activeListPage.hasReachedLoadMoreThreshold()
         guard reachedLoadMoreThreshold || panelViewState().isCommandHintModeEnabled else {
@@ -1371,6 +1457,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         _ pinboard: PinboardFilterEntry,
         in button: PinboardChipButton
     ) {
+        cardRenameSession?.finish(commit: true)
         cancelInlinePinboardRename()
 
         let textField = NSTextField(frame: inlineRenameFieldFrame(in: button))
@@ -1546,6 +1633,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         preserveScrollPositionOnStructuralChange: Bool = false
     ) {
         let updateScope = scope ?? currentListScope
+        if case .success(let list) = result {
+            for item in list.items {
+                if let pending = pendingCardTitles[item.id],
+                   pending.isPersisted, pending.title == (item.customTitle ?? "") {
+                    pendingCardTitles.removeValue(forKey: item.id)
+                }
+            }
+        }
         let loadedCountBeforeUpdate = currentItems().count
         if updateScope != currentListScope {
             let activeQueryScope = ClipboardListScope(
@@ -1709,6 +1804,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func switchListPage(to scope: ClipboardListScope) {
+        if scope != currentListScope { cardRenameSession?.finish(commit: true) }
         guard scope != currentListScope else { return }
 
         saveCurrentListPageState()
@@ -1736,6 +1832,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         scrollSelectedItem: Bool = true,
         preserveScrollPosition: Bool = false
     ) {
+        cardRenameLayoutSuspensionDepth += 1
+        defer {
+            cardRenameLayoutSuspensionDepth -= 1
+            updateCardRenameAnchor()
+        }
         let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
         switch panelViewState().list.presentation {
         case .emptyHistory, .filteredEmpty:
@@ -1768,6 +1869,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func applyRenderPlan(_ plan: PanelContentRenderPlan) {
+        cardRenameLayoutSuspensionDepth += 1
+        defer {
+            cardRenameLayoutSuspensionDepth -= 1
+            updateCardRenameAnchor()
+        }
         if plan.previewClosePolicy == .close {
             previewPopoverController.close()
         }
@@ -1849,6 +1955,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func handleKeyboardCommand(_ event: NSEvent) -> Bool {
+        if cardRenameSession != nil { return false }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let commandPressed = modifiers.contains(.command)
         let shiftPressed = modifiers.contains(.shift)
@@ -1873,6 +1980,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 return true
             }
 
+            if character == "r", modifiers.subtracting([.capsLock, .numericPad]) == [.command] {
+                if let itemID = panelViewState().selectedItemID {
+                    beginCardRename(itemID: itemID)
+                }
+                return true
+            }
         }
 
         if quickPasteModifierPressed,
@@ -2358,6 +2471,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 self?.onRuntimeAction?(.copyPath(pathText))
             })
         }
+        let renameItem = ActionMenuItem(title: AppLocalization.text("action.rename", defaultValue: "重命名"), imageName: "pencil", keyEquivalent: "r", modifierMask: [.command]) { [weak self] in
+            self?.beginCardRename(itemID: item.id)
+        }
+        renameItem.isEnabled = panelViewState().selectedItemIDs.count == 1
+        menu.addItem(renameItem)
         menu.addItem(ActionMenuItem(title: AppLocalization.text("action.delete", defaultValue: "删除"), imageName: "trash", keyEquivalent: "\u{8}", modifierMask: []) { [weak self] in
             self?.applyInteractionAction(.management(itemID: item.id, action: .delete))
         })
@@ -2514,6 +2632,12 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                     self.scheduleEmptySearchCloseIfNeeded(for: event)
                 }
                 self.commitInlinePinboardRenameBeforePanelMouseDown(event)
+                if let session = self.cardRenameSession, event.window === self.window {
+                    let point = session.field.convert(event.locationInWindow, from: nil)
+                    if !session.field.bounds.contains(point) {
+                        session.finish(commit: true)
+                    }
+                }
             }
             let quickPasteModifierPressed = self.shortcutModifierIsPressed(
                 self.shortcutPreferences.quickPasteModifier,
@@ -2554,6 +2678,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
               panelViewState().toolbar.isSearchVisible,
               panelViewState().toolbar.searchText.isEmpty,
               activeRenameField == nil,
+              cardRenameSession == nil,
               !hasBlockingPanelOperation,
               !previewPopoverController.isShown,
               menuTrackingDepth == 0,
@@ -2580,6 +2705,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
               panelViewState().toolbar.isSearchVisible,
               panelViewState().toolbar.searchText.isEmpty,
               activeRenameField == nil,
+              cardRenameSession == nil,
               !hasBlockingPanelOperation,
               !previewPopoverController.isShown
         else {
@@ -2834,11 +2960,15 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func makeItemCardState(_ item: RustClipboardItemSummary) -> PanelItemCardViewState {
-        PanelItemCardViewStateAdapter.makeViewState(
+        var state = PanelItemCardViewStateAdapter.makeViewState(
             for: item,
             selectedItemID: panelViewState().selectedItemID,
             selectedItemIDs: panelViewState().selectedItemIDs
         )
+        if let pending = pendingCardTitles[item.id] {
+            state.titleText = pending.title.isEmpty ? state.typeText : pending.title
+        }
+        return state
     }
 
     private func makeItemCardCallbacks(
@@ -3848,6 +3978,8 @@ extension FloatingPanelContentView {
             )
         }
     }
+
+    var smokeCardRenameField: NSTextField? { cardRenameSession?.field }
 
     func smokeManagementSubmenuItems(itemID: String, title: String) -> [
         (title: String, isEnabled: Bool, isSelected: Bool, hasImage: Bool)
