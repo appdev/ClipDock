@@ -115,6 +115,7 @@ function PanelApp() {
   const [items, setItems] = useState(isTauri() ? [] : panelItems);
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const renameQueue = useRef(new CardRenameQueue(persistCardTitle));
+  const deletedItemIds = useRef(new Set<string>());
   const [searchRevision, setSearchRevision] = useState(0);
   const [storedSearch, setStoredSearch] = useState<{ query: string; matches: ClipItem[] } | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
@@ -136,6 +137,7 @@ function PanelApp() {
     const nativeIds = new Set(nativeMatches.map((item) => item.id));
     const candidates = [...items, ...nativeMatches.filter((match) => !items.some((item) => item.id === match.id))];
     return sortedPanelItemsForDisplay(candidates).filter((item) => {
+      if (deletedItemIds.current.has(item.id)) return false;
       const typeMatches = activeType === "all" || item.kind === activeType;
       const pinboardMatches = !activePinboard || item.pinboardIds.includes(activePinboard);
       const textMatches =
@@ -596,6 +598,8 @@ function PanelApp() {
   }
 
   function deleteItem(item: ClipItem) {
+    // A search response may have been read before the deletion reached storage.
+    deletedItemIds.current.add(item.id);
     setItems((currentItems) => deletePanelItem(currentItems, item.id));
     setStoredSearch((current) => current ? { ...current, matches: current.matches.filter((match) => match.id !== item.id) } : null);
     setContextMenu(null);
