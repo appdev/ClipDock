@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Link as LinkIcon,
   Palette,
+  Pencil,
   Pin,
   Plus,
   Search,
@@ -48,6 +49,8 @@ import {
 } from "./panel/panelInteractions";
 import { applyResolvedPanelAssets, resolvePanelNativeAssets } from "./panel/nativeAssets";
 import { loadStoredPanelItems } from "./panel/panelStore";
+import { CardTitleEditor } from "./panel/CardTitleEditor";
+import { CardRenameQueue, matchesRenameShortcut, normalizedCardTitle, persistCardTitle } from "./panel/cardRename";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { ClipItem, ClipKind, SourceKind } from "./panel/panelTypes";
 import { PreferencesApp } from "./preferences/PreferencesApp";
@@ -109,7 +112,11 @@ function PanelApp() {
   const { preferences } = usePreferences();
   const [activeType, setActiveType] = useState<(typeof typeFilters)[number]["id"]>("all");
   const [activePinboard, setActivePinboard] = useState<string | null>(null);
-  const [items, setItems] = useState(panelItems);
+  const [items, setItems] = useState(isTauri() ? [] : panelItems);
+  const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
+  const renameQueue = useRef(new CardRenameQueue(persistCardTitle));
+  const [searchRevision, setSearchRevision] = useState(0);
+  const [storedSearch, setStoredSearch] = useState<{ query: string; matches: ClipItem[] } | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [selectedItemId, setSelectedItemId] = useState(panelItems[0]?.id ?? "");
@@ -125,18 +132,33 @@ function PanelApp() {
 
   const filteredItems = useMemo(() => {
     const normalizedSearch = searchText.trim().toLocaleLowerCase();
-    return sortedPanelItemsForDisplay(items).filter((item) => {
+    const nativeMatches = storedSearch?.query === searchText ? storedSearch.matches : [];
+    const nativeIds = new Set(nativeMatches.map((item) => item.id));
+    const candidates = [...items, ...nativeMatches.filter((match) => !items.some((item) => item.id === match.id))];
+    return sortedPanelItemsForDisplay(candidates).filter((item) => {
       const typeMatches = activeType === "all" || item.kind === activeType;
       const pinboardMatches = !activePinboard || item.pinboardIds.includes(activePinboard);
       const textMatches =
         normalizedSearch.length === 0 ||
-        [item.typeLabel, item.title, item.summary, item.footer, item.sourceName]
+        nativeIds.has(item.id) || item.id === renamingItemId ||
+        [item.customTitle, item.typeLabel, item.title, item.summary, item.footer, item.sourceName]
           .join(" ")
           .toLocaleLowerCase()
           .includes(normalizedSearch);
       return typeMatches && pinboardMatches && textMatches;
     });
-  }, [activePinboard, activeType, items, searchText]);
+  }, [activePinboard, activeType, items, searchText, storedSearch, renamingItemId]);
+
+  useEffect(() => {
+    if (!searchText.trim() || !isTauri()) return;
+    let cancelled = false;
+    void loadStoredPanelItems(100, searchText).then((matches) => {
+      if (!cancelled) setStoredSearch({ query: searchText, matches });
+    }).catch(() => {
+      if (!cancelled) setStoredSearch(null);
+    });
+    return () => { cancelled = true; };
+  }, [searchText, searchRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,12 +180,11 @@ function PanelApp() {
     let cancelled = false;
     loadStoredPanelItems()
       .then((storedItems) => {
-        if (cancelled || storedItems.length === 0) {
+        if (cancelled || !isTauri()) {
           return;
         }
-        // Replace the seeded demo items with persisted history and seed
-        // the dedup set so the live monitor does not re-add existing rows.
-        setItems(storedItems);
+        // Preserve captures and edits that arrived while the initial page loaded.
+        setItems((current) => [...current, ...storedItems.filter((stored) => !current.some((item) => item.id === stored.id))]);
         setSelectedItemId(storedItems[0]?.id ?? "");
       })
       .catch((error) => {
@@ -275,6 +296,9 @@ function PanelApp() {
   }, []);
 
   function captureClipboardSnapshot(snapshot: ClipboardSnapshot | null) {
+    // The native monitor emits the persisted record. Raw polling snapshots have
+    // temporary ids and must not race the durable event into the dedup set.
+    if (isTauri() && !snapshot?.storedItem) return;
     const decision = clipboardCaptureDecision(
       snapshot,
       capturedClipboardKeysRef.current,
@@ -363,6 +387,13 @@ function PanelApp() {
         target instanceof HTMLTextAreaElement ||
         target?.isContentEditable === true;
       if (isTextEntry && event.key !== "Escape" && !matchesSearchShortcut(event)) {
+        return;
+      }
+
+      if (!isTextEntry && matchesRenameShortcut(event)) {
+        event.preventDefault();
+        const item = filteredItems.find((candidate) => candidate.id === selectedItemId);
+        if (item) beginRename(item);
         return;
       }
 
@@ -545,8 +576,28 @@ function PanelApp() {
     showPanelShortcutToast(`新增 · ${nextItem.title}`);
   }
 
+  function beginRename(item: ClipItem) {
+    setContextMenu(null);
+    setSelectedItemId(item.id);
+    // Search can return records outside the initial history page.
+    setItems((current) => current.some((entry) => entry.id === item.id) ? current : [...current, item]);
+    setRenamingItemId(item.id);
+  }
+
+  function saveRename(item: ClipItem, draft: string) {
+    const title = normalizedCardTitle(draft);
+    if (title !== (item.customTitle ?? null)) {
+      void renameQueue.current.save(item.id, item.customTitle ?? null, title,
+        (customTitle) => setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, customTitle } : entry)),
+        () => showPanelShortcutToast("重命名失败，已恢复原名称")
+      ).then(() => setSearchRevision((value) => value + 1));
+    }
+    setRenamingItemId(null);
+  }
+
   function deleteItem(item: ClipItem) {
     setItems((currentItems) => deletePanelItem(currentItems, item.id));
+    setStoredSearch((current) => current ? { ...current, matches: current.matches.filter((match) => match.id !== item.id) } : null);
     setContextMenu(null);
     showPanelShortcutToast(`已删除 · ${item.title}`);
 
@@ -608,7 +659,7 @@ function PanelApp() {
     setContextMenu({
       itemId: item.id,
       x: Math.min(event.clientX, window.innerWidth - 190),
-      y: Math.min(event.clientY, window.innerHeight - 150)
+      y: Math.max(0, Math.min(event.clientY, window.innerHeight - 205))
     });
   }
 
@@ -736,6 +787,9 @@ function PanelApp() {
                 item={item}
                 commandIndex={String(index + 1)}
                 selected={item.id === selectedItemId}
+                renaming={item.id === renamingItemId}
+                onRenameSave={(draft) => saveRename(item, draft)}
+                onRenameCancel={() => setRenamingItemId(null)}
                 onSelect={() => setSelectedItemId(item.id)}
                 onCopy={() => void copyItemToClipboard(item)}
                 onOpenContextMenu={(event) => openCardContextMenu(event, item)}
@@ -747,7 +801,7 @@ function PanelApp() {
         {contextMenu && (
           <PanelContextMenu
             state={contextMenu}
-            item={items.find((item) => item.id === contextMenu.itemId) ?? null}
+            item={filteredItems.find((item) => item.id === contextMenu.itemId) ?? null}
             onCopy={(item) => {
               setContextMenu(null);
               void copyItemToClipboard(item);
@@ -755,6 +809,7 @@ function PanelApp() {
             onAdd={addItem}
             onTogglePinned={toggleItemPinned}
             onDelete={deleteItem}
+            onRename={beginRename}
           />
         )}
 
@@ -851,6 +906,9 @@ function PanelCard({
   item,
   commandIndex,
   selected,
+  renaming,
+  onRenameSave,
+  onRenameCancel,
   onSelect,
   onCopy,
   onOpenContextMenu
@@ -858,6 +916,9 @@ function PanelCard({
   item: ClipItem;
   commandIndex: string;
   selected: boolean;
+  renaming: boolean;
+  onRenameSave: (draft: string) => void;
+  onRenameCancel: () => void;
   onSelect: () => void;
   onCopy: () => void;
   onOpenContextMenu: (event: React.MouseEvent<HTMLElement>) => void;
@@ -870,7 +931,7 @@ function PanelCard({
       onDoubleClick={onCopy}
       onContextMenu={onOpenContextMenu}
       data-testid={`panel-card-${item.id}`}
-      aria-label={`${item.typeLabel} ${item.title}`}
+      aria-label={`${item.customTitle ?? item.typeLabel} ${item.title}`}
       tabIndex={0}
       style={
         {
@@ -881,7 +942,9 @@ function PanelCard({
     >
       <header className="card-header">
         <div className="card-title-group">
-          <strong>{item.typeLabel}</strong>
+          {renaming ? <CardTitleEditor value={item.customTitle ?? ""} placeholder={item.typeLabel}
+            onSave={onRenameSave} onCancel={onRenameCancel} /> :
+            <strong title={item.customTitle ?? item.typeLabel}>{item.customTitle ?? item.typeLabel}</strong>}
           <span>{item.relativeTime}</span>
         </div>
         {item.isPinned && (
@@ -926,6 +989,7 @@ function PanelContextMenu({
   onCopy,
   onAdd,
   onTogglePinned,
+  onRename,
   onDelete
 }: {
   state: PanelContextMenuState;
@@ -933,6 +997,7 @@ function PanelContextMenu({
   onCopy: (item: ClipItem) => void;
   onAdd: () => void;
   onTogglePinned: (item: ClipItem) => void;
+  onRename: (item: ClipItem) => void;
   onDelete: (item: ClipItem) => void;
 }) {
   if (!item) {
@@ -956,6 +1021,10 @@ function PanelContextMenu({
       <button type="button" role="menuitem" data-testid="context-menu-pin" onClick={() => onTogglePinned(item)}>
         <Pin size={15} strokeWidth={2.2} />
         {item.isPinned ? "取消固定" : "固定"}
+      </button>
+      <button type="button" role="menuitem" onClick={() => onRename(item)}>
+        <Pencil size={15} strokeWidth={2.2} />
+        重命名 <kbd className="menu-shortcut">F2</kbd>
       </button>
       <button type="button" role="menuitem" onClick={onAdd}>
         <Plus size={15} strokeWidth={2.2} />

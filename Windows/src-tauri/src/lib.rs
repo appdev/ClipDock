@@ -116,10 +116,10 @@ fn start_clipboard_event_monitor(app: tauri::AppHandle) {
         let mut last_change_key: Option<String> = None;
         loop {
             match clipboard_bridge::read_clipboard_snapshot(app.clone()) {
-                Ok(Some(snapshot)) => {
+                Ok(Some(mut snapshot)) => {
                     if last_change_key.as_deref() != Some(snapshot.change_key()) {
                         last_change_key = Some(snapshot.change_key().to_string());
-                        clipboard_bridge::persist_snapshot(&app, &snapshot);
+                        clipboard_bridge::persist_snapshot(&app, &mut snapshot);
                         emit_clipboard_snapshot(&app, snapshot);
                     }
                 }
@@ -215,6 +215,7 @@ pub fn run() {
             commands::delete_pinboard,
             commands::set_item_pinboard_membership,
             commands::delete_clipboard_item,
+            commands::rename_clipboard_item,
             commands::record_clipboard_item_copied,
             commands::clear_clipboard_items,
             commands::capture_clipboard_text,

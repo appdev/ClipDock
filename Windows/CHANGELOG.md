@@ -1,5 +1,13 @@
 # ClipDock Windows Panel — Changelog
 
+## 0.2.3
+
+- Rename cards inline from the context menu, F2 or Ctrl+R. Enter or blur saves; Escape cancels; a blank name restores the default label.
+- Keep the new title visible while saving, serialize consecutive edits, and restore the last saved name if persistence fails. Chinese IME candidate confirmation does not submit the edit.
+- Preserve names across restarts and repeated captures; search custom titles in Chinese or full pinyin without altering clipboard payloads.
+- Attach persisted database ids to newly captured cards so renaming works immediately. Keep title text clear of the source icon.
+- Uses the existing schema 18; no additional database migration.
+
 ## 0.2.2
 
 - Update the shared storage core to schema 18, preserving custom card titles in clipboard history and making them searchable.

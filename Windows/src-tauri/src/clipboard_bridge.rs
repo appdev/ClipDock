@@ -1,4 +1,7 @@
-use clipboard_core::{CaptureImageRequest, CaptureTextRequest, SourceConfidence};
+use clipboard_core::{
+    CaptureImageRequest, CaptureTextRequest, ClipboardCore, ClipboardItemSummary, ItemQuery,
+    PageRequest, SourceConfidence,
+};
 use image::{ImageReader, RgbaImage};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -16,6 +19,7 @@ pub struct ClipboardSnapshot {
     image_path: Option<String>,
     image_width: Option<u32>,
     image_height: Option<u32>,
+    stored_item: Option<ClipboardItemSummary>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -45,6 +49,7 @@ pub fn read_clipboard_snapshot(app: AppHandle) -> Result<Option<ClipboardSnapsho
                 image_path: None,
                 image_width: None,
                 image_height: None,
+                stored_item: None,
             }));
         }
     }
@@ -66,6 +71,7 @@ pub fn read_clipboard_snapshot(app: AppHandle) -> Result<Option<ClipboardSnapsho
         image_path: Some(image_path.display().to_string()),
         image_width: Some(width),
         image_height: Some(height),
+        stored_item: None,
     }))
 }
 
@@ -75,7 +81,7 @@ pub fn read_clipboard_snapshot(app: AppHandle) -> Result<Option<ClipboardSnapsho
 /// Best-effort: failures are logged but never interrupt the capture pipeline,
 /// since the live UI event is emitted regardless. Re-copying existing content
 /// is handled by the core (it bumps `copy_count` rather than duplicating).
-pub fn persist_snapshot(app: &AppHandle, snapshot: &ClipboardSnapshot) {
+pub fn persist_snapshot(app: &AppHandle, snapshot: &mut ClipboardSnapshot) {
     let Some(state) = app.try_state::<CoreState>() else {
         return;
     };
@@ -85,17 +91,21 @@ pub fn persist_snapshot(app: &AppHandle, snapshot: &ClipboardSnapshot) {
         ClipboardSnapshotKind::Image => persist_image_snapshot(&state, snapshot),
     };
 
-    if let Err(message) = result {
-        eprintln!("clipboard persistence failed: {message}");
+    match result {
+        Ok(item) => snapshot.stored_item = item,
+        Err(message) => eprintln!("clipboard persistence failed: {message}"),
     }
 }
 
-fn persist_text_snapshot(state: &CoreState, snapshot: &ClipboardSnapshot) -> Result<(), String> {
+fn persist_text_snapshot(
+    state: &CoreState,
+    snapshot: &ClipboardSnapshot,
+) -> Result<Option<ClipboardItemSummary>, String> {
     let Some(text) = snapshot.text.clone() else {
-        return Ok(());
+        return Ok(None);
     };
     if text.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
 
     let request = CaptureTextRequest {
@@ -114,16 +124,19 @@ fn persist_text_snapshot(state: &CoreState, snapshot: &ClipboardSnapshot) -> Res
     };
 
     state.with_core(|core| {
-        core.capture_text(request)
+        let captured = core
+            .capture_text(request)
             .map_err(|error| error.to_string())?;
-
-        Ok(())
+        captured_item_summary(core, &captured.item_id)
     })
 }
 
-fn persist_image_snapshot(state: &CoreState, snapshot: &ClipboardSnapshot) -> Result<(), String> {
+fn persist_image_snapshot(
+    state: &CoreState,
+    snapshot: &ClipboardSnapshot,
+) -> Result<Option<ClipboardItemSummary>, String> {
     let Some(source_path) = snapshot.image_path.as_deref() else {
-        return Ok(());
+        return Ok(None);
     };
 
     // `capture_image` hashes the payload file relative to the core data root,
@@ -159,11 +172,32 @@ fn persist_image_snapshot(state: &CoreState, snapshot: &ClipboardSnapshot) -> Re
     };
 
     state.with_core(|core| {
-        core.capture_image(request)
+        let captured = core
+            .capture_image(request)
             .map_err(|error| error.to_string())?;
-
-        Ok(())
+        captured_item_summary(core, &captured.item_id)
     })
+}
+
+// Captures sort first by copy time. Keep paging for timestamp ties instead of
+// guessing an id from the clipboard hash; recaptures must retain custom titles.
+fn captured_item_summary(
+    core: &ClipboardCore,
+    id: &str,
+) -> Result<Option<ClipboardItemSummary>, String> {
+    let mut offset = 0;
+    loop {
+        let page = core
+            .list_items(ItemQuery::default(), PageRequest { limit: 100, offset })
+            .map_err(|error| error.to_string())?;
+        if let Some(item) = page.items.into_iter().find(|item| item.id == id) {
+            return Ok(Some(item));
+        }
+        if !page.has_more {
+            return Ok(None);
+        }
+        offset += 100;
+    }
 }
 
 #[tauri::command]
@@ -256,6 +290,41 @@ fn hex_digest(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn captured_summary_preserves_durable_identity_and_custom_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut core = ClipboardCore::open(dir.path()).unwrap();
+        let capture = core
+            .capture_text(CaptureTextRequest {
+                text: "synthetic clipboard payload".into(),
+                detected_link: None,
+                display_rtf_relative_path: None,
+                display_rtf_mime_type: None,
+                display_rtf_byte_count: 0,
+                source_bundle_id: None,
+                source_app_name: None,
+                source_bundle_path: None,
+                source_icon_relative_path: None,
+                source_confidence: SourceConfidence::Unknown,
+                pasteboard_change_count: 0,
+                self_write_token: None,
+            })
+            .unwrap();
+        core.rename_item(&capture.item_id, "保留名称").unwrap();
+        let item = captured_item_summary(&core, &capture.item_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(item.id, capture.item_id);
+        assert_eq!(item.custom_title.as_deref(), Some("保留名称"));
+        assert_eq!(
+            item.primary_text.as_deref(),
+            Some("synthetic clipboard payload")
+        );
+        assert!(captured_item_summary(&core, "missing-item")
+            .unwrap()
+            .is_none());
+    }
 
     #[test]
     fn text_change_key_is_stable_and_content_specific() {

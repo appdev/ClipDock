@@ -16,6 +16,7 @@ export type ClipItem = {
   id: string;
   kind: ClipKind;
   typeLabel: string;
+  customTitle?: string | null;
   relativeTime: string;
   title: string;
   summary: string;

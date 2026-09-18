@@ -4,6 +4,7 @@ import type { ClipItem, ClipKind } from "./panelTypes";
 /// Mirror of `clipboard_core::ClipboardItemSummary` (serde snake_case fields).
 export type ClipboardItemSummary = {
   id: string;
+  custom_title?: string | null;
   item_type: "text" | "link" | "image" | "file" | "color" | "rich_text" | "unknown";
   summary: string;
   primary_text: string | null;
@@ -69,12 +70,12 @@ const SOURCE_COLORS: Record<ClipKind, string> = {
 /// Load persisted clipboard history from the database. Returns an empty list
 /// outside of Tauri (e.g. the Vite-only browser preview) so the panel still
 /// renders.
-export async function loadStoredPanelItems(limit = 100): Promise<ClipItem[]> {
+export async function loadStoredPanelItems(limit = 100, searchText?: string): Promise<ClipItem[]> {
   if (!isTauri()) {
     return [];
   }
 
-  const page = await invoke<ClipboardItemPage>("list_clipboard_items", { limit });
+  const page = await invoke<ClipboardItemPage>("list_clipboard_items", { limit, searchText });
   return page.items.map((summary, index) => summaryToClipItem(summary, String(index + 1)));
 }
 
@@ -90,6 +91,7 @@ export function summaryToClipItem(
     id: summary.id,
     kind,
     typeLabel: TYPE_LABELS[kind],
+    customTitle: summary.custom_title ?? null,
     relativeTime: relativeTimeFrom(summary.last_copied_at_ms),
     title,
     summary: summary.primary_text ?? summary.summary,

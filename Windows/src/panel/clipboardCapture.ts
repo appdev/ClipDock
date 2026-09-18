@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import type { ClipItem, ClipKind } from "./panelTypes";
+import type { ClipboardItemSummary } from "./panelStore";
 
 export type ClipboardSnapshot = {
   changeKey: string;
@@ -8,6 +9,7 @@ export type ClipboardSnapshot = {
   imagePath?: string | null;
   imageWidth?: number | null;
   imageHeight?: number | null;
+  storedItem?: ClipboardItemSummary | null;
 };
 
 export type ClipboardCaptureDecision = {
@@ -134,6 +136,11 @@ export function clipboardSnapshotToPanelItem(
   commandIndex: string,
   toAssetUrl: FileSrcConverter = convertFileSrc
 ): ClipItem | null {
+  if (snapshot.storedItem) {
+    const captured = clipboardSnapshotToPanelItem({ ...snapshot, storedItem: null }, commandIndex, toAssetUrl);
+    return captured ? { ...captured, id: snapshot.storedItem.id,
+      customTitle: snapshot.storedItem.custom_title ?? null, isPinned: snapshot.storedItem.is_pinned } : null;
+  }
   if (snapshot.kind === "image") {
     if (!snapshot.imagePath) {
       return null;

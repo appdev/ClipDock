@@ -124,6 +124,19 @@ pub fn set_item_pinboard_membership(
     })
 }
 
+/// Update the card label without changing its clipboard payload.
+#[tauri::command]
+pub fn rename_clipboard_item(
+    state: State<'_, CoreState>,
+    item_id: String,
+    title: String,
+) -> Result<ItemManagementResult, String> {
+    state.with_core(|core| {
+        core.rename_item(item_id, title)
+            .map_err(|error| error.to_string())
+    })
+}
+
 /// Soft-delete a single clipboard item.
 #[tauri::command]
 pub fn delete_clipboard_item(

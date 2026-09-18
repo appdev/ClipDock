@@ -55,7 +55,11 @@ fn recapturing_same_text_bumps_copy_count_without_duplicating() {
         .list_items(ItemQuery::default(), PageRequest::default())
         .expect("list items");
 
-    assert_eq!(page.items.len(), 1, "duplicate content must not create a row");
+    assert_eq!(
+        page.items.len(),
+        1,
+        "duplicate content must not create a row"
+    );
     assert_eq!(page.items[0].copy_count, 2);
 }
 
@@ -77,6 +81,83 @@ fn history_survives_reopening_the_database() {
 
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].summary, "persisted entry");
+}
+
+#[test]
+fn renamed_card_survives_restart_search_and_recapture_without_changing_payload() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut core = ClipboardCore::open(dir.path()).unwrap();
+    let captured = core
+        .capture_text(text_request("original clipboard payload"))
+        .unwrap();
+    let original = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap()
+        .items
+        .remove(0);
+    assert_eq!(
+        core.rename_item(&captured.item_id, "  工作资料  ")
+            .unwrap()
+            .affected_count,
+        1
+    );
+    drop(core);
+    let mut core = ClipboardCore::open(dir.path()).unwrap();
+    let renamed = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap()
+        .items
+        .remove(0);
+    assert_eq!(renamed.custom_title.as_deref(), Some("工作资料"));
+    assert_eq!(renamed.primary_text, original.primary_text);
+    assert_eq!(renamed.last_copied_at_ms, original.last_copied_at_ms);
+    assert_eq!(renamed.copy_count, original.copy_count);
+    for text in ["工作", "gongzuo", "ziliao"] {
+        let query = ItemQuery {
+            search_text: Some(text.into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            core.list_items(query, PageRequest::default())
+                .unwrap()
+                .items
+                .len(),
+            1,
+            "{text}"
+        );
+    }
+    let repeated = core
+        .capture_text(text_request("original clipboard payload"))
+        .unwrap();
+    assert_eq!(repeated.item_id, captured.item_id);
+    assert_eq!(
+        core.list_items(ItemQuery::default(), PageRequest::default())
+            .unwrap()
+            .items[0]
+            .custom_title
+            .as_deref(),
+        Some("工作资料")
+    );
+    core.rename_item(&captured.item_id, "  ").unwrap();
+    let page = core
+        .list_items(ItemQuery::default(), PageRequest::default())
+        .unwrap();
+    assert_eq!(page.items[0].custom_title, None);
+    let query = ItemQuery {
+        search_text: Some("gongzuo".into()),
+        ..Default::default()
+    };
+    assert!(core
+        .list_items(query, PageRequest::default())
+        .unwrap()
+        .items
+        .is_empty());
+    assert_eq!(
+        core.rename_item("missing-item", "name")
+            .unwrap()
+            .affected_count,
+        0
+    );
 }
 
 #[test]

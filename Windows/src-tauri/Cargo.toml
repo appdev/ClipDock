@@ -1,6 +1,6 @@
 [package]
 name = "clipdock_windows_panel"
-version = "0.2.2"
+version = "0.2.3"
 description = "ClipDock cross-platform panel shell"
 authors = ["ClipDock"]
 edition = "2021"
