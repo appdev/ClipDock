@@ -1,5 +1,12 @@
 # ClipDock Windows Panel — Changelog
 
+## 0.2.4
+
+- Import and export clipboard history as a single `.clipdock` backup using the shared Rust core. Merge records, deduplicate content and preserve pinboards without changing application settings.
+- Restore stored images and rich-text resources; external file entries retain their original paths. Existing retention settings still apply.
+- Keep clipboard capture responsive during backup resource I/O and preserve local pin state in search and pinboard views.
+- Refresh preferences styling with native window effects, theme support and keyboard focus indicators.
+
 ## 0.2.3
 
 - Rename cards inline from the context menu, F2 or Ctrl+R. Enter or blur saves; Escape cancels; a blank name restores the default label.

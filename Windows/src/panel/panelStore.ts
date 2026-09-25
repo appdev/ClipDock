@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
-import type { ClipItem, ClipKind } from "./panelTypes";
+import type { ClipItem, ClipKind, PinboardFilter } from "./panelTypes";
 
 /// Mirror of `clipboard_core::ClipboardItemSummary` (serde snake_case fields).
 export type ClipboardItemSummary = {
@@ -70,13 +70,42 @@ const SOURCE_COLORS: Record<ClipKind, string> = {
 /// Load persisted clipboard history from the database. Returns an empty list
 /// outside of Tauri (e.g. the Vite-only browser preview) so the panel still
 /// renders.
-export async function loadStoredPanelItems(limit = 100, searchText?: string): Promise<ClipItem[]> {
+export async function loadStoredPanelItems(limit = 100, searchText?: string, pinboardId?: string): Promise<ClipItem[]> {
   if (!isTauri()) {
     return [];
   }
 
-  const page = await invoke<ClipboardItemPage>("list_clipboard_items", { limit, searchText });
+  const page = await invoke<ClipboardItemPage>("list_clipboard_items", { limit, searchText, pinboardId });
   return page.items.map((summary, index) => summaryToClipItem(summary, String(index + 1)));
+}
+
+export async function loadStoredPinboards(): Promise<PinboardFilter[]> {
+  if (!isTauri()) return [];
+  const page = await invoke<{ pinboards: Array<{ id: string; title: string; color_code: number }> }>("list_pinboards");
+  return page.pinboards.map((board) => ({
+    id: board.id,
+    label: board.title,
+    color: `#${(board.color_code & 0xffffff).toString(16).padStart(6, "0")}`
+  }));
+}
+
+export function mergeLoadedPanelItems(current: ClipItem[], stored: ClipItem[], atLoad: ClipItem[]): ClipItem[] {
+  const previous = new Map(atLoad.map((item) => [item.id, item]));
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  const storedIds = new Set(stored.map((item) => item.id));
+  return [
+    ...current.filter((item) => !previous.has(item.id) && !storedIds.has(item.id)),
+    ...stored.map((item) => {
+      const local = currentById.get(item.id);
+      const before = previous.get(item.id);
+      return local && before ? {
+        ...item,
+        customTitle: local.customTitle !== before.customTitle ? local.customTitle : item.customTitle,
+        isPinned: local.isPinned !== before.isPinned ? local.isPinned : item.isPinned
+      } : item;
+    }),
+    ...current.filter((item) => previous.has(item.id) && !storedIds.has(item.id))
+  ];
 }
 
 export function summaryToClipItem(

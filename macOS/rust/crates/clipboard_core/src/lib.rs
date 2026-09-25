@@ -16,7 +16,7 @@ pub use domain::{
     SourceAppPage, SourceAppSummary, SourceConfidence,
 };
 pub use error::{CoreError, CoreErrorCode, Result};
-pub use storage::ClipboardCore;
+pub use storage::{BackupResult, ClipboardCore};
 
 pub const DATABASE_FILE_NAME: &str = "clipboard.sqlite";
 pub const CURRENT_SCHEMA_VERSION: i64 = 18;

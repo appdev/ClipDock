@@ -875,25 +875,34 @@ button {
 }
 
 .preferences-root {
+  color-scheme: light dark;
+  --pref-text: light-dark(#202020, #f5f5f5);
+  --pref-secondary: light-dark(#606060, #bdbdbd);
+  --pref-border: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.08));
+  --pref-card: light-dark(rgb(255 255 255 / 0.80), rgb(255 255 255 / 0.045));
+  --pref-control: light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.065));
+  --pref-hover: light-dark(rgb(0 0 0 / 0.055), rgb(255 255 255 / 0.09));
+  --pref-accent: light-dark(#005fb8, #60cdff);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   width: 100vw;
   height: 100vh;
   display: grid;
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: 224px minmax(0, 1fr);
   overflow: hidden;
-  color: rgba(28, 29, 32, 0.96);
-  background: #f5f5f7;
+  color: var(--pref-text);
+  background: light-dark(rgb(243 243 243 / 0.86), rgb(32 32 32 / 0.94));
 }
 
 .preferences-sidebar {
   min-width: 0;
   padding: 0 12px 16px;
-  background: #eeeef1;
-  border-right: 0.5px solid rgba(0, 0, 0, 0.1);
+  background: transparent;
+  border-right: 0.5px solid var(--pref-border);
   user-select: none;
 }
 
 .preferences-sidebar-spacer {
-  height: 72px;
+  height: 48px;
 }
 
 .preferences-sidebar-list {
@@ -903,18 +912,19 @@ button {
 }
 
 .preferences-nav-button {
-  height: 38px;
+  position: relative;
+  min-height: 40px;
   display: flex;
   align-items: center;
   gap: 12px;
   border: 0;
   border-radius: 8px;
-  padding: 0 14px;
-  color: rgba(34, 35, 38, 0.8);
+  padding: 8px 14px;
+  color: var(--pref-text);
   background: transparent;
   outline: none;
-  font-size: 14.5px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 400;
   text-align: left;
   letter-spacing: 0;
 }
@@ -926,37 +936,54 @@ button {
 
 .preferences-nav-button span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 20px;
 }
 
 .preferences-nav-button:hover {
-  background: rgba(255, 255, 255, 0.52);
+  background: var(--pref-hover);
 }
 
 .preferences-nav-button.is-selected {
-  color: white;
-  background: #0a84ff;
+  color: var(--pref-text);
+  background: var(--pref-hover);
+  font-weight: 600;
+}
+
+.preferences-nav-button.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--pref-accent);
+}
+
+.preferences-root[data-appearance="light"] { color-scheme: light; }
+.preferences-root[data-appearance="dark"] { color-scheme: dark; }
+
+.preferences-root :is(button, input, select):focus-visible {
+  outline: 2px solid var(--pref-accent);
+  outline-offset: 2px;
+}
+
+.preferences-root button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .preferences-content {
   min-width: 0;
   height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 248, 250, 0.96)),
-    #f8f8fa;
+  background: light-dark(rgb(255 255 255 / 0.25), rgb(0 0 0 / 0.08));
 }
 
 .preferences-scroll {
   height: 100%;
   overflow-y: auto;
-  padding: 72px 52px 48px;
-  scrollbar-width: none;
-}
-
-.preferences-scroll::-webkit-scrollbar {
-  display: none;
+  padding: 44px 32px 40px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pref-secondary) transparent;
 }
 
 .preference-page-header {
@@ -968,32 +995,18 @@ button {
   margin: 0 0 22px;
 }
 
-.preference-page-icon {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  border-radius: 8px;
-  color: #0a84ff;
-  background: rgba(10, 132, 255, 0.12);
-  box-shadow:
-    inset 0 0 0 0.6px rgba(10, 132, 255, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
 .preference-page-header h1 {
   margin: 0;
-  color: rgba(23, 24, 27, 0.98);
-  font-size: 25px;
-  line-height: 30px;
-  font-weight: 650;
+  color: var(--pref-text);
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
 .preference-page-header p {
   margin: 3px 0 0;
-  color: rgba(64, 66, 72, 0.68);
+  color: var(--pref-secondary);
   font-size: 13.5px;
   line-height: 18px;
   letter-spacing: 0;
@@ -1014,7 +1027,7 @@ button {
 
 .preference-group-title {
   margin: 0 0 0 4px;
-  color: rgba(64, 66, 72, 0.68);
+  color: var(--pref-text);
   font-size: 12.5px;
   line-height: 16px;
   font-weight: 500;
@@ -1025,17 +1038,17 @@ button {
 .ignored-app-card {
   overflow: hidden;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
-  border: 0.6px solid rgba(0, 0, 0, 0.1);
+  background: var(--pref-card);
+  border: 0.6px solid var(--pref-border);
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.025);
 }
 
 .preference-row {
-  min-height: 58px;
+  min-height: 68px;
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 11px 22px;
+  padding: 16px 20px;
 }
 
 .preference-stacked-row {
@@ -1044,7 +1057,7 @@ button {
   flex-direction: column;
   align-items: stretch;
   gap: 9px;
-  padding: 11px 22px;
+  padding: 16px 20px;
 }
 
 .preference-row-text {
@@ -1056,22 +1069,19 @@ button {
 }
 
 .preference-row-text strong {
-  color: rgba(30, 31, 34, 0.96);
+  color: var(--pref-text);
   font-size: 14.5px;
   line-height: 18px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
 .preference-row-text span {
-  color: rgba(64, 66, 72, 0.66);
+  color: var(--pref-secondary);
   font-size: 12.5px;
   line-height: 17px;
   letter-spacing: 0;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .preference-row-accessory {
@@ -1084,8 +1094,8 @@ button {
 
 .preference-divider {
   height: 0.5px;
-  margin-left: 22px;
-  background: rgba(0, 0, 0, 0.09);
+  margin: 0 20px;
+  background: var(--pref-border);
 }
 
 .preference-switch {
@@ -1109,7 +1119,7 @@ button {
 }
 
 .preference-switch.is-on {
-  background: #34c759;
+  background: var(--pref-accent);
 }
 
 .preference-switch.is-on span {
@@ -1123,15 +1133,15 @@ button {
   grid-auto-columns: 1fr;
   padding: 2px;
   border-radius: 7px;
-  background: rgba(118, 118, 128, 0.14);
-  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  background: var(--pref-control);
+  box-shadow: inset 0 0 0 0.5px var(--pref-border);
 }
 
 .preference-segmented button {
   min-width: 0;
   border: 0;
   border-radius: 5px;
-  color: rgba(32, 33, 36, 0.78);
+  color: var(--pref-text);
   background: transparent;
   font-size: 12.5px;
   font-weight: 500;
@@ -1139,9 +1149,9 @@ button {
 }
 
 .preference-segmented button.is-selected {
-  color: rgba(20, 21, 24, 0.94);
-  background: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+  color: var(--pref-text);
+  background: light-dark(white, #454545);
+  box-shadow: 0 1px 3px var(--pref-border);
 }
 
 .preference-text-input {
@@ -1150,9 +1160,9 @@ button {
   border: 0;
   border-radius: 7px;
   padding: 0 9px;
-  color: rgba(24, 25, 28, 0.96);
-  background: rgba(118, 118, 128, 0.12);
-  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  color: var(--pref-text);
+  background: var(--pref-control);
+  box-shadow: inset 0 0 0 0.5px var(--pref-border);
   outline: none;
   font-size: 13px;
 }
@@ -1169,8 +1179,8 @@ button {
   align-items: center;
   overflow: hidden;
   border-radius: 8px;
-  background: rgba(118, 118, 128, 0.12);
-  box-shadow: inset 0 0 0 0.6px rgba(0, 0, 0, 0.11);
+  background: var(--pref-control);
+  box-shadow: inset 0 0 0 0.6px var(--pref-border);
 }
 
 .shortcut-recorder {
@@ -1178,7 +1188,7 @@ button {
   height: 32px;
   border: 0;
   padding: 0 10px;
-  color: rgba(28, 29, 32, 0.94);
+  color: var(--pref-text);
   background: transparent;
   font-size: 13px;
   font-weight: 600;
@@ -1186,7 +1196,7 @@ button {
 }
 
 .shortcut-recorder.is-recording {
-  color: #0a84ff;
+  color: var(--pref-accent);
 }
 
 .shortcut-recorder.has-error {
@@ -1196,7 +1206,7 @@ button {
 .editable-shortcut-divider {
   width: 0.5px;
   height: 20px;
-  background: rgba(0, 0, 0, 0.13);
+  background: var(--pref-border);
 }
 
 .shortcut-clear-button {
@@ -1205,12 +1215,12 @@ button {
   display: grid;
   place-items: center;
   border: 0;
-  color: rgba(64, 66, 72, 0.62);
+  color: var(--pref-secondary);
   background: transparent;
 }
 
 .shortcut-clear-button:hover {
-  color: rgba(28, 29, 32, 0.86);
+  color: var(--pref-text);
 }
 
 .shortcut-modifier-row,
@@ -1231,9 +1241,9 @@ button {
   border: 0;
   border-radius: 7px;
   padding: 0 9px;
-  color: rgba(28, 29, 32, 0.9);
-  background: rgba(118, 118, 128, 0.12);
-  box-shadow: inset 0 0 0 0.6px rgba(0, 0, 0, 0.11);
+  color: var(--pref-text);
+  background: var(--pref-control);
+  box-shadow: inset 0 0 0 0.6px var(--pref-border);
   outline: none;
   font-size: 13px;
   font-weight: 500;
@@ -1254,9 +1264,9 @@ button {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: rgba(28, 29, 32, 0.9);
-  background: rgba(118, 118, 128, 0.12);
-  box-shadow: inset 0 0 0 0.6px rgba(0, 0, 0, 0.11);
+  color: var(--pref-text);
+  background: var(--pref-control);
+  box-shadow: inset 0 0 0 0.6px var(--pref-border);
 }
 
 .preference-reset-row {
@@ -1269,11 +1279,11 @@ button {
   height: 30px;
   border: 0;
   border-radius: 7px;
-  color: rgba(28, 29, 32, 0.9);
-  background: rgba(255, 255, 255, 0.9);
+  color: var(--pref-text);
+  background: var(--pref-card);
   box-shadow:
-    inset 0 0 0 0.6px rgba(0, 0, 0, 0.12),
-    0 1px 1px rgba(0, 0, 0, 0.04);
+    inset 0 0 0 0.6px var(--pref-border),
+    0 1px 1px var(--pref-border);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0;
@@ -1291,7 +1301,7 @@ button {
 
 .preference-push-button:hover,
 .preference-icon-push-button:hover {
-  background: white;
+  background: var(--pref-hover);
 }
 
 .preference-pill-row {
@@ -1306,14 +1316,14 @@ button {
   align-items: center;
   border-radius: 999px;
   padding: 0 10px;
-  color: rgba(58, 60, 66, 0.82);
-  background: rgba(118, 118, 128, 0.12);
+  color: var(--pref-secondary);
+  background: var(--pref-control);
   font-size: 12.5px;
   font-weight: 550;
 }
 
 .preference-value-pill.is-prominent {
-  color: #0058b7;
+  color: var(--pref-accent);
   background: rgba(10, 132, 255, 0.14);
 }
 
@@ -1335,9 +1345,9 @@ button {
   border-radius: 7px;
   padding: 0 8px;
   text-align: center;
-  color: rgba(28, 29, 32, 0.94);
-  background: rgba(118, 118, 128, 0.12);
-  box-shadow: inset 0 0 0 0.6px rgba(0, 0, 0, 0.11);
+  color: var(--pref-text);
+  background: var(--pref-control);
+  box-shadow: inset 0 0 0 0.6px var(--pref-border);
   outline: none;
   font-size: 13px;
   font-weight: 600;
@@ -1351,7 +1361,7 @@ button {
 
 .preference-status-label {
   gap: 6px;
-  color: rgba(35, 100, 48, 0.88);
+  color: light-dark(#286b36, #8bd89a);
   background: rgba(52, 199, 89, 0.13);
 }
 
@@ -1371,16 +1381,16 @@ button {
 
 .ignored-app-heading h2 {
   margin: 0;
-  color: rgba(30, 31, 34, 0.96);
+  color: var(--pref-text);
   font-size: 15px;
   line-height: 20px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
 .ignored-app-heading p {
   margin: 3px 0 0;
-  color: rgba(64, 66, 72, 0.66);
+  color: var(--pref-secondary);
   font-size: 12.5px;
   line-height: 17px;
 }
@@ -1391,7 +1401,7 @@ button {
   align-items: center;
   gap: 12px;
   padding: 15px 24px;
-  color: rgba(64, 66, 72, 0.66);
+  color: var(--pref-secondary);
 }
 
 .ignored-app-empty > div,
@@ -1404,15 +1414,15 @@ button {
 
 .ignored-app-empty strong,
 .ignored-app-row strong {
-  color: rgba(30, 31, 34, 0.94);
+  color: var(--pref-text);
   font-size: 15px;
   line-height: 19px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .ignored-app-empty span,
 .ignored-app-row span {
-  color: rgba(64, 66, 72, 0.66);
+  color: var(--pref-secondary);
   font-size: 13px;
   line-height: 17px;
 }
@@ -1440,16 +1450,16 @@ button {
   place-items: center;
   flex: 0 0 auto;
   border-radius: 7px;
-  color: rgba(64, 66, 72, 0.68);
-  background: rgba(118, 118, 128, 0.12);
+  color: var(--pref-secondary);
+  background: var(--pref-control);
 }
 
 .ignored-app-toolbar {
   height: 36px;
   display: flex;
   align-items: center;
-  border-top: 0.5px solid rgba(0, 0, 0, 0.09);
-  background: rgba(118, 118, 128, 0.08);
+  border-top: 0.5px solid var(--pref-border);
+  background: var(--pref-control);
 }
 
 .ignored-app-toolbar button {
@@ -1458,7 +1468,7 @@ button {
   display: grid;
   place-items: center;
   border: 0;
-  color: rgba(64, 66, 72, 0.72);
+  color: var(--pref-secondary);
   background: transparent;
 }
 
@@ -1470,7 +1480,7 @@ button {
 .ignored-app-toolbar span {
   width: 0.5px;
   height: 20px;
-  background: rgba(0, 0, 0, 0.13);
+  background: var(--pref-border);
 }
 
 .preference-about-hero {
@@ -1491,7 +1501,7 @@ button {
   color: white;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0)),
-    linear-gradient(145deg, #0a84ff, #4f7dff 55%, #34c759);
+    linear-gradient(145deg, var(--pref-accent), #4f7dff 55%, #34c759);
   box-shadow:
     0 8px 18px rgba(10, 132, 255, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
@@ -1499,16 +1509,16 @@ button {
 
 .preference-about-hero h2 {
   margin: 0;
-  color: rgba(30, 31, 34, 0.96);
+  color: var(--pref-text);
   font-size: 19px;
   line-height: 24px;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
 .preference-about-hero p {
   margin: 4px 0 0;
-  color: rgba(64, 66, 72, 0.66);
+  color: var(--pref-secondary);
   font-size: 13px;
   line-height: 17px;
 }
@@ -1549,12 +1559,25 @@ button {
   }
 
   .preferences-root {
-    grid-template-columns: 232px minmax(0, 1fr);
+    grid-template-columns: 210px minmax(0, 1fr);
   }
 
   .preferences-scroll {
-    padding-left: 32px;
-    padding-right: 32px;
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .preference-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .preference-row > .preference-row-text {
+    flex-basis: 180px;
+  }
+
+  .preference-row-accessory {
+    max-width: 100%;
   }
 }
 
@@ -1567,5 +1590,35 @@ button {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(238, 242, 247, 0.58)),
       linear-gradient(120deg, rgba(255, 255, 255, 0.36), rgba(220, 228, 238, 0.2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preferences-root *, .preferences-root *::before {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .preferences-root {
+    --pref-text: CanvasText;
+    --pref-secondary: CanvasText;
+    --pref-border: ButtonBorder;
+    --pref-card: Canvas;
+    --pref-control: Canvas;
+    --pref-hover: Canvas;
+    --pref-accent: Highlight;
+    background: Canvas;
+  }
+
+  .preferences-root button {
+    border: 1px solid ButtonBorder;
+  }
+
+  .preferences-nav-button.is-selected,
+  .preference-switch.is-on,
+  .preference-segmented button.is-selected {
+    background: Highlight;
+    color: HighlightText;
   }
 }

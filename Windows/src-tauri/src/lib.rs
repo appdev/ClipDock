@@ -200,6 +200,7 @@ fn elevate_panel_above_dock(_window: &tauri::WebviewWindow) -> tauri::Result<()>
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             panel_frame_for_screen,
             clipboard_bridge::read_clipboard_snapshot,
@@ -207,6 +208,7 @@ pub fn run() {
             clipboard_bridge::write_clipboard_text,
             native_assets::resolve_panel_native_assets,
             commands::core_info,
+            commands::transfer_clipboard_backup,
             commands::list_clipboard_items,
             commands::list_pinboards,
             commands::create_pinboard,

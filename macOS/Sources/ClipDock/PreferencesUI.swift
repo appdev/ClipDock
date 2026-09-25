@@ -72,6 +72,17 @@ enum PreferenceSection: Int, CaseIterable, Hashable {
             return "info.circle"
         }
     }
+
+    var iconColor: Color {
+        switch self {
+        case .general: .gray
+        case .appearance: .purple
+        case .history: .orange
+        case .shortcuts: .pink
+        case .rules: .blue
+        case .about: .indigo
+        }
+    }
 }
 
 @MainActor
@@ -448,6 +459,10 @@ final class PreferencesWindowController: NSWindowController {
 
     var onPreferencesShown: (() -> Void)?
 
+    var onBackupRequested: ((URL, Bool) async -> Result<RustBackupResult, RustCoreError>?)? {
+        didSet { viewModel.onBackupRequested = onBackupRequested }
+    }
+
     var onUpdateReleaseRequested: ((AppUpdateRelease) -> Void)? {
         didSet {
             viewModel.onUpdateReleaseRequested = onUpdateReleaseRequested
@@ -636,6 +651,8 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     @Published private(set) var state = PreferencesSceneState()
     @Published private(set) var updateStatus: AppUpdateSettingsStatus = .idle
     @Published private(set) var automaticUpdateChecksEnabled = true
+    @Published private(set) var isTransferringBackup = false
+    @Published private(set) var backupStatus = ""
 
     private let sceneController = PreferencesSceneController()
     private var pendingDeferredRender = false
@@ -645,6 +662,50 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     var onUpdateReleaseRequested: ((AppUpdateRelease) -> Void)?
     var onAutomaticUpdateChecksChanged: ((Bool) -> Void)?
     var onAppearanceModeChanged: (() -> Void)?
+    var onBackupRequested: ((URL, Bool) async -> Result<RustBackupResult, RustCoreError>?)?
+
+    func chooseBackup(importing: Bool) {
+        guard !isTransferringBackup else { return }
+        let panel: NSSavePanel
+        if importing {
+            let open = NSOpenPanel()
+            open.canChooseDirectories = false
+            open.allowsMultipleSelection = false
+            panel = open
+        } else {
+            panel = NSSavePanel()
+            panel.nameFieldStringValue = "ClipDock-\(Date().formatted(.iso8601.year().month().day())).clipdock"
+        }
+        panel.allowedContentTypes = [UTType(filenameExtension: "clipdock") ?? .data]
+        panel.allowsOtherFileTypes = false
+        panel.title = importing
+            ? AppLocalization.text("backup.import", defaultValue: "导入数据")
+            : AppLocalization.text("backup.export", defaultValue: "导出数据")
+        isTransferringBackup = true
+        panel.begin { [weak self] response in
+            guard let self else { return }
+            guard response == .OK, let url = panel.url else {
+                self.isTransferringBackup = false
+                return
+            }
+            self.backupStatus = AppLocalization.text("backup.working", defaultValue: "正在处理…")
+            Task { @MainActor in
+                defer { self.isTransferringBackup = false }
+                guard let result = await self.onBackupRequested?(url, importing) else {
+                    self.backupStatus = AppLocalization.text("backup.unavailable", defaultValue: "存储尚未就绪，请稍后重试")
+                    return
+                }
+                switch result {
+                case .success(let counts):
+                    self.backupStatus = importing
+                        ? AppLocalization.format("backup.imported", defaultValue: "已导入 %lld 条，跳过 %lld 条重复记录", counts.importedCount, counts.skippedCount)
+                        : AppLocalization.format("backup.exported", defaultValue: "已导出 %lld 条记录", counts.exportedCount)
+                case .failure(let error):
+                    self.backupStatus = AppLocalization.format("backup.failed", defaultValue: "操作失败：%@", error.message)
+                }
+            }
+        }
+    }
 
     var selectedSection: PreferenceSection {
         preferenceSection(for: state.selectedSection)
@@ -851,9 +912,8 @@ struct PreferencesShellSmokeSnapshot: Equatable {
     let toolbarHasNavigationItem: Bool
     let windowBackgroundMatchesTheme: Bool
     let splitBackgroundMatchesTheme: Bool
-    let sidebarBackgroundMatchesTheme: Bool
+    let sidebarBackgroundIsTransparent: Bool
     let contentBackgroundMatchesTheme: Bool
-    let sidebarBackgroundWhiteComponent: CGFloat
     let sidebarHostingAppearanceIsDark: Bool
     let contentHostingAppearanceIsDark: Bool
     let sidebarNavigationAllowsKeyboardFocus: Bool
@@ -983,6 +1043,7 @@ private final class PreferencesSplitViewController: NSSplitViewController {
     func applyTheme() {
         let preferencesTheme = model.preferencesTheme(fallbackAppearance: view.effectiveAppearance)
         let forcedAppearance = model.forcedAppearance
+        view.window?.appearance = forcedAppearance
         view.wantsLayer = true
         splitView.wantsLayer = true
         sidebarController.view.wantsLayer = true
@@ -991,18 +1052,17 @@ private final class PreferencesSplitViewController: NSSplitViewController {
         contentController.view.appearance = forcedAppearance
         view.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
         splitView.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
-        sidebarController.view.layer?.backgroundColor = preferencesTheme.sidebarBackgroundColor.cgColor
+        // NSSplitViewItem supplies the system material, including Liquid Glass on macOS 26.
+        sidebarController.view.layer?.backgroundColor = NSColor.clear.cgColor
         contentController.view.layer?.backgroundColor = preferencesTheme.contentBackgroundColor.cgColor
         view.window?.backgroundColor = preferencesTheme.windowBackgroundColor
         configureScrollViews(
             in: sidebarController.view,
-            backgroundColor: preferencesTheme.sidebarBackgroundColor,
-            overridesVisualEffects: true
+            backgroundColor: .clear
         )
         configureScrollViews(
             in: contentController.view,
-            backgroundColor: preferencesTheme.contentBackgroundColor,
-            overridesVisualEffects: false
+            backgroundColor: preferencesTheme.contentBackgroundColor
         )
     }
 
@@ -1057,9 +1117,8 @@ private final class PreferencesSplitViewController: NSSplitViewController {
             } == true,
             windowBackgroundMatchesTheme: preferenceColorsMatch(windowBackground, preferencesTheme.windowBackgroundColor),
             splitBackgroundMatchesTheme: preferenceColorsMatch(splitBackground, preferencesTheme.contentBackgroundColor),
-            sidebarBackgroundMatchesTheme: preferenceColorsMatch(sidebarBackground, preferencesTheme.sidebarBackgroundColor),
+            sidebarBackgroundIsTransparent: sidebarBackground?.alphaComponent == 0,
             contentBackgroundMatchesTheme: preferenceColorsMatch(contentBackground, preferencesTheme.contentBackgroundColor),
-            sidebarBackgroundWhiteComponent: preferenceWhiteComponent(sidebarBackground),
             sidebarHostingAppearanceIsDark: ClipDockTheme.isDark(sidebarController.view.effectiveAppearance),
             contentHostingAppearanceIsDark: ClipDockTheme.isDark(contentController.view.effectiveAppearance),
             sidebarNavigationAllowsKeyboardFocus: PreferenceSidebarFocusPolicy.allowsKeyboardFocus
@@ -1068,8 +1127,7 @@ private final class PreferencesSplitViewController: NSSplitViewController {
 
     private func configureScrollViews(
         in view: NSView,
-        backgroundColor: NSColor,
-        overridesVisualEffects: Bool
+        backgroundColor: NSColor
     ) {
         if let scrollView = view as? NSScrollView {
             scrollView.drawsBackground = false
@@ -1084,17 +1142,10 @@ private final class PreferencesSplitViewController: NSSplitViewController {
             tableView.enclosingScrollView?.backgroundColor = backgroundColor
         }
 
-        if overridesVisualEffects, let visualEffectView = view as? NSVisualEffectView {
-            visualEffectView.state = .inactive
-            visualEffectView.wantsLayer = true
-            visualEffectView.layer?.backgroundColor = backgroundColor.cgColor
-        }
-
         view.subviews.forEach {
             configureScrollViews(
                 in: $0,
-                backgroundColor: backgroundColor,
-                overridesVisualEffects: overridesVisualEffects
+                backgroundColor: backgroundColor
             )
         }
     }
@@ -1135,11 +1186,6 @@ private func preferenceColorsMatch(_ lhs: NSColor?, _ rhs: NSColor, tolerance: C
         && abs(lhs.greenComponent - rhs.greenComponent) <= tolerance
         && abs(lhs.blueComponent - rhs.blueComponent) <= tolerance
         && abs(lhs.alphaComponent - rhs.alphaComponent) <= tolerance
-}
-
-private func preferenceWhiteComponent(_ color: NSColor?) -> CGFloat {
-    guard let color = color?.usingColorSpace(.sRGB) else { return 1 }
-    return max(color.redComponent, color.greenComponent, color.blueComponent)
 }
 
 private struct PreferencesSidebarList: View {
@@ -1184,7 +1230,7 @@ private struct PreferencesSidebarList: View {
             maxWidth: 264,
             maxHeight: .infinity
         )
-        .background(colors.sidebarBackground.ignoresSafeArea())
+        .background(Color.clear)
         .environment(\.colorScheme, effectiveColorScheme)
     }
 }
@@ -1199,23 +1245,25 @@ private struct PreferenceSidebarButton: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: section.symbolName)
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(width: 24)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(section.iconColor.gradient, in: RoundedRectangle(cornerRadius: 7))
 
                 Text(section.title)
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(isSelected ? Color.white : colors.navigationText)
-            .padding(.horizontal, 14)
-            .frame(height: 38)
+            .foregroundStyle(colors.primaryText)
+            .padding(.horizontal, 10)
+            .frame(height: 44)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.accentColor)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.primary.opacity(0.10))
                 }
             }
             .contentShape(Rectangle())
@@ -1269,7 +1317,7 @@ private struct PreferencesContent: View {
             }
             .frame(maxWidth: 760, alignment: .leading)
             .padding(.top, 16)
-            .padding(.horizontal, 52)
+            .padding(.horizontal, 28)
             .padding(.bottom, 48)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -1305,38 +1353,16 @@ private struct PreferencePageHeader: View {
     }
 
     var body: some View {
-        Group {
-            if section == .rules {
-                Text(section.title)
-                    .font(.system(size: 25, weight: .semibold))
-                    .foregroundStyle(colors.primaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(section.title)
-                            .font(.system(size: 25, weight: .semibold))
-                            .foregroundStyle(colors.primaryText)
-                        Text(section.subtitle)
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(colors.secondaryText)
-                    }
-                    .layoutPriority(1)
-
-                    Spacer(minLength: 16)
-
-                    Image(systemName: section.symbolName)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 34, height: 34)
-                        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.6)
-                        )
-                }
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(section.title)
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(colors.primaryText)
+            Text(section.subtitle)
+                .font(.system(size: 13))
+                .foregroundStyle(colors.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1480,6 +1506,28 @@ private struct PreferenceGeneralSection: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
+                }
+            }
+
+            PreferenceSectionGroup(title: AppLocalization.text("backup.title", defaultValue: "导入与导出")) {
+                PreferenceStackedRow(
+                    title: AppLocalization.text("backup.title", defaultValue: "导入与导出"),
+                    detail: AppLocalization.text("backup.detail", defaultValue: "合并记录与收藏，保留当前设置。文件条目仅保存原路径，导入后仍遵循保留策略。")
+                ) {
+                    HStack(spacing: 10) {
+                        Button(AppLocalization.text("backup.import", defaultValue: "导入数据")) { model.chooseBackup(importing: true) }
+                        Button(AppLocalization.text("backup.export", defaultValue: "导出数据")) { model.chooseBackup(importing: false) }
+                    }
+                    .disabled(model.isTransferringBackup)
+                }
+                if !model.backupStatus.isEmpty {
+                    Text(model.backupStatus)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
                 }
             }
 
@@ -2169,8 +2217,8 @@ private struct PreferenceSectionGroup<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             if let title {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(colors.secondaryText)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(colors.primaryText)
                     .padding(.leading, 4)
             }
 
@@ -2179,10 +2227,10 @@ private struct PreferenceSectionGroup<Content: View>: View {
             }
             .background(
                 colors.cardBackground,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(colors.cardBorder, lineWidth: 0.6)
             )
         }
@@ -2234,13 +2282,12 @@ private struct PreferenceRow<Accessory: View>: View {
         HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 14.5, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(colors.primaryText)
                     .lineLimit(2)
                 Text(detail)
                     .font(.system(size: 12.5))
                     .foregroundStyle(colors.secondaryText)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .layoutPriority(1)
@@ -2250,9 +2297,9 @@ private struct PreferenceRow<Accessory: View>: View {
             accessory
                 .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 11)
-        .frame(minHeight: 58)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .frame(minHeight: 64)
     }
 }
 
@@ -2280,21 +2327,20 @@ private struct PreferenceStackedRow<Content: View>: View {
         VStack(alignment: .leading, spacing: 9) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 14.5, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(colors.primaryText)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(detail)
                     .font(.system(size: 12.5))
                     .foregroundStyle(colors.secondaryText)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             content
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minHeight: 72)
     }
@@ -2311,7 +2357,7 @@ private struct PreferenceDivider: View {
         Rectangle()
             .fill(colors.separator)
             .frame(height: 0.5)
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 20)
     }
 }
 

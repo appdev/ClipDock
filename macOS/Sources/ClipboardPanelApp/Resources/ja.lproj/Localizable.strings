@@ -77,3 +77,12 @@
 "storage.status.connected" = "ストレージ：接続済み（%lld 件）";
 "toolbar.clearCurrentResults" = "現在の結果を消去";
 "toolbar.clearHistory" = "履歴を消去";
+"backup.title" = "インポートとエクスポート";
+"backup.detail" = "設定を変更せず履歴とピンボードを統合します。ファイルは元のパスを保持し、保存期間の設定が適用されます。";
+"backup.import" = "データをインポート";
+"backup.export" = "データをエクスポート";
+"backup.working" = "処理中…";
+"backup.unavailable" = "ストレージの準備ができていません。再試行してください。";
+"backup.imported" = "%lld 件をインポート、重複 %lld 件をスキップ";
+"backup.exported" = "%lld 件をエクスポートしました";
+"backup.failed" = "操作に失敗しました：%@";

@@ -664,6 +664,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesController.onPreferencesChanged = { [weak self] preferences in
             self?.persistPreferences(preferences)
         }
+        preferencesController.onBackupRequested = { [weak self] fileURL, importing in
+            guard let self, let appSupportURL = self.appSupportURL else { return nil }
+            let result = await self.databaseWorker.transferBackup(
+                client: self.rustCoreClient,
+                appSupportURL: appSupportURL,
+                fileURL: fileURL,
+                importing: importing
+            )
+            if importing, case .success = result {
+                self.refreshPinboards()
+                self.listCoordinator?.refresh()
+            }
+            return result
+        }
         preferencesController.onAccessibilityPermissionRequested = { [weak self] in
             self?.openAccessibilitySettingsFromPreferences()
         }

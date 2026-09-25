@@ -1,3 +1,4 @@
+mod backup;
 mod capture;
 mod link_metadata;
 mod maintenance;
@@ -18,6 +19,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use self::preferences::seed_default_preferences;
+pub use backup::BackupResult;
 
 pub struct ClipboardCore {
     database_path: PathBuf,
@@ -26,6 +28,14 @@ pub struct ClipboardCore {
 
 impl ClipboardCore {
     pub fn open(app_support_dir: impl AsRef<Path>) -> Result<Self> {
+        let mut core = Self::open_for_backup(app_support_dir)?;
+        let preferences = core.get_preferences()?;
+        core.apply_history_preferences(&preferences)?;
+        Ok(core)
+    }
+
+    /// Backup validation must not prune existing history as a side effect of opening it.
+    pub fn open_for_backup(app_support_dir: impl AsRef<Path>) -> Result<Self> {
         let app_support_dir = app_support_dir.as_ref();
         fs::create_dir_all(app_support_dir)?;
 
@@ -55,14 +65,10 @@ impl ClipboardCore {
         run_migrations(&mut connection)?;
         seed_default_preferences(&connection)?;
 
-        let mut core = Self {
+        Ok(Self {
             database_path,
             connection,
-        };
-        let preferences = core.get_preferences()?;
-        core.apply_history_preferences(&preferences)?;
-
-        Ok(core)
+        })
     }
 
     pub fn info(&self) -> Result<CoreInfo> {

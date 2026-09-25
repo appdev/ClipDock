@@ -490,7 +490,7 @@ enum PreferencesRealUICommand {
         }
 
         qaController = controller
-        RunLoop.main.run()
+        app.run()
     }
 
 }

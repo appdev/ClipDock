@@ -24,8 +24,9 @@ import type { LucideIcon } from "lucide-react";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { Effect } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { panelItems, pinboardFilters, typeFilters } from "./panel/panelData";
+import { panelItems, pinboardFilters as demoPinboards, typeFilters } from "./panel/panelData";
 import {
   clipboardCaptureDecision,
   clipboardPayloadForItem,
@@ -48,7 +49,7 @@ import {
   togglePinnedItem
 } from "./panel/panelInteractions";
 import { applyResolvedPanelAssets, resolvePanelNativeAssets } from "./panel/nativeAssets";
-import { loadStoredPanelItems } from "./panel/panelStore";
+import { loadStoredPanelItems, loadStoredPinboards, mergeLoadedPanelItems } from "./panel/panelStore";
 import { CardTitleEditor } from "./panel/CardTitleEditor";
 import { CardRenameQueue, matchesRenameShortcut, normalizedCardTitle, persistCardTitle } from "./panel/cardRename";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -112,12 +113,14 @@ function PanelApp() {
   const { preferences } = usePreferences();
   const [activeType, setActiveType] = useState<(typeof typeFilters)[number]["id"]>("all");
   const [activePinboard, setActivePinboard] = useState<string | null>(null);
+  const [pinboardFilters, setPinboardFilters] = useState(isTauri() ? [] : demoPinboards);
+  const [backupRevision, setBackupRevision] = useState(0);
   const [items, setItems] = useState(isTauri() ? [] : panelItems);
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const renameQueue = useRef(new CardRenameQueue(persistCardTitle));
   const deletedItemIds = useRef(new Set<string>());
   const [searchRevision, setSearchRevision] = useState(0);
-  const [storedSearch, setStoredSearch] = useState<{ query: string; matches: ClipItem[] } | null>(null);
+  const [storedSearch, setStoredSearch] = useState<{ query: string; pinboardId: string | null; matches: ClipItem[] } | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [selectedItemId, setSelectedItemId] = useState(panelItems[0]?.id ?? "");
@@ -133,13 +136,16 @@ function PanelApp() {
 
   const filteredItems = useMemo(() => {
     const normalizedSearch = searchText.trim().toLocaleLowerCase();
-    const nativeMatches = storedSearch?.query === searchText ? storedSearch.matches : [];
+    const nativeMatches = storedSearch?.query === searchText && storedSearch.pinboardId === activePinboard ? storedSearch.matches : [];
     const nativeIds = new Set(nativeMatches.map((item) => item.id));
-    const candidates = [...items, ...nativeMatches.filter((match) => !items.some((item) => item.id === match.id))];
+    const candidates = [
+      ...items,
+      ...nativeMatches.filter((match) => !items.some((item) => item.id === match.id))
+    ];
     return sortedPanelItemsForDisplay(candidates).filter((item) => {
       if (deletedItemIds.current.has(item.id)) return false;
       const typeMatches = activeType === "all" || item.kind === activeType;
-      const pinboardMatches = !activePinboard || item.pinboardIds.includes(activePinboard);
+      const pinboardMatches = !activePinboard || (isTauri() ? nativeIds.has(item.id) : item.pinboardIds.includes(activePinboard));
       const textMatches =
         normalizedSearch.length === 0 ||
         nativeIds.has(item.id) || item.id === renamingItemId ||
@@ -152,15 +158,24 @@ function PanelApp() {
   }, [activePinboard, activeType, items, searchText, storedSearch, renamingItemId]);
 
   useEffect(() => {
-    if (!searchText.trim() || !isTauri()) return;
+    if ((!searchText.trim() && !activePinboard) || !isTauri()) return;
     let cancelled = false;
-    void loadStoredPanelItems(100, searchText).then((matches) => {
-      if (!cancelled) setStoredSearch({ query: searchText, matches });
+    void loadStoredPanelItems(100, searchText, activePinboard ?? undefined).then((matches) => {
+      if (!cancelled) setStoredSearch({ query: searchText, pinboardId: activePinboard, matches });
     }).catch(() => {
       if (!cancelled) setStoredSearch(null);
     });
     return () => { cancelled = true; };
-  }, [searchText, searchRevision]);
+  }, [searchText, searchRevision, activePinboard, backupRevision]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    void loadStoredPinboards().then((boards) => {
+      if (!cancelled) setPinboardFilters(boards);
+    }).catch((error) => console.error("Failed to load pinboards", error));
+    return () => { cancelled = true; };
+  }, [backupRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,13 +195,14 @@ function PanelApp() {
 
   useEffect(() => {
     let cancelled = false;
+    const atLoad = items;
     loadStoredPanelItems()
       .then((storedItems) => {
         if (cancelled || !isTauri()) {
           return;
         }
         // Preserve captures and edits that arrived while the initial page loaded.
-        setItems((current) => [...current, ...storedItems.filter((stored) => !current.some((item) => item.id === stored.id))]);
+        setItems((current) => mergeLoadedPanelItems(current, storedItems, atLoad));
         setSelectedItemId(storedItems[0]?.id ?? "");
       })
       .catch((error) => {
@@ -195,11 +211,19 @@ function PanelApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [backupRevision]);
 
   useEffect(() => {
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
+    listen("clipdock://backup-imported", () => {
+      deletedItemIds.current.clear();
+      setStoredSearch(null);
+      setBackupRevision((revision) => revision + 1);
+    }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else unlisteners.push(unlisten);
+    }).catch((error) => console.error("Failed to listen for backup imports", error));
     listen("clipdock://open-preferences", () => {
       void openPreferencesWindow();
     })
@@ -491,6 +515,7 @@ function PanelApp() {
   }, [
     filteredItems,
     contextMenu,
+    pinboardFilters,
     preferences.appearance.previewPopoverEnabled,
     preferences.shortcuts,
     searchText,
@@ -553,6 +578,7 @@ function PanelApp() {
   }
 
   function movePinboard(offset: 1 | -1) {
+    if (pinboardFilters.length === 0) return;
     setActivePinboard((current) => {
       const currentIndex = pinboardFilters.findIndex((pinboard) => pinboard.id === current);
       const nextIndex =
@@ -617,6 +643,9 @@ function PanelApp() {
 
   function toggleItemPinned(item: ClipItem) {
     setItems((currentItems) => togglePinnedItem(currentItems, item.id));
+    setStoredSearch((current) => current
+      ? { ...current, matches: togglePinnedItem(current.matches, item.id) }
+      : null);
     setContextMenu(null);
     showPanelShortcutToast(`${item.isPinned ? "取消固定" : "已固定"} · ${item.title}`);
   }
@@ -853,7 +882,8 @@ async function openPreferencesWindow() {
       center: true,
       resizable: true,
       decorations: true,
-      transparent: false,
+      transparent: true,
+      windowEffects: { effects: [Effect.Mica, Effect.Sidebar] },
       visible: true,
       focus: true,
       titleBarStyle: "overlay",

@@ -4,9 +4,56 @@ use clipboard_core::{
     SourceConfidence,
 };
 use serde::Serialize;
-use tauri::State;
+use tauri::{Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::core_state::CoreState;
+
+#[tauri::command]
+pub async fn transfer_clipboard_backup(
+    app: tauri::AppHandle,
+    importing: bool,
+) -> Result<Option<clipboard_core::BackupResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app
+            .dialog()
+            .file()
+            .add_filter("ClipDock backup", &["clipdock"]);
+        if let Some(window) = app.get_webview_window("preferences") {
+            dialog = dialog.set_parent(&window);
+        }
+        let selected = if importing {
+            dialog.set_title("导入数据").blocking_pick_file()
+        } else {
+            dialog
+                .set_title("导出数据")
+                .set_file_name("ClipDock.clipdock")
+                .blocking_save_file()
+        };
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let path = selected.into_path().map_err(|e| e.to_string())?;
+        // Keep resource I/O off the capture connection's mutex. SQLite provides
+        // the backup snapshot and the short merge transaction's synchronization.
+        let mut core = clipboard_core::ClipboardCore::open_for_backup(
+            app.state::<CoreState>().root_dir(),
+        )
+        .map_err(|e| e.to_string())?;
+        let result = if importing {
+            core.import_backup(&path)
+        } else {
+            core.export_backup(&path)
+        }
+        .map_err(|e| e.to_string())?;
+        if importing {
+            let _ = app.emit("clipdock://backup-imported", &result);
+        }
+        Ok(Some(result))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -2,6 +2,12 @@ import RustXcframework
 public func open_core<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CoreOpenResult {
     __swift_bridge__$open_core({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
+public func export_backup<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ path: GenericIntoRustString) -> CoreBackupResult {
+    __swift_bridge__$export_backup({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = path.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func import_backup<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ path: GenericIntoRustString) -> CoreBackupResult {
+    __swift_bridge__$import_backup({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = path.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
 public func active_source_icon_header_color_cache_version() -> Int64 {
     __swift_bridge__$active_source_icon_header_color_cache_version()
 }
@@ -97,6 +103,53 @@ public func recover_pending_images<GenericIntoRustString: IntoRustString>(_ app_
 }
 public func capture_files<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ files_json: GenericIntoRustString, _ preview_relative_path: GenericIntoRustString, _ preview_mime_type: GenericIntoRustString, _ preview_width: Int64, _ preview_height: Int64, _ preview_byte_count: Int64, _ snapshot_relative_path: GenericIntoRustString, _ snapshot_byte_count: Int64, _ source_bundle_id: GenericIntoRustString, _ source_app_name: GenericIntoRustString, _ source_bundle_path: GenericIntoRustString, _ source_icon_relative_path: GenericIntoRustString, _ source_confidence: GenericIntoRustString, _ pasteboard_change_count: Int64, _ self_write_token: GenericIntoRustString) -> CoreCaptureResult {
     __swift_bridge__$capture_files({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = files_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = preview_mime_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), preview_width, preview_height, preview_byte_count, { let rustString = snapshot_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), snapshot_byte_count, { let rustString = source_bundle_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_name.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_bundle_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_icon_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_confidence.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), pasteboard_change_count, { let rustString = self_write_token.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public struct CoreBackupResult {
+    public var ok: Bool
+    public var exported_count: Int64
+    public var imported_count: Int64
+    public var skipped_count: Int64
+    public var error_code: RustString
+    public var message: RustString
+
+    public init(ok: Bool,exported_count: Int64,imported_count: Int64,skipped_count: Int64,error_code: RustString,message: RustString) {
+        self.ok = ok
+        self.exported_count = exported_count
+        self.imported_count = imported_count
+        self.skipped_count = skipped_count
+        self.error_code = error_code
+        self.message = message
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreBackupResult {
+        { let val = self; return __swift_bridge__$CoreBackupResult(ok: val.ok, exported_count: val.exported_count, imported_count: val.imported_count, skipped_count: val.skipped_count, error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message: { let rustString = val.message.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreBackupResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreBackupResult {
+        { let val = self; return CoreBackupResult(ok: val.ok, exported_count: val.exported_count, imported_count: val.imported_count, skipped_count: val.skipped_count, error_code: RustString(ptr: val.error_code), message: RustString(ptr: val.message)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreBackupResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreBackupResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreBackupResult>) -> __swift_bridge__$Option$CoreBackupResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreBackupResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreBackupResult(is_some: false, val: __swift_bridge__$CoreBackupResult())
+        }
+    }
 }
 public struct CoreOpenResult {
     public var ok: Bool

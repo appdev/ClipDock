@@ -16,6 +16,9 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use tempfile::TempDir;
 
+#[path = "backup_tests.rs"]
+mod backup_tests;
+
 fn open_temp_core() -> (TempDir, ClipboardCore) {
     let temp_dir = TempDir::new().expect("temp dir");
     let core = ClipboardCore::open(temp_dir.path()).expect("open core");

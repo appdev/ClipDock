@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ClipDock Panel",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "identifier": "com.apkdv.clipdock.panel",
   "build": {
     "beforeDevCommand": "npm run dev:web",

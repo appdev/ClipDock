@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import {
   formatKeyboardShortcut,
@@ -137,7 +138,7 @@ export function PreferencesApp() {
   );
 
   return (
-    <main className="preferences-root" data-testid="preferences-root">
+    <main className="preferences-root" data-testid="preferences-root" data-appearance={preferences.appearance.mode}>
       <aside className="preferences-sidebar" data-tauri-drag-region>
         <div className="preferences-sidebar-spacer" data-tauri-drag-region />
         <nav className="preferences-sidebar-list" aria-label="设置分区">
@@ -151,6 +152,7 @@ export function PreferencesApp() {
                   selectedSection === section.id ? "is-selected" : ""
                 }`}
                 onClick={() => setSelectedSection(section.id)}
+                aria-current={selectedSection === section.id ? "page" : undefined}
               >
                 <SectionIcon size={17} strokeWidth={2.15} />
                 <span>{section.title}</span>
@@ -192,15 +194,11 @@ export function PreferencesApp() {
 }
 
 function PreferencePageHeader({ section }: { section: PreferenceSectionDefinition }) {
-  const SectionIcon = section.icon;
   return (
     <header className="preference-page-header" data-tauri-drag-region>
       <div>
         <h1>{section.title}</h1>
         <p>{section.subtitle}</p>
-      </div>
-      <div className="preference-page-icon">
-        <SectionIcon size={16} strokeWidth={2.2} />
       </div>
     </header>
   );
@@ -323,6 +321,8 @@ function PreferenceGeneralSection({
         </PreferenceRow>
       </PreferenceSectionGroup>
 
+      <PreferenceBackupSection />
+
       <PreferenceSectionGroup title="Retention">
         <PreferenceRow
           title="Retention"
@@ -351,6 +351,41 @@ function PreferenceGeneralSection({
   );
 }
 
+
+function PreferenceBackupSection() {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  async function transfer(importing: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setStatus(importing ? "正在导入…" : "正在导出…");
+    try {
+      const result = await invoke<{ exported_count: number; imported_count: number; skipped_count: number } | null>(
+        "transfer_clipboard_backup", { importing }
+      );
+      setStatus(result === null ? "" : importing
+        ? `已导入 ${result.imported_count} 条，跳过 ${result.skipped_count} 条重复记录`
+        : `已导出 ${result.exported_count} 条记录`);
+    } catch (error) {
+      setStatus(`操作失败：${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <PreferenceSectionGroup title="导入与导出">
+      <PreferenceStackedRow title="导入与导出" detail="合并记录与收藏，保留当前设置。文件条目仅保存原路径，导入后仍遵循保留策略。">
+        <div className="preference-action-row">
+          <button type="button" className="preference-push-button" disabled={busy || !isTauri()} onClick={() => void transfer(true)}>导入数据</button>
+          <button type="button" className="preference-push-button" disabled={busy || !isTauri()} onClick={() => void transfer(false)}>导出数据</button>
+        </div>
+      </PreferenceStackedRow>
+      {status && <div className="preference-row" role="status"><div className="preference-row-text"><span>{status}</span></div></div>}
+    </PreferenceSectionGroup>
+  );
+}
 
 function PreferenceRulesSection({
   preferences,

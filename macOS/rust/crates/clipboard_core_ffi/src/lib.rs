@@ -12,6 +12,16 @@ use serde::Deserialize;
 #[swift_bridge::bridge]
 mod ffi {
     #[swift_bridge(swift_repr = "struct")]
+    struct CoreBackupResult {
+        ok: bool,
+        exported_count: i64,
+        imported_count: i64,
+        skipped_count: i64,
+        error_code: String,
+        message: String,
+    }
+
+    #[swift_bridge(swift_repr = "struct")]
     struct CoreOpenResult {
         ok: bool,
         database_path: String,
@@ -139,6 +149,8 @@ mod ffi {
 
     extern "Rust" {
         fn open_core(app_support_dir: String) -> CoreOpenResult;
+        fn export_backup(app_support_dir: String, path: String) -> CoreBackupResult;
+        fn import_backup(app_support_dir: String, path: String) -> CoreBackupResult;
         fn active_source_icon_header_color_cache_version() -> i64;
         fn blake3_digest(bytes: &[u8]) -> String;
         fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> CoreWebPEncodeResult;
@@ -202,7 +214,11 @@ mod ffi {
             is_member: bool,
         ) -> CoreItemManagementResult;
         fn delete_item(app_support_dir: String, item_id: String) -> CoreItemManagementResult;
-        fn rename_item(app_support_dir: String, item_id: String, title: String) -> CoreItemManagementResult;
+        fn rename_item(
+            app_support_dir: String,
+            item_id: String,
+            title: String,
+        ) -> CoreItemManagementResult;
         fn record_item_copied(app_support_dir: String, item_id: String)
             -> CoreItemManagementResult;
         fn update_source_app_icon_header_color(
@@ -474,6 +490,43 @@ fn set_item_pinboard_membership(
     {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
+    }
+}
+
+fn export_backup(app_support_dir: String, path: String) -> ffi::CoreBackupResult {
+    backup_result(
+        ClipboardCore::open_for_backup(app_support_dir)
+            .and_then(|mut core| core.export_backup(path)),
+    )
+}
+
+fn import_backup(app_support_dir: String, path: String) -> ffi::CoreBackupResult {
+    backup_result(
+        ClipboardCore::open_for_backup(app_support_dir)
+            .and_then(|mut core| core.import_backup(path)),
+    )
+}
+
+fn backup_result(
+    result: clipboard_core::Result<clipboard_core::BackupResult>,
+) -> ffi::CoreBackupResult {
+    match result {
+        Ok(result) => ffi::CoreBackupResult {
+            ok: true,
+            exported_count: result.exported_count,
+            imported_count: result.imported_count,
+            skipped_count: result.skipped_count,
+            error_code: String::new(),
+            message: String::new(),
+        },
+        Err(error) => ffi::CoreBackupResult {
+            ok: false,
+            exported_count: 0,
+            imported_count: 0,
+            skipped_count: 0,
+            error_code: error.code.as_str().into(),
+            message: error.message,
+        },
     }
 }
 

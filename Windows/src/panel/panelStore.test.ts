@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { summaryToClipItem, type ClipboardItemSummary } from "./panelStore";
+import { mergeLoadedPanelItems, summaryToClipItem, type ClipboardItemSummary } from "./panelStore";
 import { clipboardPayloadForItem, clipboardSnapshotToPanelItem } from "./clipboardCapture";
 
 const summary: ClipboardItemSummary = {
@@ -17,6 +17,16 @@ it("loads custom labels separately from the original clipboard contents", () => 
   expect(item.title).toBe("original content");
   expect(clipboardPayloadForItem(item)).toEqual({ kind: "text", text: "original content" });
   expect(summaryToClipItem({ ...summary, custom_title: undefined }, "1").customTitle).toBeNull();
+});
+
+it("restores database order after import while preserving captures and edits during the refresh", () => {
+  const old = summaryToClipItem({ ...summary, id: "old" }, "1");
+  const imported = summaryToClipItem({ ...summary, id: "imported" }, "2");
+  const captured = summaryToClipItem({ ...summary, id: "captured" }, "3");
+  const result = mergeLoadedPanelItems([captured, { ...old, customTitle: "Just edited" }], [imported, { ...old, isPinned: true }], [old]);
+  expect(result.map((item) => item.id)).toEqual(["captured", "imported", "old"]);
+  expect(result[2].customTitle).toBe("Just edited");
+  expect(result[2].isPinned).toBe(true);
 });
 
 it("uses the persisted id and title for new captures, retaining link detection", () => {

@@ -4,6 +4,27 @@ import Testing
 
 struct RustCoreClientTests {
     @Test
+    func backupRoundtripThroughSwiftBridge() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source")
+        let target = root.appendingPathComponent("target")
+        let archive = root.appendingPathComponent("history.clipdock")
+        let client = RustCoreClient()
+        let captured = try client.captureText(appSupportDirectory: source, request: RustCaptureTextRequest(
+            text: "Synthetic backup", sourceBundleId: nil, sourceAppName: nil,
+            sourceBundlePath: nil, sourceIconRelativePath: nil, sourceConfidence: "unknown",
+            pasteboardChangeCount: 1
+        )).get()
+        #expect(try client.transferBackup(appSupportDirectory: source, fileURL: archive, importing: false).get().exportedCount == 1)
+        #expect(try client.transferBackup(appSupportDirectory: target, fileURL: archive, importing: true).get().importedCount == 1)
+        #expect(try client.transferBackup(appSupportDirectory: target, fileURL: archive, importing: true).get().skippedCount == 1)
+        let page = try client.listItems(appSupportDirectory: target).get()
+        #expect(page.items.first?.id == captured.itemId)
+        #expect(page.items.first?.primaryText == "Synthetic backup")
+    }
+
+    @Test
     func legacySyncPreferencesDecodeWithoutRestoringSyncConfiguration() throws {
         let data = Data(#"{"appearance":{"mode":"dark","item_density":"standard","preview_popover_enabled":true},"sync":{"enabled":true,"server_url":"https://example.invalid"}}"#.utf8)
         let preferences = try JSONDecoder().decode(RustPreferencesDocument.self, from: data)

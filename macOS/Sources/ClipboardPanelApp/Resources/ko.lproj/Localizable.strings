@@ -77,3 +77,12 @@
 "storage.status.connected" = "저장소: 연결됨(%lld개)";
 "toolbar.clearCurrentResults" = "현재 결과 지우기";
 "toolbar.clearHistory" = "기록 지우기";
+"backup.title" = "가져오기 및 내보내기";
+"backup.detail" = "현재 설정을 유지하며 기록과 핀보드를 병합합니다. 파일 항목은 원래 경로를 유지하며 보관 설정이 적용됩니다.";
+"backup.import" = "데이터 가져오기";
+"backup.export" = "데이터 내보내기";
+"backup.working" = "처리 중…";
+"backup.unavailable" = "저장소가 준비되지 않았습니다. 다시 시도해 주세요.";
+"backup.imported" = "%lld개 가져옴, 중복 %lld개 건너뜀";
+"backup.exported" = "%lld개 내보냄";
+"backup.failed" = "작업 실패: %@";

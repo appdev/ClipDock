@@ -1196,6 +1196,12 @@ public struct RustCoreError: Error, Equatable, Sendable {
     public let message: String
 }
 
+public struct RustBackupResult: Equatable, Sendable {
+    public let exportedCount: Int64
+    public let importedCount: Int64
+    public let skippedCount: Int64
+}
+
 public struct RustAdaptiveWebPEncodeResult: Equatable, Sendable {
     public let data: Data
     public let width: Int
@@ -1223,6 +1229,29 @@ public struct RustAdaptiveWebPEncodeResult: Equatable, Sendable {
 
 public struct RustCoreClient: Sendable {
     public init() {}
+
+    public func transferBackup(
+        appSupportDirectory: URL,
+        fileURL: URL,
+        importing: Bool
+    ) -> Result<RustBackupResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { path in
+            let result = importing ? import_backup(path, fileURL.path) : export_backup(path, fileURL.path)
+            guard result.ok else {
+                return .failure(RustCoreError(
+                    code: result.error_code.toString(),
+                    messageKey: "backup.error",
+                    recoverable: true,
+                    message: result.message.toString()
+                ))
+            }
+            return .success(RustBackupResult(
+                exportedCount: result.exported_count,
+                importedCount: result.imported_count,
+                skippedCount: result.skipped_count
+            ))
+        }
+    }
 
     public static func activeSourceIconHeaderColorCacheVersion() -> Int64 {
         active_source_icon_header_color_cache_version()

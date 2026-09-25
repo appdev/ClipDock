@@ -184,13 +184,13 @@ enum ClipDockTheme {
             sidebarBackgroundColor: NSColor(calibratedWhite: 0.88, alpha: 1),
             borderColor: NSColor(calibratedWhite: 0.0, alpha: 0.16),
             cardBackgroundColor: NSColor(calibratedWhite: 0.985, alpha: 1),
-            cardBorderColor: NSColor(calibratedWhite: 0.0, alpha: 0.13),
+            cardBorderColor: NSColor(calibratedWhite: 0.0, alpha: 0.06),
             navigationSelectedBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.70),
             navigationSelectedTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.92),
             navigationTextColor: NSColor(calibratedWhite: 0.20, alpha: 0.70),
             primaryTextColor: NSColor(calibratedWhite: 0.08, alpha: 0.95),
             secondaryTextColor: NSColor(calibratedWhite: 0.30, alpha: 0.70),
-            separatorColor: NSColor(calibratedWhite: 0.0, alpha: 0.16),
+            separatorColor: NSColor(calibratedWhite: 0.0, alpha: 0.08),
             controlBackgroundColor: NSColor(calibratedWhite: 1.0, alpha: 0.92)
         ),
         preview: ClipDockPreviewTheme(
@@ -278,12 +278,12 @@ enum ClipDockTheme {
             imagePreviewCheckerboardAlternateColor: NSColor(calibratedWhite: 0.12, alpha: 1)
         ),
         preferences: ClipDockPreferencesTheme(
-            windowBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),
-            contentBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),
+            windowBackgroundColor: NSColor(calibratedWhite: 0.12, alpha: 1),
+            contentBackgroundColor: NSColor(calibratedWhite: 0.12, alpha: 1),
             sidebarBackgroundColor: NSColor(calibratedWhite: 0.145, alpha: 1),
             borderColor: NSColor(calibratedWhite: 0.30, alpha: 1),
-            cardBackgroundColor: NSColor(calibratedWhite: 0.132, alpha: 1),
-            cardBorderColor: NSColor(calibratedWhite: 0.28, alpha: 1),
+            cardBackgroundColor: NSColor(calibratedWhite: 0.16, alpha: 1),
+            cardBorderColor: NSColor.white.withAlphaComponent(0.06),
             navigationSelectedBackgroundColor: NSColor(calibratedWhite: 0.34, alpha: 1),
             navigationSelectedTextColor: NSColor.white.withAlphaComponent(0.88),
             navigationTextColor: NSColor.white.withAlphaComponent(0.58),

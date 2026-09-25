@@ -26,7 +26,7 @@ struct PreferencesShellTests {
         #expect(!snapshot.toolbarHasNavigationItem)
         #expect(snapshot.windowBackgroundMatchesTheme)
         #expect(snapshot.splitBackgroundMatchesTheme)
-        #expect(snapshot.sidebarBackgroundMatchesTheme)
+        #expect(snapshot.sidebarBackgroundIsTransparent)
         #expect(snapshot.contentBackgroundMatchesTheme)
         #expect(snapshot.splitItemCount == 2)
         #expect(snapshot.sidebarMinimumThickness >= 220)
@@ -57,9 +57,8 @@ struct PreferencesShellTests {
 
         #expect(snapshot.windowBackgroundMatchesTheme)
         #expect(snapshot.splitBackgroundMatchesTheme)
-        #expect(snapshot.sidebarBackgroundMatchesTheme)
+        #expect(snapshot.sidebarBackgroundIsTransparent)
         #expect(snapshot.contentBackgroundMatchesTheme)
-        #expect(snapshot.sidebarBackgroundWhiteComponent < 0.25)
         #expect(snapshot.sidebarHostingAppearanceIsDark)
         #expect(snapshot.contentHostingAppearanceIsDark)
     }
@@ -100,9 +99,8 @@ struct PreferencesShellTests {
 
         #expect(snapshot.windowBackgroundMatchesTheme)
         #expect(snapshot.splitBackgroundMatchesTheme)
-        #expect(snapshot.sidebarBackgroundMatchesTheme)
+        #expect(snapshot.sidebarBackgroundIsTransparent)
         #expect(snapshot.contentBackgroundMatchesTheme)
-        #expect(snapshot.sidebarBackgroundWhiteComponent < 0.25)
         #expect(snapshot.sidebarHostingAppearanceIsDark)
         #expect(snapshot.contentHostingAppearanceIsDark)
     }

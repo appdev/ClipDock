@@ -77,3 +77,12 @@
 "storage.status.connected" = "儲存：已連線（%lld 筆）";
 "toolbar.clearCurrentResults" = "清空目前結果";
 "toolbar.clearHistory" = "清空歷史";
+"backup.title" = "匯入與匯出";
+"backup.detail" = "合併記錄與收藏，保留目前設定。檔案項目僅儲存原路徑，匯入後仍遵循保留策略。";
+"backup.import" = "匯入資料";
+"backup.export" = "匯出資料";
+"backup.working" = "正在處理…";
+"backup.unavailable" = "儲存空間尚未就緒，請稍後重試";
+"backup.imported" = "已匯入 %lld 筆，略過 %lld 筆重複記錄";
+"backup.exported" = "已匯出 %lld 筆記錄";
+"backup.failed" = "操作失敗：%@";

@@ -77,3 +77,12 @@
 "storage.status.connected" = "Storage: Connected (%lld items)";
 "toolbar.clearCurrentResults" = "Clear Current Results";
 "toolbar.clearHistory" = "Clear History";
+"backup.title" = "Import and Export";
+"backup.detail" = "Merge history and pinboards without changing settings. File entries keep their original paths. Retention settings still apply.";
+"backup.import" = "Import Data";
+"backup.export" = "Export Data";
+"backup.working" = "Processing…";
+"backup.unavailable" = "Storage is not ready. Please try again.";
+"backup.imported" = "Imported %lld items; skipped %lld duplicates";
+"backup.exported" = "Exported %lld items";
+"backup.failed" = "Operation failed: %@";

@@ -167,6 +167,15 @@ public typealias ClipboardPinboardMutationPerformer =
 public actor ClipboardCoreDatabaseWorker {
     public init() {}
 
+    public func transferBackup(
+        client: RustCoreClient,
+        appSupportURL: URL,
+        fileURL: URL,
+        importing: Bool
+    ) -> Result<RustBackupResult, RustCoreError> {
+        client.transferBackup(appSupportDirectory: appSupportURL, fileURL: fileURL, importing: importing)
+    }
+
     public func listItems(
         client: RustCoreClient,
         appSupportURL: URL,
