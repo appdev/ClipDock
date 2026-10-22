@@ -12,8 +12,8 @@ struct ClipboardMonitoringTests {
         pasteboard.clearContents()
         let monitor = ClipboardMonitor(pasteboard: pasteboard, pollInterval: 0.01)
         var capturedTexts: [(text: String, changeCount: Int)] = []
-        monitor.onTextCaptured = { text, _, changeCount in
-            capturedTexts.append((text, changeCount))
+        monitor.onTextCaptured = { text, _, context in
+            capturedTexts.append((text, context.changeCount))
         }
 
         monitor.start()

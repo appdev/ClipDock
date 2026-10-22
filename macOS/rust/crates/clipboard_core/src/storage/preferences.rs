@@ -13,6 +13,12 @@ const SHORTCUT_OPTIONS_SCHEMA_VERSION: i64 = 12;
 const LEGACY_DEFAULT_OPEN_PANEL_KEY_CODE: i64 = 9;
 
 impl ClipboardCore {
+    /// Reapply history policy for a reused connection, including expiration while idle.
+    pub fn apply_current_history_preferences(&mut self) -> Result<i64> {
+        let preferences = self.get_preferences()?;
+        self.apply_history_preferences(&preferences)
+    }
+
     pub fn get_preferences(&self) -> Result<PreferencesDocument> {
         let value_json: String = self.connection.query_row(
             "SELECT value_json FROM preference_documents WHERE id = 'current'",
@@ -69,8 +75,9 @@ impl ClipboardCore {
                         AND pb_retention.deleted_at_ms IS NULL
                 )
                 AND last_copied_at_ms < ?2
+                AND ?3 = 0
             "#,
-            params![now, retention_cutoff],
+            params![now, retention_cutoff, preferences.history.retention_forever],
         )?;
         let max_items_deleted = transaction.execute(
             r#"

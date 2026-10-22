@@ -40,6 +40,8 @@ pub struct BackupResult {
 
 impl ClipboardCore {
     pub fn export_backup(&mut self, destination: impl AsRef<Path>) -> Result<BackupResult> {
+        // Share the capture/maintenance lock so referenced files survive the snapshot.
+        let _lifecycle = self.asset_lifecycle()?;
         let destination = destination.as_ref();
         let root = self.root_dir()?.canonicalize()?;
         let parent = destination
@@ -120,6 +122,8 @@ impl ClipboardCore {
     }
 
     pub fn import_backup(&mut self, source: impl AsRef<Path>) -> Result<BackupResult> {
+        // Publish resources and their DB references under the same lifecycle lock.
+        let _lifecycle = self.asset_lifecycle()?;
         let mut archive = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         archive.execute_batch("PRAGMA trusted_schema = OFF; PRAGMA query_only = ON;")?;
         // Keep one read snapshot through validation and extraction, even if the

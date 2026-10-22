@@ -9,6 +9,173 @@ import WebKit
 struct PanelRuntimeSeamTests {
     @Test
     @MainActor
+    func richTextPreviewRemovalCancelsDeliveryToReusedCard() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("{\\rtf1\\ansi\\b Styled content}".utf8).write(to: directory.appendingPathComponent("preview.rtf"))
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: directory, itemSide: 218)
+        let card = renderer.render(PanelItemCardViewState(
+            itemID: "cancelled-preview",
+            sourceAppName: "TextEdit",
+            relativeTimeText: "now",
+            symbolName: "doc.text",
+            typeText: "文本",
+            summaryText: "Fallback content",
+            footnoteText: "",
+            isSelected: false,
+            preview: .none,
+            assetRequest: PanelCardAssetRequest(sourceAppName: "TextEdit", previewAssetPath: "preview.rtf")
+        ))
+        let body = try #require(card.artifacts.bodyLabels.first)
+        #expect(body.richTextPreviewLoadToken != nil)
+        #expect(!body.hasAppliedRichTextPreview)
+        card.artifacts.prepareForRemoval()
+        #expect(body.richTextPreviewLoadToken == nil)
+        // Waiting for the serial worker and yielding the main actor also drains any
+        // completion that raced with removal; the removed view must keep fallback.
+        _ = try await PanelRichTextPreviewLoader.shared.load(
+            url: directory.appendingPathComponent("preview.rtf"), maximumUTF16Length: 500
+        )
+        await Task.yield()
+        #expect(!body.hasAppliedRichTextPreview)
+        #expect(body.attributedStringForTesting.string.contains("Fallback content"))
+    }
+
+    @Test
+    @MainActor
+    func mixedScopeCacheEvictsDataAndSurfacesTogether() {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 2)
+        let result = RustCoreListResult(items: items, totalCount: 2, hasMore: false)
+        contentView.updateListState(.success(result), isFiltered: false, scope: .clipboard)
+        for index in 0..<12 {
+            let scope = ClipboardListScope(normalizedSearch: "query-\(index)")
+            contentView.smokeOpenSearch(text: scope.normalizedSearch)
+            contentView.updateListState(.success(result), isFiltered: true, scope: scope)
+            let allScopes = contentView.smokeCachedListScopes.union(contentView.smokeRetainedListSurfaceScopes)
+            #expect(allScopes.count <= 5)
+            #expect(contentView.smokeCachedListScopes.contains(.clipboard))
+            #expect(contentView.smokeRetainedListSurfaceScopes.contains(.clipboard))
+            #expect(contentView.smokeCachedListScopes.contains(scope))
+            #expect(contentView.smokeRetainedListSurfaceScopes.contains(scope))
+        }
+        let retained = Set([ClipboardListScope.clipboard] + (8..<12).map {
+            ClipboardListScope(normalizedSearch: "query-\($0)")
+        })
+        #expect(contentView.smokeCachedListScopes == retained)
+        #expect(contentView.smokeRetainedListSurfaceScopes == retained)
+    }
+
+    @Test
+    @MainActor
+    func cacheInvalidationAlsoRemovesSuppressionOnlyScopes() {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let removedBoard = ClipboardListScope(pinboardID: "removed")
+        let staleBoard = ClipboardListScope(pinboardID: "stale")
+        let staleSearch = ClipboardListScope(normalizedSearch: "stale")
+        for scope in [ClipboardListScope.clipboard, removedBoard, staleBoard, staleSearch] {
+            contentView.smokeSuppressLoadMore(for: scope)
+        }
+        contentView.invalidateCachedPinboardListPages(pinboardID: "removed")
+        #expect(contentView.smokeLoadMoreSuppressedScopes == [.clipboard, staleBoard, staleSearch])
+        contentView.updatePinboards([])
+        #expect(contentView.smokeLoadMoreSuppressedScopes == [.clipboard, staleSearch])
+        contentView.invalidateCachedListPages()
+        #expect(contentView.smokeLoadMoreSuppressedScopes == [.clipboard])
+    }
+
+    @Test
+    @MainActor
+    func scrollNotificationsCoalesceBeforeVisibleQueriesAndKeepStableGeometry() async throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = PanelQASamples.makePagedPanelItems(count: 30)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: 30, hasMore: false)), isFiltered: false
+        )
+        contentView.layoutSubtreeIfNeeded()
+        try? await Task.sleep(for: .milliseconds(30))
+        let before = contentView.smokeScrollUpdateCount
+        let geometryBefore = contentView.smokeCollectionGeometryUpdateCount
+        for _ in 0..<100 {
+            contentView.smokeNotifyScrollChange()
+        }
+        #expect(contentView.smokeScrollUpdateCount == before)
+        try #require(await waitForMainActor { contentView.smokeScrollUpdateCount > before })
+        #expect(contentView.smokeScrollUpdateCount == before + 1)
+        for _ in 0..<20 {
+            _ = contentView.smokeVisibleCommandItemIDs()
+        }
+        #expect(contentView.smokeCollectionGeometryUpdateCount == geometryBefore)
+    }
+
+    @Test(arguments: [0, 1, 18])
+    @MainActor
+    func itemBandKeepsScrollableGeometryWhenResizedWithoutCommandHints(itemCount: Int) throws {
+        let contentView = FloatingPanelContentView(frame: NSRect(x: 0, y: 0, width: 940, height: 302))
+        let items = itemCount == 0 ? [] : PanelQASamples.makePagedPanelItems(count: itemCount)
+        contentView.updateListState(
+            .success(RustCoreListResult(items: items, totalCount: Int64(itemCount), hasMore: false)), isFiltered: false
+        )
+        let scrollView = try #require(contentView.smokeHorizontalScrollView())
+        let documentView = try #require(scrollView.documentView)
+        var documentWidths: [CGFloat] = []
+        for height: CGFloat in [260, 420, 302] {
+            contentView.setFrameSize(NSSize(width: 940, height: height))
+            contentView.updatePanelHeight(height)
+            contentView.layoutSubtreeIfNeeded()
+            documentWidths.append(documentView.frame.width)
+            let shouldScroll = itemCount > 1
+            #expect((documentView.frame.width > scrollView.contentView.bounds.width) == shouldScroll)
+            scrollView.contentView.scroll(to: .zero)
+            sendWheel(to: scrollView, deltaX: -180, deltaY: 0)
+            #expect((scrollView.contentView.bounds.origin.x > 0) == shouldScroll)
+        }
+        if itemCount > 0 {
+            #expect(documentWidths[0] < documentWidths[2])
+            #expect(documentWidths[2] < documentWidths[1])
+        } else {
+            #expect(Set(documentWidths).count == 1)
+        }
+    }
+
+    @Test
+    @MainActor
+    func commandHintUpdatesTouchOnlyChangedItems() {
+        let renderer = makeRuntimeCardRenderer(appSupportDirectory: FileManager.default.temporaryDirectory, itemSide: 218)
+        let surface = PanelItemCollectionSurface(
+            metrics: PanelItemCollectionLayoutMetrics(
+                itemSide: 218, itemSpacing: 22, horizontalContentInset: 22,
+                imagePreviewMinHeight: 54, imagePreviewMaxHeight: 120, cardInset: 12
+            ),
+            rendererProvider: { renderer },
+            onScrollDidChange: {},
+            onTailPrefetch: {}
+        )
+        surface.reload(entries: (0..<500).map { index in
+            PanelItemCollectionEntry(
+                id: "\(index)", state: makeRuntimeCardState(itemID: "\(index)"),
+                callbacks: PanelItemCollectionCallbacks(toolTip: nil, onSelect: nil, onDoubleClick: nil, onContextMenu: nil)
+            )
+        })
+        surface.applyCommandHintTexts(["0": "1", "1": "2"])
+        #expect(surface.commandHintItemUpdateCount == 2)
+        surface.applyCommandHintTexts(["0": "1", "1": "2"])
+        #expect(surface.commandHintItemUpdateCount == 2)
+        surface.applyCommandHintTexts(["1": "1", "2": "2"])
+        #expect(surface.commandHintItemUpdateCount == 5)
+        surface.applyCommandHintTexts([:])
+        #expect(surface.commandHintItemUpdateCount == 7)
+        let geometryCount = surface.geometryUpdateCount
+        surface.updatePanelHeight(218)
+        _ = surface.collectionDocumentWidth()
+        _ = surface.visibleCommandItemIDs()
+        #expect(surface.geometryUpdateCount == geometryCount)
+        surface.prepareForRemoval()
+    }
+
+    @Test
+    @MainActor
     func floatingPanelControllerShowsFocusesAndHidesOnOutsideClick() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -208,22 +375,16 @@ struct PanelRuntimeSeamTests {
     @MainActor
     func batchPasteboardWriterFiltersMixedTextAndImageToTextOnly() throws {
         let imageURL = try writePasteboardWriterPNGFixture(name: "mixed.png")
-        let payload = ClipboardPastePayload.pasteboardItems([
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["text"],
-                representations: [.string("Mixed text")]
-            ),
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["image"],
-                representations: [.imageFile(imageURL)]
-            )
-        ])
+        let plan = try RustCopyPlan.plan(items: [
+            makeCopyPlanWriterItem(id: "text", type: "text", text: "Mixed text"),
+            makeCopyPlanWriterItem(id: "image", type: "image", asset: imageURL.path)
+        ], mode: .original, appSupportDirectory: FileManager.default.temporaryDirectory).get()
         let delegate = AppDelegate()
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        defer { pasteboard.clearContents() }
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("ClipDock.CopyPlan.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
 
-        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+        #expect(plan.includedIDs == ["text"])
+        #expect(delegate.smokeWriteCopyPlan(plan, to: pasteboard))
 
         let pasteboardItems = try #require(pasteboard.pasteboardItems)
         #expect(pasteboardItems.count == 1)
@@ -241,22 +402,15 @@ struct PanelRuntimeSeamTests {
     func batchPasteboardWriterWritesMultipleImageItems() throws {
         let firstURL = try writePasteboardWriterPNGFixture(name: "first.png")
         let secondURL = try writePasteboardWriterPNGFixture(name: "second.png")
-        let payload = ClipboardPastePayload.pasteboardItems([
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["first"],
-                representations: [.imageFile(firstURL)]
-            ),
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["second"],
-                representations: [.imageFile(secondURL)]
-            )
-        ])
+        let plan = try RustCopyPlan.plan(items: [
+            makeCopyPlanWriterItem(id: "first", type: "image", asset: firstURL.path),
+            makeCopyPlanWriterItem(id: "second", type: "image", asset: secondURL.path)
+        ], mode: .original, appSupportDirectory: FileManager.default.temporaryDirectory).get()
         let delegate = AppDelegate()
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        defer { pasteboard.clearContents() }
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("ClipDock.CopyPlan.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
 
-        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+        #expect(delegate.smokeWriteCopyPlan(plan, to: pasteboard))
 
         let pasteboardItems = try #require(pasteboard.pasteboardItems)
         #expect(pasteboardItems.count == 2)
@@ -291,22 +445,15 @@ struct PanelRuntimeSeamTests {
             withIntermediateDirectories: true
         )
         try Data("file payload".utf8).write(to: fileURL)
-        let payload = ClipboardPastePayload.pasteboardItems([
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["image"],
-                representations: [.imageFile(imageURL)]
-            ),
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["file"],
-                representations: [.fileURL(fileURL)]
-            )
-        ])
+        let plan = try RustCopyPlan.plan(items: [
+            makeCopyPlanWriterItem(id: "image", type: "image", asset: imageURL.path),
+            makeCopyPlanWriterItem(id: "file", type: "file", text: fileURL.path)
+        ], mode: .original, appSupportDirectory: FileManager.default.temporaryDirectory).get()
         let delegate = AppDelegate()
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        defer { pasteboard.clearContents() }
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("ClipDock.CopyPlan.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
 
-        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+        #expect(delegate.smokeWriteCopyPlan(plan, to: pasteboard))
 
         let pasteboardItems = try #require(pasteboard.pasteboardItems)
         #expect(pasteboardItems.count == 2)
@@ -327,22 +474,15 @@ struct PanelRuntimeSeamTests {
     @Test
     @MainActor
     func batchPasteboardWriterUsesCompositeOnlyForTextItems() throws {
-        let payload = ClipboardPastePayload.pasteboardItems([
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["first"],
-                representations: [.string("First")]
-            ),
-            ClipboardPasteboardItemPayload(
-                sourceItemIDs: ["second"],
-                representations: [.string("Second")]
-            )
-        ])
+        let plan = try RustCopyPlan.plan(items: [
+            makeCopyPlanWriterItem(id: "first", type: "text", text: "First"),
+            makeCopyPlanWriterItem(id: "second", type: "text", text: "Second")
+        ], mode: .original, appSupportDirectory: FileManager.default.temporaryDirectory).get()
         let delegate = AppDelegate()
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        defer { pasteboard.clearContents() }
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("ClipDock.CopyPlan.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
 
-        #expect(delegate.smokeWriteClipboardPayloadForRealFunctionQA(payload))
+        #expect(delegate.smokeWriteCopyPlan(plan, to: pasteboard))
 
         let pasteboardItems = try #require(pasteboard.pasteboardItems)
         #expect(pasteboardItems.count == 1)
@@ -2913,7 +3053,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func textCardBodyUsesRTFPreviewAssetForStyledCode() throws {
+    func textCardBodyUsesRTFPreviewAssetForStyledCode() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richTextDirectory = tempDirectory
@@ -2994,6 +3134,7 @@ struct PanelRuntimeSeamTests {
         ))
 
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        try #require(await waitForMainActor { bodyLabel.hasAppliedRichTextPreview })
         let renderedAttributedString = bodyLabel.attributedStringForTesting
         let functionRange = (renderedAttributedString.string as NSString).range(of: "UgAdaptiveDialog")
         let functionLocation = try #require(functionRange.location == NSNotFound ? nil : functionRange.location)
@@ -3017,7 +3158,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func darkTextCardRTFPreviewPreservesExplicitForegroundColor() throws {
+    func darkTextCardRTFPreviewPreservesExplicitForegroundColor() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richTextDirectory = tempDirectory
@@ -3063,6 +3204,7 @@ struct PanelRuntimeSeamTests {
         ))
 
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        try #require(await waitForMainActor { bodyLabel.hasAppliedRichTextPreview })
         let renderedAttributedString = bodyLabel.attributedStringForTesting
         let textLocation = try #require(
             (renderedAttributedString.string as NSString).range(of: text).location == NSNotFound
@@ -3079,7 +3221,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func textCardKeepsRichTextBackgroundInsideContentAndUsesThemeFade() throws {
+    func textCardKeepsRichTextBackgroundInsideContentAndUsesThemeFade() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richTextDirectory = tempDirectory
@@ -3137,6 +3279,7 @@ struct PanelRuntimeSeamTests {
             $0.identifier?.rawValue == "TextBodyBottomFade"
         })
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        try #require(await waitForMainActor { bodyLabel.hasAppliedRichTextPreview })
         let renderedAttributedString = bodyLabel.attributedStringForTesting
         let textLocation = try #require(
             (renderedAttributedString.string as NSString).range(of: text).location == NSNotFound
@@ -3175,7 +3318,7 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
-    func lightTextCardKeepsDarkTerminalBackgroundInsideContentAndUsesLightThemeFade() throws {
+    func lightTextCardKeepsDarkTerminalBackgroundInsideContentAndUsesLightThemeFade() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richTextDirectory = tempDirectory
@@ -3243,6 +3386,7 @@ struct PanelRuntimeSeamTests {
             $0.identifier?.rawValue == "TextBodyBottomFade"
         })
         let bodyLabel = try #require(renderedCard.artifacts.bodyLabels.first)
+        try #require(await waitForMainActor { bodyLabel.hasAppliedRichTextPreview })
         let renderedAttributedString = bodyLabel.attributedStringForTesting
         let gitLocation = try #require(
             (renderedAttributedString.string as NSString).range(of: "git").location == NSNotFound
@@ -6263,6 +6407,13 @@ private func alphaBoundingBox(of view: NSView) -> NSRect? {
         width: CGFloat(maxX - minX + 1),
         height: CGFloat(maxY - minY + 1)
     )
+}
+
+private func makeCopyPlanWriterItem(id: String, type: String, text: String? = nil, asset: String? = nil) -> RustClipboardItemSummary {
+    RustClipboardItemSummary(id: id, itemType: type, summary: text ?? id, primaryText: text, contentHash: id,
+        sourceAppId: nil, sourceAppName: nil, sourceAppIconPath: nil, previewAssetPath: nil, payloadAssetPath: asset,
+        sourceConfidence: "unknown", firstCopiedAtMs: 1, lastCopiedAtMs: 1, copyCount: 1, isPinned: false,
+        sizeBytes: 1, previewState: "ready")
 }
 
 private func writePasteboardWriterPNGFixture(name: String) throws -> URL {

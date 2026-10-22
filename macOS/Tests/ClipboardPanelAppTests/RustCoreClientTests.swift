@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import ClipboardPanelApp
@@ -85,6 +86,8 @@ struct RustCoreClientTests {
         let value = try client.open(appSupportDirectory: tempDirectory).get()
 
         #expect(value.databasePath.hasSuffix("clipboard.sqlite"))
+        #expect(value.databasePath == (try canonicalBridgeFixtureURL(tempDirectory))
+            .appendingPathComponent("clipboard.sqlite").path)
         #expect(value.schemaVersion == 18)
         #expect(value.itemCount == 0)
         #expect(value.items.isEmpty)
@@ -418,7 +421,7 @@ struct RustCoreClientTests {
 
     @Test
     func pendingImageBridgeGatesPayloadSemanticsUntilCompletion() throws {
-        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+        let tempDirectory = try canonicalBridgeFixtureURL(URL(fileURLWithPath: NSTemporaryDirectory()))
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let thumbnail = try writeBridgeWebP(
             appSupportDirectory: tempDirectory,
@@ -489,7 +492,7 @@ struct RustCoreClientTests {
         #expect(item.payloadAssetPath?.hasSuffix("assets/pending.webp") == true)
         #expect(ClipboardPastePayloadPlanner.payload(for: item, appSupportDirectory: tempDirectory) == .imageFile(payloadURL))
         #expect(ClipboardPreviewContentPlanner.preview(for: item, appSupportDirectory: tempDirectory).imageURL == payloadURL)
-        #expect(ClipboardOriginalImagePathResolver.originalImagePaths(for: item, appSupportDirectory: tempDirectory) == [payloadURL.path])
+        #expect(ClipboardOriginalImagePathResolver.originalImagePaths(for: item, appSupportDirectory: tempDirectory) == [payloadURL.standardizedFileURL.path])
     }
 
     @Test
@@ -1380,7 +1383,7 @@ struct RustCoreClientTests {
 
     @Test
     func plansRichTextPastePayloadFromRTFAssetWithPlainFallback() throws {
-        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+        let tempDirectory = try canonicalBridgeFixtureURL(URL(fileURLWithPath: NSTemporaryDirectory()))
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richDirectory = tempDirectory
             .appendingPathComponent("assets", isDirectory: true)
@@ -1494,7 +1497,7 @@ struct RustCoreClientTests {
 
     @Test
     func plansImagePastePayloadFromCapturedItemAsset() throws {
-        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+        let tempDirectory = try canonicalBridgeFixtureURL(URL(fileURLWithPath: NSTemporaryDirectory()))
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let payloadDirectory = tempDirectory.appendingPathComponent("assets", isDirectory: true)
         let thumbnailDirectory = tempDirectory.appendingPathComponent("thumbnails", isDirectory: true)
@@ -1710,7 +1713,7 @@ struct RustCoreClientTests {
 
     @Test
     func plansRichTextPreviewContentWithLazyRTFURLAndPlainBody() throws {
-        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+        let tempDirectory = try canonicalBridgeFixtureURL(URL(fileURLWithPath: NSTemporaryDirectory()))
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let richDirectory = tempDirectory
             .appendingPathComponent("assets", isDirectory: true)
@@ -1822,7 +1825,7 @@ struct RustCoreClientTests {
 
     @Test
     func plansImagePreviewContentFromOriginalPayloadAsset() throws {
-        let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+        let tempDirectory = try canonicalBridgeFixtureURL(URL(fileURLWithPath: NSTemporaryDirectory()))
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let payloadDirectory = tempDirectory.appendingPathComponent("assets", isDirectory: true)
         let thumbnailDirectory = tempDirectory.appendingPathComponent("thumbnails", isDirectory: true)
@@ -1911,6 +1914,16 @@ struct RustCoreClientTests {
         #expect(error.messageKey == "clipboard.error.database_unavailable")
         #expect(error.recoverable)
     }
+}
+
+// Match Rust's filesystem canonicalization. Foundation intentionally folds
+// /private/var back to /var even in resolvingSymlinksInPath().
+private func canonicalBridgeFixtureURL(_ url: URL) throws -> URL {
+    guard let path = realpath(url.path, nil) else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    defer { free(path) }
+    return URL(fileURLWithPath: String(cString: path), isDirectory: true)
 }
 
 private struct BridgeWebPFixture {

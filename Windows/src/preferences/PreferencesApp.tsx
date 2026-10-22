@@ -72,7 +72,7 @@ const modifierOptions: ShortcutModifier[] = ["command", "control", "option"];
 const plainTextModifierOptions: PlainTextModifier[] = ["shift", "command", "control", "option"];
 
 export function PreferencesApp() {
-  const { preferences, updatePreferences, resetShortcuts } = usePreferences();
+  const { preferences, updatePreferences, resetShortcuts, error } = usePreferences();
   const [selectedSection, setSelectedSection] = useState<PreferenceSectionId>("general");
 
   useEffect(() => {
@@ -139,6 +139,7 @@ export function PreferencesApp() {
 
   return (
     <main className="preferences-root" data-testid="preferences-root" data-appearance={preferences.appearance.mode}>
+      {error && <div className="preferences-save-error" role="alert">{error}</div>}
       <aside className="preferences-sidebar" data-tauri-drag-region>
         <div className="preferences-sidebar-spacer" data-tauri-drag-region />
         <nav className="preferences-sidebar-list" aria-label="设置分区">
@@ -336,7 +337,7 @@ function PreferenceGeneralSection({
               { label: "周", value: 7 },
               { label: "月", value: 30 },
               { label: "年", value: 365 },
-              { label: "永久", value: "forever" }
+              { label: "不限", value: "forever" }
             ]}
             onChange={(retentionDays) =>
               updatePreferences((current) => ({
@@ -404,7 +405,7 @@ function PreferenceRulesSection({
   }, [ignoredApps, selectedIdentifier]);
 
   function addIgnoredApp() {
-    const value = window.prompt("输入要忽略的应用标识", "com.example.App");
+    const value = window.prompt("输入要忽略的程序文件名或路径（如 KeePass.exe）", "KeePass.exe");
     const trimmed = value?.trim();
     if (!trimmed) {
       return;
@@ -931,7 +932,7 @@ function retentionDetail(days: RetentionDays): string {
     case 365:
       return "保留 1 年";
     case "forever":
-      return "永久保留";
+      return "不限时间；历史最多 5000 条，Pinboard 内容保留";
   }
 }
 

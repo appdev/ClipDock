@@ -150,7 +150,7 @@ public enum PanelItemCardPresenter {
                 ?? item.primaryText
                 ?? item.summary
         case "text", "rich_text":
-            return boundedTextPreview(from: item.primaryText ?? item.summary)
+            return item.textPreview ?? boundedTextPreview(from: item.primaryText ?? item.summary)
         default:
             return item.primaryText ?? item.summary
         }
@@ -199,6 +199,11 @@ public enum PanelItemCardPresenter {
                 ? AppLocalization.text("color.format.unavailable", defaultValue: "颜色格式不可用")
                 : ""
         default:
+            if let count = item.trimmedGraphemeCount {
+                return count > 0
+                    ? AppLocalization.format("item.footnote.characters", defaultValue: "%lld 个字符", count)
+                    : ""
+            }
             return contentFootnote(for: item.primaryText ?? item.summary)
         }
     }

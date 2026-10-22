@@ -138,13 +138,15 @@ public final class PanelInteractionController {
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
         append: Bool = false,
-        preserveScrollPositionOnStructuralChange: Bool = false
+        preserveScrollPositionOnStructuralChange: Bool = false,
+        preservesItemsOnFailure: Bool = true
     ) -> PanelContentRenderPlan {
         contentController.updateListState(
             result,
             isFiltered: isFiltered,
             append: append,
-            preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
+            preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange,
+            preservesItemsOnFailure: preservesItemsOnFailure
         )
     }
 

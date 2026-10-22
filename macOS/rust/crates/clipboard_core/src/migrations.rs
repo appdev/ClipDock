@@ -136,6 +136,19 @@ pub fn run_migrations(connection: &mut Connection) -> Result<()> {
         )
         .map_err(|error| CoreError::new(CoreErrorCode::MigrationFailed, error.to_string()))?;
 
+    let highest_version: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+    if highest_version > crate::CURRENT_SCHEMA_VERSION {
+        return Err(CoreError::new(
+            CoreErrorCode::MigrationFailed,
+            "database was created by a newer application version",
+        )
+        .with_detail("version", highest_version.to_string()));
+    }
+
     for migration in MIGRATIONS {
         let expected_checksum = checksum(migration.sql);
         let stored_checksum = connection

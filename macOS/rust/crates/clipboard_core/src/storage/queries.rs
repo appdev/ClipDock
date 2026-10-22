@@ -1,7 +1,8 @@
 use crate::domain::{
-    ClipboardFileItemSummary, ClipboardItemSummary, ClipboardItemType, ItemManagementResult,
-    ItemPage, ItemQuery, LinkMetadataState, LinkMetadataSummary, PageRequest, PayloadState,
-    PinboardPage, PinboardSummary, PreviewState, SourceAppPage, SourceAppSummary, SourceConfidence,
+    ClipboardFileItemSummary, ClipboardItemSummary, ClipboardItemType, ClipboardListEntry,
+    ItemLookupResult, ItemManagementResult, ItemPage, ItemQuery, LinkMetadataState,
+    LinkMetadataSummary, ListEntryPage, PageRequest, PayloadState, PinboardPage, PinboardSummary,
+    PreviewState, SourceAppPage, SourceAppSummary, SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
@@ -25,41 +26,119 @@ const PINBOARD_COLOR_CODES: [i64; 7] = [
 ];
 
 impl ClipboardCore {
-    /// Rename metadata without changing the captured payload or its ordering.
-    pub fn rename_item(
-        &mut self,
-        item_id: impl AsRef<str>,
-        title: impl AsRef<str>,
-    ) -> Result<ItemManagementResult> {
-        let item_id = normalize_item_id(item_id.as_ref())?;
-        let title = title.as_ref().trim();
-        let title = if title.is_empty() { None } else { Some(title) };
-        let transaction = self.connection.transaction()?;
-        let exists: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM clipboard_items WHERE id = ?1 AND deleted_at_ms IS NULL)",
-            [&item_id],
-            |row| row.get(0),
-        )?;
-        if !exists {
-            return Ok(ItemManagementResult { affected_count: 0 });
-        }
-        super::capture::remove_search_index(&transaction, &item_id)?;
-        transaction.execute(
-            "UPDATE clipboard_items SET custom_title = ?1 WHERE id = ?2",
-            params![title, item_id],
-        )?;
-        super::capture::insert_search_index(&transaction, &item_id)?;
+    pub fn list_items(&self, query: ItemQuery, page: PageRequest) -> Result<ItemPage> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let page = self.query_item_entries(query, page, false, false, None)?;
         transaction.commit()?;
-        Ok(ItemManagementResult { affected_count: 1 })
+        Ok(ItemPage {
+            items: page.items.into_iter().map(|entry| entry.item).collect(),
+            total_count: page.total_count,
+            has_more: page.has_more,
+        })
     }
 
-    pub fn list_items(&self, query: ItemQuery, page: PageRequest) -> Result<ItemPage> {
+    /// Count, rows, memberships and file metadata share this page's WAL snapshot.
+    /// The transaction ends here, before any caller serializes the result.
+    pub fn list_entries(&self, query: ItemQuery, page: PageRequest) -> Result<ListEntryPage> {
+        self.list_entries_with_metrics(query, page, true)
+    }
+
+    /// Clients using scalar counts can omit the more expensive Foundation-style
+    /// grapheme metric. Omission is explicit (`None`), never a substituted count.
+    pub fn list_entries_with_metrics(
+        &self,
+        query: ItemQuery,
+        page: PageRequest,
+        include_trimmed_grapheme_count: bool,
+    ) -> Result<ListEntryPage> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let page =
+            self.query_item_entries(query, page, true, include_trimmed_grapheme_count, None)?;
+        transaction.commit()?;
+        Ok(page)
+    }
+
+    pub fn get_item(&self, item_id: &str) -> Result<Option<ClipboardItemSummary>> {
+        Ok(self.get_items(vec![item_id.to_owned()])?.remove(0).item)
+    }
+
+    /// Preserve caller order, including duplicate and missing IDs. Hidden history
+    /// items remain addressable when retained by a pinboard.
+    pub fn get_items(&self, item_ids: Vec<String>) -> Result<Vec<ItemLookupResult>> {
+        if item_ids.len() > crate::MAX_ITEM_BATCH_SIZE {
+            return Err(CoreError::new(
+                CoreErrorCode::InvalidInput,
+                "at most 200 item IDs are allowed",
+            ));
+        }
+        let normalized: Vec<String> = item_ids
+            .iter()
+            .map(|id| normalize_item_id(id))
+            .collect::<Result<_>>()?;
+        if normalized.is_empty() {
+            return Ok(Vec::new());
+        }
+        let transaction = self.connection.unchecked_transaction()?;
+        let page = self.query_item_entries(
+            ItemQuery::default(),
+            PageRequest {
+                limit: 200,
+                offset: 0,
+            },
+            false,
+            false,
+            Some(&normalized),
+        )?;
+        transaction.commit()?;
+        let items: HashMap<_, _> = page
+            .items
+            .into_iter()
+            .map(|entry| (entry.item.id.clone(), entry.item))
+            .collect();
+        Ok(item_ids
+            .into_iter()
+            .zip(normalized)
+            .map(|(item_id, id)| ItemLookupResult {
+                item_id,
+                item: items.get(&id).cloned(),
+            })
+            .collect())
+    }
+
+    fn query_item_entries(
+        &self,
+        query: ItemQuery,
+        page: PageRequest,
+        lightweight: bool,
+        include_trimmed_grapheme_count: bool,
+        lookup_ids: Option<&[String]>,
+    ) -> Result<ListEntryPage> {
         let page = page.normalized();
-        let total_count = self.active_item_count(&query)?;
+        let is_search = query
+            .search_text
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+        let mut total_count = if is_search || lookup_ids.is_some() {
+            0
+        } else {
+            self.active_item_count(&query)?
+        };
+        #[cfg(test)]
+        query_read_hook("after_count");
         let pinboard_id = query
             .pinboard_id
             .as_deref()
             .map(Self::normalize_pinboard_id);
+        let extra_projection = if is_search {
+            ", totals.total_count"
+        } else {
+            ""
+        };
+        let item_source = if is_search {
+            "totals LEFT JOIN page_items ON 1 = 1 LEFT JOIN clipboard_items i ON i.rowid = page_items.item_rowid"
+        } else {
+            "clipboard_items i"
+        };
         let mut sql = format!(
             r#"
             SELECT
@@ -134,8 +213,8 @@ impl ClipboardCore {
                 lm.image_relative_path,
                 lm.metadata_state,
                 lm.fetched_at_ms,
-                i.custom_title
-            FROM clipboard_items i
+                i.custom_title{extra_projection}
+            FROM {item_source}
             LEFT JOIN source_apps s ON s.id = i.source_app_id
             LEFT JOIN source_app_icons ic ON ic.id = (
                 SELECT latest_ic.id
@@ -149,8 +228,9 @@ impl ClipboardCore {
         );
 
         let mut filter_params = Vec::new();
+        let mut filter_sql = String::new();
         if let Some(pinboard_id) = pinboard_id.as_deref() {
-            sql.push_str(
+            filter_sql.push_str(
                 r#"
                 INNER JOIN pinboard_items pi_filter ON pi_filter.item_id = i.id
                 INNER JOIN pinboards pb_filter ON pb_filter.id = pi_filter.pinboard_id
@@ -158,56 +238,146 @@ impl ClipboardCore {
             );
             filter_params.push(Value::Text(pinboard_id.to_string()));
         }
-        sql.push_str(" WHERE i.deleted_at_ms IS NULL");
-        if pinboard_id.is_none() {
-            sql.push_str(" AND i.history_deleted_at_ms IS NULL");
+        filter_sql.push_str(" WHERE i.deleted_at_ms IS NULL");
+        if pinboard_id.is_none() && lookup_ids.is_none() {
+            filter_sql.push_str(" AND i.history_deleted_at_ms IS NULL");
+        }
+        if let Some(ids) = lookup_ids {
+            filter_sql.push_str(&format!(
+                " AND i.id IN ({})",
+                vec!["?"; ids.len()].join(",")
+            ));
+            filter_params.extend(ids.iter().cloned().map(Value::Text));
         }
         if pinboard_id.is_some() {
-            sql.push_str(
+            filter_sql.push_str(
                 r#"
                 AND pi_filter.pinboard_id = ?
                 AND pb_filter.deleted_at_ms IS NULL
                 "#,
             );
         }
-        filter_params.extend(append_query_filters(&self.connection, &mut sql, &query)?);
-        if pinboard_id.is_some() {
-            sql.push_str(
-                " ORDER BY pi_filter.display_order ASC, pi_filter.pinned_at_ms DESC, i.last_copied_at_ms DESC",
+        filter_params.extend(append_query_filters(
+            &self.connection,
+            &mut filter_sql,
+            &query,
+        )?);
+        if is_search {
+            let pin_projection = if pinboard_id.is_some() {
+                ", pi_filter.display_order, pi_filter.pinned_at_ms"
+            } else {
+                ""
+            };
+            let page_order = if pinboard_id.is_some() {
+                "display_order ASC, pinned_at_ms DESC, last_copied_at_ms DESC"
+            } else {
+                "last_copied_at_ms DESC, id DESC"
+            };
+            let final_order = if pinboard_id.is_some() {
+                "page_items.display_order ASC, page_items.pinned_at_ms DESC, page_items.last_copied_at_ms DESC"
+            } else {
+                "page_items.last_copied_at_ms DESC, page_items.id DESC"
+            };
+            sql = format!(
+                "WITH candidates AS MATERIALIZED (
+                    SELECT i.rowid AS item_rowid, i.id, i.last_copied_at_ms{pin_projection}
+                    FROM clipboard_items i LEFT JOIN source_apps s ON s.id = i.source_app_id
+                    {filter_sql}
+                 ), page_items AS MATERIALIZED (
+                    SELECT * FROM candidates ORDER BY {page_order} LIMIT ? OFFSET ?
+                 ), totals AS (SELECT COUNT(*) AS total_count FROM candidates)
+                 {sql} ORDER BY {final_order}"
             );
         } else {
-            sql.push_str(" ORDER BY i.last_copied_at_ms DESC, i.id DESC");
+            sql.push_str(&filter_sql);
+            if pinboard_id.is_some() {
+                sql.push_str(" ORDER BY pi_filter.display_order ASC, pi_filter.pinned_at_ms DESC, i.last_copied_at_ms DESC");
+            } else {
+                sql.push_str(" ORDER BY i.last_copied_at_ms DESC, i.id DESC");
+            }
+            sql.push_str(" LIMIT ? OFFSET ?");
         }
-        sql.push_str(" LIMIT ? OFFSET ?");
         filter_params.push(Value::Integer(page.limit));
         filter_params.push(Value::Integer(page.offset));
 
         let mut statement = self.connection.prepare(&sql)?;
-        let rows = statement.query_map(params_from_iter(filter_params.iter()), map_item_summary)?;
-
-        let mut items = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-        let file_items_by_item = self.file_items_for_items(&items)?;
-        for item in &mut items {
+        let rows = statement.query_map(params_from_iter(filter_params.iter()), move |row| {
+            let count = if is_search { row.get(29)? } else { total_count };
+            let item = if is_search && row.get::<_, Option<String>>(0)?.is_none() {
+                None
+            } else {
+                Some(map_list_entry(
+                    row,
+                    lightweight,
+                    include_trimmed_grapheme_count,
+                    &self.text_metrics,
+                )?)
+            };
+            Ok((count, item))
+        })?;
+        let mut items = Vec::new();
+        for row in rows {
+            let (count, item) = row?;
+            total_count = count;
+            items.extend(item);
+        }
+        #[cfg(test)]
+        query_read_hook("after_rows");
+        let summaries: Vec<_> = items.iter().map(|entry| &entry.item).collect();
+        let file_items_by_item = self.file_items_for_items(&summaries)?;
+        let pinboards_by_item = self.pinboards_for_items(&summaries)?;
+        for entry in &mut items {
+            let item = &mut entry.item;
             item.file_items = file_items_by_item
                 .get(item.id.as_str())
                 .cloned()
                 .unwrap_or_default();
+            item.pinboard_ids = pinboards_by_item.get(&item.id).cloned().unwrap_or_default();
         }
-        let items: Vec<ClipboardItemSummary> = items
+        let items: Vec<ClipboardListEntry> = items
             .into_iter()
-            .map(|item| self.with_absolute_paths(item))
+            .map(|mut entry| {
+                entry.item = self.with_absolute_paths(entry.item);
+                entry
+            })
             .collect();
 
-        Ok(ItemPage {
-            has_more: page.offset + (items.len() as i64) < total_count,
+        Ok(ListEntryPage {
+            has_more: page.offset.saturating_add(items.len() as i64) < total_count,
             items,
             total_count,
         })
     }
 
+    fn pinboards_for_items(
+        &self,
+        items: &[&ClipboardItemSummary],
+    ) -> Result<HashMap<String, Vec<String>>> {
+        if items.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders = vec!["?"; items.len()].join(",");
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT pi.item_id, pi.pinboard_id FROM pinboard_items pi
+             INNER JOIN pinboards pb ON pb.id = pi.pinboard_id
+             WHERE pb.deleted_at_ms IS NULL AND pi.item_id IN ({placeholders})
+             ORDER BY pi.item_id, pb.sort_order, pb.id"
+        ))?;
+        let rows = statement
+            .query_map(params_from_iter(items.iter().map(|item| &item.id)), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+        let mut result: HashMap<String, Vec<String>> = HashMap::new();
+        for row in rows {
+            let (item_id, pinboard_id) = row?;
+            result.entry(item_id).or_default().push(pinboard_id);
+        }
+        Ok(result)
+    }
+
     fn file_items_for_items(
         &self,
-        items: &[ClipboardItemSummary],
+        items: &[&ClipboardItemSummary],
     ) -> Result<HashMap<String, Vec<ClipboardFileItemSummary>>> {
         let item_ids: Vec<&str> = items
             .iter()
@@ -604,7 +774,8 @@ impl ClipboardCore {
         };
         transaction.commit()?;
         if affected_count > 0 && !has_active_pinboard {
-            self.purge_soft_deleted_items_and_assets()?;
+            self.purge_soft_deleted_items_and_assets()
+                .map_err(|error| error.with_detail("mutation_committed", "true"))?;
         }
 
         Ok(ItemManagementResult { affected_count })
@@ -1013,7 +1184,10 @@ fn make_like_query(search_text: &str) -> String {
     format!("%{escaped}%")
 }
 
-fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSummary> {
+fn map_item_summary(
+    row: &rusqlite::Row<'_>,
+    omit_primary_text: bool,
+) -> rusqlite::Result<ClipboardItemSummary> {
     let item_type = row.get::<_, String>(1)?;
     let source_confidence = row.get::<_, String>(11)?;
     let preview_state = row.get::<_, String>(17)?;
@@ -1044,7 +1218,7 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
         custom_title: row.get(28)?,
         item_type: ClipboardItemType::from_storage(&item_type),
         summary: row.get(2)?,
-        primary_text: row.get(3)?,
+        primary_text: if omit_primary_text { None } else { row.get(3)? },
         content_hash: row.get(4)?,
         source_app_id: row.get(5)?,
         source_app_name: row.get(6)?,
@@ -1057,12 +1231,74 @@ fn map_item_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItemSu
         last_copied_at_ms: row.get(13)?,
         copy_count: row.get(14)?,
         is_pinned: row.get::<_, i64>(15)? == 1,
+        pinboard_ids: Vec::new(),
         size_bytes: row.get(16)?,
         preview_state: PreviewState::from_storage(&preview_state),
         payload_state: PayloadState::from_storage(&payload_state),
         file_items: Vec::new(),
         link_metadata,
     })
+}
+
+fn map_list_entry(
+    row: &rusqlite::Row<'_>,
+    lightweight: bool,
+    include_trimmed_grapheme_count: bool,
+    metrics: &std::cell::RefCell<super::text_metrics::TextMetricsCache>,
+) -> rusqlite::Result<ClipboardListEntry> {
+    let is_text = lightweight && matches!(row.get_ref(1)?.as_str()?, "text" | "rich_text");
+    let (text_preview, preview_truncated, trimmed_grapheme_count, scalar_count) = if is_text {
+        // Borrow SQLite's body; never allocate an owned full body for a list row.
+        let text = row
+            .get_ref(3)?
+            .as_str_or_null()?
+            .unwrap_or(row.get_ref(2)?.as_str()?);
+        let mut utf16_units = 0;
+        let mut preview_end = 0;
+        for (index, scalar) in text.char_indices() {
+            if utf16_units + scalar.len_utf16() <= 500 {
+                utf16_units += scalar.len_utf16();
+                preview_end = index + scalar.len_utf8();
+            } else {
+                break;
+            }
+        }
+        let (grapheme_count, scalar_count) = metrics.borrow_mut().get(
+            row.get_ref(4)?.as_str()?,
+            text,
+            include_trimmed_grapheme_count,
+            row.get_ref(1)?.as_str()? == "rich_text",
+        );
+        (
+            Some(text[..preview_end].to_owned()),
+            preview_end < text.len(),
+            grapheme_count,
+            Some(scalar_count),
+        )
+    } else {
+        (None, false, None, None)
+    };
+    Ok(ClipboardListEntry {
+        item: map_item_summary(row, is_text)?,
+        text_preview,
+        preview_truncated,
+        trimmed_grapheme_count,
+        scalar_count,
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static QUERY_READ_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(&str)>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn query_read_hook(stage: &str) {
+    QUERY_READ_HOOK.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().as_mut() {
+            hook(stage);
+        }
+    });
 }
 
 fn map_source_app_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceAppSummary> {

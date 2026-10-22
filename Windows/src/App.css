@@ -251,6 +251,14 @@ button {
   display: none;
 }
 
+.card-rail.is-virtual { display: block; padding: 0 0 22px; }
+.virtual-card-canvas { position: relative; }
+.virtual-card-slot { position: absolute; top: 0; }
+.history-status { position: absolute; bottom: 7px; right: 22px; display: flex; gap: 8px; font-size: 12px; }
+.history-status button { border: 0; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.content-type-select { max-width: 85px; border: 0; border-radius: 8px; padding: 5px; background: rgba(255,255,255,.5); color: inherit; }
+.preferences-save-error { position: fixed; bottom: 20px; left: 220px; right: 20px; z-index: 10; padding: 12px; border-radius: 8px; background: #fff0ec; color: #a22d14; }
+
 .panel-card {
   position: relative;
   flex: 0 0 var(--item-side);

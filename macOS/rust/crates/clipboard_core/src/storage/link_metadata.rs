@@ -89,12 +89,35 @@ impl ClipboardCore {
         &mut self,
         request: CompleteLinkMetadataFetchRequest,
     ) -> Result<ItemManagementResult> {
+        let paths = [
+            request.icon_relative_path.clone(),
+            request.image_relative_path.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        self.with_asset_registration(paths, |core, lifecycle| {
+            core.complete_link_metadata_fetch_locked(request, lifecycle)
+        })
+    }
+    fn complete_link_metadata_fetch_locked(
+        &mut self,
+        request: CompleteLinkMetadataFetchRequest,
+        lifecycle: &super::asset_lifecycle::ManagedAssetGuard,
+    ) -> Result<ItemManagementResult> {
         let item_id = normalize_item_id(&request.item_id)?;
         let canonical_url = non_empty_or(request.canonical_url, "");
         let display_url = non_empty_or(request.display_url, &canonical_url);
         let host = non_empty_or(request.host, "");
         let icon_relative_path = normalize_optional_asset_path(request.icon_relative_path)?;
         let image_relative_path = normalize_optional_asset_path(request.image_relative_path)?;
+        let asset_paths = [icon_relative_path.clone(), image_relative_path.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        for path in &asset_paths {
+            let _ = lifecycle.exists(path)?;
+        }
         let now = now_ms();
         let affected_count = self.connection.execute(
             r#"

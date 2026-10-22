@@ -88,7 +88,7 @@ struct PreferencesCoordinatorTests {
 
     @Test
     @MainActor
-    func loadNormalizesLaunchAtLoginAndPersistsReconciledPreferences() throws {
+    func loadNormalizesLaunchAtLoginAndPersistsReconciledPreferences() async throws {
         var savedPreferences: [RustPreferencesDocument] = []
         let coordinator = PreferencesCoordinator(
             loadPreferencesOperation: {
@@ -127,7 +127,7 @@ struct PreferencesCoordinatorTests {
             openAccessibilitySettings: {}
         )
 
-        let result = try coordinator.load().get()
+        let result = try await coordinator.load().get()
 
         #expect(result.preferences.general.launchAtLogin == false)
         #expect(result.statusText == "登录项：登录后自动启动")
@@ -138,7 +138,7 @@ struct PreferencesCoordinatorTests {
 
     @Test
     @MainActor
-    func persistAppliesRequestedLaunchAtLoginChangeBeforeSaving() throws {
+    func persistAppliesRequestedLaunchAtLoginChangeBeforeSaving() async throws {
         var savedPreference: RustPreferencesDocument?
         let coordinator = PreferencesCoordinator(
             loadPreferencesOperation: {
@@ -180,7 +180,7 @@ struct PreferencesCoordinatorTests {
             openAccessibilitySettings: {}
         )
 
-        let result = try coordinator.persist(RustPreferencesDocument(
+        let result = try await coordinator.persist(RustPreferencesDocument(
             general: RustGeneralPreferences(launchAtLogin: true)
         )).get()
 
@@ -193,7 +193,7 @@ struct PreferencesCoordinatorTests {
 
     @Test
     @MainActor
-    func persistFallsBackToCurrentStateWhenLaunchAtLoginChangeFails() throws {
+    func persistFallsBackToCurrentStateWhenLaunchAtLoginChangeFails() async throws {
         var savedPreference: RustPreferencesDocument?
         let coordinator = PreferencesCoordinator(
             loadPreferencesOperation: {
@@ -230,7 +230,7 @@ struct PreferencesCoordinatorTests {
             openAccessibilitySettings: {}
         )
 
-        let result = try coordinator.persist(RustPreferencesDocument(
+        let result = try await coordinator.persist(RustPreferencesDocument(
             general: RustGeneralPreferences(launchAtLogin: true)
         )).get()
 

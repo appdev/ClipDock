@@ -3,10 +3,11 @@ import ClipboardPanelApp
 
 @MainActor
 protocol ClipboardMonitoring: AnyObject {
-    var onTextCaptured: ((String, ClipboardCapturedRichText?, Int) -> Void)? { get set }
-    var onRichTextCaptured: ((ClipboardCapturedRichText, Int) -> Void)? { get set }
-    var onImageCaptured: ((CapturedClipboardImage, Int) -> Void)? { get set }
-    var onFilesCaptured: ((CapturedClipboardFiles, Int) -> Void)? { get set }
+    var capturePreflight: ((Int) -> ClipboardCaptureEventContext?)? { get set }
+    var onTextCaptured: ((String, ClipboardCapturedRichText?, ClipboardCaptureEventContext) -> Void)? { get set }
+    var onRichTextCaptured: ((ClipboardCapturedRichText, ClipboardCaptureEventContext) -> Void)? { get set }
+    var onImageCaptured: ((CapturedClipboardImage, ClipboardCaptureEventContext) -> Void)? { get set }
+    var onFilesCaptured: ((CapturedClipboardFiles, ClipboardCaptureEventContext) -> Void)? { get set }
 
     func start()
     func stop()
@@ -349,10 +350,11 @@ final class ClipboardMonitor: ClipboardMonitoring {
     private var lastChangeCount: Int
     private var ignoredChangeCounts = Set<Int>()
     private var ignoredSelfWriteTokens = Set<String>()
-    var onTextCaptured: ((String, ClipboardCapturedRichText?, Int) -> Void)?
-    var onRichTextCaptured: ((ClipboardCapturedRichText, Int) -> Void)?
-    var onImageCaptured: ((CapturedClipboardImage, Int) -> Void)?
-    var onFilesCaptured: ((CapturedClipboardFiles, Int) -> Void)?
+    var capturePreflight: ((Int) -> ClipboardCaptureEventContext?)?
+    var onTextCaptured: ((String, ClipboardCapturedRichText?, ClipboardCaptureEventContext) -> Void)?
+    var onRichTextCaptured: ((ClipboardCapturedRichText, ClipboardCaptureEventContext) -> Void)?
+    var onImageCaptured: ((CapturedClipboardImage, ClipboardCaptureEventContext) -> Void)?
+    var onFilesCaptured: ((CapturedClipboardFiles, ClipboardCaptureEventContext) -> Void)?
 
     init(
         pasteboard: NSPasteboard = .general,
@@ -402,24 +404,43 @@ final class ClipboardMonitor: ClipboardMonitoring {
     private func pollPasteboard() {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }
-        lastChangeCount = changeCount
 
         if shouldIgnoreSelfWrite(pasteboard: pasteboard, changeCount: changeCount) {
+            if pasteboard.changeCount == changeCount { lastChangeCount = changeCount }
             return
         }
 
-        switch payloadReader.readContent(from: pasteboard) {
+        let context: ClipboardCaptureEventContext
+        if let capturePreflight {
+            guard let evaluated = capturePreflight(changeCount) else { return }
+            context = evaluated
+        } else {
+            context = ClipboardCaptureEventContext(changeCount: changeCount,
+                preferences: RustPreferencesDocument(), source: nil, decision: .capture)
+        }
+        // A source lookup or policy callback may race another process's write.
+        // Do not consume the newer sequence: the next poll must retry it.
+        guard context.changeCount == changeCount, pasteboard.changeCount == changeCount else { return }
+        if context.decision.shouldSkip {
+            lastChangeCount = changeCount
+            return
+        }
+        let content = payloadReader.readContent(from: pasteboard)
+        guard pasteboard.changeCount == changeCount else { return }
+        lastChangeCount = changeCount
+
+        switch content {
         case .files(let files):
-            onFilesCaptured?(files, changeCount)
+            onFilesCaptured?(files, context)
 
         case .richText(let richText):
-            onRichTextCaptured?(richText, changeCount)
+            onRichTextCaptured?(richText, context)
 
         case .image(let image):
-            onImageCaptured?(image, changeCount)
+            onImageCaptured?(image, context)
 
         case .text(let text, let displayRichText):
-            onTextCaptured?(text, displayRichText, changeCount)
+            onTextCaptured?(text, displayRichText, context)
 
         case nil:
             return

@@ -1,4 +1,5 @@
 mod clipboard_bridge;
+mod clipboard_platform;
 mod commands;
 mod core_state;
 mod native_assets;
@@ -6,8 +7,7 @@ mod tray;
 
 use core_state::CoreState;
 use serde::Serialize;
-use std::{thread, time::Duration};
-use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
+use tauri::{Manager, PhysicalPosition, PhysicalSize};
 
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
@@ -18,7 +18,6 @@ const DEFAULT_PANEL_HEIGHT: f64 = 320.0;
 const MINIMUM_PANEL_HEIGHT: f64 = 260.0;
 const MAXIMUM_HEIGHT_RATIO: f64 = 0.3;
 const OUTER_MARGIN: f64 = 10.0;
-const CLIPBOARD_CHANGED_EVENT: &str = "clipboard-changed";
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,43 +110,6 @@ fn configure_initial_panel_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn start_clipboard_event_monitor(app: tauri::AppHandle) {
-    thread::spawn(move || {
-        let mut last_change_key: Option<String> = None;
-        loop {
-            match clipboard_bridge::read_clipboard_snapshot(app.clone()) {
-                Ok(Some(mut snapshot)) => {
-                    if last_change_key.as_deref() != Some(snapshot.change_key()) {
-                        last_change_key = Some(snapshot.change_key().to_string());
-                        clipboard_bridge::persist_snapshot(&app, &mut snapshot);
-                        emit_clipboard_snapshot(&app, snapshot);
-                    }
-                }
-                Ok(None) => {
-                    last_change_key = None;
-                }
-                Err(_) => {}
-            }
-            thread::sleep(Duration::from_millis(800));
-        }
-    });
-}
-
-fn emit_clipboard_snapshot(app: &tauri::AppHandle, snapshot: clipboard_bridge::ClipboardSnapshot) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let _ = window.emit(CLIPBOARD_CHANGED_EVENT, snapshot.clone());
-    let Ok(payload) = serde_json::to_string(&snapshot) else {
-        return;
-    };
-    let script = format!(
-        "window.__clipdockHandleClipboardSnapshot?.({payload});\
-         window.dispatchEvent(new CustomEvent('clipdock-native-clipboard-changed', {{ detail: {payload} }}));"
-    );
-    let _ = window.eval(&script);
-}
-
 #[cfg(target_os = "macos")]
 fn configure_platform_always_on_top(_window: &tauri::WebviewWindow) -> tauri::Result<()> {
     Ok(())
@@ -203,13 +165,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             panel_frame_for_screen,
-            clipboard_bridge::read_clipboard_snapshot,
             clipboard_bridge::write_clipboard_image,
             clipboard_bridge::write_clipboard_text,
+            clipboard_bridge::write_clipboard_item,
+            clipboard_bridge::write_clipboard_text_intent,
+            clipboard_bridge::begin_clipboard_copy_session,
+            clipboard_bridge::cancel_clipboard_copy,
+            clipboard_bridge::ensure_image_thumbnail,
             native_assets::resolve_panel_native_assets,
             commands::core_info,
             commands::transfer_clipboard_backup,
             commands::list_clipboard_items,
+            commands::list_clipboard_entries,
+            commands::mutate_clipboard_items,
             commands::list_pinboards,
             commands::create_pinboard,
             commands::rename_pinboard,
@@ -223,16 +191,18 @@ pub fn run() {
             commands::capture_clipboard_text,
             commands::capture_clipboard_image,
             commands::get_preferences,
-            commands::update_preferences,
+            commands::patch_capture_preferences,
         ])
         .setup(|app| {
             let core_state = CoreState::initialize(app.handle())
                 .map_err(|message| tauri::Error::Anyhow(anyhow::anyhow!(message)))?;
             app.manage(core_state);
+            app.manage(clipboard_bridge::ClipboardMonitorState::default());
+            app.manage(clipboard_bridge::ClipboardCopyIntentState::default());
 
             tray::setup_tray(app)?;
             configure_initial_panel_window(app.handle())?;
-            start_clipboard_event_monitor(app.handle().clone());
+            clipboard_bridge::start_monitor(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

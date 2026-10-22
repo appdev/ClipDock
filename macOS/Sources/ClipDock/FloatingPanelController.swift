@@ -223,6 +223,13 @@ final class FloatingPanelController {
     private var resizePerformanceSlowestFrameMilliseconds = 0.0
 
     var onRuntimeAction: ((PanelRuntimeAction) -> Void)?
+    var onWillHide: ((_ afterSuccessfulCopy: Bool) -> Void)?
+
+    var copyTargetApplication: PanelFocusApplication? { previousFocusApplication }
+
+    func isCopyTargetFrontmost(_ target: PanelFocusApplication) -> Bool {
+        !target.isTerminated && focusApplicationProvider.frontmostPanelFocusApplication()?.processIdentifier == target.processIdentifier
+    }
 
     private struct ActivePanelAnimation {
         let generation: Int
@@ -352,8 +359,10 @@ final class FloatingPanelController {
     private func hide(
         restoresPreviousApplicationFocus: Bool,
         restoresFocusAfterWindowOrderOut: Bool,
+        afterSuccessfulCopy: Bool = false,
         afterHidden: (() -> Void)? = nil
     ) {
+        onWillHide?(afterSuccessfulCopy)
         contentView.finishCardRenameBeforeHiding()
         let hideStart = ClipDockPerformanceLog.mark()
         let wasPresented = isPanelPresented
@@ -453,7 +462,8 @@ final class FloatingPanelController {
         pendingCopySelectionCollapseAfterHide = true
         hide(
             restoresPreviousApplicationFocus: restoresPreviousApplicationFocus,
-            restoresFocusAfterWindowOrderOut: true
+            restoresFocusAfterWindowOrderOut: true,
+            afterSuccessfulCopy: true
         )
     }
 
@@ -505,6 +515,9 @@ final class FloatingPanelController {
         scope: ClipboardListScope? = nil,
         preserveScrollPositionOnStructuralChange: Bool = false
     ) {
+        // Rendering can wait for the animation; an authoritative removal must
+        // cancel a pending detail load before it can reopen the old card.
+        contentView.invalidateDetailRemovedByListUpdate(result, append: append, scope: scope)
         if shouldDeferListUpdateUntilPresentationCompletes(append: append) {
             pendingListUpdateAfterPresentation = PendingListUpdate(
                 result: result,
@@ -543,6 +556,10 @@ final class FloatingPanelController {
 
     func setSourceIconHeaderColorWriter(_ writer: SourceAppIconHeaderColorWriter?) {
         contentView.updateSourceIconHeaderColorWriter(writer)
+    }
+
+    func setCompleteItemLoader(_ loader: ClipboardFullItemsLoader?) {
+        contentView.updateCompleteItemLoader(loader)
     }
 
     func updatePinboards(_ pinboards: [RustPinboardSummary]) {
@@ -1178,6 +1195,27 @@ extension FloatingPanelController {
 
     var smokeHasActivePanelAnimation: Bool {
         activePanelAnimation != nil
+    }
+
+    var smokeHasDeferredListUpdate: Bool {
+        pendingListUpdateAfterPresentation != nil
+    }
+
+    func smokeSetPresentationAnimationTimelinePaused(_ paused: Bool) {
+        guard let layer = presentationHostView.layer else { return }
+        if paused {
+            guard layer.speed != 0 else { return }
+            let pausedTime = layer.convertTime(CACurrentMediaTime(), from: nil)
+            layer.speed = 0
+            layer.timeOffset = pausedTime
+        } else {
+            guard layer.speed == 0 else { return }
+            let pausedTime = layer.timeOffset
+            layer.speed = 1
+            layer.timeOffset = 0
+            layer.beginTime = 0
+            layer.beginTime = layer.convertTime(CACurrentMediaTime(), from: nil) - pausedTime
+        }
     }
 
     var smokePresentationAnimationSamples: [PanelPresentationAnimationSample] {

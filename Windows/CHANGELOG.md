@@ -1,5 +1,12 @@
 # ClipDock Windows Panel — Changelog
 
+## 0.2.5
+
+- Load history through paginated database queries and a virtual card list.
+- Use authoritative item lookups for copying and cancel superseded copy requests.
+- Save capture preferences through field-level patches with visible error reporting.
+- Preserve card rename drafts when scrolling and refresh history after backup imports.
+
 ## 0.2.4
 
 - Import and export clipboard history as a single `.clipdock` backup using the shared Rust core. Merge records, deduplicate content and preserve pinboards without changing application settings.

@@ -128,6 +128,9 @@ public struct ClipboardItemBatchMutationResult: Sendable, Equatable {
     public let failedRequests: [ClipboardItemMutationRequest]
     public let zeroAffectedRequests: [ClipboardItemMutationRequest]
     public let erroredRequests: [ClipboardItemMutationRequest]
+    public let notAttemptedRequests: [ClipboardItemMutationRequest]
+    public let requiresRefresh: Bool
+    public let sessionFault: Bool
     public let affectedCount: Int64
     public let outcome: BatchMutationOutcome
 
@@ -138,7 +141,10 @@ public struct ClipboardItemBatchMutationResult: Sendable, Equatable {
         failedRequests: [ClipboardItemMutationRequest],
         zeroAffectedRequests: [ClipboardItemMutationRequest] = [],
         erroredRequests: [ClipboardItemMutationRequest] = [],
-        affectedCount: Int64? = nil
+        affectedCount: Int64? = nil,
+        notAttemptedRequests: [ClipboardItemMutationRequest] = [],
+        requiresRefresh: Bool = false,
+        sessionFault: Bool = false
     ) {
         self.summaryKind = summaryKind
         self.requests = requests
@@ -146,6 +152,9 @@ public struct ClipboardItemBatchMutationResult: Sendable, Equatable {
         self.failedRequests = failedRequests
         self.zeroAffectedRequests = zeroAffectedRequests
         self.erroredRequests = erroredRequests
+        self.notAttemptedRequests = notAttemptedRequests
+        self.requiresRefresh = requiresRefresh
+        self.sessionFault = sessionFault
         self.affectedCount = affectedCount ?? Int64(successfulRequests.count)
         if successfulRequests.isEmpty {
             self.outcome = .failure
@@ -161,6 +170,8 @@ public typealias ClipboardListPageLoader =
     @Sendable (ClipboardListQuery) async -> Result<RustCoreListResult, RustCoreError>
 public typealias ClipboardItemMutationPerformer =
     @Sendable (ClipboardItemMutationRequest) async -> Result<RustItemManagementResult, RustCoreError>
+public typealias ClipboardItemBatchMutationPerformer =
+    @Sendable ([ClipboardItemMutationRequest]) async -> RustItemBatchMutationResult
 public typealias ClipboardPinboardMutationPerformer =
     @Sendable (ClipboardPinboardMutationRequest) async -> Result<RustItemManagementResult, RustCoreError>
 
@@ -176,12 +187,23 @@ public actor ClipboardCoreDatabaseWorker {
         client.transferBackup(appSupportDirectory: appSupportURL, fileURL: fileURL, importing: importing)
     }
 
+    /// Runs synchronous FFI work on this actor, never on the UI executor.
+    public func perform<T: Sendable>(_ operation: @Sendable () -> T) -> T {
+        operation()
+    }
+
     public func listItems(
         client: RustCoreClient,
         appSupportURL: URL,
         query: ClipboardListQuery
     ) -> Result<RustCoreListResult, RustCoreError> {
-        client.listItems(
+        guard !Task.isCancelled else {
+            return .failure(RustCoreError(
+                code: "cancelled", messageKey: "core.cancelled",
+                recoverable: true, message: "List request was cancelled before execution"
+            ))
+        }
+        return client.listEntries(
             appSupportDirectory: appSupportURL,
             limit: query.limit,
             offset: query.offset,
@@ -190,6 +212,94 @@ public actor ClipboardCoreDatabaseWorker {
             pinboardId: query.pinboardID,
             searchText: query.normalizedSearch.isEmpty ? nil : query.normalizedSearch
         )
+    }
+
+    public func loadCompleteItems(
+        client: RustCoreClient, appSupportURL: URL, orderedIDs: [String]
+    ) -> Result<[RustClipboardItemSummary], RustCoreError> {
+        var items: [RustClipboardItemSummary] = []
+        for start in stride(from: 0, to: orderedIDs.count, by: RustCoreClient.maximumItemBatchSize) {
+            guard !Task.isCancelled else { return .failure(Self.contentReadError("cancelled")) }
+            let ids = Array(orderedIDs[start..<min(start + RustCoreClient.maximumItemBatchSize, orderedIDs.count)])
+            switch client.getItems(appSupportDirectory: appSupportURL, orderedIDs: ids) {
+            case .failure(let error): return .failure(error)
+            case .success(let lookups):
+                guard lookups.map(\.itemID) == ids else { return .failure(Self.contentReadError("invalid_response")) }
+                for lookup in lookups {
+                    guard let item = lookup.item, item.id == lookup.itemID, item.isContentComplete else {
+                        return .failure(Self.contentReadError("missing_item"))
+                    }
+                    items.append(item)
+                }
+            }
+        }
+        return .success(items)
+    }
+
+    private static func contentReadError(_ code: String) -> RustCoreError {
+        RustCoreError(code: code, messageKey: "clipboard.error.\(code)", recoverable: true, message: "Requested content is unavailable")
+    }
+
+    public func performBatchMutation(
+        client: RustCoreClient, appSupportURL: URL, requests: [ClipboardItemMutationRequest]
+    ) -> RustItemBatchMutationResult {
+        Self.performMutationChunks(requests) { chunk in
+            client.mutateItems(appSupportDirectory: appSupportURL, requests: chunk)
+        }
+    }
+
+    /// Stop after a session fault or failed preflight, retaining completed
+    /// chunks and global request indices. Never retry a possibly committed call.
+    static func performMutationChunks(
+        _ requests: [ClipboardItemMutationRequest],
+        perform: ([ClipboardItemMutationRequest]) -> Result<RustItemBatchMutationResult, RustCoreError>
+    ) -> RustItemBatchMutationResult {
+        var outcomes: [RustItemMutationOutcome] = []
+        var sessionFault = false
+        var termination: RustItemMutationError?
+        for start in stride(from: 0, to: requests.count, by: RustCoreClient.maximumItemBatchSize) {
+            let chunk = Array(requests[start..<min(start + RustCoreClient.maximumItemBatchSize, requests.count)])
+            let result = perform(chunk)
+            switch result {
+            case .success(let batch):
+                guard batch.outcomes.count == chunk.count,
+                      batch.outcomes.map(\.requestIndex) == Array(chunk.indices) else {
+                    termination = RustItemMutationError(coreError: contentReadError("invalid_response"))
+                    sessionFault = true
+                    outcomes += chunk.indices.map { index in
+                        RustItemMutationOutcome(requestIndex: start + index, status: "failed",
+                            affectedCount: 0, error: termination, requiresRefresh: true, committed: nil)
+                    }
+                    break
+                }
+                outcomes += batch.outcomes.map {
+                    RustItemMutationOutcome(requestIndex: start + $0.requestIndex, status: $0.status,
+                        affectedCount: $0.affectedCount, error: $0.error,
+                        requiresRefresh: $0.requiresRefresh, committed: $0.committed)
+                }
+                sessionFault = batch.sessionFault
+                termination = batch.terminationReason
+                if batch.outcomes.contains(where: { $0.status == "not_attempted" }), termination == nil {
+                    termination = RustItemMutationError(coreError: contentReadError("not_attempted"))
+                }
+            case .failure(let error):
+                termination = RustItemMutationError(coreError: error)
+                if error.code == "bridge_decode_failed" {
+                    // The native call already ran; a malformed response cannot
+                    // prove that any request in this chunk was left untouched.
+                    outcomes += chunk.indices.map { index in
+                        RustItemMutationOutcome(requestIndex: start + index, status: "failed",
+                            affectedCount: 0, error: termination, requiresRefresh: true, committed: nil)
+                    }
+                }
+            }
+            if sessionFault || termination != nil { break }
+        }
+        for index in outcomes.count..<requests.count {
+            outcomes.append(RustItemMutationOutcome(requestIndex: index, status: "not_attempted",
+                affectedCount: 0, error: termination, requiresRefresh: sessionFault, committed: false))
+        }
+        return RustItemBatchMutationResult(outcomes: outcomes, sessionFault: sessionFault, terminationReason: termination)
     }
 
     public func performMutation(
@@ -305,6 +415,7 @@ public final class ClipboardListCoordinator {
     private let sleep: @Sendable (UInt64) async throws -> Void
     private let pageLoader: ClipboardListPageLoader
     private let mutationPerformer: ClipboardItemMutationPerformer
+    private let batchMutationPerformer: ClipboardItemBatchMutationPerformer?
 
     private var currentSearchText = ""
     private var currentItemType: String?
@@ -326,13 +437,15 @@ public final class ClipboardListCoordinator {
             try await Task.sleep(nanoseconds: nanoseconds)
         },
         pageLoader: @escaping ClipboardListPageLoader,
-        mutationPerformer: @escaping ClipboardItemMutationPerformer
+        mutationPerformer: @escaping ClipboardItemMutationPerformer,
+        batchMutationPerformer: ClipboardItemBatchMutationPerformer? = nil
     ) {
         self.pageSize = pageSize
         self.debounceNanoseconds = debounceNanoseconds
         self.sleep = sleep
         self.pageLoader = pageLoader
         self.mutationPerformer = mutationPerformer
+        self.batchMutationPerformer = batchMutationPerformer
     }
 
     public var loadedItemCount: Int64 {
@@ -403,7 +516,7 @@ public final class ClipboardListCoordinator {
     }
 
     public func loadMore() {
-        guard hasMoreItems, !isLoadingMoreStorage else {
+        guard pendingListRefreshTask == nil, hasMoreItems, !isLoadingMoreStorage else {
             setLoadingMore(false)
             return
         }
@@ -475,30 +588,58 @@ public final class ClipboardListCoordinator {
     ) {
         guard !requests.isEmpty else { return }
         let mutationPerformer = self.mutationPerformer
+        let batchMutationPerformer = self.batchMutationPerformer
 
         prepareForMutation()
 
-        Task { [weak self, requests, summaryKind, mutationPerformer] in
+        Task { [weak self, requests, summaryKind, mutationPerformer, batchMutationPerformer] in
             var successfulRequests: [ClipboardItemMutationRequest] = []
             var failedRequests: [ClipboardItemMutationRequest] = []
             var zeroAffectedRequests: [ClipboardItemMutationRequest] = []
             var erroredRequests: [ClipboardItemMutationRequest] = []
             var affectedCount: Int64 = 0
+            var notAttemptedRequests: [ClipboardItemMutationRequest] = []
+            var requiresRefresh = false
+            var sessionFault = false
 
-            for request in requests {
-                let result = await mutationPerformer(request)
-                switch result {
-                case .success(let mutationResult):
-                    if mutationResult.affectedCount > 0 {
+            if let batchMutationPerformer {
+                let result = await batchMutationPerformer(requests)
+                sessionFault = result.sessionFault
+                requiresRefresh = result.outcomes.contains(where: \.requiresRefresh)
+                for outcome in result.outcomes {
+                    guard requests.indices.contains(outcome.requestIndex) else { continue }
+                    let request = requests[outcome.requestIndex]
+                    switch outcome.status {
+                    case "applied":
                         successfulRequests.append(request)
-                        affectedCount += mutationResult.affectedCount
-                    } else {
+                        affectedCount += outcome.affectedCount
+                    case "zero_affected":
                         failedRequests.append(request)
                         zeroAffectedRequests.append(request)
+                    case "not_attempted":
+                        failedRequests.append(request)
+                        notAttemptedRequests.append(request)
+                    default:
+                        failedRequests.append(request)
+                        erroredRequests.append(request)
                     }
-                case .failure:
-                    failedRequests.append(request)
-                    erroredRequests.append(request)
+                }
+            } else {
+                for request in requests {
+                    let result = await mutationPerformer(request)
+                    switch result {
+                    case .success(let mutationResult):
+                        if mutationResult.affectedCount > 0 {
+                            successfulRequests.append(request)
+                            affectedCount += mutationResult.affectedCount
+                        } else {
+                            failedRequests.append(request)
+                            zeroAffectedRequests.append(request)
+                        }
+                    case .failure:
+                        failedRequests.append(request)
+                        erroredRequests.append(request)
+                    }
                 }
             }
 
@@ -510,12 +651,15 @@ public final class ClipboardListCoordinator {
                 failedRequests: failedRequests,
                 zeroAffectedRequests: zeroAffectedRequests,
                 erroredRequests: erroredRequests,
-                affectedCount: affectedCount
+                affectedCount: affectedCount,
+                notAttemptedRequests: notAttemptedRequests,
+                requiresRefresh: requiresRefresh,
+                sessionFault: sessionFault
             )
             self.onStatusTextChanged?(self.statusText(for: batchResult))
             self.onBatchMutationCompleted?(batchResult)
 
-            if successfulRequests.contains(where: { self.refreshAfterBatchMutationIsNeeded($0) }) {
+            if requiresRefresh || successfulRequests.contains(where: { self.refreshAfterBatchMutationIsNeeded($0) }) {
                 let preservesScroll = successfulRequests.allSatisfy {
                     if case .recordCopied = $0 {
                         return true
@@ -642,15 +786,65 @@ public final class ClipboardListCoordinator {
         setLoadingMore(false)
 
         pendingListRefreshTask = Task { [weak self, query, generation, pageLoader] in
-            let result = await pageLoader(query)
+            var items: [RustClipboardItemSummary] = []
+            var itemIDs: Set<String> = []
+            var expectedTotalCount: Int64?
+            var restartCount = 0
+            var result: Result<RustCoreListResult, RustCoreError>
+            repeat {
+                guard !Task.isCancelled, self?.listRefreshGeneration == generation else { return }
+                let pageQuery = ClipboardListQuery(
+                    limit: min(200, query.limit - Int64(items.count)),
+                    offset: Int64(items.count),
+                    itemType: query.itemType,
+                    sourceAppID: query.sourceAppID,
+                    pinboardID: query.pinboardID,
+                    normalizedSearch: query.normalizedSearch
+                )
+                let pageResult = await pageLoader(pageQuery)
+                guard !Task.isCancelled, self?.listRefreshGeneration == generation else { return }
+                switch pageResult {
+                case .success(let page):
+                    let pageIDs = Set(page.items.map(\.id))
+                    let changedDuringRefresh = pageIDs.count != page.items.count
+                        || !itemIDs.isDisjoint(with: pageIDs)
+                        || (expectedTotalCount != nil && expectedTotalCount != page.totalCount)
+                        || (page.items.isEmpty && page.hasMore)
+                    if changedDuringRefresh {
+                        // Offset pages can overlap if capture/reordering occurs between reads.
+                        // Retry the whole window rather than publishing duplicate collection IDs.
+                        guard restartCount < 2 else {
+                            result = .failure(RustCoreError(
+                                code: "query_changed", messageKey: "query_changed", recoverable: true,
+                                message: "History changed while refreshing. Please retry."
+                            ))
+                            break
+                        }
+                        restartCount += 1
+                        items.removeAll(keepingCapacity: true)
+                        itemIDs.removeAll(keepingCapacity: true)
+                        expectedTotalCount = nil
+                        continue
+                    }
+                    expectedTotalCount = page.totalCount
+                    itemIDs.formUnion(pageIDs)
+                    items.append(contentsOf: page.items)
+                    result = .success(RustCoreListResult(
+                        items: items,
+                        totalCount: page.totalCount,
+                        hasMore: page.hasMore
+                    ))
+                    if page.items.isEmpty || !page.hasMore || Int64(items.count) >= query.limit {
+                        break
+                    }
+                    continue
+                case .failure(let error):
+                    result = .failure(error)
+                }
+                break
+            } while true
 
-            guard !Task.isCancelled,
-                  let self,
-                  generation == self.listRefreshGeneration
-            else {
-                return
-            }
-
+            guard let self else { return }
             self.pendingListRefreshTask = nil
             self.applyListResult(
                 result,
@@ -780,7 +974,7 @@ public final class ClipboardListCoordinator {
             onListUpdate?(ClipboardListUpdate(
                 scope: updateScope,
                 result: .failure(error),
-                isFiltered: false,
+                isFiltered: isFiltered,
                 append: append,
                 preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
             ))
@@ -831,6 +1025,9 @@ public final class ClipboardListCoordinator {
     }
 
     private func statusText(for result: ClipboardItemBatchMutationResult) -> String {
+        if result.summaryKind == .recordCopied, result.outcome != .success {
+            return AppLocalization.text("copy.status.historyUpdateWarning", defaultValue: "已复制；历史记录更新失败")
+        }
         let succeeded = result.affectedCount
         let total = result.requests.count
         switch result.outcome {

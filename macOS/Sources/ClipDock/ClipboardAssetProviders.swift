@@ -48,6 +48,8 @@ struct PlatformAssetDirectories {
     let richTextDirectoryURL: URL
     let fileSnapshotDirectoryURL: URL
 
+    var assetStore: RustAssetStore { RustAssetStore(appSupportDirectory: appSupportURL) }
+
     init(appSupportURL: URL) {
         self.appSupportURL = appSupportURL
         self.iconCacheDirectoryURL = appSupportURL.appendingPathComponent("app-icons", isDirectory: true)
@@ -100,9 +102,8 @@ final class SourceAppIconProvider: SourceAppIconCaching {
         guard let source else { return nil }
 
         let fileName = "\(safeCacheKey(for: source)).\(Self.iconFileExtension)"
-        let fileURL = directories.iconCacheDirectoryURL.appendingPathComponent(fileName)
         let relativePath = "app-icons/\(fileName)"
-        if fileManager.fileExists(atPath: fileURL.path) {
+        if case .success = directories.assetStore.reserveExisting(relativePath: relativePath) {
             return relativePath
         }
 
@@ -113,8 +114,7 @@ final class SourceAppIconProvider: SourceAppIconCaching {
         }
 
         do {
-            try fileManager.createDirectory(at: directories.iconCacheDirectoryURL, withIntermediateDirectories: true)
-            try data.write(to: fileURL, options: .atomic)
+            _ = try directories.assetStore.write(data: data, relativePath: relativePath).get()
             return relativePath
         } catch {
             return nil
@@ -382,20 +382,16 @@ final class ClipboardFileSnapshotProvider: ClipboardFileSnapshotCaching {
 
     func cacheFiles(_ files: ClipboardCapturedFiles, changeCount: Int) -> ClipboardStoredFileSnapshot? {
         let fileStem = fileStemFactory.makeFileStem(prefix: "files", changeCount: changeCount)
-        let snapshotURL = directories.fileSnapshotDirectoryURL.appendingPathComponent("\(fileStem).json")
+        let relativePath = "assets/file-snapshots/\(fileStem).json"
         let document = ClipboardFileSnapshotDocument(paths: files.paths)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
 
         do {
-            try fileManager.createDirectory(
-                at: directories.fileSnapshotDirectoryURL,
-                withIntermediateDirectories: true
-            )
             let data = try encoder.encode(document)
-            try data.write(to: snapshotURL, options: .atomic)
+            _ = try directories.assetStore.write(data: data, relativePath: relativePath).get()
             return ClipboardStoredFileSnapshot(
-                relativePath: "assets/file-snapshots/\(fileStem).json",
+                relativePath: relativePath,
                 byteCount: data.count
             )
         } catch {
@@ -424,40 +420,21 @@ final class ClipboardRichTextAssetProvider: ClipboardRichTextAssetCaching, @unch
 
         let fileStem = fileStemFactory.makeFileStem(prefix: "rich-text", changeCount: changeCount)
         let fileName = "\(fileStem).rtf"
-        let assetURL = directories.richTextDirectoryURL.appendingPathComponent(fileName)
-        let stagingDirectoryURL = directories.appSupportURL
-            .appendingPathComponent(".staging", isDirectory: true)
-            .appendingPathComponent("rich-text", isDirectory: true)
-        let stagingURL = stagingDirectoryURL.appendingPathComponent(fileName)
+        let relativePath = "assets/rich-text/\(fileName)"
 
         do {
-            try fileManager.createDirectory(
-                at: directories.richTextDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: stagingDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try richText.rtfData.write(to: stagingURL, options: .atomic)
-            try fileManager.moveItem(at: stagingURL, to: assetURL)
+            _ = try directories.assetStore.write(data: richText.rtfData, relativePath: relativePath).get()
         } catch {
-            removeFileIfExists(assetURL)
-            removeFileIfExists(stagingURL)
             return nil
         }
 
         return ClipboardStoredRichTextAsset(
-            rtfRelativePath: "assets/rich-text/\(fileName)",
+            rtfRelativePath: relativePath,
             mimeType: "application/rtf",
             byteCount: richText.rtfData.count
         )
     }
 
-    private func removeFileIfExists(_ url: URL) {
-        guard fileManager.fileExists(atPath: url.path) else { return }
-        try? fileManager.removeItem(at: url)
-    }
 }
 
 @MainActor
@@ -507,31 +484,16 @@ final class ClipboardFilePreviewProvider {
         }
 
         let fileStem = fileStemFactory.makeFileStem(prefix: "file-thumbnail", changeCount: changeCount)
-        let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).png")
-        let stagingDirectoryURL = directories.appSupportURL
-            .appendingPathComponent(".staging", isDirectory: true)
-            .appendingPathComponent("file-thumbnails", isDirectory: true)
-        let stagingURL = stagingDirectoryURL.appendingPathComponent("\(fileStem).png")
+        let relativePath = "thumbnails/\(fileStem).png"
 
         do {
-            try fileManager.createDirectory(
-                at: directories.imageThumbnailDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: stagingDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try preview.data.write(to: stagingURL, options: .atomic)
-            try fileManager.moveItem(at: stagingURL, to: thumbnailURL)
+            _ = try directories.assetStore.write(data: preview.data, relativePath: relativePath).get()
         } catch {
-            removeFileIfExists(thumbnailURL)
-            removeFileIfExists(stagingURL)
             return nil
         }
 
         return ClipboardStoredFilePreview(
-            relativePath: "thumbnails/\(fileStem).png",
+            relativePath: relativePath,
             mimeType: "image/png",
             width: preview.width,
             height: preview.height,
@@ -563,10 +525,6 @@ final class ClipboardFilePreviewProvider {
         return icon
     }
 
-    private func removeFileIfExists(_ url: URL) {
-        guard fileManager.fileExists(atPath: url.path) else { return }
-        try? fileManager.removeItem(at: url)
-    }
 }
 
 fileprivate struct FilePreviewImageData: Sendable {
@@ -665,6 +623,7 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
 
     struct PendingImageAsset: Sendable {
         let pendingImage: ClipboardPendingImageAsset
+        fileprivate let payloadReservation: RustAssetReservation
         fileprivate let reservedPayloadURL: URL
         fileprivate let thumbnailURL: URL
         fileprivate let stagingPayloadURL: URL
@@ -694,146 +653,56 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
     }
 
     func cacheImage(_ capturedImage: ClipboardCapturedImage, changeCount: Int) -> ClipboardStoredImageAsset? {
-        let fileStem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
-        let fileExtension = capturedImage.normalizedImageFileExtension
-        let payloadURL = directories.imagePayloadDirectoryURL.appendingPathComponent("\(fileStem).\(fileExtension)")
-        let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).\(fileExtension)")
-        let stagingDirectoryURL = directories.appSupportURL
-            .appendingPathComponent(".staging", isDirectory: true)
-            .appendingPathComponent("image-captures", isDirectory: true)
-        let stagingPayloadURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-payload.\(fileExtension)")
-        let stagingThumbnailURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-thumbnail.\(fileExtension)")
-        let thumbnailData = capturedImage.thumbnailData
-
+        let stem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
+        let ext = capturedImage.normalizedImageFileExtension
+        let payloadPath = "assets/\(stem).\(ext)"
+        let previewPath = "thumbnails/\(stem).\(ext)"
+        let store = directories.assetStore
+        var published: [String] = []
         do {
-            try fileManager.createDirectory(
-                at: directories.imagePayloadDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: directories.imageThumbnailDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: stagingDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try capturedImage.data.write(to: stagingPayloadURL, options: .atomic)
-            try thumbnailData.write(to: stagingThumbnailURL, options: .atomic)
-            try fileManager.moveItem(at: stagingPayloadURL, to: payloadURL)
-            do {
-                try fileManager.moveItem(at: stagingThumbnailURL, to: thumbnailURL)
-            } catch {
-                removeFileIfExists(payloadURL)
-                throw error
-            }
+            _ = try store.write(data: capturedImage.data, relativePath: payloadPath).get()
+            published.append(payloadPath)
+            _ = try store.write(data: capturedImage.thumbnailData, relativePath: previewPath).get()
+            return ClipboardStoredImageAsset(payloadRelativePath: payloadPath,
+                previewRelativePath: previewPath, mimeType: capturedImage.mimeType,
+                width: capturedImage.width, height: capturedImage.height, byteCount: capturedImage.data.count)
         } catch {
-            removeFileIfExists(payloadURL)
-            removeFileIfExists(thumbnailURL)
-            removeFileIfExists(stagingPayloadURL)
-            removeFileIfExists(stagingThumbnailURL)
+            store.cleanupUncommitted(relativePaths: published)
             return nil
         }
-
-        return ClipboardStoredImageAsset(
-            payloadRelativePath: "assets/\(fileStem).\(fileExtension)",
-            previewRelativePath: "thumbnails/\(fileStem).\(fileExtension)",
-            mimeType: capturedImage.mimeType,
-            width: capturedImage.width,
-            height: capturedImage.height,
-            byteCount: capturedImage.data.count
-        )
     }
 
     func prepareImage(
         _ capturedImage: CapturedClipboardImage,
         changeCount: Int
     ) -> Result<PreparedImageAsset, FinalizationError> {
-        let fileStem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
-        let payloadURL = directories.imagePayloadDirectoryURL.appendingPathComponent("\(fileStem).webp")
-        let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).webp")
-        let stagingDirectoryURL = directories.appSupportURL
-            .appendingPathComponent(".staging", isDirectory: true)
-            .appendingPathComponent("image-captures", isDirectory: true)
-        let stagingPayloadURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-payload.webp")
-        let stagingThumbnailURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-thumbnail.webp")
-        let prepared = PreparedImageAsset(
-            storedImage: ClipboardStoredImageAsset(
-                payloadRelativePath: "assets/\(fileStem).webp",
-                previewRelativePath: "thumbnails/\(fileStem).webp",
-                mimeType: "image/webp",
-                width: 0,
-                height: 0,
-                byteCount: 0
-            ),
-            payloadURL: payloadURL,
-            thumbnailURL: thumbnailURL,
-            stagingPayloadURL: stagingPayloadURL,
-            stagingThumbnailURL: stagingThumbnailURL
-        )
-
+        let stem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
+        let store = directories.assetStore
+        var owned: [RustAssetReservation] = []
         do {
-            try fileManager.createDirectory(
-                at: directories.imagePayloadDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: directories.imageThumbnailDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: stagingDirectoryURL,
-                withIntermediateDirectories: true
-            )
-
-            let fullImage = try renderFullSizeRGBA(from: capturedImage.source)
-            guard let payloadData = encoder.encodeLosslessRGBA(
-                fullImage.data,
-                width: fullImage.width,
-                height: fullImage.height
-            ), !payloadData.isEmpty else {
-                throw FinalizationError.webPEncodingFailed
-            }
-
-            let thumbnailImage = try renderThumbnailRGBA(from: capturedImage.source)
-            guard let thumbnailData = encoder.encodeLosslessRGBA(
-                thumbnailImage.data,
-                width: thumbnailImage.width,
-                height: thumbnailImage.height
-            ), !thumbnailData.isEmpty else {
-                throw FinalizationError.webPEncodingFailed
-            }
-
-            try payloadData.write(to: stagingPayloadURL, options: .atomic)
-            try thumbnailData.write(to: stagingThumbnailURL, options: .atomic)
-            try fileManager.moveItem(at: stagingPayloadURL, to: payloadURL)
-            do {
-                try fileManager.moveItem(at: stagingThumbnailURL, to: thumbnailURL)
-            } catch {
-                removeFileIfExists(payloadURL)
-                throw error
-            }
-
+            let payload = try store.reserve(relativePath: "assets/\(stem).webp",
+                stagedRelativePath: ".staging/image-captures/\(stem)-payload.webp").get()
+            owned.append(payload)
+            let thumbnail = try store.reserve(relativePath: "thumbnails/\(stem).webp",
+                stagedRelativePath: ".staging/image-captures/\(stem)-thumbnail.webp").get()
+            owned.append(thumbnail)
+            let full = try renderFullSizeRGBA(from: capturedImage.source)
+            let stagedPayload = try encodeStaged(full, reservation: payload)
+            let thumb = try renderThumbnailRGBA(from: capturedImage.source)
+            let stagedThumbnail = try encodeStaged(thumb, reservation: thumbnail, isThumbnail: true)
+            _ = try store.publish(reservation: stagedPayload).get()
+            _ = try store.publish(reservation: stagedThumbnail).get()
             return .success(PreparedImageAsset(
-                storedImage: ClipboardStoredImageAsset(
-                    payloadRelativePath: "assets/\(fileStem).webp",
-                    previewRelativePath: "thumbnails/\(fileStem).webp",
-                    mimeType: "image/webp",
-                    width: fullImage.width,
-                    height: fullImage.height,
-                    byteCount: payloadData.count
-                ),
-                payloadURL: payloadURL,
-                thumbnailURL: thumbnailURL,
-                stagingPayloadURL: stagingPayloadURL,
-                stagingThumbnailURL: stagingThumbnailURL
-            ))
-        } catch let error as FinalizationError {
-            removePreparedImage(prepared)
-            return .failure(error)
+                storedImage: ClipboardStoredImageAsset(payloadRelativePath: payload.relativePath,
+                    previewRelativePath: thumbnail.relativePath, mimeType: "image/webp",
+                    width: full.width, height: full.height, byteCount: Int(stagedPayload.byteCount)),
+                payloadURL: directories.appSupportURL.appendingPathComponent(payload.relativePath),
+                thumbnailURL: directories.appSupportURL.appendingPathComponent(thumbnail.relativePath),
+                stagingPayloadURL: directories.appSupportURL.appendingPathComponent(payload.stagedRelativePath),
+                stagingThumbnailURL: directories.appSupportURL.appendingPathComponent(thumbnail.stagedRelativePath)))
         } catch {
-            removePreparedImage(prepared)
-            return .failure(.assetWriteFailed)
+            store.cleanupUncommitted(relativePaths: owned.map(\.relativePath))
+            return .failure((error as? FinalizationError) ?? .assetWriteFailed)
         }
     }
 
@@ -841,82 +710,37 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         _ capturedImage: CapturedClipboardImage,
         changeCount: Int
     ) -> Result<PendingImageAsset, FinalizationError> {
-        let fileStem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
-        let reservedPayloadURL = directories.imagePayloadDirectoryURL.appendingPathComponent("\(fileStem).webp")
-        let thumbnailURL = directories.imageThumbnailDirectoryURL.appendingPathComponent("\(fileStem).webp")
-        let stagingDirectoryURL = directories.appSupportURL
-            .appendingPathComponent(".staging", isDirectory: true)
-            .appendingPathComponent("image-captures", isDirectory: true)
-        let stagingPayloadURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-payload.webp")
-        let stagingThumbnailURL = stagingDirectoryURL.appendingPathComponent("\(fileStem)-thumbnail.webp")
-        let pending = PendingImageAsset(
-            pendingImage: ClipboardPendingImageAsset(
-                thumbnailRelativePath: "thumbnails/\(fileStem).webp",
-                reservedPayloadRelativePath: "assets/\(fileStem).webp",
-                stagedPayloadRelativePath: ".staging/image-captures/\(fileStem)-payload.webp",
-                mimeType: "image/webp",
-                width: 0,
-                height: 0,
-                thumbnailWidth: 0,
-                thumbnailHeight: 0,
-                thumbnailByteCount: 0
-            ),
-            reservedPayloadURL: reservedPayloadURL,
-            thumbnailURL: thumbnailURL,
-            stagingPayloadURL: stagingPayloadURL,
-            stagingThumbnailURL: stagingThumbnailURL
-        )
-
+        let stem = fileStemFactory.makeFileStem(prefix: "image", changeCount: changeCount)
+        let store = directories.assetStore
+        var owned: [RustAssetReservation] = []
         do {
-            try fileManager.createDirectory(
-                at: directories.imagePayloadDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: directories.imageThumbnailDirectoryURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at: stagingDirectoryURL,
-                withIntermediateDirectories: true
-            )
-
+            let payload = try store.reserve(relativePath: "assets/\(stem).webp",
+                stagedRelativePath: ".staging/image-captures/\(stem)-payload.webp").get()
+            owned.append(payload)
+            let thumbnail = try store.reserve(relativePath: "thumbnails/\(stem).webp",
+                stagedRelativePath: ".staging/image-captures/\(stem)-thumbnail.webp").get()
+            owned.append(thumbnail)
             let sourceSize = try sourcePixelSize(from: capturedImage.source)
-            let thumbnailImage = try renderThumbnailRGBA(from: capturedImage.source)
-            guard let thumbnailData = encoder.encodeLosslessRGBA(
-                thumbnailImage.data,
-                width: thumbnailImage.width,
-                height: thumbnailImage.height
-            ), !thumbnailData.isEmpty else {
-                throw FinalizationError.webPEncodingFailed
+            guard RustAssetStore.acceptsLosslessDimensions(width: sourceSize.width, height: sourceSize.height) else {
+                throw FinalizationError.imageDecodeFailed
             }
-
-            try thumbnailData.write(to: stagingThumbnailURL, options: .atomic)
-            try fileManager.moveItem(at: stagingThumbnailURL, to: thumbnailURL)
-
+            let thumb = try renderThumbnailRGBA(from: capturedImage.source)
+            let stagedThumbnail = try encodeStaged(thumb, reservation: thumbnail, isThumbnail: true)
+            _ = try store.publish(reservation: stagedThumbnail).get()
             return .success(PendingImageAsset(
-                pendingImage: ClipboardPendingImageAsset(
-                    thumbnailRelativePath: "thumbnails/\(fileStem).webp",
-                    reservedPayloadRelativePath: "assets/\(fileStem).webp",
-                    stagedPayloadRelativePath: ".staging/image-captures/\(fileStem)-payload.webp",
-                    mimeType: "image/webp",
-                    width: sourceSize.width,
-                    height: sourceSize.height,
-                    thumbnailWidth: thumbnailImage.width,
-                    thumbnailHeight: thumbnailImage.height,
-                    thumbnailByteCount: thumbnailData.count
-                ),
-                reservedPayloadURL: reservedPayloadURL,
-                thumbnailURL: thumbnailURL,
-                stagingPayloadURL: stagingPayloadURL,
-                stagingThumbnailURL: stagingThumbnailURL
-            ))
-        } catch let error as FinalizationError {
-            removePendingImage(pending)
-            return .failure(error)
+                pendingImage: ClipboardPendingImageAsset(thumbnailRelativePath: thumbnail.relativePath,
+                    reservedPayloadRelativePath: payload.relativePath, stagedPayloadRelativePath: payload.stagedRelativePath,
+                    mimeType: "image/webp", width: sourceSize.width, height: sourceSize.height,
+                    thumbnailWidth: thumb.width, thumbnailHeight: thumb.height,
+                    thumbnailByteCount: Int(stagedThumbnail.byteCount)),
+                payloadReservation: payload,
+                reservedPayloadURL: directories.appSupportURL.appendingPathComponent(payload.relativePath),
+                thumbnailURL: directories.appSupportURL.appendingPathComponent(thumbnail.relativePath),
+                stagingPayloadURL: directories.appSupportURL.appendingPathComponent(payload.stagedRelativePath),
+                stagingThumbnailURL: directories.appSupportURL.appendingPathComponent(thumbnail.stagedRelativePath)))
         } catch {
-            removePendingImage(pending)
-            return .failure(.assetWriteFailed)
+            store.cleanupUncommitted(relativePaths: owned.map(\.relativePath))
+            return .failure((error as? FinalizationError) ?? .assetWriteFailed)
         }
     }
 
@@ -926,57 +750,42 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         jobID: String
     ) -> Result<CompletedPendingImagePayload, FinalizationError> {
         do {
-            let fullImage = try renderFullSizeRGBA(from: capturedImage.source)
-            guard let payloadData = encoder.encodeLosslessRGBA(
-                fullImage.data,
-                width: fullImage.width,
-                height: fullImage.height
-            ), !payloadData.isEmpty else {
-                throw FinalizationError.webPEncodingFailed
-            }
-            try fileManager.createDirectory(
-                at: pendingImage.stagingPayloadURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try payloadData.write(to: pendingImage.stagingPayloadURL, options: .atomic)
-
+            let full = try renderFullSizeRGBA(from: capturedImage.source)
+            let staged = try encodeStaged(full, reservation: pendingImage.payloadReservation)
+            // Only core complete_pending_image publishes the original, together
+            // with its job/DB reconciliation protocol.
             return .success(CompletedPendingImagePayload(
-                completedImage: ClipboardCompletedPendingImageAsset(
-                    jobID: jobID,
-                    stagedPayloadRelativePath: pendingImage.pendingImage.stagedPayloadRelativePath,
-                    mimeType: "image/webp",
-                    width: fullImage.width,
-                    height: fullImage.height,
-                    byteCount: payloadData.count
-                ),
-                stagingPayloadURL: pendingImage.stagingPayloadURL
-            ))
-        } catch let error as FinalizationError {
-            removeFileIfExists(pendingImage.stagingPayloadURL)
-            return .failure(error)
+                completedImage: ClipboardCompletedPendingImageAsset(jobID: jobID,
+                    stagedPayloadRelativePath: staged.stagedRelativePath, mimeType: "image/webp",
+                    width: full.width, height: full.height, byteCount: Int(staged.byteCount)),
+                stagingPayloadURL: pendingImage.stagingPayloadURL))
         } catch {
-            removeFileIfExists(pendingImage.stagingPayloadURL)
-            return .failure(.assetWriteFailed)
+            return .failure((error as? FinalizationError) ?? .assetWriteFailed)
+        }
+    }
+
+    private func encodeStaged(_ image: RenderedClipboardRGBAImage,
+        reservation: RustAssetReservation, isThumbnail: Bool = false) throws -> RustAssetReservation {
+        switch encoder.encodeLosslessToStaging(image.data, width: image.width, height: image.height,
+            store: directories.assetStore, reservation: reservation,
+            maximumBytes: isThumbnail ? RustAssetStore.maximumThumbnailBytes : RustAssetStore.maximumEncodedBytes) {
+        case .success(let staged): return staged
+        case .failure(let error):
+            throw error.code == "encoding_failed" || error.code == "invalid_input"
+                ? FinalizationError.webPEncodingFailed : FinalizationError.assetWriteFailed
         }
     }
 
     func removePreparedImage(_ preparedImage: PreparedImageAsset) {
-        removeFileIfExists(preparedImage.payloadURL)
-        removeFileIfExists(preparedImage.thumbnailURL)
-        removeFileIfExists(preparedImage.stagingPayloadURL)
-        removeFileIfExists(preparedImage.stagingThumbnailURL)
+        directories.assetStore.cleanupUncommitted(relativePaths: [
+            preparedImage.storedImage.payloadRelativePath, preparedImage.storedImage.previewRelativePath
+        ])
     }
 
     func removePendingImage(_ pendingImage: PendingImageAsset) {
-        removeFileIfExists(pendingImage.reservedPayloadURL)
-        removeFileIfExists(pendingImage.thumbnailURL)
-        removeFileIfExists(pendingImage.stagingPayloadURL)
-        removeFileIfExists(pendingImage.stagingThumbnailURL)
-    }
-
-    private func removeFileIfExists(_ url: URL) {
-        guard fileManager.fileExists(atPath: url.path) else { return }
-        try? fileManager.removeItem(at: url)
+        directories.assetStore.cleanupUncommitted(relativePaths: [
+            pendingImage.pendingImage.reservedPayloadRelativePath, pendingImage.pendingImage.thumbnailRelativePath
+        ])
     }
 
     private func renderFullSizeRGBA(
@@ -1010,6 +819,9 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
     ) throws -> (width: Int, height: Int) {
         switch source {
         case .encodedData(let data, _):
+            guard data.count <= RustAssetStore.maximumEncodedBytes else {
+                throw FinalizationError.imageDecodeFailed
+            }
             let sourceOptions = [
                 kCGImageSourceShouldCache: false
             ] as CFDictionary
@@ -1021,8 +833,10 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
                   ) as? [CFString: Any],
                   let width = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelWidth]),
                   let height = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelHeight]),
-                  width > 0,
-                  height > 0
+                  width.isFinite, height.isFinite,
+                  width > 0, height > 0,
+                  width <= CGFloat(RustAssetStore.maximumWebPDimension),
+                  height <= CGFloat(RustAssetStore.maximumWebPDimension)
             else {
                 let image = try transformedImage(from: data, maxPixelDimension: nil)
                 return (image.width, image.height)
@@ -1052,10 +866,20 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         from data: Data,
         maxPixelDimension: Int?
     ) throws -> CGImage {
+        guard data.count <= RustAssetStore.maximumEncodedBytes else {
+            throw FinalizationError.imageDecodeFailed
+        }
         let sourceOptions = [
             kCGImageSourceShouldCache: false
         ] as CFDictionary
-        guard let imageSource = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, sourceOptions),
+              let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, sourceOptions) as? [CFString: Any],
+              let width = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelWidth]),
+              let height = ImagePropertyReader.pixelDimension(properties[kCGImagePropertyPixelHeight]),
+              width.isFinite, height.isFinite, width > 0, height > 0,
+              width <= CGFloat(RustAssetStore.maximumWebPDimension),
+              height <= CGFloat(RustAssetStore.maximumWebPDimension),
+              RustAssetStore.acceptsLosslessDimensions(width: Int(width.rounded()), height: Int(height.rounded())) else {
             throw FinalizationError.imageDecodeFailed
         }
 
@@ -1090,7 +914,7 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
     ) throws -> RenderedClipboardRGBAImage {
         let sourceWidth = cgImage.width
         let sourceHeight = cgImage.height
-        guard sourceWidth > 0, sourceHeight > 0 else {
+        guard RustAssetStore.acceptsLosslessDimensions(width: sourceWidth, height: sourceHeight) else {
             throw FinalizationError.rgbaRenderFailed
         }
 
@@ -1105,7 +929,7 @@ final class ClipboardImageAssetProvider: ClipboardImageAssetCaching, @unchecked 
         }
         let bytesPerRow = rowByteCount.partialValue
         let byteCount = bytesPerRow.multipliedReportingOverflow(by: targetSize.height)
-        guard !byteCount.overflow else {
+        guard !byteCount.overflow, byteCount.partialValue <= RustAssetStore.maximumPixels * 4 else {
             throw FinalizationError.rgbaRenderFailed
         }
         var data = Data(count: byteCount.partialValue)
@@ -1178,6 +1002,9 @@ fileprivate struct ClipboardImageRepresentation {
 
 protocol ClipboardWebPEncoding: Sendable {
     func encodeLosslessRGBA(_ rgbaData: Data, width: Int, height: Int) -> Data?
+    func encodeLosslessToStaging(_ rgbaData: Data, width: Int, height: Int,
+        store: RustAssetStore, reservation: RustAssetReservation, maximumBytes: Int
+    ) -> Result<RustAssetReservation, RustCoreError>
     func encodeAdaptiveThumbnailWebP(
         _ rgbaData: Data,
         width: Int,
@@ -1188,8 +1015,30 @@ protocol ClipboardWebPEncoding: Sendable {
     ) -> RustAdaptiveWebPEncodeResult?
 }
 
+extension ClipboardWebPEncoding {
+    // Test/custom encoders retain a byte adapter; production overrides this to
+    // keep the encoded allocation entirely inside Rust.
+    func encodeLosslessToStaging(_ rgbaData: Data, width: Int, height: Int,
+        store: RustAssetStore, reservation: RustAssetReservation, maximumBytes: Int
+    ) -> Result<RustAssetReservation, RustCoreError> {
+        guard let data = encodeLosslessRGBA(rgbaData, width: width, height: height),
+              !data.isEmpty, data.count <= maximumBytes else {
+            return .failure(RustCoreError(code: "encoding_failed", messageKey: "clipboard.error.encoding_failed",
+                recoverable: true, message: "Lossless encoding failed"))
+        }
+        return store.stage(data: data, reservation: reservation)
+    }
+}
+
 struct RustClipboardWebPEncoder: ClipboardWebPEncoding {
     private let client = RustCoreClient()
+
+    func encodeLosslessToStaging(_ rgbaData: Data, width: Int, height: Int,
+        store: RustAssetStore, reservation: RustAssetReservation, maximumBytes: Int
+    ) -> Result<RustAssetReservation, RustCoreError> {
+        store.encodeLosslessToStaging(rgbaData: rgbaData, width: width, height: height,
+            reservation: reservation, maximumBytes: maximumBytes)
+    }
 
     func encodeLosslessRGBA(_ rgbaData: Data, width: Int, height: Int) -> Data? {
         switch client.encodeLosslessWebP(rgbaData: rgbaData, width: width, height: height) {

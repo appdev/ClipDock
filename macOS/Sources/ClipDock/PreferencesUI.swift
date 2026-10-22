@@ -445,7 +445,7 @@ final class PreferencesWindowController: NSWindowController {
         viewModel.preferencesTheme(fallbackAppearance: window?.effectiveAppearance)
     }
 
-    var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)? {
+    var onPreferencesChanged: ((RustPreferencesPatch, RustPreferencesDocument) -> RustPreferencesDocument?)? {
         didSet {
             viewModel.onPreferencesChanged = onPreferencesChanged
         }
@@ -657,7 +657,7 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
     private let sceneController = PreferencesSceneController()
     private var pendingDeferredRender = false
 
-    var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
+    var onPreferencesChanged: ((RustPreferencesPatch, RustPreferencesDocument) -> RustPreferencesDocument?)?
     var onAccessibilityPermissionRequested: (() -> Void)?
     var onUpdateReleaseRequested: ((AppUpdateRelease) -> Void)?
     var onAutomaticUpdateChecksChanged: ((Bool) -> Void)?
@@ -764,13 +764,15 @@ private final class PreferencesSwiftUIViewModel: ObservableObject {
         onAutomaticUpdateChecksChanged?(isEnabled)
     }
 
-    func persist(_ update: (inout RustPreferencesDocument) -> Void) {
+    func persist(launchAtLoginIntent: Bool? = nil, _ update: (inout RustPreferencesDocument) -> Void) {
+        let previousPreferences = sceneController.state.preferences
         let previousAppearanceMode = sceneController.state.preferences.appearance.mode
         let nextPreferences = sceneController.makeUpdatedPreferences(update)
         sceneController.beginPreferencePersistence()
         state = sceneController.state
 
-        let savedPreferences = onPreferencesChanged?(nextPreferences)
+        let patch = RustPreferencesPatch(previous: previousPreferences, next: nextPreferences, launchAtLoginIntent: launchAtLoginIntent)
+        let savedPreferences = onPreferencesChanged?(patch, nextPreferences)
         apply(sceneController.completePreferencePersistence(
             persistedPreferences: savedPreferences,
             fallbackPreferences: nextPreferences
@@ -1377,7 +1379,7 @@ private struct PreferenceGeneralSection: View {
                         "",
                         isOn: Binding(
                             get: { model.state.launchAtLoginState.isOn },
-                            set: { isOn in model.persist { $0.general.launchAtLogin = isOn } }
+                            set: { isOn in model.persist(launchAtLoginIntent: isOn) { $0.general.launchAtLogin = isOn } }
                         )
                     )
                     .labelsHidden()
@@ -1534,13 +1536,13 @@ private struct PreferenceGeneralSection: View {
             PreferenceSectionGroup(title: AppLocalization.text("preferences.group.retention", defaultValue: "保留策略")) {
                 PreferenceRow(
                     title: AppLocalization.text("preferences.retention.title", defaultValue: "保留时长"),
-                    detail: retentionLabel(days: model.state.preferences.history.retentionDays)
+                    detail: retentionLabel(days: model.state.preferences.history.retentionSelection)
                 ) {
                     Picker(
                         "",
                         selection: Binding(
-                            get: { model.state.preferences.history.retentionDays },
-                            set: { days in model.persist { $0.history.retentionDays = days } }
+                            get: { model.state.preferences.history.retentionSelection },
+                            set: { days in model.persist { $0.history.retentionSelection = days } }
                         )
                     ) {
                         Text(AppLocalization.text("retention.days.unit", defaultValue: "天")).tag(Int64(1))
@@ -2744,7 +2746,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
     private var textInputBindings: [TextInputBinding] = []
     private var pendingDeferredRender = false
 
-    var onPreferencesChanged: ((RustPreferencesDocument) -> RustPreferencesDocument?)?
+    var onPreferencesChanged: ((RustPreferencesPatch, RustPreferencesDocument) -> RustPreferencesDocument?)?
     var onAccessibilityPermissionRequested: (() -> Void)?
     private var theme: ClipDockThemePalette {
         ClipDockTheme.current(for: window)
@@ -2978,7 +2980,7 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                                 isOn: launchAtLoginState.isOn,
                                 isEnabled: launchAtLoginState.canChange
                             ) { [weak self] isOn in
-                                self?.persist { $0.general.launchAtLogin = isOn }
+                                self?.persist(launchAtLoginIntent: isOn) { $0.general.launchAtLogin = isOn }
                             }
                         ),
                         makeSettingRow(
@@ -3028,12 +3030,12 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                     makeSection(title: AppLocalization.text("preferences.group.retention", defaultValue: "保留策略"), rows: [
                         makeSettingRow(
                             title: AppLocalization.text("preferences.retention.title", defaultValue: "保留时长"),
-                            detail: retentionLabel(days: preferences.history.retentionDays),
+                            detail: retentionLabel(days: preferences.history.retentionSelection),
                             control: makeSegmentedControl(
                                 labels: retentionSegmentLabels(),
-                                selected: retentionIndex(days: preferences.history.retentionDays)
+                                selected: retentionIndex(days: preferences.history.retentionSelection)
                             ) { [weak self] selected in
-                                self?.persist { $0.history.retentionDays = self?.retentionDays(for: selected) ?? 30 }
+                                self?.persist { $0.history.retentionSelection = self?.retentionDays(for: selected) ?? 30 }
                             }
                         )
                     ])
@@ -3070,12 +3072,12 @@ private final class LegacyPreferencesWindowController: NSWindowController {
                     makeSection(title: AppLocalization.text("preferences.group.retention", defaultValue: "保留策略"), rows: [
                         makeSettingRow(
                             title: AppLocalization.text("preferences.retention.title", defaultValue: "保留时长"),
-                            detail: retentionLabel(days: preferences.history.retentionDays),
+                            detail: retentionLabel(days: preferences.history.retentionSelection),
                             control: makeSegmentedControl(
                                 labels: retentionSegmentLabels(),
-                                selected: retentionIndex(days: preferences.history.retentionDays)
+                                selected: retentionIndex(days: preferences.history.retentionSelection)
                             ) { [weak self] selected in
-                                self?.persist { $0.history.retentionDays = self?.retentionDays(for: selected) ?? 30 }
+                                self?.persist { $0.history.retentionSelection = self?.retentionDays(for: selected) ?? 30 }
                             }
                         )
                     ])
@@ -3460,11 +3462,13 @@ private final class LegacyPreferencesWindowController: NSWindowController {
             .filter { !$0.isEmpty }
     }
 
-    private func persist(_ update: (inout RustPreferencesDocument) -> Void) {
+    private func persist(launchAtLoginIntent: Bool? = nil, _ update: (inout RustPreferencesDocument) -> Void) {
+        let previousPreferences = sceneController.state.preferences
         let previousAppearanceMode = sceneController.state.preferences.appearance.mode
         let nextPreferences = sceneController.makeUpdatedPreferences(update)
         sceneController.beginPreferencePersistence()
-        if let savedPreferences = onPreferencesChanged?(nextPreferences) {
+        let patch = RustPreferencesPatch(previous: previousPreferences, next: nextPreferences, launchAtLoginIntent: launchAtLoginIntent)
+        if let savedPreferences = onPreferencesChanged?(patch, nextPreferences) {
             _ = sceneController.completePreferencePersistence(
                 persistedPreferences: savedPreferences,
                 fallbackPreferences: nextPreferences

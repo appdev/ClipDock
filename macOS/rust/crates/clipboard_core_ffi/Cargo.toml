@@ -21,3 +21,4 @@ swift-bridge-build = "0.1.59"
 
 [dev-dependencies]
 tempfile = "3.21"
+rusqlite = { version = "0.39", features = ["bundled"] }

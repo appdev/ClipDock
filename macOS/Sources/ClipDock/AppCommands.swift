@@ -404,7 +404,7 @@ enum PreferencesSmokeCommand {
                 canOpenSettings: true
             )
         )
-        controller.onPreferencesChanged = { [weak controller] preferences in
+        controller.onPreferencesChanged = { [weak controller] _, preferences in
             controller?.updateLaunchAtLoginState(
                 LaunchAtLoginState(
                     isOn: preferences.general.launchAtLogin,

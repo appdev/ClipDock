@@ -12,17 +12,20 @@ public struct PanelListViewState: Equatable, Sendable {
     public var totalCount: Int64
     public var hasMoreItems: Bool
     public var isLoadingMoreItems: Bool
+    public var refreshError: RustCoreError?
 
     public init(
         presentation: PanelListPresentation = .emptyHistory,
         totalCount: Int64 = 0,
         hasMoreItems: Bool = false,
-        isLoadingMoreItems: Bool = false
+        isLoadingMoreItems: Bool = false,
+        refreshError: RustCoreError? = nil
     ) {
         self.presentation = presentation
         self.totalCount = totalCount
         self.hasMoreItems = hasMoreItems
         self.isLoadingMoreItems = isLoadingMoreItems
+        self.refreshError = refreshError
     }
 
     public var items: [RustClipboardItemSummary] {
@@ -72,7 +75,8 @@ public enum PanelListViewStateAdapter {
         current state: PanelListViewState,
         result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
-        append: Bool
+        append: Bool,
+        preservesItemsOnFailure: Bool = true
     ) -> PanelListRenderUpdate {
         switch result {
         case .success(let listResult):
@@ -84,10 +88,11 @@ public enum PanelListViewStateAdapter {
                 hasMore: listResult.hasMore,
                 append: append
             )
-        case .failure:
-            if append {
+        case .failure(let error):
+            if append || (preservesItemsOnFailure && !state.items.isEmpty) {
                 var nextState = state
                 nextState.isLoadingMoreItems = false
+                nextState.refreshError = error
                 return PanelListRenderUpdate(
                     state: nextState,
                     appendedItems: [],
@@ -96,7 +101,7 @@ public enum PanelListViewStateAdapter {
             }
 
             return PanelListRenderUpdate(
-                state: PanelListViewState(presentation: .databaseError),
+                state: PanelListViewState(presentation: .databaseError, refreshError: error),
                 appendedItems: [],
                 didAppendToExistingItems: false
             )

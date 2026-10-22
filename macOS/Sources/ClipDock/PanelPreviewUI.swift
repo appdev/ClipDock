@@ -276,6 +276,7 @@ enum ClipboardRichTextPreviewStyler {
 
 @MainActor
 final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
+    var onDidClose: (() -> Void)?
     private let popover = NSPopover()
     private var shownItemID: String?
     private var keyDownMonitor: Any?
@@ -382,6 +383,7 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
     }
 
     private func finishClosing(restoresFocus: Bool) {
+        let hadContent = shownItemID != nil
         stopKeyDownMonitor()
         shownItemID = nil
         (popover.contentViewController as? ClipboardPreviewViewController)?.prepareForClose()
@@ -390,6 +392,7 @@ final class ClipboardPreviewPopoverController: NSObject, NSPopoverDelegate {
             returnFocusView?.window?.makeFirstResponder(returnFocusView)
         }
         returnFocusView = nil
+        if hadContent { onDidClose?() }
     }
 
     private func startKeyDownMonitor() {

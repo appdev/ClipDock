@@ -42,6 +42,17 @@ enum ClipDockPerformanceLog {
         return result
     }
 
+    @MainActor
+    @discardableResult
+    static func measureAsync<T>(
+        _ name: String, detail: String = "", _ body: @MainActor () async -> T
+    ) async -> T {
+        let start = mark()
+        let result = await body()
+        finish(name, start: start, detail: detail)
+        return result
+    }
+
     static func format(_ milliseconds: Double) -> String {
         String(format: "%.1f", milliseconds)
     }

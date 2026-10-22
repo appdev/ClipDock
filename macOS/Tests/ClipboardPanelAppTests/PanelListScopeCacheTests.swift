@@ -3,6 +3,61 @@ import Testing
 
 struct PanelListScopeCacheTests {
     @Test
+    func retentionBoundsAllScopeKindsAndProtectsClipboardAndCurrent() {
+        var cache = PanelListScopeCache()
+        let scopes = [
+            ClipboardListScope.clipboard,
+            ClipboardListScope(normalizedSearch: "first"),
+            ClipboardListScope(itemType: "image"),
+            ClipboardListScope(sourceAppID: "source"),
+            ClipboardListScope(pinboardID: "board"),
+            ClipboardListScope(normalizedSearch: "current")
+        ]
+        for scope in scopes {
+            cache[scope] = PanelCachedListScopeState(
+                result: RustCoreListResult(items: [], totalCount: 0, hasMore: false),
+                isFiltered: scope.isFiltered,
+                selectedItemID: nil
+            )
+        }
+
+        let evicted = cache.retainRecentlyUsedScopes(currentScope: scopes[5])
+
+        #expect(evicted == [scopes[1]])
+        #expect(cache.scopes == Set([scopes[0], scopes[2], scopes[3], scopes[4], scopes[5]]))
+
+        // Revisiting an existing page changes the common data/surface eviction order.
+        cache.recordAccess(scopes[2])
+        let next = ClipboardListScope(normalizedSearch: "next")
+        cache.recordAccess(next)
+        let surfaceOnly = ClipboardListScope(pinboardID: "surface-only")
+        cache.recordAccess(surfaceOnly)
+        let furtherEvicted = cache.retainRecentlyUsedScopes(
+            currentScope: next,
+            additionalScopes: [next, surfaceOnly]
+        )
+        #expect(furtherEvicted == [scopes[3], scopes[4]])
+        #expect(cache.scopes == Set([scopes[0], scopes[2], scopes[5]]))
+    }
+
+    @Test
+    func inactiveResultsCannotGrowTheDataCacheWithoutSurfaces() {
+        var cache = PanelListScopeCache()
+        for index in 0..<30 {
+            let scope = ClipboardListScope(normalizedSearch: "search-\(index)")
+            cache.store(
+                .success(RustCoreListResult(items: [makeItem(id: "\(index)")], totalCount: 1, hasMore: false)),
+                isFiltered: true,
+                append: false,
+                selectedItemID: nil,
+                scope: scope
+            )
+            cache.retainRecentlyUsedScopes(currentScope: .clipboard)
+        }
+        #expect(cache.scopes == Set((27..<30).map { ClipboardListScope(normalizedSearch: "search-\($0)") }))
+    }
+
+    @Test
     func storeAppendMergesNewItemsAndDeduplicatesExistingIDs() {
         var cache = PanelListScopeCache()
         let scope = ClipboardListScope.clipboard

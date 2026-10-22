@@ -537,12 +537,16 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private let searchField = PanelSearchField()
     private var searchBarView: PanelSearchBarView?
     private let previewPopoverController = ClipboardPreviewPopoverController()
+    private var completeItemLoader: ClipboardFullItemsLoader?
+    private var detailIntent: ClipboardDetailIntent?
+    private var detailLoadTask: Task<Void, Never>?
     private let itemBandContainerView = NSView()
-    private static let maxRetainedPinboardListPages = 3
     private var currentListScope: ClipboardListScope = .clipboard
+    private var hasLoadedCurrentScopeSinceSwitch = false
     private var listPageSurfaces: [ClipboardListScope: ListPageSurface] = [:]
-    private var listPageAccessOrder: [ClipboardListScope] = [.clipboard]
     private var listScopeCache = PanelListScopeCache()
+    private var pendingScrollUpdateTask: Task<Void, Never>?
+    private var scrollUpdateCount = 0
     private var suppressedLoadMoreLoadedCountByScope: [ClipboardListScope: Int] = [:]
     private var currentPanelHeight: CGFloat = BottomPanelGeometryPlanner.defaultHeight
     private var pinboardButtons: [PinboardChipButton] = []
@@ -607,6 +611,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        previewPopoverController.onDidClose = { [weak self] in self?.invalidateDetailIntent() }
         configureAppearance()
         configureLayout()
     }
@@ -618,6 +623,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil {
+            closePreviewPopover()
+            pendingScrollUpdateTask?.cancel()
+            pendingScrollUpdateTask = nil
             stopCommandHintMonitor()
             clearCommandHintMode()
         } else {
@@ -718,6 +726,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     func updateStorageState(_ result: Result<RustCoreOpenResult, RustCoreError>) {
         applyRenderPlan(interactionController.updateStorageState(result))
         if case .success(let openResult) = result {
+            hasLoadedCurrentScopeSinceSwitch = true
             listScopeCache[.clipboard] = PanelCachedListScopeState(
                 result: RustCoreListResult(
                     items: openResult.items,
@@ -732,6 +741,11 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     func updateAppSupportDirectory(_ url: URL) {
         appSupportDirectory = url
+    }
+
+    func updateCompleteItemLoader(_ loader: ClipboardFullItemsLoader?) {
+        closePreviewPopover()
+        completeItemLoader = loader
     }
 
     func updateSourceIconHeaderColorWriter(_ writer: SourceAppIconHeaderColorWriter?) {
@@ -775,14 +789,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     func setPreviewPopoverEnabled(_ enabled: Bool) {
         interactionController.setPreviewPopoverEnabled(enabled)
         if !enabled {
-            previewPopoverController.close()
+            closePreviewPopover()
         }
     }
 
     func setLinkWebPreviewEnabled(_ enabled: Bool) {
         linkWebPreviewEnabled = enabled
         if !enabled {
-            previewPopoverController.close()
+            closePreviewPopover()
         }
     }
 
@@ -796,7 +810,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     func closePreviewPopover() {
+        invalidateDetailIntent()
         previewPopoverController.close()
+    }
+
+    private func invalidateDetailIntent() {
+        detailIntent = nil
+        detailLoadTask?.cancel()
+        detailLoadTask = nil
     }
 
     func resetFiltersForCapturedItem() {
@@ -835,14 +856,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
 
     func invalidateCachedListPages() {
         let currentScope = currentListScope
-        listScopeCache.keepOnly(currentScope)
-        let removableScopes = listPageSurfaces.keys.filter { $0 != currentScope }
-        for scope in removableScopes {
-            if let page = listPageSurfaces.removeValue(forKey: scope) {
-                removeListPageSurface(page)
-            }
-        }
-        listPageAccessOrder.removeAll { $0 != currentScope }
+        retainedListScopes.filter { $0 != currentScope }.forEach(evictListScope)
     }
 
     func invalidateCachedPinboardListPages(pinboardID: String) {
@@ -850,36 +864,18 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func removeCachedPinboardPages(pinboardID: String) {
-        let removableScopes = listPageSurfaces.keys.filter {
+        let removableScopes = retainedListScopes.filter {
             $0.pinboardID == pinboardID && $0 != currentListScope
         }
-        for scope in removableScopes {
-            if let page = listPageSurfaces.removeValue(forKey: scope) {
-                removeListPageSurface(page)
-            }
-        }
-        listPageAccessOrder.removeAll { $0.pinboardID == pinboardID && $0 != currentListScope }
-        listScopeCache.removePinboard(pinboardID, keeping: currentListScope)
+        removableScopes.forEach(evictListScope)
     }
 
     private func pruneCachedPinboardPages(validPinboardIDs: Set<String>) {
-        let removableScopes = listPageSurfaces.keys.filter { scope in
+        let removableScopes = retainedListScopes.filter { scope in
             guard let pinboardID = scope.pinboardID else { return false }
             return !validPinboardIDs.contains(pinboardID) && scope != currentListScope
         }
-        for scope in removableScopes {
-            if let page = listPageSurfaces.removeValue(forKey: scope) {
-                removeListPageSurface(page)
-            }
-        }
-        listPageAccessOrder.removeAll { scope in
-            guard let pinboardID = scope.pinboardID else { return false }
-            return !validPinboardIDs.contains(pinboardID) && scope != currentListScope
-        }
-        listScopeCache.pruneInvalidPinboards(
-            validPinboardIDs: validPinboardIDs,
-            keeping: currentListScope
-        )
+        removableScopes.forEach(evictListScope)
     }
 
     private func beginInlinePinboardRenameAfterCreation(pinboardID: String) {
@@ -985,6 +981,20 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func handleItemBandScrollDidChange() {
         updateCardRenameAnchor()
         activeListPage.savedScrollOrigin = activeListPage.saveScrollOrigin()
+        guard pendingScrollUpdateTask == nil else { return }
+        let scope = currentListScope
+        pendingScrollUpdateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(16))
+            guard !Task.isCancelled, let self else { return }
+            self.pendingScrollUpdateTask = nil
+            guard self.currentListScope == scope else { return }
+            self.performItemBandScrollUpdate()
+        }
+    }
+
+    private func performItemBandScrollUpdate() {
+        updateCardRenameAnchor()
+        scrollUpdateCount += 1
         let reachedLoadMoreThreshold = activeListPage.hasReachedLoadMoreThreshold()
         guard reachedLoadMoreThreshold || panelViewState().isCommandHintModeEnabled else {
             return
@@ -993,8 +1003,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         let shouldEmitLoadMore = shouldEmitLoadMoreForCurrentThreshold(
             reachedLoadMoreThreshold: reachedLoadMoreThreshold
         )
+        guard shouldEmitLoadMore || panelViewState().isCommandHintModeEnabled else { return }
         applyInteractionAction(.didScroll(
-            visibleCommandItemIDs: fullyVisibleCommandItemIDs(),
+            visibleCommandItemIDs: panelViewState().isCommandHintModeEnabled ? fullyVisibleCommandItemIDs() : [],
             reachedLoadMoreThreshold: shouldEmitLoadMore
         ))
     }
@@ -1095,49 +1106,33 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func removeListPageSurface(_ page: ListPageSurface) {
+        page.prepareForRemoval()
         page.detach()
     }
 
     private func recordListPageAccess(_ scope: ClipboardListScope) {
-        listPageAccessOrder.removeAll { $0 == scope }
-        listPageAccessOrder.append(scope)
+        listScopeCache.recordAccess(scope)
         pruneRetainedListPagesIfNeeded()
     }
 
-    private func pruneRetainedListPagesIfNeeded() {
-        let nonRetainedScopes = listPageSurfaces.keys.filter {
-            $0 != .clipboard
-                && $0 != currentListScope
-                && $0.sourceAppID != nil
-        }
-        for scope in nonRetainedScopes {
-            if let page = listPageSurfaces.removeValue(forKey: scope) {
-                removeListPageSurface(page)
-            }
-            listScopeCache.remove(scope)
-            listPageAccessOrder.removeAll { $0 == scope }
-        }
+    private var retainedListScopes: Set<ClipboardListScope> {
+        listScopeCache.scopes.union(listPageSurfaces.keys).union(suppressedLoadMoreLoadedCountByScope.keys)
+    }
 
-        let retainedPinboardPages = listPageSurfaces.keys.filter {
-            $0.pinboardID != nil && $0 != currentListScope
-        }
-        guard retainedPinboardPages.count > Self.maxRetainedPinboardListPages else { return }
-
-        for scope in Array(listPageAccessOrder) {
-            guard scope != .clipboard,
-                  scope != currentListScope,
-                  scope.pinboardID != nil,
-                  let page = listPageSurfaces.removeValue(forKey: scope)
-            else {
-                continue
-            }
+    private func evictListScope(_ scope: ClipboardListScope) {
+        listScopeCache.remove(scope)
+        if let page = listPageSurfaces.removeValue(forKey: scope) {
             removeListPageSurface(page)
-            listPageAccessOrder.removeAll { $0 == scope }
-            if listPageSurfaces.keys.filter({ $0.pinboardID != nil && $0 != currentListScope }).count
-                <= Self.maxRetainedPinboardListPages {
-                break
-            }
         }
+        suppressedLoadMoreLoadedCountByScope.removeValue(forKey: scope)
+    }
+
+    private func pruneRetainedListPagesIfNeeded() {
+        let evictedScopes = listScopeCache.retainRecentlyUsedScopes(
+            currentScope: currentListScope,
+            additionalScopes: Set(listPageSurfaces.keys).union(suppressedLoadMoreLoadedCountByScope.keys)
+        )
+        evictedScopes.forEach(evictListScope)
     }
 
     private func configureLayout() {
@@ -1625,6 +1620,19 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         return itemBandContainerView
     }
 
+    func invalidateDetailRemovedByListUpdate(
+        _ result: Result<RustCoreListResult, RustCoreError>,
+        append: Bool,
+        scope: ClipboardListScope?
+    ) {
+        guard !append,
+              (scope ?? currentListScope) == currentListScope,
+              case .success(let list) = result,
+              let itemID = detailIntent?.itemID ?? previewPopoverController.previewedItemID,
+              !list.items.contains(where: { $0.id == itemID }) else { return }
+        closePreviewPopover()
+    }
+
     func updateListState(
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
@@ -1662,6 +1670,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             scope: updateScope
         )
         if shouldReuseRenderedPage {
+            hasLoadedCurrentScopeSinceSwitch = true
             ClipDockPerformanceLog.event("list.render.reuse", detail: "scope=\(updateScope)")
             updateLoadMoreSuppressionAfterListUpdate(
                 result: result,
@@ -1679,8 +1688,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             result,
             isFiltered: isFiltered,
             append: append,
-            preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange
+            preserveScrollPositionOnStructuralChange: preserveScrollPositionOnStructuralChange,
+            preservesItemsOnFailure: hasLoadedCurrentScopeSinceSwitch
         )
+        if case .success = result { hasLoadedCurrentScopeSinceSwitch = true }
         cacheListState(result, isFiltered: isFiltered, append: append, scope: updateScope)
         updateLoadMoreSuppressionAfterListUpdate(
             result: result,
@@ -1746,6 +1757,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         scope: ClipboardListScope
     ) -> Bool {
         guard !append,
+              panelViewState().list.refreshError == nil,
               activeListPage.hasRenderedContent,
               let cachedState = listScopeCache[scope],
               case .success(let listResult) = result
@@ -1770,6 +1782,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             selectionSnapshot: interactionController.selectionSnapshot(),
             scope: scope
         )
+        pruneRetainedListPagesIfNeeded()
     }
 
     private func saveCurrentListPageState() {
@@ -1807,9 +1820,14 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         if scope != currentListScope { cardRenameSession?.finish(commit: true) }
         guard scope != currentListScope else { return }
 
+        closePreviewPopover()
+
+        pendingScrollUpdateTask?.cancel()
+        pendingScrollUpdateTask = nil
         saveCurrentListPageState()
         suppressedLoadMoreLoadedCountByScope.removeValue(forKey: scope)
         currentListScope = scope
+        hasLoadedCurrentScopeSinceSwitch = false
         let page = activeListPage
         attachListPage(page)
         recordListPageAccess(scope)
@@ -1875,7 +1893,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             updateCardRenameAnchor()
         }
         if plan.previewClosePolicy == .close {
-            previewPopoverController.close()
+            closePreviewPopover()
         }
 
         switch plan.instruction {
@@ -1905,7 +1923,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
         previewClosePolicy: PanelPreviewClosePolicy
     ) {
         let preservedOrigin = itemBandScrollView?.contentView.bounds.origin
-        let previewedItemID = previewPopoverController.previewedItemID
+        let previewedItemID = detailIntent?.itemID ?? previewPopoverController.previewedItemID
         let entries = ClipDockPerformanceLog.measure("list.reconcile.makeEntries", detail: "count=\(items.count)") {
             items.map(makeItemEntry)
         }
@@ -2036,7 +2054,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return true
         case kVK_Escape:
             clearCommandHintMode()
-            applyInteractionAction(.escape(isPreviewShown: previewPopoverController.isShown))
+            applyInteractionAction(.escape(isPreviewShown: detailIntent != nil || previewPopoverController.isShown))
             return true
         default:
             return false
@@ -2242,6 +2260,9 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
                 sourceAppID: sourceAppID,
                 pinboardID: pinboardID
             )
+            // Search deliberately keeps the old page visible during debounce,
+            // but a pending detail belongs to the old query intent immediately.
+            if scope != currentListScope { closePreviewPopover() }
             if !debounce {
                 switchListPage(to: scope)
             }
@@ -2332,7 +2353,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     private func applyPreviewRequest(_ request: PanelPreviewRequest) {
         switch request {
         case .close:
-            previewPopoverController.close()
+            closePreviewPopover()
         case .toggle(let itemID):
             togglePreview(forItemID: itemID)
         case .show(let itemID):
@@ -2341,72 +2362,66 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func togglePreview(forItemID itemID: String) {
-        guard let appSupportDirectory,
-              let item = interactionController.item(withID: itemID)
-        else {
+        if detailIntent?.itemID == itemID || previewPopoverController.previewedItemID == itemID {
+            closePreviewPopover()
             return
         }
-
-        guard let cardView = itemBandCardView(forItemID: itemID) else {
-            activeListPage.scrollItemIntoView(itemID: itemID) { [weak self] in
-                guard let self,
-                      let cardView = self.itemBandCardView(forItemID: itemID)
-                else {
-                    self?.previewPopoverController.close()
-                    return
-                }
-                self.previewPopoverController.toggle(
-                    item: item,
-                    appSupportDirectory: appSupportDirectory,
-                    linkWebPreviewEnabled: self.linkWebPreviewEnabled,
-                    relativeTo: cardView,
-                    returnFocusTo: self
-                )
-            }
-            return
-        }
-
-        previewPopoverController.toggle(
-            item: item,
-            appSupportDirectory: appSupportDirectory,
-            linkWebPreviewEnabled: linkWebPreviewEnabled,
-            relativeTo: cardView,
-            returnFocusTo: self
-        )
+        showPreview(forItemID: itemID)
     }
 
     private func showPreview(forItemID itemID: String) {
-        guard let item = interactionController.item(withID: itemID)
-        else {
-            return
-        }
-
-        guard let cardView = itemBandCardView(forItemID: itemID) else {
+        closePreviewPopover()
+        guard interactionController.item(withID: itemID) != nil else { return }
+        let intent = ClipboardDetailIntent(itemID: itemID)
+        detailIntent = intent
+        let scope = currentListScope
+        guard let cardView = itemBandCardView(forItemID: itemID),
+              activeListPage.itemIsFullyVisible(itemID) else {
             activeListPage.scrollItemIntoView(itemID: itemID) { [weak self] in
-                guard let self,
-                      let cardView = self.itemBandCardView(forItemID: itemID)
-                else {
-                    self?.previewPopoverController.close()
-                    return
-                }
-                self.previewPopoverController.show(
-                    item: item,
-                    appSupportDirectory: self.appSupportDirectory ?? URL(fileURLWithPath: NSHomeDirectory()),
-                    linkWebPreviewEnabled: self.linkWebPreviewEnabled,
-                    relativeTo: cardView,
-                    returnFocusTo: self
-                )
+                guard let self, detailIntent == intent, currentListScope == scope else { return }
+                guard let cardView = itemBandCardView(forItemID: itemID) else { closePreviewPopover(); return }
+                loadPreview(intent: intent, scope: scope, anchor: cardView)
             }
             return
         }
+        loadPreview(intent: intent, scope: scope, anchor: cardView)
+    }
 
-        previewPopoverController.show(
-            item: item,
+    private func loadPreview(intent: ClipboardDetailIntent, scope: ClipboardListScope, anchor: NSView) {
+        guard let item = interactionController.item(withID: intent.itemID) else { closePreviewPopover(); return }
+        guard let loader = completeItemLoader else {
+            guard item.isContentComplete else { closePreviewPopover(); return }
+            presentCompletePreview(item, intent: intent, scope: scope, anchor: anchor)
+            return
+        }
+        detailLoadTask = Task { @MainActor [weak self, weak anchor] in
+            let result = await loader([intent.itemID])
+            guard let self, !Task.isCancelled, detailIntent == intent, currentListScope == scope else { return }
+            detailLoadTask = nil
+            guard let anchor,
+                  case .success(let items) = result, items.count == 1,
+                  let complete = items.first, complete.id == intent.itemID, complete.isContentComplete else {
+                closePreviewPopover()
+                return
+            }
+            presentCompletePreview(complete, intent: intent, scope: scope, anchor: anchor)
+        }
+    }
+
+    private func presentCompletePreview(
+        _ item: RustClipboardItemSummary, intent: ClipboardDetailIntent,
+        scope: ClipboardListScope, anchor: NSView
+    ) {
+        guard detailIntent == intent, currentListScope == scope,
+              interactionController.item(withID: item.id) != nil,
+              anchor === itemBandCardView(forItemID: item.id),
+              anchor.window != nil, activeListPage.itemIsFullyVisible(item.id) else {
+            if detailIntent == intent { closePreviewPopover() }
+            return
+        }
+        previewPopoverController.show(item: item,
             appSupportDirectory: appSupportDirectory ?? URL(fileURLWithPath: NSHomeDirectory()),
-            linkWebPreviewEnabled: linkWebPreviewEnabled,
-            relativeTo: cardView,
-            returnFocusTo: self
-        )
+            linkWebPreviewEnabled: linkWebPreviewEnabled, relativeTo: anchor, returnFocusTo: self)
     }
 
     private func updatePreviewAfterReconcile(
@@ -2416,7 +2431,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     ) {
         guard let previewedItemID else { return }
         if closePolicy == .closeIfPreviewedItemRemoved, !validItemIDs.contains(previewedItemID) {
-            previewPopoverController.close()
+            closePreviewPopover()
             return
         }
         guard validItemIDs.contains(previewedItemID),
@@ -2425,22 +2440,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
             return
         }
         guard activeListPage.itemIsFullyVisible(previewedItemID) else {
-            previewPopoverController.close()
+            closePreviewPopover()
             return
         }
-        guard let item = interactionController.item(withID: previewedItemID),
-              let cardView = itemBandCardView(forItemID: previewedItemID)
-        else {
-            previewPopoverController.close()
-            return
-        }
-        previewPopoverController.show(
-            item: item,
-            appSupportDirectory: appSupportDirectory ?? URL(fileURLWithPath: NSHomeDirectory()),
-            linkWebPreviewEnabled: linkWebPreviewEnabled,
-            relativeTo: cardView,
-            returnFocusTo: self
-        )
+        showPreview(forItemID: previewedItemID)
     }
 
     private func showManagementMenu(for item: RustClipboardItemSummary, event: NSEvent) {
@@ -2802,6 +2805,10 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     }
 
     private func refreshVisibleCommandHints() {
+        guard panelViewState().isCommandHintModeEnabled else {
+            applyCommandHintTexts([:])
+            return
+        }
         applyInteractionAction(.visibleCommandItemsChanged(fullyVisibleCommandItemIDs()))
     }
 
@@ -2882,7 +2889,7 @@ final class FloatingPanelContentView: NSView, NSSearchFieldDelegate {
     ) -> Bool {
         if control === searchField,
            commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            applyInteractionAction(.escape(isPreviewShown: previewPopoverController.isShown))
+            applyInteractionAction(.escape(isPreviewShown: detailIntent != nil || previewPopoverController.isShown))
             return true
         }
 
@@ -3181,6 +3188,30 @@ extension FloatingPanelContentView {
 
     var smokeActiveListScope: ClipboardListScope {
         currentListScope
+    }
+
+    var smokeCachedListScopes: Set<ClipboardListScope> {
+        listScopeCache.scopes
+    }
+
+    var smokeRetainedListSurfaceScopes: Set<ClipboardListScope> {
+        Set(listPageSurfaces.keys)
+    }
+
+    var smokeScrollUpdateCount: Int { scrollUpdateCount }
+
+    var smokeCollectionGeometryUpdateCount: Int { activeListPage.geometryUpdateCount }
+
+    var smokeLoadMoreSuppressedScopes: Set<ClipboardListScope> {
+        Set(suppressedLoadMoreLoadedCountByScope.keys)
+    }
+
+    func smokeSuppressLoadMore(for scope: ClipboardListScope) {
+        suppressedLoadMoreLoadedCountByScope[scope] = 1
+    }
+
+    func smokeNotifyScrollChange() {
+        handleItemBandScrollDidChange()
     }
 
     func smokePanelUsesLightBlurredBackground() -> Bool {
@@ -3864,6 +3895,10 @@ extension FloatingPanelContentView {
     var smokeIsPreviewShown: Bool {
         previewPopoverController.isShown
     }
+
+    var smokePendingDetailItemID: String? { detailIntent?.itemID }
+
+    var smokeDetailLoadTask: Task<Void, Never>? { detailLoadTask }
 
     var smokePreviewScreenFrame: NSRect? {
         previewPopoverController.screenFrame

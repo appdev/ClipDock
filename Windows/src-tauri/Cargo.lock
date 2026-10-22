@@ -443,20 +443,35 @@ name = "clipboard_core"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "clipdock_asset_store",
  "rusqlite",
+ "scraper",
  "serde",
  "serde_json",
  "sha2",
  "sqlite-simple-tokenizer",
  "tempfile",
+ "unicode-segmentation",
+ "url",
+]
+
+[[package]]
+name = "clipdock_asset_store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "clipdock_windows_panel"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "arboard",
+ "clipboard-win",
  "clipboard_core",
  "image",
  "objc2",
@@ -473,6 +488,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tempfile",
  "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

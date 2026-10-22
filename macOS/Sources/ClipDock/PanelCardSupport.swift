@@ -59,6 +59,10 @@ struct PanelPreviewImageLoadToken: Sendable {
     let callbackID: UUID
 }
 
+struct PanelRichTextPreviewLoadToken: Sendable {
+    let callbackID: UUID
+}
+
 private struct LoadedPreviewImage: @unchecked Sendable {
     let image: NSImage
 }
@@ -66,7 +70,7 @@ private struct LoadedPreviewImage: @unchecked Sendable {
 @MainActor
 final class PanelCardAssetResolver {
     private static let imageCache = NSCache<NSString, NSImage>()
-    private static let richTextPreviewCache = NSCache<NSString, NSAttributedString>()
+    private static var richTextPreviewLoadTasks: [UUID: Task<Void, Never>] = [:]
     private static let fileThumbnailCache = NSCache<NSString, NSImage>()
     private static var fileThumbnailInFlight: [String: FileThumbnailInFlight] = [:]
     static var fileThumbnailGenerationDelayForSmoke: Duration?
@@ -104,7 +108,6 @@ final class PanelCardAssetResolver {
     private let sourceIconImageLoader: @MainActor (String) -> NSImage?
     private let dominantHeaderColorProvider: @MainActor (NSImage, String?, String?) -> NSColor?
     private let loadSourceIconsSynchronously: Bool
-    private let maxRichTextPreviewBytes = 5 * 1024 * 1024
 
     init(
         appSupportDirectory: URL?,
@@ -157,33 +160,49 @@ final class PanelCardAssetResolver {
         )
     }
 
-    func richTextPreviewAttributedString(for request: PanelCardAssetRequest) -> NSAttributedString? {
+    @discardableResult
+    func loadRichTextPreviewAsync(
+        for request: PanelCardAssetRequest,
+        maximumUTF16Length: Int,
+        completion: @escaping @MainActor @Sendable (NSAttributedString?) -> Void
+    ) -> PanelRichTextPreviewLoadToken? {
         guard let path = request.previewAssetPath?.trimmingCharacters(in: .whitespacesAndNewlines),
               !path.isEmpty,
-              path.lowercased().hasSuffix(".rtf")
+              path.lowercased().hasSuffix(".rtf"),
+              maximumUTF16Length > 0
         else {
             return nil
         }
 
         let url = resolvedAssetURL(for: path)
-        let key = url.path as NSString
-        if let cached = Self.richTextPreviewCache.object(forKey: key) {
-            return cached
+        let callbackID = UUID()
+        let token = PanelRichTextPreviewLoadToken(callbackID: callbackID)
+        let task = Task.detached(priority: .userInitiated) {
+            let preview: LoadedRichTextPreview?
+            do {
+                try Task.checkCancellation()
+                preview = try await PanelRichTextPreviewLoader.shared.load(
+                    url: url,
+                    maximumUTF16Length: maximumUTF16Length
+                )
+                try Task.checkCancellation()
+            } catch {
+                await MainActor.run { _ = Self.richTextPreviewLoadTasks.removeValue(forKey: callbackID) }
+                return
+            }
+            await MainActor.run {
+                guard let task = Self.richTextPreviewLoadTasks.removeValue(forKey: callbackID),
+                      !task.isCancelled else { return }
+                completion(preview?.attributedString)
+            }
         }
+        Self.richTextPreviewLoadTasks[callbackID] = task
+        return token
+    }
 
-        guard FileManager.default.fileExists(atPath: url.path),
-              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let byteCount = attributes[.size] as? NSNumber,
-              byteCount.intValue <= maxRichTextPreviewBytes,
-              let data = try? Data(contentsOf: url),
-              let attributed = NSAttributedString(rtf: data, documentAttributes: nil),
-              attributed.length > 0
-        else {
-            return nil
-        }
-
-        Self.richTextPreviewCache.setObject(attributed, forKey: key)
-        return attributed
+    static func cancelRichTextPreviewLoad(_ token: PanelRichTextPreviewLoadToken?) {
+        guard let token else { return }
+        richTextPreviewLoadTasks.removeValue(forKey: token.callbackID)?.cancel()
     }
 
     func sourceIconImage(for request: PanelCardAssetRequest) -> NSImage? {

@@ -22,7 +22,6 @@ struct CapturedSourceApplication {
     let name: String
     let bundlePath: String?
     let windowTitle: String?
-    let icon: NSImage?
 
     func updatingWindowTitle(_ windowTitle: String?) -> CapturedSourceApplication {
         CapturedSourceApplication(
@@ -30,8 +29,7 @@ struct CapturedSourceApplication {
             bundleId: bundleId,
             name: name,
             bundlePath: bundlePath,
-            windowTitle: windowTitle,
-            icon: icon
+            windowTitle: windowTitle
         )
     }
 
@@ -46,8 +44,7 @@ struct CapturedSourceApplication {
                 ?? application.bundleURL?.deletingPathExtension().lastPathComponent
                 ?? AppLocalization.text("source.unknown", defaultValue: "未知来源"),
             bundlePath: application.bundleURL?.path,
-            windowTitle: windowTitleProvider.title(for: application),
-            icon: application.icon
+            windowTitle: windowTitleProvider.title(for: application)
         )
     }
 }

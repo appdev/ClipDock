@@ -1,20 +1,32 @@
 mod backup;
+mod asset_lifecycle;
+#[cfg(test)]
+mod asset_lifecycle_tests;
 mod capture;
 mod link_metadata;
+#[cfg(test)]
+mod list_mutation_tests;
 mod maintenance;
+mod mutations;
 mod pending_images;
 mod preferences;
+pub(crate) mod preferences_patch;
 mod queries;
+#[cfg(test)]
+mod remediation_tests;
 mod source_apps;
 mod support;
 #[cfg(test)]
 mod tests;
+mod text_metrics;
+mod thumbnails;
 
 use crate::domain::{ClipboardItemSummary, CoreInfo, ItemQuery, SourceAppSummary};
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::migrations::run_migrations;
 use crate::{register_simple_tokenizer, CURRENT_SCHEMA_VERSION, DATABASE_FILE_NAME};
 use rusqlite::Connection;
+use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -24,19 +36,25 @@ pub use backup::BackupResult;
 pub struct ClipboardCore {
     database_path: PathBuf,
     connection: Connection,
+    text_metrics: RefCell<text_metrics::TextMetricsCache>,
 }
 
 impl ClipboardCore {
     pub fn open(app_support_dir: impl AsRef<Path>) -> Result<Self> {
-        let mut core = Self::open_for_backup(app_support_dir)?;
-        let preferences = core.get_preferences()?;
-        core.apply_history_preferences(&preferences)?;
-        Ok(core)
+        Self::open_impl(app_support_dir.as_ref(), true)
     }
 
-    /// Backup validation must not prune existing history as a side effect of opening it.
+    /// Settings remain accessible when optional history maintenance fails.
+    pub fn open_without_history_maintenance(app_support_dir: impl AsRef<Path>) -> Result<Self> {
+        Self::open_impl(app_support_dir.as_ref(), false)
+    }
+
+    /// Backup opening must preserve history regardless of retention settings.
     pub fn open_for_backup(app_support_dir: impl AsRef<Path>) -> Result<Self> {
-        let app_support_dir = app_support_dir.as_ref();
+        Self::open_impl(app_support_dir.as_ref(), false)
+    }
+
+    fn open_impl(app_support_dir: &Path, apply_maintenance: bool) -> Result<Self> {
         fs::create_dir_all(app_support_dir)?;
 
         for directory in ["assets", "thumbnails", "app-icons", "staging", ".staging"] {
@@ -65,10 +83,17 @@ impl ClipboardCore {
         run_migrations(&mut connection)?;
         seed_default_preferences(&connection)?;
 
-        Ok(Self {
+        let mut core = Self {
             database_path,
             connection,
-        })
+            text_metrics: RefCell::new(text_metrics::TextMetricsCache::default()),
+        };
+        if apply_maintenance {
+            core.reconcile_pending_asset_files()?;
+            core.apply_current_history_preferences()?;
+        }
+
+        Ok(core)
     }
 
     pub fn info(&self) -> Result<CoreInfo> {
@@ -82,6 +107,19 @@ impl ClipboardCore {
 
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    /// Cheap stamps used by the FFI session cache before reusing a connection.
+    pub fn schema_identity(&self) -> Result<(i64, i64)> {
+        let cookie = self
+            .connection
+            .query_row("PRAGMA schema_version", [], |row| row.get(0))?;
+        let version = self.connection.query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok((cookie, version))
     }
 
     fn root_dir(&self) -> Result<&Path> {

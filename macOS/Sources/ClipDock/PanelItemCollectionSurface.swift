@@ -1,7 +1,7 @@
 import AppKit
 import ClipboardPanelApp
 
-struct PanelItemCollectionLayoutMetrics {
+struct PanelItemCollectionLayoutMetrics: Equatable {
     let itemSide: CGFloat
     let itemSpacing: CGFloat
     let horizontalContentInset: CGFloat
@@ -78,6 +78,7 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
     private var artifacts: PanelItemCardRenderArtifacts?
     private var currentState: PanelItemCardViewState?
     private var currentIdentityState: PanelItemCardViewState?
+    private var lastLayoutMetrics: PanelItemCollectionLayoutMetrics?
 
     override func loadView() {
         view = NSView()
@@ -143,7 +144,9 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
     }
 
     func applyTransientDecorations(isSelected: Bool, commandIndexText: String?) {
-        guard let currentState else { return }
+        guard let currentState,
+              currentState.isSelected != isSelected || currentState.commandIndexText != commandIndexText
+        else { return }
         let nextState = PanelItemCardViewStateAdapter.stateBySettingTransientDecorations(
             currentState,
             isSelected: isSelected,
@@ -155,7 +158,8 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
     }
 
     func updateLayoutMetrics(_ metrics: PanelItemCollectionLayoutMetrics) {
-        guard let artifacts else { return }
+        guard let artifacts, lastLayoutMetrics != metrics else { return }
+        lastLayoutMetrics = metrics
         let itemSide = PanelItemCollectionGeometry.renderedItemSide(for: metrics.itemSide)
         let previewHeight = min(
             metrics.imagePreviewMaxHeight,
@@ -194,6 +198,7 @@ final class PanelItemCollectionCell: NSCollectionViewItem {
         itemID = nil
         currentState = nil
         currentIdentityState = nil
+        lastLayoutMetrics = nil
     }
 
     private static func reusableIdentityState(_ state: PanelItemCardViewState) -> PanelItemCardViewState {
@@ -221,9 +226,14 @@ final class PanelItemCollectionSurface: NSObject,
     let collectionView: NSCollectionView
 
     private let flowLayout: NSCollectionViewFlowLayout
+    private var documentWidthConstraint: NSLayoutConstraint?
+    private var documentHeightConstraint: NSLayoutConstraint?
     private var entries: [PanelItemCollectionEntry] = []
     private var entriesByID: [String: PanelItemCollectionEntry] = [:]
     private var indexByID: [String: Int] = [:]
+    private var commandHintTextsByID: [String: String] = [:]
+    private(set) var geometryUpdateCount = 0
+    private(set) var commandHintItemUpdateCount = 0
     private var liveCells: [WeakPanelItemCollectionCell] = []
     private var hostConstraints: [NSLayoutConstraint] = []
     private var metrics: PanelItemCollectionLayoutMetrics
@@ -332,6 +342,7 @@ final class PanelItemCollectionSurface: NSObject,
 
     func updatePanelHeight(_ itemSide: CGFloat) {
         let itemSide = sanitizedItemSide(itemSide)
+        guard metrics.itemSide != itemSide else { return }
         metrics = PanelItemCollectionLayoutMetrics(
             itemSide: itemSide,
             itemSpacing: metrics.itemSpacing,
@@ -480,15 +491,23 @@ final class PanelItemCollectionSurface: NSObject,
     }
 
     func applyCommandHintTexts(_ commandNumbersByID: [String: String]) {
-        for index in entries.indices {
+        guard commandHintTextsByID != commandNumbersByID else { return }
+        let changedIDs = Set(commandHintTextsByID.keys).union(commandNumbersByID.keys).filter {
+            commandHintTextsByID[$0] != commandNumbersByID[$0]
+        }
+        commandHintTextsByID = commandNumbersByID
+        for itemID in changedIDs {
+            guard let index = indexByID[itemID] else { continue }
             entries[index].state = PanelItemCardViewStateAdapter.stateBySettingCommandIndexText(
                 entries[index].state,
-                commandIndexText: commandNumbersByID[entries[index].id]
+                commandIndexText: commandNumbersByID[itemID]
             )
+            entriesByID[itemID] = entries[index]
+            commandHintItemUpdateCount += 1
         }
-        rebuildEntryMap()
         for cell in visibleCells() {
             guard let itemID = cell.itemID,
+                  changedIDs.contains(itemID),
                   let entry = entriesByID[itemID]
             else { continue }
             cell.applyTransientDecorations(
@@ -634,6 +653,15 @@ final class PanelItemCollectionSurface: NSObject,
             width: metrics.horizontalContentInset * 2,
             height: collectionHeight(for: metrics.itemSide)
         )
+        // The document width follows its cards, independently of the viewport.
+        // Autoresizing-mask constraints otherwise retain the initial viewport
+        // width and overwrite manual frame updates during later panel resizes.
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        let widthConstraint = collectionView.widthAnchor.constraint(equalToConstant: collectionView.frame.width)
+        let heightConstraint = collectionView.heightAnchor.constraint(equalToConstant: collectionView.frame.height)
+        documentWidthConstraint = widthConstraint
+        documentHeightConstraint = heightConstraint
+        NSLayoutConstraint.activate([widthConstraint, heightConstraint])
         collectionView.postsFrameChangedNotifications = true
     }
 
@@ -657,12 +685,21 @@ final class PanelItemCollectionSurface: NSObject,
                 + metrics.horizontalContentInset * 2
         }
         let documentWidth = width.isFinite ? max(metrics.horizontalContentInset * 2, width) : metrics.horizontalContentInset * 2
-        collectionView.frame = NSRect(
+        let frame = NSRect(
             x: 0,
             y: 0,
             width: documentWidth,
             height: collectionHeight(for: metrics.itemSide)
         )
+        if documentWidthConstraint?.constant != frame.width {
+            documentWidthConstraint?.constant = frame.width
+        }
+        if documentHeightConstraint?.constant != frame.height {
+            documentHeightConstraint?.constant = frame.height
+        }
+        guard collectionView.frame != frame else { return }
+        collectionView.frame = frame
+        geometryUpdateCount += 1
         collectionView.needsLayout = true
         flowLayout.invalidateLayout()
     }
@@ -704,6 +741,9 @@ final class PanelItemCollectionSurface: NSObject,
 
     private func rebuildIndexes() {
         indexByID = Dictionary(uniqueKeysWithValues: entries.enumerated().map { ($0.element.id, $0.offset) })
+        commandHintTextsByID = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
+            entry.state.commandIndexText.map { (entry.id, $0) }
+        })
         rebuildEntryMap()
     }
 

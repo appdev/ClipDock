@@ -11,6 +11,7 @@ pub enum CoreErrorCode {
     MigrationChecksumMismatch,
     InvalidInput,
     IoFailed,
+    RecoveryRequired,
     SearchFailed,
 }
 
@@ -22,6 +23,7 @@ impl CoreErrorCode {
             Self::MigrationChecksumMismatch => "migration_checksum_mismatch",
             Self::InvalidInput => "invalid_input",
             Self::IoFailed => "io_failed",
+            Self::RecoveryRequired => "recovery_required",
             Self::SearchFailed => "search_failed",
         }
     }
@@ -33,6 +35,7 @@ impl CoreErrorCode {
             Self::MigrationChecksumMismatch => "clipboard.error.migration_checksum_mismatch",
             Self::InvalidInput => "clipboard.error.invalid_input",
             Self::IoFailed => "clipboard.error.io_failed",
+            Self::RecoveryRequired => "clipboard.error.recovery_required",
             Self::SearchFailed => "clipboard.error.search_failed",
         }
     }
@@ -40,7 +43,10 @@ impl CoreErrorCode {
     pub fn recoverable(self) -> bool {
         matches!(
             self,
-            Self::DatabaseUnavailable | Self::IoFailed | Self::SearchFailed
+            Self::DatabaseUnavailable
+                | Self::IoFailed
+                | Self::SearchFailed
+                | Self::RecoveryRequired
         )
     }
 }

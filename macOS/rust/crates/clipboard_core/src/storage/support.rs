@@ -1,45 +1,11 @@
-use crate::domain::ClipboardItemType;
 use crate::error::{CoreError, CoreErrorCode, Result};
 use rusqlite::params;
 use std::collections::HashSet;
+#[cfg(not(unix))]
 use std::fs;
 use std::path::Path;
 
-pub(super) fn normalize_text(text: &str) -> String {
-    text.trim_matches(|character: char| character == '\0')
-        .trim()
-        .to_string()
-}
-
-pub(super) fn classify_text(text: &str) -> ClipboardItemType {
-    let lower = text.to_lowercase();
-    if lower.starts_with("http://") || lower.starts_with("https://") {
-        ClipboardItemType::Link
-    } else if normalize_hex_color(text).is_some() {
-        ClipboardItemType::Color
-    } else {
-        ClipboardItemType::Text
-    }
-}
-
-pub(super) fn normalize_hex_color(text: &str) -> Option<String> {
-    let hex = text.strip_prefix('#').unwrap_or(text);
-    if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-
-    Some(format!("#{}", hex.to_ascii_uppercase()))
-}
-
-pub(super) fn summarize_text(text: &str) -> String {
-    const MAX_CHARS: usize = 180;
-    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut summary = collapsed.chars().take(MAX_CHARS).collect::<String>();
-    if collapsed.chars().count() > MAX_CHARS {
-        summary.push('…');
-    }
-    summary
-}
+pub(super) use crate::text_analysis::{normalize_text, summarize_text};
 
 pub(super) fn summarize_image(width: i64, height: i64) -> String {
     if width > 0 && height > 0 {
@@ -127,6 +93,7 @@ pub(super) fn normalize_relative_asset_path(value: &str) -> Result<String> {
     Ok(value.to_string())
 }
 
+#[cfg(not(unix))]
 pub(super) fn delete_relative_file(root: &Path, relative_path: &str) -> Result<Option<i64>> {
     let relative_path = normalize_relative_asset_path(relative_path)?;
     let path = root.join(relative_path);
@@ -159,14 +126,6 @@ pub(super) fn unique_strings(values: Vec<String>) -> Vec<String> {
         }
     }
     unique_values
-}
-
-pub(super) fn hash_file(path: &Path) -> Result<String> {
-    let data = fs::read(path).map_err(|error| {
-        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-            .with_detail("path", path.display().to_string())
-    })?;
-    Ok(stable_hash_bytes(&data))
 }
 
 pub(super) fn stable_hash_bytes(value: &[u8]) -> String {

@@ -168,17 +168,29 @@ public struct RustGeneralPreferences: Equatable, Codable, Sendable {
 public struct RustHistoryPreferences: Equatable, Codable, Sendable {
     public var maxItems: Int64
     public var retentionDays: Int64
+    public var retentionForever: Bool
     public var recordImages: Bool
     public var recordFiles: Bool
+
+    /// The existing segmented control uses Int64.max for its unlimited option.
+    public var retentionSelection: Int64 {
+        get { retentionForever ? Int64.max : retentionDays }
+        set {
+            retentionForever = newValue == Int64.max
+            if !retentionForever { retentionDays = newValue }
+        }
+    }
 
     public init(
         maxItems: Int64 = 5000,
         retentionDays: Int64 = 30,
+        retentionForever: Bool = false,
         recordImages: Bool = true,
         recordFiles: Bool = true
     ) {
         self.maxItems = 5000
         self.retentionDays = retentionDays
+        self.retentionForever = retentionForever
         self.recordImages = true
         self.recordFiles = true
     }
@@ -186,6 +198,7 @@ public struct RustHistoryPreferences: Equatable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case maxItems = "max_items"
         case retentionDays = "retention_days"
+        case retentionForever = "retention_forever"
         case recordImages = "record_images"
         case recordFiles = "record_files"
     }
@@ -195,6 +208,7 @@ public struct RustHistoryPreferences: Equatable, Codable, Sendable {
         _ = try container.decodeIfPresent(Int64.self, forKey: .maxItems)
         self.maxItems = 5000
         self.retentionDays = try container.decodeIfPresent(Int64.self, forKey: .retentionDays) ?? 30
+        self.retentionForever = try container.decodeIfPresent(Bool.self, forKey: .retentionForever) ?? false
         self.recordImages = true
         self.recordFiles = true
     }
@@ -567,6 +581,12 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let itemType: String
     public let summary: String
     public let primaryText: String?
+    /// List projections never place a bounded preview in `primaryText`.
+    public let textPreview: String?
+    public let previewTruncated: Bool
+    public let trimmedGraphemeCount: Int64?
+    public let scalarCount: Int64?
+    public let isContentComplete: Bool
     public let contentHash: String
     public let sourceAppId: String?
     public let sourceAppName: String?
@@ -579,6 +599,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
     public let lastCopiedAtMs: Int64
     public let copyCount: Int64
     public let isPinned: Bool
+    public let pinboardIDs: [String]
     public let sizeBytes: Int64
     public let previewState: String
     public let payloadState: String
@@ -607,6 +628,12 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         payloadState: String = "ready",
         fileItems: [RustClipboardFileItemSummary] = [],
         linkMetadata: RustLinkMetadataSummary? = nil,
+        pinboardIDs: [String] = [],
+        textPreview: String? = nil,
+        previewTruncated: Bool = false,
+        trimmedGraphemeCount: Int64? = nil,
+        scalarCount: Int64? = nil,
+        isContentComplete: Bool = true,
         customTitle: String? = nil
     ) {
         self.id = id
@@ -614,6 +641,11 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         self.itemType = itemType
         self.summary = summary
         self.primaryText = primaryText
+        self.textPreview = textPreview
+        self.previewTruncated = previewTruncated
+        self.trimmedGraphemeCount = trimmedGraphemeCount
+        self.scalarCount = scalarCount
+        self.isContentComplete = isContentComplete
         self.contentHash = contentHash
         self.sourceAppId = sourceAppId
         self.sourceAppName = sourceAppName
@@ -626,6 +658,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         self.lastCopiedAtMs = lastCopiedAtMs
         self.copyCount = copyCount
         self.isPinned = isPinned
+        self.pinboardIDs = pinboardIDs
         self.sizeBytes = sizeBytes
         self.previewState = previewState
         self.payloadState = payloadState
@@ -660,6 +693,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
                 forKey: .fileItems
             ) ?? [],
             linkMetadata: try container.decodeIfPresent(RustLinkMetadataSummary.self, forKey: .linkMetadata),
+            pinboardIDs: try container.decodeIfPresent([String].self, forKey: .pinboardIDs) ?? [],
             customTitle: try container.decodeIfPresent(String.self, forKey: .customTitle)
         )
     }
@@ -682,6 +716,7 @@ public struct RustClipboardItemSummary: Equatable, Decodable, Sendable {
         case lastCopiedAtMs = "last_copied_at_ms"
         case copyCount = "copy_count"
         case isPinned = "is_pinned"
+        case pinboardIDs = "pinboard_ids"
         case sizeBytes = "size_bytes"
         case previewState = "preview_state"
         case payloadState = "payload_state"
@@ -1194,6 +1229,13 @@ public struct RustCoreError: Error, Equatable, Sendable {
     public let messageKey: String
     public let recoverable: Bool
     public let message: String
+
+    public init(code: String, messageKey: String, recoverable: Bool, message: String) {
+        self.code = code
+        self.messageKey = messageKey
+        self.recoverable = recoverable
+        self.message = message
+    }
 }
 
 public struct RustBackupResult: Equatable, Sendable {
@@ -2139,6 +2181,107 @@ public struct RustCoreClient: Sendable {
                 return .failure(error)
             }
         }
+    }
+}
+
+extension RustCoreClient {
+    public static let maximumItemBatchSize = 200
+
+    public func listEntries(
+        appSupportDirectory: URL, limit: Int64 = 50, offset: Int64 = 0,
+        itemType: String? = nil, sourceAppId: String? = nil,
+        pinboardId: String? = nil, searchText: String? = nil
+    ) -> Result<RustCoreListResult, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { path in
+            let result = list_entries(path, limit, offset, itemType ?? "", sourceAppId ?? "", pinboardId ?? "", searchText ?? "")
+            guard result.ok else {
+                return .failure(Self.makeError(code: result.error_code.toString(), messageKey: result.message_key.toString()))
+            }
+            return Self.decodeBridgeJSON(result.items_json.toString(), as: [RustClipboardListEntry].self).map {
+                RustCoreListResult(items: $0.map(\.item), totalCount: result.total_count, hasMore: result.has_more)
+            }
+        }
+    }
+
+    public func getItem(
+        appSupportDirectory: URL, itemID: String
+    ) -> Result<RustClipboardItemSummary?, RustCoreError> {
+        withPreparedAppSupportDirectory(appSupportDirectory) { path in
+            let result = get_item(path, itemID)
+            guard result.ok else {
+                return .failure(Self.makeError(code: result.error_code.toString(), messageKey: result.message_key.toString()))
+            }
+            return Self.decodeBridgeJSON(result.result_json.toString(), as: RustClipboardItemSummary?.self)
+        }
+    }
+
+    public func getItems(
+        appSupportDirectory: URL, orderedIDs: [String]
+    ) -> Result<[RustClipboardItemLookup], RustCoreError> {
+        guard orderedIDs.count <= Self.maximumItemBatchSize else {
+            return .failure(Self.makeError(code: "invalid_input", messageKey: "clipboard.error.invalid_input"))
+        }
+        return withPreparedAppSupportDirectory(appSupportDirectory) { path in
+            do {
+                let json = String(decoding: try JSONEncoder().encode(orderedIDs), as: UTF8.self)
+                let result = get_items(path, json)
+                guard result.ok else {
+                    return .failure(Self.makeError(code: result.error_code.toString(), messageKey: result.message_key.toString()))
+                }
+                return Self.decodeBridgeJSON(result.result_json.toString(), as: [RustClipboardItemLookup].self)
+            } catch { return .failure(Self.makeBridgeDecodeError(error)) }
+        }
+    }
+
+    public func mutateItems(
+        appSupportDirectory: URL, requests: [ClipboardItemMutationRequest]
+    ) -> Result<RustItemBatchMutationResult, RustCoreError> {
+        guard requests.count <= Self.maximumItemBatchSize else {
+            return .failure(Self.makeError(code: "invalid_input", messageKey: "clipboard.error.invalid_input"))
+        }
+        return withPreparedAppSupportDirectory(appSupportDirectory) { path in
+            do {
+                let encoded = try requests.map(BridgeItemMutation.init)
+                let json = String(decoding: try JSONEncoder().encode(encoded), as: UTF8.self)
+                let result = mutate_items(path, json)
+                guard result.ok else {
+                    return .failure(Self.makeError(code: result.error_code.toString(), messageKey: result.message_key.toString()))
+                }
+                return Self.decodeBridgeJSON(result.result_json.toString(), as: RustItemBatchMutationResult.self)
+            } catch { return .failure(Self.makeBridgeEncodeError(error)) }
+        }
+    }
+}
+
+private struct BridgeItemMutation: Encodable {
+    let kind: String
+    let itemID: String
+    let pinboardID: String?
+    let isMember: Bool?
+    var title: String? = nil
+
+    init(_ request: ClipboardItemMutationRequest) throws {
+        switch request {
+        case .rename(let id, let nextTitle):
+            kind = "rename"; itemID = id; pinboardID = nil; isMember = nil; title = nextTitle
+        case .recordCopied(let id):
+            kind = "record_copied"; itemID = id; pinboardID = nil; isMember = nil
+        case .delete(let id, let board):
+            kind = board == nil ? "delete" : "set_pinboard_membership"
+            itemID = id; pinboardID = board; isMember = board == nil ? nil : false
+        case .setPinboardMembership(let id, let board, let member):
+            kind = "set_pinboard_membership"; itemID = id; pinboardID = board; isMember = member
+        case .clear:
+            throw RustCoreError(code: "invalid_input", messageKey: "clipboard.error.invalid_input", recoverable: true, message: "Clear is not an item batch operation")
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case title
+        case itemID = "item_id"
+        case pinboardID = "pinboard_id"
+        case isMember = "is_member"
     }
 }
 

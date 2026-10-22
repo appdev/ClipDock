@@ -149,9 +149,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesCoordinator: PreferencesCoordinator?
     private var maintenanceCoordinator: StorageMaintenanceCoordinator?
     private var currentPreferences = RustPreferencesDocument()
+    private var isStorageReady = false
     private var lastPanelToggleUptime: TimeInterval = 0
     private var directInsertTask: Task<Void, Never>?
+    private let copyIntentCoordinator = ClipboardCopyIntentCoordinator()
+    private let copyPlanWorker = ClipboardCopyPlanWorker()
+    private var copyTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
+    private var preferencesSaveTask: Task<Void, Never>?
+    private let preferencesTerminationGate = PendingTaskTerminationGate()
+    private var preferencesGeneration = 0
+    private var pendingPreferencePatches: [(generation: Int, patch: RustPreferencesPatch)] = []
+    private var pinboardsRefreshTask: Task<Void, Never>?
+    private var pinboardsGeneration = 0
     private let delegateInitUptime = ClipDockPerformanceLog.mark()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -179,7 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startupTask = Task { @MainActor in
             await Task.yield()
             guard !Task.isCancelled else { return }
-            continueStartupAfterInitialPresentation()
+            await continueStartupAfterInitialPresentation()
         }
         ClipDockPerformanceLog.finish(
             "application.didFinishLaunching.finished",
@@ -192,6 +202,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        preferencesTerminationGate.requestTermination(
+            pendingTask: { [weak self] in self?.preferencesSaveTask },
+            reply: { sender.reply(toApplicationShouldTerminate: true) }
+        )
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showPreferences(nil)
         return false
@@ -199,8 +216,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         startupTask?.cancel()
+        pinboardsRefreshTask?.cancel()
         captureRegistrationPipeline.cancel()
         directInsertTask?.cancel()
+        cancelPendingCopy()
         Task { [linkMetadataCoordinator] in
             await linkMetadataCoordinator?.stop()
         }
@@ -305,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             && Bundle.main.bundleIdentifier != nil
     }
 
-    private func continueStartupAfterInitialPresentation() {
+    private func continueStartupAfterInitialPresentation() async {
         let startupStart = ClipDockPerformanceLog.mark()
         let launchAtLoginMigration = ClipDockPerformanceLog.measure("startup.migrateLaunchAtLogin") {
             launchAtLoginController.migrateLegacyRegistrationIfNeeded()
@@ -320,11 +339,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ClipDockPerformanceLog.measure("startup.sourceTracker.start") {
             sourceApplicationTracker.start()
         }
-        ClipDockPerformanceLog.measure("startup.bootstrapLocalStorage") {
-            bootstrapLocalStorage()
+        await ClipDockPerformanceLog.measureAsync("startup.bootstrapLocalStorage") {
+            await bootstrapLocalStorage()
         }
+        guard !Task.isCancelled else { return }
         ClipDockPerformanceLog.measure("startup.clipboardMonitor.start") {
-            clipboardMonitor.start()
+            if isStorageReady {
+                clipboardMonitor.start()
+            }
         }
         ClipDockPerformanceLog.measure("startup.registerGlobalHotKey") {
             registerGlobalHotKey()
@@ -366,6 +388,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let client = rustCoreClient
         let databaseWorker = databaseWorker
+        panelController.setCompleteItemLoader { [client, databaseWorker, appSupportURL] ids in
+            await databaseWorker.loadCompleteItems(client: client, appSupportURL: appSupportURL, orderedIDs: ids)
+        }
         panelController.setSourceIconHeaderColorWriter { [client, databaseWorker, appSupportURL] request in
             _ = await databaseWorker.updateSourceAppIconHeaderColor(
                 client: client,
@@ -391,6 +416,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appSupportURL: appSupportURL,
                     mutation: mutation
                 )
+            },
+            batchMutationPerformer: { [client, databaseWorker, appSupportURL] requests in
+                await databaseWorker.performBatchMutation(client: client, appSupportURL: appSupportURL, requests: requests)
             }
         )
         listCoordinator.onListUpdate = { [weak self] update in
@@ -439,7 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         listCoordinator.onBatchMutationCompleted = { [weak self] result in
-            guard result.affectedCount > 0 else { return }
+            guard result.affectedCount > 0 || result.requiresRefresh else { return }
             switch result.summaryKind {
             case .setPinboardMembership(let pinboardID, _):
                 self?.panelController.invalidateCachedPinboardListPages(pinboardID: pinboardID)
@@ -488,14 +516,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.pinboardCoordinator = pinboardCoordinator
 
         preferencesCoordinator = PreferencesCoordinator(
-            loadPreferencesOperation: { [client, appSupportURL] in
-                client.getPreferences(appSupportDirectory: appSupportURL)
+            loadPreferencesOperation: { [client, databaseWorker, appSupportURL] in
+                await databaseWorker.perform {
+                    client.getPreferencesWithoutHistoryMaintenance(appSupportDirectory: appSupportURL)
+                }
             },
-            savePreferencesOperation: { [client, appSupportURL] preferences in
-                client.updatePreferences(
-                    appSupportDirectory: appSupportURL,
-                    preferences: preferences
-                )
+            patchPreferencesOperation: { [client, databaseWorker, appSupportURL] patch in
+                await databaseWorker.perform {
+                    client.patchPreferences(appSupportDirectory: appSupportURL, patch: patch)
+                }
             },
             currentLaunchAtLoginState: { [launchAtLoginController] in
                 launchAtLoginController.currentState()
@@ -514,35 +543,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         maintenanceCoordinator = StorageMaintenanceCoordinator(
-            openCoreOperation: { [client, appSupportURL] in
-                client.open(appSupportDirectory: appSupportURL)
+            openCoreOperation: { [client, databaseWorker, appSupportURL] in
+                await databaseWorker.perform {
+                    client.openWithoutHistoryMaintenance(appSupportDirectory: appSupportURL)
+                }
             },
-            runMaintenanceOperation: { [client, appSupportURL] in
-                client.runMaintenance(appSupportDirectory: appSupportURL)
+            runMaintenanceOperation: { [client, databaseWorker, appSupportURL] in
+                await databaseWorker.perform {
+                    client.runMaintenance(appSupportDirectory: appSupportURL)
+                }
             }
         )
 
         captureCoordinator = ClipboardCaptureCoordinator(
-            captureText: { [client, appSupportURL] request in
-                client.captureText(appSupportDirectory: appSupportURL, request: request)
+            captureText: { [client, databaseWorker, appSupportURL] request in
+                await databaseWorker.perform {
+                    client.captureText(appSupportDirectory: appSupportURL, request: request)
+                }
             },
-            captureRichText: { [client, appSupportURL] request in
-                client.captureRichText(appSupportDirectory: appSupportURL, request: request)
+            captureRichText: { [client, databaseWorker, appSupportURL] request in
+                await databaseWorker.perform {
+                    client.captureRichText(appSupportDirectory: appSupportURL, request: request)
+                }
             },
-            captureImage: { [client, appSupportURL] request in
-                client.captureImage(appSupportDirectory: appSupportURL, request: request)
+            captureImage: { [client, databaseWorker, appSupportURL] request in
+                await databaseWorker.perform {
+                    client.captureImage(appSupportDirectory: appSupportURL, request: request)
+                }
             },
-            capturePendingImage: { [client, appSupportURL] request in
-                client.capturePendingImage(appSupportDirectory: appSupportURL, request: request)
+            capturePendingImage: { [client, databaseWorker, appSupportURL] request in
+                await databaseWorker.perform {
+                    client.capturePendingImage(appSupportDirectory: appSupportURL, request: request)
+                }
             },
-            completePendingImagePayload: { [client, appSupportURL] request in
-                client.completePendingImagePayload(appSupportDirectory: appSupportURL, request: request)
+            completePendingImagePayload: { [client, databaseWorker, appSupportURL] request in
+                await databaseWorker.perform {
+                    client.completePendingImagePayload(appSupportDirectory: appSupportURL, request: request)
+                }
             },
-            failPendingImagePayload: { [client, appSupportURL] request in
-                client.failPendingImagePayload(appSupportDirectory: appSupportURL, request: request)
+            failPendingImagePayload: { [client, databaseWorker, appSupportURL] request in
+                await databaseWorker.perform {
+                    client.failPendingImagePayload(appSupportDirectory: appSupportURL, request: request)
+                }
             },
-            captureFiles: { [client, appSupportURL] request in
-                client.captureFiles(appSupportDirectory: appSupportURL, request: request)
+            captureFiles: { [client, databaseWorker, appSupportURL] request in
+                await databaseWorker.perform {
+                    client.captureFiles(appSupportDirectory: appSupportURL, request: request)
+                }
             },
             cacheIcon: { [weak iconProvider] source in
                 iconProvider?.cacheIcon(for: source)
@@ -561,6 +608,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         linkMetadataCoordinator = LinkMetadataCoordinator(
             coreClient: client,
             appSupportDirectory: appSupportURL,
+            databaseWorker: databaseWorker,
             onMetadataChanged: { [weak self] in
                 await MainActor.run {
                     self?.panelController.invalidateCachedListPages()
@@ -615,6 +663,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configurePanelCallbacks() {
+        panelController.onWillHide = { [weak self] afterSuccessfulCopy in
+            if !afterSuccessfulCopy { self?.cancelPendingCopy() }
+        }
         panelController.onRuntimeAction = { [weak self] action in
             switch action {
             case .showPreferences:
@@ -661,8 +712,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.loadMoreClipboardItems()
             }
         }
-        preferencesController.onPreferencesChanged = { [weak self] preferences in
-            self?.persistPreferences(preferences)
+        preferencesController.onPreferencesChanged = { [weak self] patch, preferences in
+            guard let self else { return nil }
+            guard self.isStorageReady else {
+                self.updateStorageStatus(AppLocalization.text(
+                    "preferences.status.storageInitializing", defaultValue: "偏好：存储正在初始化，请稍后重试"
+                ))
+                return self.currentPreferences
+            }
+            self.enqueuePreferencesSave(patch)
+            return preferences
         }
         preferencesController.onBackupRequested = { [weak self] fileURL, importing in
             guard let self, let appSupportURL = self.appSupportURL else { return nil }
@@ -788,146 +847,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func copySelectedItemToPasteboard(_ item: RustClipboardItemSummary) {
-        guard let appSupportURL else {
-            storageStatusText = AppLocalization.text("copy.status.storageUninitialized", defaultValue: "复制：存储未初始化")
-            refreshStatusText()
-            return
-        }
-
-        let payload = ClipboardPastePayloadPlanner.payload(
-            for: item,
-            appSupportDirectory: appSupportURL,
-            alwaysPasteAsPlainText: currentPreferences.shortcuts.alwaysPasteAsPlainText
-        )
-        let token = "self-\(UUID().uuidString)"
-        let startChangeCount = NSPasteboard.general.changeCount + 1
-
-        switch writeClipboardPayload(payload, token: token) {
-        case .success(let changeCount):
-            clipboardMonitor.markSelfWrite(
-                token: token,
-                from: startChangeCount,
-                through: changeCount
-            )
-            showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
-            let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
-            let didScheduleDirectPaste = pasteDirectlyToTarget && scheduleCommandVToTargetIfPermitted()
-            storageStatusText = if pasteDirectlyToTarget {
-                didScheduleDirectPaste
-                    ? AppLocalization.text("copy.status.sentToTarget", defaultValue: "复制：已发送到目标")
-                    : AppLocalization.text("copy.status.requiresAccessibility", defaultValue: "复制：请在辅助功能中允许 ClipDock")
-            } else {
-                AppLocalization.text("copy.status.writtenToClipboard", defaultValue: "复制：已写入剪贴板")
-            }
-            refreshStatusText()
-            panelController.hideAfterCopyingSelection()
-            performItemMutation(.recordCopied(itemID: item.id))
-            if didScheduleDirectPaste {
-                scheduleCommandVToTarget()
-            }
-
-        case .failure(let message):
-            storageStatusText = AppLocalization.format("copy.status.message", defaultValue: "复制：%@", message)
-            refreshStatusText()
-        }
+        beginCopy(items: [item], explicitlyPlainText: false)
     }
 
     private func copySelectedItemsToPasteboard(_ items: [RustClipboardItemSummary]) {
-        guard let firstItem = items.first else { return }
-        guard items.count > 1 else {
-            copySelectedItemToPasteboard(firstItem)
-            return
-        }
-        guard let appSupportURL else {
-            storageStatusText = AppLocalization.text("copy.status.storageUninitialized", defaultValue: "复制：存储未初始化")
-            refreshStatusText()
-            return
-        }
-
-        let payload = ClipboardPastePayloadPlanner.payload(
-            for: items,
-            appSupportDirectory: appSupportURL,
-            alwaysPasteAsPlainText: currentPreferences.shortcuts.alwaysPasteAsPlainText
-        )
-        let copiedItems = copiedItems(from: items, payload: payload)
-        copyItemsToPasteboard(copiedItems, payload: payload, statusText: AppLocalization.format(
-            "copy.status.batchWrittenToClipboard",
-            defaultValue: "复制：已写入 %lld 项",
-            Int64(copiedItems.count)
-        ))
+        beginCopy(items: items, explicitlyPlainText: false)
     }
 
     private func copyItemAsPlainTextToPasteboard(_ item: RustClipboardItemSummary) {
-        let payload = ClipboardPastePayloadPlanner.plainTextPayload(for: item)
-        let token = "self-\(UUID().uuidString)"
-        let startChangeCount = NSPasteboard.general.changeCount + 1
-
-        switch writeClipboardPayload(payload, token: token) {
-        case .success(let changeCount):
-            clipboardMonitor.markSelfWrite(
-                token: token,
-                from: startChangeCount,
-                through: changeCount
-            )
-            showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
-            storageStatusText = AppLocalization.text("copyPlainText.status.writtenToClipboard", defaultValue: "复制为纯文本：已写入剪贴板")
-            refreshStatusText()
-            panelController.hideAfterCopyingSelection()
-            performItemMutation(.recordCopied(itemID: item.id))
-
-        case .failure(let message):
-            storageStatusText = AppLocalization.format("copyPlainText.status.message", defaultValue: "复制为纯文本：%@", message)
-            refreshStatusText()
-        }
+        beginCopy(items: [item], explicitlyPlainText: true)
     }
 
     private func copyItemsAsPlainTextToPasteboard(_ items: [RustClipboardItemSummary]) {
-        guard let firstItem = items.first else { return }
-        guard items.count > 1 else {
-            copyItemAsPlainTextToPasteboard(firstItem)
-            return
-        }
+        beginCopy(items: items, explicitlyPlainText: true)
+    }
+
+    private func cancelPendingCopy() {
+        copyIntentCoordinator.cancel()
+        copyTask?.cancel()
+        copyTask = nil
+        directInsertTask?.cancel()
+        directInsertTask = nil
+    }
+
+    private func beginCopy(items: [RustClipboardItemSummary], explicitlyPlainText: Bool) {
+        guard !items.isEmpty else { return }
+        cancelPendingCopy()
         guard let appSupportURL else {
             storageStatusText = AppLocalization.text("copy.status.storageUninitialized", defaultValue: "复制：存储未初始化")
             refreshStatusText()
             return
         }
-
-        let payload = ClipboardPastePayloadPlanner.payload(
-            for: items,
-            appSupportDirectory: appSupportURL,
-            alwaysPasteAsPlainText: true
+        let target = panelController.copyTargetApplication
+        let mode: ClipboardCopyMode = explicitlyPlainText ? .explicitPlainText
+            : currentPreferences.shortcuts.alwaysPasteAsPlainText ? .preferPlainText : .original
+        let intent = copyIntentCoordinator.begin(
+            itemIDs: items.map(\.id), mode: mode,
+            pasteDirectlyToTarget: currentPreferences.shortcuts.pasteDirectlyToTarget
+                && !(explicitlyPlainText && items.count == 1),
+            targetProcessIdentifier: target?.processIdentifier
         )
-        let copiedItems = copiedItems(from: items, payload: payload)
-        copyItemsToPasteboard(copiedItems, payload: payload, statusText: AppLocalization.format(
-            "copyPlainText.status.batchWrittenToClipboard",
-            defaultValue: "复制为纯文本：已写入 %lld 项",
-            Int64(copiedItems.count)
-        ))
-    }
-
-    private func copiedItems(
-        from items: [RustClipboardItemSummary],
-        payload: ClipboardPastePayload
-    ) -> [RustClipboardItemSummary] {
-        let sourceItemIDs = payload.sourceItemIDs
-        guard !sourceItemIDs.isEmpty else {
-            return items
+        let worker = databaseWorker
+        let client = rustCoreClient
+        copyTask = Task { @MainActor [weak self] in
+            guard let self,
+                  let result = await copyIntentCoordinator.resolve(intent, loader: { ids in
+                      await worker.loadCompleteItems(client: client, appSupportURL: appSupportURL, orderedIDs: ids)
+                  }) else { return }
+            switch result {
+            case .failure(let error):
+                updateStorageStatus(AppLocalization.format("copy.status.message", defaultValue: "复制：%@", error.message))
+            case .success(let completeItems):
+                let planned = await copyPlanWorker.plan(items: completeItems, mode: intent.mode, appSupportDirectory: appSupportURL)
+                guard copyIntentCoordinator.isCurrent(intent), !Task.isCancelled else { return }
+                guard case .success(let plan) = planned else {
+                    updateStorageStatus(AppLocalization.text("copy.error.planFailed", defaultValue: "复制：无法准备所选内容"))
+                    return
+                }
+                let copiedCount = plan.includedIDs.count
+                let status: String
+                if copiedCount == 1 {
+                    status = intent.mode == .explicitPlainText
+                        ? AppLocalization.text("copyPlainText.status.writtenToClipboard", defaultValue: "复制为纯文本：已写入剪贴板")
+                        : AppLocalization.text("copy.status.writtenToClipboard", defaultValue: "复制：已写入剪贴板")
+                } else {
+                    status = intent.mode == .explicitPlainText
+                        ? AppLocalization.format("copyPlainText.status.batchWrittenToClipboard", defaultValue: "复制为纯文本：已写入 %lld 项", Int64(copiedCount))
+                        : AppLocalization.format("copy.status.batchWrittenToClipboard", defaultValue: "复制：已写入 %lld 项", Int64(copiedCount))
+                }
+                copyItemsToPasteboard(plan, statusText: status, intent: intent, target: target)
+            }
         }
-
-        let itemByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        return sourceItemIDs.compactMap { itemByID[$0] }
     }
 
     private func copyItemsToPasteboard(
-        _ items: [RustClipboardItemSummary],
-        payload: ClipboardPastePayload,
-        statusText: String
+        _ plan: ClipboardCopyPlan,
+        statusText: String,
+        intent: ClipboardCopyIntent,
+        target: PanelFocusApplication?
     ) {
+        guard copyIntentCoordinator.isCurrent(intent), !Task.isCancelled else { return }
         let token = "self-\(UUID().uuidString)"
         let startChangeCount = NSPasteboard.general.changeCount + 1
 
-        switch writeClipboardPayload(payload, token: token) {
+        switch writeClipboardPayload(plan.payloadForWriting(), token: token, composition: plan.composition) {
         case .success(let changeCount):
             clipboardMonitor.markSelfWrite(
                 token: token,
@@ -935,9 +938,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 through: changeCount
             )
             showCopyCompletionHUDIfEnabled(eventID: selfCopyCompletionEventID(changeCount: changeCount, token: token))
-            let pasteDirectlyToTarget = currentPreferences.shortcuts.pasteDirectlyToTarget
-            let didScheduleDirectPaste = pasteDirectlyToTarget && scheduleCommandVToTargetIfPermitted()
-            storageStatusText = if pasteDirectlyToTarget {
+            let pasteDirectlyToTarget = intent.pasteDirectlyToTarget
+            let didScheduleDirectPaste = pasteDirectlyToTarget && target != nil && scheduleCommandVToTargetIfPermitted()
+            storageStatusText = if pasteDirectlyToTarget && target != nil {
                 didScheduleDirectPaste
                     ? AppLocalization.text("copy.status.sentToTarget", defaultValue: "复制：已发送到目标")
                     : AppLocalization.text("copy.status.requiresAccessibility", defaultValue: "复制：请在辅助功能中允许 ClipDock")
@@ -947,11 +950,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshStatusText()
             panelController.hideAfterCopyingSelection()
             performItemBatchMutation(
-                items.map { .recordCopied(itemID: $0.id) },
+                plan.includedIDs.map { .recordCopied(itemID: $0) },
                 summaryKind: .recordCopied
             )
-            if didScheduleDirectPaste {
-                scheduleCommandVToTarget()
+            if didScheduleDirectPaste, let target {
+                scheduleCommandVToTarget(intent: intent, target: target)
             }
 
         case .failure(let message):
@@ -961,6 +964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func copyPathToPasteboard(_ pathText: String) {
+        cancelPendingCopy()
         let normalizedPathText = pathText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedPathText.isEmpty else {
             storageStatusText = AppLocalization.text("copyPath.status.emptyPath", defaultValue: "复制路径：路径为空")
@@ -990,9 +994,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func copyClipboardDiagnostics(_ sender: Any?) {
-        Task { @MainActor [weak self] in
+        cancelPendingCopy()
+        let intent = copyIntentCoordinator.begin(itemIDs: [], mode: .original,
+            pasteDirectlyToTarget: false, targetProcessIdentifier: nil)
+        copyTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let latestItem = await latestClipboardItemForDiagnostics()
+            guard copyIntentCoordinator.isCurrent(intent), !Task.isCancelled else { return }
             let versionProvider = BundleAppVersionProvider()
             let report = ClipboardDiagnosticsReport.make(
                 latestItem: latestItem,
@@ -1051,12 +1059,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func scheduleCommandVToTarget() {
+    private func scheduleCommandVToTarget(intent: ClipboardCopyIntent, target: PanelFocusApplication) {
         directInsertTask?.cancel()
         directInsertTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: DirectInsertTiming.focusRestoreDelayNanoseconds)
-            guard !Task.isCancelled else { return }
-            self?.commandVKeystrokeSender.sendCommandVKeystroke()
+            guard let self, !Task.isCancelled,
+                  copyIntentCoordinator.isCurrent(intent),
+                  target.processIdentifier == intent.targetProcessIdentifier,
+                  panelController.isCopyTargetFrontmost(target) else { return }
+            commandVKeystrokeSender.sendCommandVKeystroke()
         }
     }
 
@@ -1070,8 +1081,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    private func writeClipboardPayload(_ payload: ClipboardPastePayload, token: String) -> ClipboardWriteResult {
-        let pasteboard = NSPasteboard.general
+    private func writeClipboardPayload(
+        _ payload: ClipboardPastePayload, token: String,
+        composition: ClipboardCopyComposition = .separateItems,
+        pasteboard suppliedPasteboard: NSPasteboard? = nil
+    ) -> ClipboardWriteResult {
+        let pasteboard = suppliedPasteboard ?? NSPasteboard.general
 
         let didWrite: Bool
         switch payload {
@@ -1084,40 +1099,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .richText(let rtfURL, let fallbackText):
             let rtfData = rtfURL.flatMap { try? Data(contentsOf: $0) }
-            pasteboard.clearContents()
+            let item = NSPasteboardItem()
             var wroteRichText = false
             if let rtfData, !rtfData.isEmpty {
-                wroteRichText = pasteboard.setData(rtfData, forType: .rtf)
-                wroteRichText = pasteboard.setData(
+                wroteRichText = item.setData(rtfData, forType: .rtf)
+                wroteRichText = item.setData(
                     rtfData,
                     forType: NSPasteboard.PasteboardType("public.rtf")
                 ) || wroteRichText
             }
-            let wroteString = pasteboard.setString(fallbackText, forType: .string)
-            didWrite = wroteRichText || wroteString
+            let wroteString = item.setString(fallbackText, forType: .string)
+            guard wroteRichText || wroteString else { return .failure(message: pasteUnsupportedReasonText("empty_text")) }
+            pasteboard.clearContents()
+            didWrite = pasteboard.writeObjects([item])
 
         case .imageFile(let url):
-            let sourceData = try? Data(contentsOf: url)
-            let sourceType = pasteboardImageType(for: url)
-            let image = NSImage(contentsOf: url)
-            let tiffData = image?.tiffRepresentation
-            guard sourceData != nil || tiffData != nil else {
-                return .failure(message: AppLocalization.text("copy.error.imageDataCannotWrite", defaultValue: "图片数据无法写入"))
+            let item = NSPasteboardItem()
+            switch writeImageRepresentations(to: item, url: url) {
+            case .failure(let message): return .failure(message: message)
+            case .success: break
             }
-
             pasteboard.clearContents()
-            var wroteImage = false
-            if let sourceData, let sourceType {
-                wroteImage = pasteboard.setData(sourceData, forType: sourceType.primary) || wroteImage
-                for alias in sourceType.aliases {
-                    wroteImage = pasteboard.setData(sourceData, forType: alias) || wroteImage
-                }
-            }
-
-            if let tiffData {
-                wroteImage = pasteboard.setData(tiffData, forType: .tiff) || wroteImage
-            }
-            didWrite = wroteImage
+            didWrite = pasteboard.writeObjects([item])
 
         case .fileURLs(let urls):
             guard !urls.isEmpty else {
@@ -1138,18 +1141,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return .failure(message: pasteUnsupportedReasonText("empty_selection"))
             }
 
-            let writableItemPayloads = pasteboardItemPayloadsForWrite(itemPayloads)
-            guard !writableItemPayloads.isEmpty else {
-                return .failure(message: pasteUnsupportedReasonText("unsupported_type"))
-            }
-
             var batch = PasteboardWritingBatch()
-            let compositeItem = shouldWriteCompositePasteboardItem(for: writableItemPayloads)
-                ? compositePasteboardItem(for: writableItemPayloads)
+            let compositeItem = composition == .compositeText
+                ? compositePasteboardItem(for: itemPayloads)
                 : nil
             let rawItemPayloads = compositeItem == nil
-                ? writableItemPayloads
-                : writableItemPayloads.filter(shouldPreserveRawPasteboardItemAlongsideComposite)
+                ? itemPayloads
+                : []
             for itemPayload in rawItemPayloads {
                 switch pasteboardWritingBatch(for: itemPayload) {
                 case .success(let itemBatch):
@@ -1248,7 +1246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         to pasteboardItem: NSPasteboardItem,
         url: URL
     ) -> PasteboardImageWriteResult {
-        let sourceData = try? Data(contentsOf: url)
+        let sourceData = (try? Data(contentsOf: url)).flatMap { $0.isEmpty ? nil : $0 }
         let sourceType = pasteboardImageType(for: url)
         let image = NSImage(contentsOf: url)
         let tiffData = image?.tiffRepresentation
@@ -1277,68 +1275,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pasteboardItem.setString(url.absoluteString, forType: .fileURL)
     }
 
-    private func pasteboardItemPayloadsForWrite(
-        _ itemPayloads: [ClipboardPasteboardItemPayload]
-    ) -> [ClipboardPasteboardItemPayload] {
-        guard itemPayloads.contains(where: hasImageRepresentation),
-              itemPayloads.contains(where: hasTextRepresentation) else {
-            return itemPayloads
-        }
-
-        return itemPayloads.filter(hasTextRepresentation)
-    }
-
-    private func hasTextRepresentation(_ itemPayload: ClipboardPasteboardItemPayload) -> Bool {
-        itemPayload.representations.contains { representation in
-            switch representation {
-            case .string, .rtf:
-                true
-            case .imageFile, .fileURL:
-                false
-            }
-        }
-    }
-
-    private func hasImageRepresentation(_ itemPayload: ClipboardPasteboardItemPayload) -> Bool {
-        itemPayload.representations.contains { representation in
-            switch representation {
-            case .imageFile:
-                true
-            case .string, .rtf, .fileURL:
-                false
-            }
-        }
-    }
-
-    private func shouldWriteCompositePasteboardItem(
-        for itemPayloads: [ClipboardPasteboardItemPayload]
-    ) -> Bool {
-        guard itemPayloads.count > 1 else { return false }
-
-        return itemPayloads.allSatisfy { itemPayload in
-            itemPayload.representations.allSatisfy { representation in
-                switch representation {
-                case .string, .rtf:
-                    true
-                case .imageFile, .fileURL:
-                    false
-                }
-            }
-        }
-    }
-
-    private func shouldPreserveRawPasteboardItemAlongsideComposite(
-        _ itemPayload: ClipboardPasteboardItemPayload
-    ) -> Bool {
-        itemPayload.representations.contains { representation in
-            switch representation {
-            case .fileURL:
-                true
-            case .string, .rtf, .imageFile:
-                false
-            }
-        }
-    }
 
     private func compositePasteboardItem(
         for itemPayloads: [ClipboardPasteboardItemPayload]
@@ -1540,7 +1476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func bootstrapLocalStorage() {
+    private func bootstrapLocalStorage() async {
         let bootstrapStart = ClipDockPerformanceLog.mark()
         let defaultAppSupportURL = FileManager.default.urls(
             for: .applicationSupportDirectory,
@@ -1568,24 +1504,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let maintenanceCoordinator else { return }
 
-        let openResult = ClipDockPerformanceLog.measure("storage.openCore") {
-            maintenanceCoordinator.openCore()
+        let openResult = await ClipDockPerformanceLog.measureAsync("storage.openCore") {
+            await maintenanceCoordinator.openCore()
         }
         switch openResult {
         case .success(let result):
             ClipDockPerformanceLog.event("storage.openCore.success", detail: "items=\(result.itemCount)")
             updateStorageStatus(AppLocalization.format("storage.status.connected", defaultValue: "存储：已连接（%lld 条）", result.itemCount))
-            ClipDockPerformanceLog.measure("preferences.load") {
-                loadPreferences()
+            let preferencesLoaded = await ClipDockPerformanceLog.measureAsync("preferences.load") {
+                await loadPreferences()
             }
-            ClipDockPerformanceLog.measure("storage.recoverPendingImages") {
-                _ = rustCoreClient.recoverPendingImages(
-                    appSupportDirectory: appSupportURL,
-                    request: RustRecoverPendingImagesRequest(ownerSessionId: imageCaptureSessionID)
-                )
+            guard preferencesLoaded, !Task.isCancelled else { return }
+            isStorageReady = true
+            await ClipDockPerformanceLog.measureAsync("storage.recoverPendingImages") {
+                let client = rustCoreClient
+                let request = RustRecoverPendingImagesRequest(ownerSessionId: imageCaptureSessionID)
+                _ = await databaseWorker.perform {
+                    client.recoverPendingImages(appSupportDirectory: appSupportURL, request: request)
+                }
             }
-            let maintenanceResult = ClipDockPerformanceLog.measure("storage.maintenance") {
-                runLocalMaintenance()
+            let maintenanceResult = await ClipDockPerformanceLog.measureAsync("storage.maintenance") {
+                await runLocalMaintenance()
             }
             ClipDockPerformanceLog.measure("pinboards.refresh") {
                 refreshPinboards()
@@ -1605,10 +1544,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func runLocalMaintenance() -> RustMaintenanceResult? {
+    private func runLocalMaintenance() async -> RustMaintenanceResult? {
         guard let maintenanceCoordinator else { return nil }
 
-        switch maintenanceCoordinator.runMaintenance() {
+        switch await maintenanceCoordinator.runMaintenance() {
         case .success(let result):
             return result
         case .failure(let error):
@@ -1625,51 +1564,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         maintenanceCoordinator?.statusText(result) ?? MaintenanceStatusPresenter.statusText(result)
     }
 
-    private func loadPreferences() {
-        guard let preferencesCoordinator else { return }
+    @discardableResult
+    private func loadPreferences() async -> Bool {
+        guard let preferencesCoordinator else { return false }
+        let generation = preferencesGeneration
 
-        switch preferencesCoordinator.load() {
+        switch await preferencesCoordinator.load() {
         case .success(let result):
-            applyPreferencesState(result, updatePreferencesController: true)
+            applyPreferencesState(result, updatePreferencesController: generation == preferencesGeneration)
             if let statusText = result.statusText {
                 updateStorageStatus(statusText)
             }
+            return true
 
         case .failure(let error):
             updateStorageStatus(AppLocalization.format("preferences.status.error", defaultValue: "偏好：%@", error.code))
+            return false
         }
     }
 
     private func refreshPinboards() {
         guard let appSupportURL else { return }
-
-        switch rustCoreClient.listPinboards(appSupportDirectory: appSupportURL) {
-        case .success(let result):
-            panelController.updatePinboards(result.pinboards)
-        case .failure(let error):
-            updateStorageStatus("Pinboard：\(error.code)")
+        pinboardsGeneration += 1
+        let generation = pinboardsGeneration
+        pinboardsRefreshTask?.cancel()
+        pinboardsRefreshTask = Task { [weak self, client = rustCoreClient, databaseWorker] in
+            let result = await databaseWorker.perform {
+                client.listPinboards(appSupportDirectory: appSupportURL)
+            }
+            guard !Task.isCancelled, let self, self.pinboardsGeneration == generation else { return }
+            self.pinboardsRefreshTask = nil
+            switch result {
+            case .success(let page):
+                self.panelController.updatePinboards(page.pinboards)
+            case .failure(let error):
+                self.updateStorageStatus("Pinboard：\(error.code)")
+            }
         }
     }
 
-    private func persistPreferences(_ preferences: RustPreferencesDocument) -> RustPreferencesDocument? {
+    private func enqueuePreferencesSave(_ patch: RustPreferencesPatch) {
+        guard !patch.isEmpty else { return }
+        preferencesGeneration += 1
+        let generation = preferencesGeneration
+        pendingPreferencePatches.append((generation, patch))
+        let previous = preferencesSaveTask
+        preferencesSaveTask = Task { @MainActor [weak self] in
+            await previous?.value
+            await self?.persistPreferences(patch, generation: generation)
+            if self?.preferencesGeneration == generation {
+                self?.preferencesSaveTask = nil
+            }
+        }
+    }
+
+    private func persistPreferences(_ patch: RustPreferencesPatch, generation: Int) async {
         guard let preferencesCoordinator else {
             updateStorageStatus(AppLocalization.text("preferences.status.storageUninitialized", defaultValue: "偏好：存储未初始化"))
-            return nil
+            return
         }
 
-        switch preferencesCoordinator.persist(preferences) {
+        switch await preferencesCoordinator.persist(patch: patch) {
         case .success(let result):
             applyPreferencesState(result, updatePreferencesController: false)
             if result.shouldRefreshList {
                 refreshClipboardList()
             }
             updateStorageStatus(result.statusText ?? AppLocalization.text("preferences.saved", defaultValue: "偏好：已保存"))
-            return result.preferences
 
         case .failure(let error):
             updateStorageStatus(AppLocalization.format("preferences.status.error", defaultValue: "偏好：%@", error.code))
-            return nil
+            preferencesController.updateLaunchAtLoginState(preferencesCoordinator.currentSceneSnapshot().launchAtLoginState)
         }
+        pendingPreferencePatches.removeAll { $0.generation == generation }
+        let display = pendingPreferencePatches.reduce(preferencesCoordinator.currentPreferences) { document, pending in
+            (try? pending.patch.applying(to: document)) ?? document
+        }
+        preferencesController.updatePreferences(display)
     }
 
     private func applyPreferencesState(
@@ -1765,21 +1736,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureClipboardCapture() {
-        clipboardMonitor.onTextCaptured = { [weak self] text, displayRichText, changeCount in
+        clipboardMonitor.capturePreflight = { [weak self] changeCount in
+            guard let self, isStorageReady, let captureCoordinator else { return nil }
+            let preferences = currentPreferences
+            let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
+            let decision = ClipboardIgnoreRuleEvaluator.decision(
+                for: source.map { ClipboardIgnoreRuleSource(bundleId: $0.bundleId, appName: $0.appName, bundlePath: $0.bundlePath) },
+                windowTitle: source?.windowTitle, preferences: preferences.ignoreList
+            )
+            if let skipped = captureCoordinator.preflightCapture(source: source, preferences: preferences, decision: decision) {
+                applyCaptureResult(skipped)
+            }
+            return ClipboardCaptureEventContext(changeCount: changeCount,
+                preferences: preferences, source: source, decision: decision)
+        }
+        clipboardMonitor.onTextCaptured = { [weak self] text, displayRichText, context in
             self?.captureClipboardText(
                 text,
                 displayRichText: displayRichText,
-                changeCount: changeCount
+                context: context
             )
         }
-        clipboardMonitor.onRichTextCaptured = { [weak self] richText, changeCount in
-            self?.captureClipboardRichText(richText, changeCount: changeCount)
+        clipboardMonitor.onRichTextCaptured = { [weak self] richText, context in
+            self?.captureClipboardRichText(richText, context: context)
         }
-        clipboardMonitor.onImageCaptured = { [weak self] image, changeCount in
-            self?.captureClipboardImage(image, changeCount: changeCount)
+        clipboardMonitor.onImageCaptured = { [weak self] image, context in
+            self?.captureClipboardImage(image, context: context)
         }
-        clipboardMonitor.onFilesCaptured = { [weak self] files, changeCount in
-            self?.captureClipboardFiles(files, changeCount: changeCount)
+        clipboardMonitor.onFilesCaptured = { [weak self] files, context in
+            self?.captureClipboardFiles(files, context: context)
         }
     }
 
@@ -1797,6 +1782,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if result.shouldRefreshList {
             panelController.resetFiltersForCapturedItem()
+            panelController.invalidateCachedListPages()
             listCoordinator?.updateQuery(
                 searchText: "",
                 itemType: nil,
@@ -1811,36 +1797,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func captureClipboardText(
         _ text: String,
         displayRichText: ClipboardCapturedRichText? = nil,
-        changeCount: Int
+        context: ClipboardCaptureEventContext
     ) {
-        guard let captureCoordinator else {
-            return
-        }
-
-        let preferences = currentPreferences
-        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
-        if let skipResult = captureCoordinator.preflightCapture(
-            source: source,
-            preferences: preferences
-        ) {
-            applyCaptureResult(skipResult)
-            return
-        }
+        guard captureCoordinator != nil else { return }
+        let preferences = context.preferences
+        let source = context.source
+        let changeCount = context.changeCount
+        let decision = context.decision
         playExternalCopySoundIfEnabled()
 
-        enqueueCaptureRegistration { [weak self, text, displayRichText, changeCount, preferences, source] in
+        enqueueCaptureRegistration { [weak self, text, displayRichText, changeCount, preferences, source, decision] in
             guard let self,
                   let captureCoordinator = self.captureCoordinator
             else {
                 return
             }
 
-            let result = captureCoordinator.captureText(
+            let result = await captureCoordinator.captureText(
                 text,
                 displayRichText: displayRichText,
                 changeCount: changeCount,
                 preferences: preferences,
-                source: source
+                source: source,
+                frozenDecision: decision
             )
             self.applyCaptureResult(result)
             if result.shouldRefreshList {
@@ -1851,56 +1830,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func captureClipboardRichText(_ richText: ClipboardCapturedRichText, changeCount: Int) {
-        guard let captureCoordinator else {
-            return
-        }
-
-        let preferences = currentPreferences
-        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
-        if let skipResult = captureCoordinator.preflightCapture(
-            source: source,
-            preferences: preferences
-        ) {
-            applyCaptureResult(skipResult)
-            return
-        }
+    private func captureClipboardRichText(_ richText: ClipboardCapturedRichText, context: ClipboardCaptureEventContext) {
+        guard captureCoordinator != nil else { return }
+        let preferences = context.preferences
+        let source = context.source
+        let changeCount = context.changeCount
+        let decision = context.decision
         playExternalCopySoundIfEnabled()
 
-        enqueueCaptureRegistration { [weak self, richText, changeCount, preferences, source] in
+        enqueueCaptureRegistration { [weak self, richText, changeCount, preferences, source, decision] in
             guard let self,
                   let captureCoordinator = self.captureCoordinator
             else {
                 return
             }
 
-            let result = captureCoordinator.captureRichText(
+            let result = await captureCoordinator.captureRichText(
                 richText,
                 changeCount: changeCount,
                 preferences: preferences,
-                source: source
+                source: source,
+                frozenDecision: decision
             )
             self.applyCaptureResult(result)
         }
     }
 
-    private func captureClipboardImage(_ image: CapturedClipboardImage, changeCount: Int) {
-        guard let captureCoordinator else {
-            return
-        }
-
-        let preferences = currentPreferences
-        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
-        if let skipResult = captureCoordinator.preflightCapture(
-            source: source,
-            preferences: preferences
-        ) {
-            applyCaptureResult(skipResult)
-            return
-        }
+    private func captureClipboardImage(_ image: CapturedClipboardImage, context: ClipboardCaptureEventContext) {
+        guard captureCoordinator != nil else { return }
+        let preferences = context.preferences
+        let source = context.source
+        let changeCount = context.changeCount
+        let decision = context.decision
         playExternalCopySoundIfEnabled()
 
-        enqueueCaptureRegistration { [weak self, image, changeCount, preferences, source] in
+        enqueueCaptureRegistration { [weak self, image, changeCount, preferences, source, decision] in
             guard let self,
                   let imageAssetProvider = self.imageAssetProvider
             else {
@@ -1924,12 +1888,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                let captureResult = captureCoordinator.capturePendingImage(
+                let captureResult = await captureCoordinator.capturePendingImage(
                     pendingImage.pendingImage,
                     changeCount: changeCount,
                     preferences: preferences,
                     source: source,
-                    ownerSessionID: self.imageCaptureSessionID
+                    ownerSessionID: self.imageCaptureSessionID,
+                    frozenDecision: decision
                 )
                 switch captureResult {
                 case .success(let pendingCapture):
@@ -1986,12 +1951,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch payloadResult {
             case .success(let payload):
-                switch captureCoordinator.completePendingImagePayload(payload.completedImage) {
+                switch await captureCoordinator.completePendingImagePayload(payload.completedImage) {
                 case .success(let result):
                     self.applyCaptureResult(self.captureHandlingResult(for: result))
 
                 case .failure(let error):
-                    self.failPendingImageCompletion(
+                    await self.failPendingImageCompletion(
                         jobID: pendingCapture.jobId,
                         stagedPayloadRelativePath: pendingImage.pendingImage.stagedPayloadRelativePath,
                         failureCode: error.code
@@ -1999,7 +1964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
             case .failure(let error):
-                self.failPendingImageCompletion(
+                await self.failPendingImageCompletion(
                     jobID: pendingCapture.jobId,
                     stagedPayloadRelativePath: pendingImage.pendingImage.stagedPayloadRelativePath,
                     failureCode: "\(error)"
@@ -2012,10 +1977,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         jobID: String,
         stagedPayloadRelativePath: String,
         failureCode: String
-    ) {
+    ) async {
         guard let captureCoordinator else { return }
 
-        switch captureCoordinator.failPendingImagePayload(
+        switch await captureCoordinator.failPendingImagePayload(
             jobID: jobID,
             stagedPayloadRelativePath: stagedPayloadRelativePath,
             failureCode: failureCode
@@ -2046,19 +2011,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func captureClipboardFiles(_ files: CapturedClipboardFiles, changeCount: Int) {
-        let preferences = currentPreferences
-        let source = sourceApplicationTracker.currentSource()?.clipboardCaptureSource
-        if let skipResult = captureCoordinator?.preflightCapture(
-            source: source,
-            preferences: preferences
-        ) {
-            applyCaptureResult(skipResult)
-            return
-        }
+    private func captureClipboardFiles(_ files: CapturedClipboardFiles, context: ClipboardCaptureEventContext) {
+        guard captureCoordinator != nil else { return }
+        let preferences = context.preferences
+        let source = context.source
+        let changeCount = context.changeCount
+        let decision = context.decision
         playExternalCopySoundIfEnabled()
 
-        enqueueCaptureRegistration { [weak self, files, changeCount, preferences, source] in
+        enqueueCaptureRegistration { [weak self, files, changeCount, preferences, source, decision] in
             var enrichedFiles = await Task.detached(priority: .utility) {
                 await files.collectingMetadata()
             }.value
@@ -2076,11 +2037,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             enrichedFiles = enrichedFiles.withPreview(preview)
             guard !Task.isCancelled else { return }
 
-            let captureResult = captureCoordinator.captureFiles(
+            let captureResult = await captureCoordinator.captureFiles(
                 enrichedFiles.clipboardCapturedFiles,
                 changeCount: changeCount,
                 preferences: preferences,
-                source: source
+                source: source,
+                frozenDecision: decision
             )
             self.applyCaptureResult(captureResult)
         }
@@ -2471,7 +2433,9 @@ extension AppDelegate {
     }
 
     func smokeCaptureClipboardText(_ text: String, changeCount: Int64) {
-        captureClipboardText(text, changeCount: Int(changeCount))
+        guard let context = clipboardMonitor.capturePreflight?(Int(changeCount)),
+              !context.decision.shouldSkip else { return }
+        captureClipboardText(text, context: context)
     }
 
     func smokeApplyCaptureResultForRealFunctionQA(_ result: ClipboardCaptureHandlingResult) {
@@ -2518,8 +2482,8 @@ extension AppDelegate {
         _ = applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false)
     }
 
-    func smokeLoadPreferencesForRealFunctionQA() {
-        loadPreferences()
+    func smokeLoadPreferencesForRealFunctionQA() async {
+        await loadPreferences()
     }
 
     func smokeDeleteGlobalItemForRealFunctionQA(_ item: RustClipboardItemSummary) {
@@ -2581,6 +2545,13 @@ extension AppDelegate {
             return true
         case .failure:
             return false
+        }
+    }
+
+    func smokeWriteCopyPlan(_ plan: ClipboardCopyPlan, to pasteboard: NSPasteboard) -> Bool {
+        switch writeClipboardPayload(plan.payloadForWriting(), token: "isolated-test", composition: plan.composition, pasteboard: pasteboard) {
+        case .success: return true
+        case .failure: return false
         }
     }
 

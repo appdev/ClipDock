@@ -24,18 +24,13 @@ import type { LucideIcon } from "lucide-react";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Effect } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { panelItems, pinboardFilters as demoPinboards, typeFilters } from "./panel/panelData";
 import {
-  clipboardCaptureDecision,
   clipboardPayloadForItem,
-  clipboardSnapshotToPanelItem,
-  readClipboardSnapshot,
-  writeClipboardImage,
   writeClipboardText
 } from "./panel/clipboardCapture";
-import type { ClipboardSnapshot } from "./panel/clipboardCapture";
+import { cancelPendingClipboardCopy, copyNativeText, copyStoredItem, panelCopyIntents } from "./panel/copyIntent";
 import {
   clampedPanelHeight,
   itemSideLength,
@@ -49,10 +44,13 @@ import {
   togglePinnedItem
 } from "./panel/panelInteractions";
 import { applyResolvedPanelAssets, resolvePanelNativeAssets } from "./panel/nativeAssets";
-import { loadStoredPanelItems, loadStoredPinboards, mergeLoadedPanelItems } from "./panel/panelStore";
 import { CardTitleEditor } from "./panel/CardTitleEditor";
 import { CardRenameQueue, matchesRenameShortcut, normalizedCardTitle, persistCardTitle } from "./panel/cardRename";
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Effect } from "@tauri-apps/api/window";
+import { useHistory } from "./panel/useHistory";
+import { useVirtualRail } from "./panel/useVirtualRail";
+import { cardOffset, mountedCardIndices, railWidth } from "./panel/virtualRail";
+import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import type { ClipItem, ClipKind, SourceKind } from "./panel/panelTypes";
 import { PreferencesApp } from "./preferences/PreferencesApp";
 import {
@@ -85,12 +83,6 @@ const kindLabels: Record<ClipKind, string> = {
   richText: "富文本"
 };
 
-declare global {
-  interface Window {
-    __clipdockHandleClipboardSnapshot?: (snapshot: ClipboardSnapshot) => void;
-  }
-}
-
 type PanelContextMenuState = {
   itemId: string;
   x: number;
@@ -110,19 +102,23 @@ export default function App() {
 }
 
 function PanelApp() {
-  const { preferences } = usePreferences();
+  const { preferences, error: preferencesError } = usePreferences();
+  const native = isTauri();
   const [activeType, setActiveType] = useState<(typeof typeFilters)[number]["id"]>("all");
   const [activePinboard, setActivePinboard] = useState<string | null>(null);
-  const [pinboardFilters, setPinboardFilters] = useState(isTauri() ? [] : demoPinboards);
-  const [backupRevision, setBackupRevision] = useState(0);
-  const [items, setItems] = useState(isTauri() ? [] : panelItems);
+  const [demoItems, setItems] = useState(panelItems);
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const renameQueue = useRef(new CardRenameQueue(persistCardTitle));
-  const deletedItemIds = useRef(new Set<string>());
-  const [searchRevision, setSearchRevision] = useState(0);
-  const [storedSearch, setStoredSearch] = useState<{ query: string; pinboardId: string | null; matches: ClipItem[] } | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchText.trim()), 180);
+    return () => window.clearTimeout(timer);
+  }, [searchText]);
+  const history = useHistory({ itemType: activeType === "all" ? null : activeType, pinboardId: activePinboard, searchText: debouncedSearch });
+  const items = native ? history.items : demoItems;
+  const pinboardFilters = native ? history.pinboards : demoPinboards;
   const [selectedItemId, setSelectedItemId] = useState(panelItems[0]?.id ?? "");
   const [panelHeight, setPanelHeight] = useState<number>(panelGeometry.defaultHeight);
   const [quickAccessMode, setQuickAccessMode] = useState(false);
@@ -130,54 +126,67 @@ function PanelApp() {
   const [toast, setToast] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const cardRailRef = useRef<HTMLDivElement | null>(null);
-  const capturedClipboardKeysRef = useRef<Set<string>>(new Set());
-  const selfWriteClipboardKeyRef = useRef<string | null>(null);
-  const clipboardPollInFlightRef = useRef(false);
+  const mutationInFlight = useRef(false);
+  const thumbnailQueue = useRef<string[]>([]);
+  const thumbnailVisible = useRef(new Set<string>());
+  const thumbnailInFlight = useRef<string | null>(null);
+  const thumbnailAlive = useRef(true);
+  useEffect(() => { thumbnailAlive.current = true; return () => { thumbnailAlive.current = false; thumbnailQueue.current = []; }; }, []);
+  useEffect(() => {
+    const onVisibilityChanged = () => { if (document.hidden) cancelPendingClipboardCopy(); };
+    document.addEventListener("visibilitychange", onVisibilityChanged);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChanged);
+      cancelPendingClipboardCopy();
+    };
+  }, []);
 
   const filteredItems = useMemo(() => {
+    if (native) return items;
     const normalizedSearch = searchText.trim().toLocaleLowerCase();
-    const nativeMatches = storedSearch?.query === searchText && storedSearch.pinboardId === activePinboard ? storedSearch.matches : [];
-    const nativeIds = new Set(nativeMatches.map((item) => item.id));
-    const candidates = [
-      ...items,
-      ...nativeMatches.filter((match) => !items.some((item) => item.id === match.id))
-    ];
-    return sortedPanelItemsForDisplay(candidates).filter((item) => {
-      if (deletedItemIds.current.has(item.id)) return false;
+    return sortedPanelItemsForDisplay(items).filter((item) => {
       const typeMatches = activeType === "all" || item.kind === activeType;
-      const pinboardMatches = !activePinboard || (isTauri() ? nativeIds.has(item.id) : item.pinboardIds.includes(activePinboard));
+      const pinboardMatches = !activePinboard || item.pinboardIds.includes(activePinboard);
       const textMatches =
         normalizedSearch.length === 0 ||
-        nativeIds.has(item.id) || item.id === renamingItemId ||
         [item.customTitle, item.typeLabel, item.title, item.summary, item.footer, item.sourceName]
           .join(" ")
           .toLocaleLowerCase()
           .includes(normalizedSearch);
       return typeMatches && pinboardMatches && textMatches;
     });
-  }, [activePinboard, activeType, items, searchText, storedSearch, renamingItemId]);
+  }, [activePinboard, activeType, items, searchText, native]);
+
+  const itemSide = itemSideLength(panelHeight);
+  const rail = useVirtualRail(cardRailRef, filteredItems.length, itemSide);
+  const visibleItems = filteredItems.slice(rail.start, rail.end);
+  const mountedIndices = mountedCardIndices(filteredItems.length, rail.start, rail.end,
+    filteredItems.findIndex((item) => item.id === renamingItemId));
+  const visibleImageIds = visibleItems.filter((item) => item.kind === "image" && !item.preview?.imageAssetUrl).map((item) => item.id).join(",");
+  useEffect(() => {
+    const ids = visibleImageIds ? visibleImageIds.split(",") : [];
+    thumbnailVisible.current = new Set(ids);
+    thumbnailQueue.current = ids.filter((id) => id !== thumbnailInFlight.current);
+    if (!native || thumbnailInFlight.current) return;
+    void (async () => {
+      while (thumbnailAlive.current && thumbnailQueue.current.length > 0) {
+        const itemId = thumbnailQueue.current.shift()!;
+        thumbnailInFlight.current = itemId;
+        try {
+          const result = await invoke<{ itemId: string; path: string | null }>("ensure_image_thumbnail", { itemId });
+          if (thumbnailAlive.current && thumbnailVisible.current.has(itemId) && result.path) history.controller.updateItem(itemId, (item) => ({ ...item, preview: { ...item.preview, imageAssetUrl: convertFileSrc(result.path!) } }));
+        } catch { /* Keep the placeholder; retry when the card becomes visible again. */ }
+        finally { thumbnailInFlight.current = null; }
+      }
+    })();
+  }, [native, visibleImageIds, history.controller]);
 
   useEffect(() => {
-    if ((!searchText.trim() && !activePinboard) || !isTauri()) return;
-    let cancelled = false;
-    void loadStoredPanelItems(100, searchText, activePinboard ?? undefined).then((matches) => {
-      if (!cancelled) setStoredSearch({ query: searchText, pinboardId: activePinboard, matches });
-    }).catch(() => {
-      if (!cancelled) setStoredSearch(null);
-    });
-    return () => { cancelled = true; };
-  }, [searchText, searchRevision, activePinboard, backupRevision]);
+    if (native && history.revision >= 0 && !history.refreshing && activePinboard && !pinboardFilters.some((board) => board.id === activePinboard)) setActivePinboard(null);
+  }, [activePinboard, history.revision, history.refreshing, native, pinboardFilters]);
 
   useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    void loadStoredPinboards().then((boards) => {
-      if (!cancelled) setPinboardFilters(boards);
-    }).catch((error) => console.error("Failed to load pinboards", error));
-    return () => { cancelled = true; };
-  }, [backupRevision]);
-
-  useEffect(() => {
+    if (native) return;
     let cancelled = false;
     resolvePanelNativeAssets(panelItems)
       .then((nextItems) => {
@@ -194,36 +203,9 @@ function PanelApp() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const atLoad = items;
-    loadStoredPanelItems()
-      .then((storedItems) => {
-        if (cancelled || !isTauri()) {
-          return;
-        }
-        // Preserve captures and edits that arrived while the initial page loaded.
-        setItems((current) => mergeLoadedPanelItems(current, storedItems, atLoad));
-        setSelectedItemId(storedItems[0]?.id ?? "");
-      })
-      .catch((error) => {
-        console.error("Failed to load stored clipboard history", error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [backupRevision]);
-
-  useEffect(() => {
+    if (!native) return;
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
-    listen("clipdock://backup-imported", () => {
-      deletedItemIds.current.clear();
-      setStoredSearch(null);
-      setBackupRevision((revision) => revision + 1);
-    }).then((unlisten) => {
-      if (cancelled) unlisten();
-      else unlisteners.push(unlisten);
-    }).catch((error) => console.error("Failed to listen for backup imports", error));
     listen("clipdock://open-preferences", () => {
       void openPreferencesWindow();
     })
@@ -246,130 +228,6 @@ function PanelApp() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const clipboardHandler = (snapshot: ClipboardSnapshot) => {
-      captureClipboardSnapshot(snapshot);
-    };
-    window.__clipdockHandleClipboardSnapshot = clipboardHandler;
-    const onNativeClipboardChange = (event: Event) => {
-      const snapshot = (event as CustomEvent<ClipboardSnapshot>).detail;
-      captureClipboardSnapshot(snapshot);
-    };
-    window.addEventListener("clipdock-native-clipboard-changed", onNativeClipboardChange);
-    return () => {
-      if (window.__clipdockHandleClipboardSnapshot === clipboardHandler) {
-        delete window.__clipdockHandleClipboardSnapshot;
-      }
-      window.removeEventListener("clipdock-native-clipboard-changed", onNativeClipboardChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    let unlisten: (() => void) | null = null;
-
-    listen<ClipboardSnapshot>("clipboard-changed", (event) => {
-      if (!cancelled) {
-        captureClipboardSnapshot(event.payload);
-      }
-    })
-      .then((nextUnlisten) => {
-        if (cancelled) {
-          nextUnlisten();
-          return;
-        }
-        unlisten = nextUnlisten;
-      })
-      .catch((error) => {
-        console.error("Failed to subscribe clipboard changes", error);
-      });
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const pollClipboard = async () => {
-      if (clipboardPollInFlightRef.current) {
-        return;
-      }
-      clipboardPollInFlightRef.current = true;
-      try {
-        const snapshot = await readClipboardSnapshot();
-        if (cancelled) {
-          return;
-        }
-        captureClipboardSnapshot(snapshot);
-      } catch (error) {
-        console.error("Failed to read clipboard snapshot", error);
-      } finally {
-        clipboardPollInFlightRef.current = false;
-      }
-    };
-
-    void pollClipboard();
-    const timer = window.setInterval(() => {
-      void pollClipboard();
-    }, 900);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  function captureClipboardSnapshot(snapshot: ClipboardSnapshot | null) {
-    // The native monitor emits the persisted record. Raw polling snapshots have
-    // temporary ids and must not race the durable event into the dedup set.
-    if (isTauri() && !snapshot?.storedItem) return;
-    const decision = clipboardCaptureDecision(
-      snapshot,
-      capturedClipboardKeysRef.current,
-      selfWriteClipboardKeyRef.current
-    );
-    if (!snapshot || !decision.shouldCapture) {
-      if (decision.reason === "self-write" && snapshot?.changeKey) {
-        capturedClipboardKeysRef.current.add(snapshot.changeKey);
-        selfWriteClipboardKeyRef.current = null;
-      }
-      return;
-    }
-
-    const nextItem = clipboardSnapshotToPanelItem(
-      snapshot,
-      String(capturedClipboardKeysRef.current.size + 1)
-    );
-    capturedClipboardKeysRef.current.add(snapshot.changeKey);
-    if (!nextItem) {
-      return;
-    }
-
-    setActiveType("all");
-    setActivePinboard(null);
-    setSearchText("");
-    setContextMenu(null);
-    setSelectedItemId(nextItem.id);
-    setItems((currentItems) => {
-      if (currentItems.some((item) => item.id === nextItem.id)) {
-        return currentItems;
-      }
-      return [nextItem, ...currentItems];
-    });
-    showPanelShortcutToast(`已捕获 · ${kindLabels[nextItem.kind]} · ${nextItem.title}`);
-
-    if (nextItem.kind === "link") {
-      void resolvePanelNativeAssets([nextItem])
-        .then((resolvedItems) => {
-          setItems((currentItems) => applyResolvedPanelAssets(currentItems, resolvedItems));
-        })
-        .catch((error) => {
-          console.error("Failed to resolve captured link assets", error);
-        });
-    }
-  }
 
   useEffect(() => {
     if (!contextMenu) {
@@ -396,6 +254,11 @@ function PanelApp() {
   }, [filteredItems, selectedItemId]);
 
   useEffect(() => {
+    const index = filteredItems.findIndex((item) => item.id === selectedItemId);
+    if (index >= 0) rail.scrollToIndex(index);
+  }, [selectedItemId]);
+
+  useEffect(() => {
     if (searchVisible) {
       searchInputRef.current?.focus();
     }
@@ -411,6 +274,7 @@ function PanelApp() {
       const isTextEntry =
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
         target?.isContentEditable === true;
       if (isTextEntry && event.key !== "Escape" && !matchesSearchShortcut(event)) {
         return;
@@ -482,8 +346,10 @@ function PanelApp() {
             filteredItems.length - 1
           );
           setSelectedItemId(filteredItems[nextIndex].id);
+          if (native && offset > 0 && nextIndex === filteredItems.length - 1) void history.controller.loadMore();
         }
       } else if (event.key === "Escape") {
+        cancelPendingClipboardCopy();
         if (contextMenu) {
           setContextMenu(null);
           return;
@@ -515,7 +381,6 @@ function PanelApp() {
   }, [
     filteredItems,
     contextMenu,
-    pinboardFilters,
     preferences.appearance.previewPopoverEnabled,
     preferences.shortcuts,
     searchText,
@@ -538,8 +403,6 @@ function PanelApp() {
     };
   }, [preferences.shortcuts.quickPasteModifier]);
 
-  const itemSide = itemSideLength(panelHeight);
-
   function showCopyToast(item: ClipItem, prefix = "已复制") {
     setToast(`${prefix} · ${kindLabels[item.kind]} · ${item.title}`);
     window.setTimeout(() => {
@@ -548,6 +411,18 @@ function PanelApp() {
   }
 
   async function copyItemToClipboard(item: ClipItem, prefix = "已复制") {
+    const intent = panelCopyIntents.begin();
+    if (native) {
+      try {
+        const result = await copyStoredItem(item.id, intent);
+        if (!panelCopyIntents.isCurrent(intent) || result.status === "superseded") return;
+        if (result.record_warning) showPanelShortcutToast(`已复制；历史记录更新失败 · ${item.title}`);
+        else showCopyToast(item, prefix);
+      } catch {
+        if (panelCopyIntents.isCurrent(intent)) showPanelShortcutToast(`复制失败 · ${item.title}`);
+      }
+      return;
+    }
     const payload = clipboardPayloadForItem(item);
     if (!payload) {
       showPanelShortcutToast(`无法复制 · ${item.title}`);
@@ -555,15 +430,8 @@ function PanelApp() {
     }
 
     try {
-      const changeKey =
-        payload.kind === "image"
-          ? await writeClipboardImage(payload.imagePath)
-          : await writeClipboardText(payload.text);
-      if (changeKey) {
-        capturedClipboardKeysRef.current.add(changeKey);
-        selfWriteClipboardKeyRef.current = changeKey;
-      }
-      showCopyToast(item, prefix);
+      if (payload.kind === "text") await writeClipboardText(payload.text);
+      if (panelCopyIntents.isCurrent(intent)) showCopyToast(item, prefix);
     } catch (error) {
       console.error("Failed to write clipboard item", error);
       showPanelShortcutToast(`复制失败 · ${item.title}`);
@@ -593,22 +461,28 @@ function PanelApp() {
     });
   }
 
-  function addItem() {
+  async function addItem() {
     const [nextItem] = addPanelItem(items);
     setActiveType("all");
     setActivePinboard(null);
     setSearchText("");
     setContextMenu(null);
-    setItems((currentItems) => [nextItem, ...currentItems]);
-    setSelectedItemId(nextItem.id);
-    showPanelShortcutToast(`新增 · ${nextItem.title}`);
+    if (native) {
+      try {
+        await invoke("capture_clipboard_text", { text: nextItem.summary, sourceAppName: "ClipDock" });
+        history.controller.refresh();
+        showPanelShortcutToast(`新增 · ${nextItem.title}`);
+      } catch { showPanelShortcutToast("新增失败，请重试"); }
+    } else {
+      setItems((currentItems) => [nextItem, ...currentItems]);
+      setSelectedItemId(nextItem.id);
+      showPanelShortcutToast(`新增 · ${nextItem.title}`);
+    }
   }
 
   function beginRename(item: ClipItem) {
     setContextMenu(null);
     setSelectedItemId(item.id);
-    // Search can return records outside the initial history page.
-    setItems((current) => current.some((entry) => entry.id === item.id) ? current : [...current, item]);
     setRenamingItemId(item.id);
   }
 
@@ -616,41 +490,47 @@ function PanelApp() {
     const title = normalizedCardTitle(draft);
     if (title !== (item.customTitle ?? null)) {
       void renameQueue.current.save(item.id, item.customTitle ?? null, title,
-        (customTitle) => setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, customTitle } : entry)),
+        (customTitle) => {
+          if (native) history.controller.updateItem(item.id, (entry) => ({ ...entry, customTitle }));
+          else setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, customTitle } : entry));
+        },
         () => showPanelShortcutToast("重命名失败，已恢复原名称")
-      ).then(() => setSearchRevision((value) => value + 1));
+      ).then(() => { if (native) history.controller.refresh(); });
     }
     setRenamingItemId(null);
   }
 
-  function deleteItem(item: ClipItem) {
-    // A search response may have been read before the deletion reached storage.
-    deletedItemIds.current.add(item.id);
-    setItems((currentItems) => deletePanelItem(currentItems, item.id));
-    setStoredSearch((current) => current ? { ...current, matches: current.matches.filter((match) => match.id !== item.id) } : null);
+  async function deleteItem(item: ClipItem) {
+    if (mutationInFlight.current) return;
     setContextMenu(null);
-    showPanelShortcutToast(`已删除 · ${item.title}`);
-
-    // Persist the deletion to the database (best-effort). Only items that
-    // originate from storage carry a database id; locally seeded demo items
-    // are ignored by the backend.
-    if (isTauri()) {
-      void invoke("delete_clipboard_item", { itemId: item.id }).catch((error) => {
-        console.error("Failed to delete clipboard item from database", error);
-      });
-    }
+    if (!native) { setItems((current) => deletePanelItem(current, item.id)); return; }
+    mutationInFlight.current = true;
+    try {
+      const result = activePinboard
+        ? await invoke<{ affected_count: number }>("set_item_pinboard_membership", { itemId: item.id, pinboardId: activePinboard, isMember: false })
+        : await invoke<{ affected_count: number }>("delete_clipboard_item", { itemId: item.id });
+      history.controller.refresh();
+      showPanelShortcutToast(result.affected_count > 0 ? `${activePinboard ? "已从 Pinboard 移除" : "已从历史删除"} · ${item.title}` : "项目已不存在，列表已刷新");
+    } catch { showPanelShortcutToast("删除失败，请重试"); }
+    finally { mutationInFlight.current = false; }
   }
 
-  function toggleItemPinned(item: ClipItem) {
-    setItems((currentItems) => togglePinnedItem(currentItems, item.id));
-    setStoredSearch((current) => current
-      ? { ...current, matches: togglePinnedItem(current.matches, item.id) }
-      : null);
+  async function toggleItemPinned(item: ClipItem) {
+    if (mutationInFlight.current) return;
     setContextMenu(null);
-    showPanelShortcutToast(`${item.isPinned ? "取消固定" : "已固定"} · ${item.title}`);
+    if (!native) { setItems((current) => togglePinnedItem(current, item.id)); return; }
+    const isMember = !item.pinboardIds.includes("default");
+    mutationInFlight.current = true;
+    try {
+      const result = await invoke<{ affected_count: number }>("set_item_pinboard_membership", { itemId: item.id, pinboardId: "default", isMember });
+      history.controller.refresh();
+      showPanelShortcutToast(result.affected_count > 0 ? `${isMember ? "已固定" : "取消固定"} · ${item.title}` : "项目已不存在，列表已刷新");
+    } catch { showPanelShortcutToast("固定操作失败，请重试"); }
+    finally { mutationInFlight.current = false; }
   }
 
   function copyClipboardDiagnostics() {
+    const intent = panelCopyIntents.begin();
     const diagnosticsReport = generateClipboardDiagnostics(filteredItems);
     const payload = clipboardPayloadForItem({
       id: "diagnostics",
@@ -675,13 +555,14 @@ function PanelApp() {
       return;
     }
 
-    void writeClipboardText(payload.text)
-      .then(() => {
+    void (native ? copyNativeText(payload.text, intent) : writeClipboardText(payload.text))
+      .then((result) => {
+        if (!panelCopyIntents.isCurrent(intent) || result?.status === "superseded") return;
         showPanelShortcutToast("已复制诊断信息");
       })
       .catch((error) => {
         console.error("Failed to copy diagnostics", error);
-        showPanelShortcutToast("复制诊断信息失败");
+        if (panelCopyIntents.isCurrent(intent)) showPanelShortcutToast("复制诊断信息失败");
       });
   }
 
@@ -758,6 +639,9 @@ function PanelApp() {
                 </button>
               )}
             </div>
+            <select className="content-type-select" aria-label="内容类型筛选" value={activeType} onChange={(event) => setActiveType(event.target.value as typeof activeType)}>
+              {typeFilters.map((filter) => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
+            </select>
           </div>
 
           <div className="pinboard-strip" aria-label="Pinboard 分类">
@@ -807,34 +691,51 @@ function PanelApp() {
 
         <div
           ref={cardRailRef}
-          className="card-rail"
+          className="card-rail is-virtual"
           data-testid="panel-card-rail"
+          role="listbox"
+          tabIndex={0}
           aria-label="剪贴项目列表"
+          aria-busy={native && (history.refreshing || history.loadingMore)}
+          aria-activedescendant={visibleItems.some((item) => item.id === selectedItemId) ? `card-${selectedItemId}` : undefined}
+          onScroll={() => setContextMenu(null)}
         >
           {filteredItems.length === 0 ? (
-            <EmptyState />
+            native && history.refreshing ? <div role="status">正在加载…</div> : <EmptyState />
           ) : (
-            filteredItems.map((item, index) => (
-              <PanelCard
-                key={item.id}
-                item={item}
-                commandIndex={String(index + 1)}
-                selected={item.id === selectedItemId}
-                renaming={item.id === renamingItemId}
-                onRenameSave={(draft) => saveRename(item, draft)}
-                onRenameCancel={() => setRenamingItemId(null)}
-                onSelect={() => setSelectedItemId(item.id)}
-                onCopy={() => void copyItemToClipboard(item)}
-                onOpenContextMenu={(event) => openCardContextMenu(event, item)}
-              />
-            ))
+            <div className="virtual-card-canvas" style={{ width: railWidth(filteredItems.length, itemSide), height: itemSide }}>
+              {mountedIndices.map((index) => {
+                const item = filteredItems[index];
+                return <div className="virtual-card-slot" key={item.id} style={{ left: cardOffset(index, itemSide), width: itemSide }}>
+                  <PanelCard
+                    item={item}
+                    commandIndex={String(index + 1)}
+                    totalCount={native ? history.totalCount : filteredItems.length}
+                    selected={item.id === selectedItemId}
+                    renaming={item.id === renamingItemId}
+                    onRenameSave={(draft) => saveRename(item, draft)}
+                    onRenameCancel={() => setRenamingItemId(null)}
+                    onSelect={() => { setSelectedItemId(item.id); cardRailRef.current?.focus({ preventScroll: true }); }}
+                    onCopy={() => void copyItemToClipboard(item)}
+                    onOpenContextMenu={(event) => openCardContextMenu(event, item)}
+                  />
+                </div>;
+              })}
+            </div>
           )}
         </div>
+        {native && (preferencesError || history.error || history.captureError || history.hasMore || history.refreshing) && <div className="history-status" role="status">
+          {preferencesError && <span>{preferencesError}</span>}
+          {history.captureError && <span>{history.captureError}</span>}
+          {history.error && <><span>{history.error}</span><button onClick={() => history.controller.refresh()}>重试</button></>}
+          {!history.error && history.refreshing && <span>正在更新…</span>}
+          {!history.refreshing && history.hasMore && <button disabled={history.loadingMore} onClick={() => void history.controller.loadMore()}>{history.loadingMore ? "正在加载…" : `加载更多（${history.items.length} / ${history.totalCount}）`}</button>}
+        </div>}
 
         {contextMenu && (
           <PanelContextMenu
             state={contextMenu}
-            item={filteredItems.find((item) => item.id === contextMenu.itemId) ?? null}
+            item={items.find((item) => item.id === contextMenu.itemId) ?? null}
             onCopy={(item) => {
               setContextMenu(null);
               void copyItemToClipboard(item);
@@ -843,6 +744,8 @@ function PanelApp() {
             onTogglePinned={toggleItemPinned}
             onDelete={deleteItem}
             onRename={beginRename}
+            pinLabel={native ? (items.find((item) => item.id === contextMenu.itemId)?.pinboardIds.includes("default") ? "取消固定" : "固定") : undefined}
+            deleteLabel={activePinboard ? "从此 Pinboard 移除" : "从历史删除"}
           />
         )}
 
@@ -905,6 +808,7 @@ async function openPreferencesWindow() {
 }
 
 async function hidePanelWindow(window: WebviewWindow) {
+  cancelPendingClipboardCopy();
   try {
     await window.hide();
   } catch (error) {
@@ -939,6 +843,7 @@ function FilterStrip({
 function PanelCard({
   item,
   commandIndex,
+  totalCount,
   selected,
   renaming,
   onRenameSave,
@@ -949,6 +854,7 @@ function PanelCard({
 }: {
   item: ClipItem;
   commandIndex: string;
+  totalCount: number;
   selected: boolean;
   renaming: boolean;
   onRenameSave: (draft: string) => void;
@@ -966,7 +872,12 @@ function PanelCard({
       onContextMenu={onOpenContextMenu}
       data-testid={`panel-card-${item.id}`}
       aria-label={`${item.customTitle ?? item.typeLabel} ${item.title}`}
-      tabIndex={0}
+      id={`card-${item.id}`}
+      role="option"
+      aria-selected={selected}
+      aria-posinset={Number(commandIndex)}
+      aria-setsize={totalCount}
+      tabIndex={-1}
       style={
         {
           "--source-color": item.sourceColor,
@@ -1023,16 +934,20 @@ function PanelContextMenu({
   onCopy,
   onAdd,
   onTogglePinned,
+  onDelete,
+  pinLabel,
   onRename,
-  onDelete
+  deleteLabel
 }: {
   state: PanelContextMenuState;
   item: ClipItem | null;
   onCopy: (item: ClipItem) => void;
   onAdd: () => void;
   onTogglePinned: (item: ClipItem) => void;
-  onRename: (item: ClipItem) => void;
   onDelete: (item: ClipItem) => void;
+  pinLabel?: string;
+  onRename: (item: ClipItem) => void;
+  deleteLabel: string;
 }) {
   if (!item) {
     return null;
@@ -1054,7 +969,7 @@ function PanelContextMenu({
       </button>
       <button type="button" role="menuitem" data-testid="context-menu-pin" onClick={() => onTogglePinned(item)}>
         <Pin size={15} strokeWidth={2.2} />
-        {item.isPinned ? "取消固定" : "固定"}
+        {pinLabel ?? (item.isPinned ? "取消固定" : "固定")}
       </button>
       <button type="button" role="menuitem" onClick={() => onRename(item)}>
         <Pencil size={15} strokeWidth={2.2} />
@@ -1072,7 +987,7 @@ function PanelContextMenu({
         onClick={() => onDelete(item)}
       >
         <Trash2 size={15} strokeWidth={2.2} />
-        删除
+        {deleteLabel}
       </button>
     </div>
   );
@@ -1114,6 +1029,10 @@ function CardPreview({ item }: { item: ClipItem }) {
           <img className="captured-image-preview" src={item.preview.imageAssetUrl} alt="" />
         </div>
       );
+    }
+
+    if (item.preview?.imageTone === "captured") {
+      return <div className="card-preview image-preview" aria-label="图片缩略图尚未就绪"><ImageIcon size={36} aria-hidden="true" /></div>;
     }
 
     if (item.preview?.imageTone === "clipboard") {

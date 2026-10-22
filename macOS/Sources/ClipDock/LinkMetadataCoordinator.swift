@@ -30,6 +30,11 @@ protocol LinkMetadataAssetWriting: Sendable {
         icon: LinkMetadataImagePayload?,
         preview: LinkMetadataImagePayload?
     ) async throws -> LinkMetadataAssetWriteResult
+    func cleanupAssets(_ assets: LinkMetadataAssetWriteResult) async
+}
+
+extension LinkMetadataAssetWriting {
+    func cleanupAssets(_ assets: LinkMetadataAssetWriteResult) async {}
 }
 
 struct LinkMetadataAssetWriteResult: Sendable, Equatable {
@@ -55,30 +60,37 @@ struct LinkMetadataCoordinatorConfiguration: Sendable, Equatable {
 
 actor LinkMetadataCoordinator {
     private let coreClient: RustCoreClient
+    private let databaseWorker: ClipboardCoreDatabaseWorker
     private let appSupportDirectory: URL
     private let configuration: LinkMetadataCoordinatorConfiguration
     private let fetcher: LinkMetadataFetching
     private let assetWriter: LinkMetadataAssetWriting
     private let onMetadataChanged: LinkMetadataChangeHandler
+    private let beforeCompletionSubmission: @Sendable () -> Void
     private var isStopped = false
     private var schedulerTask: Task<Void, Never>?
-    private var activeFetchTasks: [String: Task<Void, Never>] = [:]
+    private var schedulerToken: UUID?
+    private var activeFetchTasks: [String: (token: UUID, leaseStartedAtMs: Int64, task: Task<Void, Never>)] = [:]
     private var rescheduleRequested = false
 
     init(
         coreClient: RustCoreClient,
         appSupportDirectory: URL,
+        databaseWorker: ClipboardCoreDatabaseWorker = ClipboardCoreDatabaseWorker(),
         configuration: LinkMetadataCoordinatorConfiguration = LinkMetadataCoordinatorConfiguration(),
         fetcher: LinkMetadataFetching = LinkPresentationMetadataFetcher(),
         assetWriter: LinkMetadataAssetWriting? = nil,
+        beforeCompletionSubmission: @escaping @Sendable () -> Void = {},
         onMetadataChanged: @escaping LinkMetadataChangeHandler
     ) {
         self.coreClient = coreClient
+        self.databaseWorker = databaseWorker
         self.appSupportDirectory = appSupportDirectory
         self.configuration = configuration
         self.fetcher = fetcher
         self.assetWriter = assetWriter ?? LinkMetadataAssetWriter(appSupportDirectory: appSupportDirectory)
         self.onMetadataChanged = onMetadataChanged
+        self.beforeCompletionSubmission = beforeCompletionSubmission
     }
 
     func apply(preferences: RustPreferencesDocument) async {
@@ -93,8 +105,10 @@ actor LinkMetadataCoordinator {
             rescheduleRequested = true
             return
         }
+        let token = UUID()
+        schedulerToken = token
         schedulerTask = Task { [weak self] in
-            await self?.runScheduledPass()
+            await self?.runScheduledPass(token: token)
         }
     }
 
@@ -103,34 +117,42 @@ actor LinkMetadataCoordinator {
         rescheduleRequested = false
         schedulerTask?.cancel()
         schedulerTask = nil
+        schedulerToken = nil
         for task in activeFetchTasks.values {
-            task.cancel()
+            task.task.cancel()
         }
         activeFetchTasks.removeAll()
     }
 
-    private func runScheduledPass() async {
+    private func runScheduledPass(token: UUID) async {
         defer {
-            schedulerTask = nil
-            if !isStopped, rescheduleRequested {
-                rescheduleRequested = false
-                scheduleSoon()
+            if schedulerToken == token {
+                schedulerTask = nil
+                schedulerToken = nil
+                if !isStopped, rescheduleRequested {
+                    rescheduleRequested = false
+                    scheduleSoon()
+                }
             }
         }
-        while !isStopped, !Task.isCancelled {
+        while !isStopped, !Task.isCancelled, schedulerToken == token {
             let availableSlots = configuration.maxConcurrentFetches - activeFetchTasks.count
             guard availableSlots > 0 else { return }
             let claimLimit = min(configuration.batchLimit, Int64(availableSlots))
-            switch coreClient.claimLinkMetadataFetchBatch(
-                appSupportDirectory: appSupportDirectory,
-                limit: claimLimit,
-                leaseTimeoutMs: configuration.leaseTimeoutMs
-            ) {
+            let leaseTimeoutMs = configuration.leaseTimeoutMs
+            let result = await databaseWorker.perform { [coreClient, appSupportDirectory] in
+                coreClient.claimLinkMetadataFetchBatch(
+                    appSupportDirectory: appSupportDirectory,
+                    limit: claimLimit,
+                    leaseTimeoutMs: leaseTimeoutMs
+                )
+            }
+            switch result {
             case .success(let candidates):
                 guard !candidates.isEmpty else { return }
                 let activeCountBeforeStarting = activeFetchTasks.count
                 for candidate in candidates {
-                    guard !isStopped, !Task.isCancelled else { break }
+                    guard !isStopped, !Task.isCancelled, schedulerToken == token else { break }
                     startProcessing(candidate)
                 }
                 if candidates.count < claimLimit ||
@@ -145,20 +167,31 @@ actor LinkMetadataCoordinator {
     }
 
     private func startProcessing(_ candidate: RustLinkMetadataFetchCandidate) {
-        guard activeFetchTasks[candidate.itemId] == nil else { return }
-        activeFetchTasks[candidate.itemId] = Task { [weak self] in
-            await self?.process(candidate)
-            await self?.processDidFinish(itemID: candidate.itemId)
+        if let previous = activeFetchTasks[candidate.itemId] {
+            guard previous.leaseStartedAtMs != candidate.leaseStartedAtMs else { return }
+            previous.task.cancel()
         }
+        let token = UUID()
+        let task = Task { [weak self] in
+            await self?.process(candidate, token: token)
+            await self?.processDidFinish(itemID: candidate.itemId, token: token)
+        }
+        activeFetchTasks[candidate.itemId] = (token, candidate.leaseStartedAtMs, task)
     }
 
-    private func processDidFinish(itemID: String) {
+    private func processDidFinish(itemID: String, token: UUID) {
+        guard activeFetchTasks[itemID]?.token == token else { return }
         activeFetchTasks[itemID] = nil
         guard !isStopped else { return }
         scheduleSoon()
     }
 
-    private func process(_ candidate: RustLinkMetadataFetchCandidate) async {
+    private func isCurrent(_ candidate: RustLinkMetadataFetchCandidate, token: UUID) -> Bool {
+        !isStopped && !Task.isCancelled && activeFetchTasks[candidate.itemId]?.token == token
+    }
+
+    private func process(_ candidate: RustLinkMetadataFetchCandidate, token: UUID) async {
+        guard isCurrent(candidate, token: token) else { return }
         guard let url = URL(string: candidate.canonicalURL),
               LinkMetadataURLPolicy.isSupportedRemoteURL(url)
         else {
@@ -173,17 +206,24 @@ actor LinkMetadataCoordinator {
 
         do {
             let payload = try await fetcher.fetch(url: url)
-            guard !isStopped, !Task.isCancelled else { return }
+            guard isCurrent(candidate, token: token) else { return }
             let assets = try await assetWriter.writeAssets(
                 itemID: candidate.itemId,
                 icon: payload.iconData,
                 preview: payload.previewData
             )
-            guard !isStopped, !Task.isCancelled else { return }
+            guard isCurrent(candidate, token: token) else {
+                await assetWriter.cleanupAssets(assets)
+                return
+            }
             await completeSuccess(candidate, payload: payload, assets: assets)
         } catch let error as LinkMetadataFetchError {
+            // Lifecycle cancellation leaves the lease recoverable. A provider's
+            // own cancelled result, while this attempt is live, remains terminal.
+            guard isCurrent(candidate, token: token) else { return }
             await completeFailure(candidate, failureCode: error.failureCode, retry: error.shouldRetry)
         } catch {
+            guard isCurrent(candidate, token: token), !(error is CancellationError) else { return }
             await completeFailure(candidate, failureCode: "provider_error", retry: true)
         }
     }
@@ -208,14 +248,20 @@ actor LinkMetadataCoordinator {
             iconRelativePath: assets.iconRelativePath,
             imageRelativePath: assets.imageRelativePath
         )
-        switch coreClient.completeLinkMetadataFetch(
-            appSupportDirectory: appSupportDirectory,
-            request: request
-        ) {
-        case .success(let result) where result.affectedCount > 0:
+        beforeCompletionSubmission()
+        let result: Result<RustItemManagementResult, RustCoreError>? = await databaseWorker.perform { [coreClient, appSupportDirectory] in
+            // An actor hop can queue behind a long operation. Check in the
+            // same task immediately before the synchronous mutation begins.
+            guard !Task.isCancelled else { return nil }
+            return coreClient.completeLinkMetadataFetch(appSupportDirectory: appSupportDirectory, request: request)
+        }
+        switch result {
+        case .some(.success(let result)) where result.affectedCount > 0:
             await onMetadataChanged()
-        case .success, .failure:
-            break
+        case .some, .none:
+            // AssetStore checks current DB references under its lifecycle lock,
+            // including an uncertain committed response; never delete a winner.
+            await assetWriter.cleanupAssets(assets)
         }
     }
 
@@ -224,31 +270,31 @@ actor LinkMetadataCoordinator {
         failureCode: String,
         retry: Bool
     ) async {
-        let nextRetryAtMs = retry ? Self.nextRetryAtMs(fetchAttempts: candidate.fetchAttempts) : nil
-        switch coreClient.failLinkMetadataFetch(
-            appSupportDirectory: appSupportDirectory,
-            itemId: candidate.itemId,
-            leaseStartedAtMs: candidate.leaseStartedAtMs,
-            failureCode: failureCode,
-            nextRetryAtMs: nextRetryAtMs
-        ) {
-        case .success(let result) where result.affectedCount > 0:
+        let nextRetryAtMs: Int64?
+        if retry {
+            guard let retryAt = try? RustMetadataPolicy.retryAtMs(fetchAttempts: candidate.fetchAttempts,
+                nowMs: Int64(Date().timeIntervalSince1970 * 1_000)) else { return }
+            nextRetryAtMs = retryAt
+        } else { nextRetryAtMs = nil }
+        beforeCompletionSubmission()
+        let result: Result<RustItemManagementResult, RustCoreError>? = await databaseWorker.perform { [coreClient, appSupportDirectory] in
+            guard !Task.isCancelled else { return nil }
+            return coreClient.failLinkMetadataFetch(
+                appSupportDirectory: appSupportDirectory,
+                itemId: candidate.itemId,
+                leaseStartedAtMs: candidate.leaseStartedAtMs,
+                failureCode: failureCode,
+                nextRetryAtMs: nextRetryAtMs
+            )
+        }
+        switch result {
+        case .some(.success(let result)) where result.affectedCount > 0:
             await onMetadataChanged()
-        case .success, .failure:
+        case .some, .none:
             break
         }
     }
 
-    private static func nextRetryAtMs(fetchAttempts: Int64) -> Int64 {
-        let delays: [Int64] = [
-            5 * 60 * 1_000,
-            30 * 60 * 1_000,
-            6 * 60 * 60 * 1_000,
-            24 * 60 * 60 * 1_000
-        ]
-        let index = min(max(Int(fetchAttempts), 0), delays.count - 1)
-        return Int64(Date().timeIntervalSince1970 * 1_000) + delays[index]
-    }
 }
 
 enum LinkMetadataFetchError: Error, Equatable {
@@ -313,21 +359,25 @@ final class LinkPresentationMetadataFetcher: LinkMetadataFetching, @unchecked Se
         do {
             let payload = try await metadataProvider.fetchPayload(url: url, timeout: timeout)
             var images = await originalImages
+            try Task.checkCancellation()
             if !images.hasAssets, payload.canonicalURL != url {
                 images = await imageFetcher.fetchImages(for: payload.canonicalURL)
             }
+            try Task.checkCancellation()
             return LinkMetadataFetchPayload(
-                title: payload.title,
+                title: payload.title ?? images.title,
                 canonicalURL: payload.canonicalURL,
                 originalURL: payload.originalURL,
                 iconData: images.iconData,
                 previewData: images.previewData
             )
         } catch {
+            try Task.checkCancellation()
             let images = await originalImages
-            guard images.hasAssets else { throw error }
+            try Task.checkCancellation()
+            guard images.hasAssets || images.title != nil else { throw error }
             return LinkMetadataFetchPayload(
-                title: nil,
+                title: images.title,
                 canonicalURL: url,
                 originalURL: url,
                 iconData: images.iconData,
@@ -350,6 +400,13 @@ struct LinkPresentationMetadataProviderLoader: LinkMetadataProviderLoading {
 struct LinkMetadataFetchedImages: Sendable, Equatable {
     let iconData: LinkMetadataImagePayload?
     let previewData: LinkMetadataImagePayload?
+    let title: String?
+
+    init(iconData: LinkMetadataImagePayload?, previewData: LinkMetadataImagePayload?, title: String? = nil) {
+        self.iconData = iconData
+        self.previewData = previewData
+        self.title = title
+    }
 }
 
 private extension LinkMetadataFetchedImages {
@@ -496,12 +553,7 @@ private final class MetadataProviderBox: @unchecked Sendable {
 
 final class OpenGraphLinkMetadataImageFetcher: LinkMetadataPageImageFetching, @unchecked Sendable {
     private enum Defaults {
-        static let pageTimeout: TimeInterval = 8
-        static let imageTimeout: TimeInterval = 6
-        static let maxHTMLBytes = 512 * 1_024
-        static let maxImageBytes = 5 * 1_024 * 1_024
-        static let maxPreviewCandidates = 4
-        static let maxIconCandidates = 4
+        static let limits = try? RustMetadataPolicy.limits()
         static let svgIconMaxPixelSize = 128
         static let svgPreviewMaxPixelSize = 640
     }
@@ -513,54 +565,52 @@ final class OpenGraphLinkMetadataImageFetcher: LinkMetadataPageImageFetching, @u
     }
 
     func fetchImages(for pageURL: URL) async -> LinkMetadataFetchedImages {
-        guard LinkMetadataURLPolicy.isSupportedRemoteURL(pageURL),
+        guard !Task.isCancelled, let limits = Defaults.limits,
+              LinkMetadataURLPolicy.isSupportedRemoteURL(pageURL),
               !LinkMetadataURLPolicy.isPrivacySensitive(pageURL)
         else {
             return LinkMetadataFetchedImages(iconData: nil, previewData: nil)
         }
 
-        guard let html = try? await loadHTML(from: pageURL) else {
+        guard let (html, finalURL) = try? await loadHTML(from: pageURL, limits: limits), !Task.isCancelled else {
             return LinkMetadataFetchedImages(iconData: nil, previewData: nil)
         }
-        let candidates = LinkMetadataHTMLImageParser.imageCandidates(
-            in: html,
-            baseURL: pageURL
-        )
+        guard let parsed = try? RustMetadataPolicy.parse(html: html, baseURL: finalURL) else {
+            return LinkMetadataFetchedImages(iconData: nil, previewData: nil)
+        }
         async let iconData = loadFirstImage(
-            from: candidates.iconURLs,
-            limit: Defaults.maxIconCandidates,
+            from: parsed.iconUrls.compactMap(URL.init(string:)),
+            limit: limits.maxIconCandidates,
             svgMaxPixelSize: Defaults.svgIconMaxPixelSize
         )
         async let previewData = loadFirstImage(
-            from: candidates.previewURLs,
-            limit: Defaults.maxPreviewCandidates,
+            from: parsed.previewUrls.compactMap(URL.init(string:)),
+            limit: limits.maxPreviewCandidates,
             svgMaxPixelSize: Defaults.svgPreviewMaxPixelSize
         )
         return await LinkMetadataFetchedImages(
             iconData: iconData,
-            previewData: previewData
+            previewData: previewData,
+            title: parsed.title
         )
     }
 
-    private func loadHTML(from url: URL) async throws -> String {
+    private func loadHTML(from url: URL, limits: RustMetadataLimits) async throws -> (String, URL) {
         var request = URLRequest(url: url)
-        request.timeoutInterval = Defaults.pageTimeout
+        request.timeoutInterval = Double(limits.pageTimeoutMs) / 1_000
         request.setValue(
             "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
             forHTTPHeaderField: "Accept"
         )
-        let (data, response) = try await httpClient.data(for: request)
+        let (data, response) = try await httpClient.data(for: request,
+            maxBytes: limits.maxHtmlBytes, maxRedirects: limits.maxRedirects)
         guard isSuccessfulHTTPResponse(response),
               response.mimeType?.lowercased().contains("html") != false
         else {
             throw LinkMetadataFetchError.provider
         }
-        let limitedData = data.count > Defaults.maxHTMLBytes
-            ? data.prefix(Defaults.maxHTMLBytes)
-            : data[...]
-        return String(data: Data(limitedData), encoding: .utf8)
-            ?? String(data: Data(limitedData), encoding: .isoLatin1)
-            ?? ""
+        return (String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .isoLatin1) ?? "", response.url ?? url)
     }
 
     private func loadFirstImage(
@@ -569,6 +619,7 @@ final class OpenGraphLinkMetadataImageFetcher: LinkMetadataPageImageFetching, @u
         svgMaxPixelSize: Int
     ) async -> LinkMetadataImagePayload? {
         for url in urls.prefix(limit) {
+            guard !Task.isCancelled else { return nil }
             guard LinkMetadataURLPolicy.isSupportedRemoteURL(url),
                   !LinkMetadataURLPolicy.isPrivacySensitive(url),
                   let payload = try? await loadImage(from: url, svgMaxPixelSize: svgMaxPixelSize)
@@ -581,17 +632,19 @@ final class OpenGraphLinkMetadataImageFetcher: LinkMetadataPageImageFetching, @u
     }
 
     private func loadImage(from url: URL, svgMaxPixelSize: Int) async throws -> LinkMetadataImagePayload? {
+        guard let limits = Defaults.limits else { throw LinkMetadataFetchError.provider }
         var request = URLRequest(url: url)
-        request.timeoutInterval = Defaults.imageTimeout
+        request.timeoutInterval = Double(limits.imageTimeoutMs) / 1_000
         request.setValue("image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        let (data, response) = try await httpClient.data(for: request)
+        let (data, response) = try await httpClient.data(for: request,
+            maxBytes: limits.maxImageBytes, maxRedirects: limits.maxRedirects)
         guard isSuccessfulHTTPResponse(response), !data.isEmpty else {
             return nil
         }
         if isSVGImage(url: url, response: response, data: data) {
             return rasterizedSVGImagePayload(data, maxPixelSize: svgMaxPixelSize)
         }
-        guard data.count <= Defaults.maxImageBytes,
+        guard data.count <= limits.maxImageBytes,
               let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
               CGImageSourceGetCount(imageSource) > 0
         else { return nil }
@@ -637,7 +690,7 @@ final class OpenGraphLinkMetadataImageFetcher: LinkMetadataPageImageFetching, @u
     }
 
     private func rasterizedSVGImagePayload(_ data: Data, maxPixelSize: Int) -> LinkMetadataImagePayload? {
-        guard data.count <= Defaults.maxHTMLBytes else { return nil }
+        guard let limits = Defaults.limits, data.count <= limits.maxHtmlBytes else { return nil }
         guard case let .success(result) = RustCoreClient().rasterizeSVGToPNG(
             svgData: data,
             maxWidth: maxPixelSize,
@@ -658,126 +711,29 @@ struct LinkMetadataImageCandidates: Equatable, Sendable {
 }
 
 enum LinkMetadataHTMLImageParser {
-    private static let metaImageKeys: Set<String> = [
-        "og:image",
-        "og:image:url",
-        "twitter:image",
-        "twitter:image:src"
-    ]
-    private static let fallbackIconPaths = [
-        "/favicon.ico",
-        "/favicon.png",
-        "/apple-touch-icon.png"
-    ]
-
     static func imageCandidates(in html: String, baseURL: URL) -> LinkMetadataImageCandidates {
-        let metaTags = tags(named: "meta", in: html)
-        let linkTags = tags(named: "link", in: html)
-        let previewURLs = metaTags.compactMap { tag -> URL? in
-            let attributes = attributes(in: tag)
-            let key = (attributes["property"] ?? attributes["name"])?.lowercased()
-            guard let key,
-                  metaImageKeys.contains(key),
-                  let content = attributes["content"]
-            else {
-                return nil
-            }
-            return resolvedURL(from: content, baseURL: baseURL)
-        }
-        let declaredIconURLs = linkTags.compactMap { tag -> URL? in
-            let attributes = attributes(in: tag)
-            guard let rel = attributes["rel"]?.lowercased(),
-                  rel.split(separator: " ").contains(where: { $0 == "icon" || $0 == "apple-touch-icon" }),
-                  let href = attributes["href"]
-            else {
-                return nil
-            }
-            return resolvedURL(from: href, baseURL: baseURL)
+        guard let parsed = try? RustMetadataPolicy.parse(html: html, baseURL: baseURL) else {
+            return LinkMetadataImageCandidates(iconURLs: [], previewURLs: [])
         }
         return LinkMetadataImageCandidates(
-            iconURLs: unique(declaredIconURLs + fallbackIconURLs(baseURL: baseURL)),
-            previewURLs: unique(previewURLs)
+            iconURLs: parsed.iconUrls.compactMap(URL.init(string:)),
+            previewURLs: parsed.previewUrls.compactMap(URL.init(string:))
         )
-    }
-
-    private static func tags(named name: String, in html: String) -> [String] {
-        let pattern = "<\\s*\(name)\\b[^>]*>"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return []
-        }
-        let range = NSRange(html.startIndex..<html.endIndex, in: html)
-        return regex.matches(in: html, range: range).compactMap { match in
-            guard let matchRange = Range(match.range, in: html) else { return nil }
-            return String(html[matchRange])
-        }
-    }
-
-    private static func attributes(in tag: String) -> [String: String] {
-        let pattern = #"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>/]+))"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return [:]
-        }
-        let range = NSRange(tag.startIndex..<tag.endIndex, in: tag)
-        var result: [String: String] = [:]
-        for match in regex.matches(in: tag, range: range) {
-            guard let keyRange = Range(match.range(at: 1), in: tag) else { continue }
-            let valueRange = [3, 4, 5]
-                .compactMap { index -> Range<String.Index>? in
-                    let range = match.range(at: index)
-                    guard range.location != NSNotFound else { return nil }
-                    return Range(range, in: tag)
-                }
-                .first
-            guard let valueRange else { continue }
-            result[String(tag[keyRange]).lowercased()] = String(tag[valueRange])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return result
-    }
-
-    private static func resolvedURL(from value: String, baseURL: URL) -> URL? {
-        guard let url = URL(string: value, relativeTo: baseURL)?.absoluteURL,
-              LinkMetadataURLPolicy.isSupportedRemoteURL(url),
-              !LinkMetadataURLPolicy.isPrivacySensitive(url)
-        else {
-            return nil
-        }
-        return url
-    }
-
-    private static func unique(_ urls: [URL]) -> [URL] {
-        var seen: Set<String> = []
-        return urls.filter { url in
-            let value = url.absoluteString
-            guard !seen.contains(value) else { return false }
-            seen.insert(value)
-            return true
-        }
-    }
-
-    private static func fallbackIconURLs(baseURL: URL) -> [URL] {
-        fallbackIconPaths.compactMap { path in
-            guard var components = URLComponents(
-                url: baseURL,
-                resolvingAgainstBaseURL: true
-            ) else {
-                return nil
-            }
-            components.path = path
-            components.query = nil
-            components.fragment = nil
-            return components.url
-        }
     }
 }
 
 protocol LinkMetadataHTTPClient: Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse)
+    func data(for request: URLRequest, maxBytes: Int, maxRedirects: Int) async throws -> (Data, URLResponse)
 }
 
-struct URLSessionLinkMetadataHTTPClient: LinkMetadataHTTPClient {
-    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        try await URLSession.shared.data(for: request)
+extension LinkMetadataHTTPClient {
+    // Existing deterministic fixture clients return finite data. Production
+    // overrides this method and enforces the limit while bytes arrive.
+    func data(for request: URLRequest, maxBytes: Int, maxRedirects: Int) async throws -> (Data, URLResponse) {
+        let result = try await data(for: request)
+        guard result.0.count <= maxBytes else { throw MetadataHTTPError.byteLimit }
+        return result
     }
 }
 
@@ -804,25 +760,36 @@ final class LinkMetadataAssetWriter: LinkMetadataAssetWriting, @unchecked Sendab
         icon: LinkMetadataImagePayload?,
         preview: LinkMetadataImagePayload?
     ) async throws -> LinkMetadataAssetWriteResult {
-        let safeID = Self.safeFileStem(for: itemID)
-        let iconPath = try await writeImage(
-            icon,
-            relativePath: "assets/link-icons/\(safeID).png",
-            typeIdentifier: UTType.png.identifier,
-            maxPixelSize: Limits.iconMaxPixelSize,
-            maxBytes: nil
-        )
-        let previewPath = try await writeImage(
-            preview,
-            relativePath: "assets/link-previews/\(safeID).jpg",
-            typeIdentifier: UTType.jpeg.identifier,
-            maxPixelSize: Limits.previewMaxPixelSize,
-            maxBytes: Limits.previewMaxBytes
-        )
-        return LinkMetadataAssetWriteResult(
-            iconRelativePath: iconPath,
-            imageRelativePath: previewPath
-        )
+        _ = itemID
+        let attemptID = UUID().uuidString
+        var iconPath: String?
+        var previewPath: String?
+        do {
+            try Task.checkCancellation()
+            iconPath = try await writeImage(icon,
+                relativePath: "assets/link-icons/\(attemptID).png",
+                typeIdentifier: UTType.png.identifier,
+                maxPixelSize: Limits.iconMaxPixelSize, maxBytes: nil)
+            try Task.checkCancellation()
+            previewPath = try await writeImage(preview,
+                relativePath: "assets/link-previews/\(attemptID).jpg",
+                typeIdentifier: UTType.jpeg.identifier,
+                maxPixelSize: Limits.previewMaxPixelSize, maxBytes: Limits.previewMaxBytes)
+            try Task.checkCancellation()
+            return LinkMetadataAssetWriteResult(iconRelativePath: iconPath, imageRelativePath: previewPath)
+        } catch {
+            await cleanupAssets(LinkMetadataAssetWriteResult(iconRelativePath: iconPath, imageRelativePath: previewPath))
+            throw error
+        }
+    }
+
+    func cleanupAssets(_ assets: LinkMetadataAssetWriteResult) async {
+        let paths = [assets.iconRelativePath, assets.imageRelativePath].compactMap { $0 }
+        guard !paths.isEmpty else { return }
+        let root = appSupportDirectory
+        _ = await Task.detached(priority: .utility) {
+            RustAssetStore(appSupportDirectory: root).cleanupUncommitted(relativePaths: paths)
+        }.value
     }
 
     private func writeImage(
@@ -834,17 +801,8 @@ final class LinkMetadataAssetWriter: LinkMetadataAssetWriting, @unchecked Sendab
     ) async throws -> String? {
         guard let payload else { return nil }
         let appSupportDirectory = appSupportDirectory
-        let fileManager = fileManager
         return try await Task.detached(priority: .utility) {
-            let destinationURL = appSupportDirectory.appendingPathComponent(relativePath)
-            try fileManager.createDirectory(
-                at: destinationURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let temporaryURL = destinationURL
-                .deletingLastPathComponent()
-                .appendingPathComponent(".\(destinationURL.lastPathComponent).\(UUID().uuidString).tmp")
-
+            let encoded = NSMutableData()
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
@@ -852,8 +810,8 @@ final class LinkMetadataAssetWriter: LinkMetadataAssetWriting, @unchecked Sendab
             ]
             guard let source = CGImageSourceCreateWithData(payload.data as CFData, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-                  let destination = CGImageDestinationCreateWithURL(
-                    temporaryURL as CFURL,
+                  let destination = CGImageDestinationCreateWithData(
+                    encoded as CFMutableData,
                     typeIdentifier as CFString,
                     1,
                     nil
@@ -870,70 +828,20 @@ final class LinkMetadataAssetWriter: LinkMetadataAssetWriting, @unchecked Sendab
                 throw LinkMetadataFetchError.assetWriteFailed
             }
 
-            if let maxBytes,
-               let byteCount = try? fileManager
-                .attributesOfItem(atPath: temporaryURL.path)[.size] as? NSNumber,
-               byteCount.intValue > maxBytes {
-                try? fileManager.removeItem(at: temporaryURL)
-                return nil
-            }
-
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                _ = try fileManager.replaceItemAt(
-                    destinationURL,
-                    withItemAt: temporaryURL,
-                    backupItemName: nil,
-                    options: .usingNewMetadataOnly
-                )
-            } else {
-                try fileManager.moveItem(at: temporaryURL, to: destinationURL)
-            }
+            if let maxBytes, encoded.length > maxBytes { return nil }
+            let store = RustAssetStore(appSupportDirectory: appSupportDirectory)
+            _ = try store.write(data: encoded as Data, relativePath: relativePath).get()
             return relativePath
         }.value
-    }
-
-    private static func safeFileStem(for itemID: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let scalars = itemID.unicodeScalars.map { scalar in
-            allowed.contains(scalar) ? Character(scalar) : "-"
-        }
-        let value = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return value.isEmpty ? UUID().uuidString : value
     }
 }
 
 enum LinkMetadataURLPolicy {
     static func isSupportedRemoteURL(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased() else { return false }
-        return (scheme == "http" || scheme == "https") && url.host?.isEmpty == false
+        (try? RustMetadataPolicy.decision(for: url).supported) ?? false
     }
 
     static func isPrivacySensitive(_ url: URL) -> Bool {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return true
-        }
-
-        let sensitiveQueryKeywords: Set<String> = [
-            "auth",
-            "code",
-            "jwt",
-            "key",
-            "otp",
-            "password",
-            "secret",
-            "session",
-            "signature",
-            "token"
-        ]
-        return components.queryItems?.contains { item in
-            let name = item.name.lowercased()
-            return sensitiveQueryKeywords.contains(name)
-                || sensitiveQueryKeywords.contains { keyword in
-                    name.contains("_\(keyword)")
-                        || name.contains("\(keyword)_")
-                        || name.contains("-\(keyword)")
-                        || name.contains("\(keyword)-")
-                }
-        } ?? false
+        (try? RustMetadataPolicy.decision(for: url).privacySensitive) ?? true
     }
 }

@@ -16,6 +16,7 @@ public enum ClipboardIgnoreRuleReason: String, Equatable, Sendable {
     case unknownSource = "unknown_source"
     case sourceApplication = "source_application"
     case windowTitle = "window_title"
+    case evaluationFailed = "evaluation_failed"
 }
 
 public struct ClipboardIgnoreRuleDecision: Equatable, Sendable {
@@ -46,61 +47,52 @@ public enum ClipboardIgnoreRuleEvaluator {
         windowTitle: String? = nil,
         preferences: RustIgnoreListPreferences
     ) -> ClipboardIgnoreRuleDecision {
-        let sourceCandidates = normalizedSourceCandidates(source)
-
-        if preferences.skipUnknownSource, sourceCandidates.isEmpty {
-            return ClipboardIgnoreRuleDecision(
-                shouldSkip: true,
-                reason: .unknownSource,
-                matchedRule: nil
-            )
-        }
-
-        if let matchedIdentifier = firstMatchedAppIdentifier(
-            rules: preferences.ignoredAppIdentifiers,
-            sourceCandidates: sourceCandidates
-        ) {
-            return ClipboardIgnoreRuleDecision(
-                shouldSkip: true,
-                reason: .sourceApplication,
-                matchedRule: matchedIdentifier
-            )
-        }
-
-        if let matchedKeyword = firstMatchedWindowTitleKeyword(
-            rules: preferences.windowTitleKeywords,
-            windowTitle: windowTitle
-        ) {
-            return ClipboardIgnoreRuleDecision(
-                shouldSkip: true,
-                reason: .windowTitle,
-                matchedRule: matchedKeyword
-            )
-        }
-
-        return .capture
+        let input = RustCapturePolicyInput(
+            profile: "mac_os_v1", sourceCandidateKeys: Array(normalizedSourceCandidates(source)),
+            applicationRuleKeys: preferences.ignoredAppIdentifiers.map { normalized($0) },
+            skipUnknownSource: preferences.skipUnknownSource,
+            sourceConfidence: source == nil ? "unknown" : "high",
+            hasOwner: false, // Foreground-app inference is not a clipboard-owner guarantee.
+            titleMatchIndex: firstMatchedWindowTitleIndex(rules: preferences.windowTitleKeywords, windowTitle: windowTitle),
+            titleRuleCount: preferences.windowTitleKeywords.count
+        )
+        return resolvePolicyDecision(RustCapturePolicyBridge.evaluate(input), preferences: preferences)
     }
 
-    private static func firstMatchedAppIdentifier(
-        rules: [String],
-        sourceCandidates: Set<String>
-    ) -> String? {
-        rules.first { rule in
-            let normalizedRule = normalized(rule)
-            return !normalizedRule.isEmpty && sourceCandidates.contains(normalizedRule)
-        }?.trimmingCharacters(in: .whitespacesAndNewlines)
+    static func resolvePolicyDecision(
+        _ result: Result<RustCapturePolicyDecision, RustCoreError>,
+        preferences: RustIgnoreListPreferences
+    ) -> ClipboardIgnoreRuleDecision {
+        guard case .success(let decision) = result else {
+            return .init(shouldSkip: true, reason: .evaluationFailed, matchedRule: nil)
+        }
+        guard decision.skip else { return .capture }
+        let reason = decision.reason.flatMap(ClipboardIgnoreRuleReason.init(rawValue:))
+        let rules: [String]
+        switch reason {
+        case .unknownSource:
+            return .init(shouldSkip: true, reason: .unknownSource, matchedRule: nil)
+        case .sourceApplication: rules = preferences.ignoredAppIdentifiers
+        case .windowTitle: rules = preferences.windowTitleKeywords
+        default: return .init(shouldSkip: true, reason: .evaluationFailed, matchedRule: nil)
+        }
+        guard let index = decision.matchedRuleIndex, rules.indices.contains(index) else {
+            return .init(shouldSkip: true, reason: .evaluationFailed, matchedRule: nil)
+        }
+        return .init(shouldSkip: true, reason: reason,
+            matchedRule: rules[index].trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    private static func firstMatchedWindowTitleKeyword(
+    private static func firstMatchedWindowTitleIndex(
         rules: [String],
         windowTitle: String?
-    ) -> String? {
+    ) -> Int? {
         let normalizedTitle = windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !normalizedTitle.isEmpty else {
             return nil
         }
 
-        return rules.first { rule in
+        return rules.firstIndex { rule in
             let normalizedRule = rule.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalizedRule.isEmpty else {
                 return false
@@ -112,7 +104,7 @@ public enum ClipboardIgnoreRuleEvaluator {
                 range: nil,
                 locale: .current
             ) != nil
-        }?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     private static func normalizedSourceCandidates(_ source: ClipboardIgnoreRuleSource?) -> Set<String> {
@@ -146,6 +138,7 @@ public enum ClipboardIgnoreRuleEvaluator {
         value?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+            .precomposedStringWithCanonicalMapping
             ?? ""
     }
 }

@@ -1,4 +1,43 @@
 import RustXcframework
+public func reserve_asset<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ relative_path: GenericIntoRustString, _ staged_relative_path: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$reserve_asset({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = staged_relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func reserve_existing_asset<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ relative_path: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$reserve_existing_asset({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = relative_path.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func stage_reserved_asset<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ reservation_json: GenericIntoRustString, _ bytes: UnsafeBufferPointer<UInt8>) -> CoreJSONResult {
+    __swift_bridge__$stage_reserved_asset({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = reservation_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), bytes.toFfiSlice()).intoSwiftRepr()
+}
+public func publish_reserved_asset<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ reservation_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$publish_reserved_asset({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = reservation_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func encode_lossless_webp_to_staging<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ reservation_json: GenericIntoRustString, _ rgba: UnsafeBufferPointer<UInt8>, _ width: Int64, _ height: Int64, _ max_bytes: Int64) -> CoreJSONResult {
+    __swift_bridge__$encode_lossless_webp_to_staging({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = reservation_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), rgba.toFfiSlice(), width, height, max_bytes).intoSwiftRepr()
+}
+public func cleanup_uncommitted_assets<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ relative_paths_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$cleanup_uncommitted_assets({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = relative_paths_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func metadata_url_policy_json<GenericIntoRustString: IntoRustString>(_ request_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$metadata_url_policy_json({ let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func metadata_limits_json<GenericIntoRustString: IntoRustString>(_ request_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$metadata_limits_json({ let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func metadata_retry_at_json<GenericIntoRustString: IntoRustString>(_ request_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$metadata_retry_at_json({ let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func parse_metadata_html_json<GenericIntoRustString: IntoRustString>(_ request_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$parse_metadata_html_json({ let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func evaluate_capture_policy_json<GenericIntoRustString: IntoRustString>(_ request_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$evaluate_capture_policy_json({ let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func analyze_capture_text_json<GenericIntoRustString: IntoRustString>(_ request_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$analyze_capture_text_json({ let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func plan_copy_json<GenericIntoRustString: IntoRustString>(_ request_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$plan_copy_json({ let rustString = request_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
 public func open_core<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CoreOpenResult {
     __swift_bridge__$open_core({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
@@ -7,6 +46,27 @@ public func export_backup<GenericIntoRustString: IntoRustString>(_ app_support_d
 }
 public func import_backup<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ path: GenericIntoRustString) -> CoreBackupResult {
     __swift_bridge__$import_backup({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = path.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func open_core_without_maintenance<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CoreOpenResult {
+    __swift_bridge__$open_core_without_maintenance({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func get_preferences_without_maintenance<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString) -> CorePreferencesResult {
+    __swift_bridge__$get_preferences_without_maintenance({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func patch_preferences<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ patch_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$patch_preferences({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = patch_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func get_item<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ item_id: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$get_item({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = item_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func get_items<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ ordered_ids_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$get_items({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = ordered_ids_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func mutate_items<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ requests_json: GenericIntoRustString) -> CoreJSONResult {
+    __swift_bridge__$mutate_items({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = requests_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
+}
+public func list_entries<GenericIntoRustString: IntoRustString>(_ app_support_dir: GenericIntoRustString, _ limit: Int64, _ offset: Int64, _ item_type: GenericIntoRustString, _ source_app_id: GenericIntoRustString, _ pinboard_id: GenericIntoRustString, _ search_text: GenericIntoRustString) -> CoreListResult {
+    __swift_bridge__$list_entries({ let rustString = app_support_dir.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), limit, offset, { let rustString = item_type.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = source_app_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = pinboard_id.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), { let rustString = search_text.intoRustString(); rustString.isOwned = false; return rustString.ptr }()).intoSwiftRepr()
 }
 public func active_source_icon_header_color_cache_version() -> Int64 {
     __swift_bridge__$active_source_icon_header_color_cache_version()
@@ -242,6 +302,49 @@ extension __swift_bridge__$Option$CoreListResult {
             return __swift_bridge__$Option$CoreListResult(is_some: true, val: v.intoFfiRepr())
         } else {
             return __swift_bridge__$Option$CoreListResult(is_some: false, val: __swift_bridge__$CoreListResult())
+        }
+    }
+}
+public struct CoreJSONResult {
+    public var ok: Bool
+    public var result_json: RustString
+    public var error_code: RustString
+    public var message_key: RustString
+
+    public init(ok: Bool,result_json: RustString,error_code: RustString,message_key: RustString) {
+        self.ok = ok
+        self.result_json = result_json
+        self.error_code = error_code
+        self.message_key = message_key
+    }
+
+    @inline(__always)
+    func intoFfiRepr() -> __swift_bridge__$CoreJSONResult {
+        { let val = self; return __swift_bridge__$CoreJSONResult(ok: val.ok, result_json: { let rustString = val.result_json.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), error_code: { let rustString = val.error_code.intoRustString(); rustString.isOwned = false; return rustString.ptr }(), message_key: { let rustString = val.message_key.intoRustString(); rustString.isOwned = false; return rustString.ptr }()); }()
+    }
+}
+extension __swift_bridge__$CoreJSONResult {
+    @inline(__always)
+    func intoSwiftRepr() -> CoreJSONResult {
+        { let val = self; return CoreJSONResult(ok: val.ok, result_json: RustString(ptr: val.result_json), error_code: RustString(ptr: val.error_code), message_key: RustString(ptr: val.message_key)); }()
+    }
+}
+extension __swift_bridge__$Option$CoreJSONResult {
+    @inline(__always)
+    func intoSwiftRepr() -> Optional<CoreJSONResult> {
+        if self.is_some {
+            return self.val.intoSwiftRepr()
+        } else {
+            return nil
+        }
+    }
+
+    @inline(__always)
+    static func fromSwiftRepr(_ val: Optional<CoreJSONResult>) -> __swift_bridge__$Option$CoreJSONResult {
+        if let v = val {
+            return __swift_bridge__$Option$CoreJSONResult(is_some: true, val: v.intoFfiRepr())
+        } else {
+            return __swift_bridge__$Option$CoreJSONResult(is_some: false, val: __swift_bridge__$CoreJSONResult())
         }
     }
 }

@@ -47,28 +47,20 @@ const TYPE_LABELS: Record<ClipKind, string> = {
   richText: "Text"
 };
 
-export async function readClipboardSnapshot(): Promise<ClipboardSnapshot | null> {
+export async function writeClipboardText(text: string, itemId?: string): Promise<void> {
   if (!isTauri()) {
-    return null;
+    return;
   }
 
-  return invoke<ClipboardSnapshot | null>("read_clipboard_snapshot");
+  return invoke<void>("write_clipboard_text", { text, itemId });
 }
 
-export async function writeClipboardText(text: string): Promise<string | null> {
+export async function writeClipboardImage(itemId: string): Promise<void> {
   if (!isTauri()) {
-    return null;
+    return;
   }
 
-  return invoke<string>("write_clipboard_text", { text });
-}
-
-export async function writeClipboardImage(imagePath: string): Promise<string | null> {
-  if (!isTauri()) {
-    return null;
-  }
-
-  return invoke<string>("write_clipboard_image", { imagePath });
+  return invoke<void>("write_clipboard_image", { itemId });
 }
 
 export function clipboardPayloadForItem(item: ClipItem): ClipboardWritePayload | null {

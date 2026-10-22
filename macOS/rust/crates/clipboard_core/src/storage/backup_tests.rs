@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+fn imported_history_supports_projected_lists_full_copy_and_batch_rename() {
+    let (_source_root, mut source) = open_temp_core();
+    let body = format!("{}outside projected preview", "合并😀".repeat(400));
+    let id = source.capture_text(text_capture_request(&body, 1)).unwrap().item_id;
+    source.rename_item(&id, "ImportedTitle").unwrap();
+    let board = source.create_pinboard("Imported board", None).unwrap();
+    source.set_item_pinboard_membership(&id, &board.id, true).unwrap();
+    let outside = TempDir::new().unwrap();
+    let archive = outside.path().join("projection.clipdock");
+    source.export_backup(&archive).unwrap();
+
+    let (_target_root, mut target) = open_temp_core();
+    // Prime the reused connection before importing, as native sessions do.
+    target.list_entries(ItemQuery::default(), PageRequest::default()).unwrap();
+    target.import_backup(&archive).unwrap();
+    let page = target.list_entries(ItemQuery {
+        search_text: Some("ImportedTitle".into()),
+        pinboard_id: Some(board.id.clone()),
+        ..Default::default()
+    }, PageRequest::default()).unwrap();
+    assert_eq!(page.total_count, 1);
+    assert_eq!(page.items[0].item.custom_title.as_deref(), Some("ImportedTitle"));
+    assert!(page.items[0].preview_truncated);
+    assert!(page.items[0].item.primary_text.is_none());
+    assert!(page.items[0].item.pinboard_ids.contains(&board.id));
+    assert_eq!(target.get_item(&id).unwrap().unwrap().primary_text.as_deref(), Some(body.as_str()));
+
+    let batch = target.mutate_items(vec![crate::ItemMutation::Rename {
+        item_id: id.clone(), title: "RenamedAfterImport".into(),
+    }]).unwrap();
+    assert_eq!(batch.outcomes[0].status, crate::ItemMutationStatus::Applied);
+    for (title, count) in [("ImportedTitle", 0), ("RenamedAfterImport", 1)] {
+        assert_eq!(target.list_entries(ItemQuery {
+            search_text: Some(title.into()), ..Default::default()
+        }, PageRequest::default()).unwrap().total_count, count);
+    }
+    assert_eq!(target.capture_text(text_capture_request(&body, 2)).unwrap().item_id, id);
+    assert_eq!(target.get_item(&id).unwrap().unwrap().custom_title.as_deref(), Some("RenamedAfterImport"));
+}
+
+#[test]
 fn backup_restores_image_bytes_and_external_file_references() {
     let (source_root, mut source) = open_temp_core();
     write_test_webp(
@@ -55,6 +96,8 @@ fn backup_restores_image_bytes_and_external_file_references() {
     source.export_backup(&archive).unwrap();
     let (target_root, mut target) = open_temp_core();
     assert_eq!(target.import_backup(&archive).unwrap().imported_count, 2);
+    // Imported assets must survive the newly shared lifecycle cleanup path.
+    target.run_maintenance().unwrap();
     let restored = target.get_item(&image.item_id).unwrap().unwrap();
     assert_eq!(
         fs::read(restored.payload_asset_path.unwrap()).unwrap(),

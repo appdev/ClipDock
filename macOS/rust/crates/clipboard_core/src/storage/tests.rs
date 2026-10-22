@@ -45,9 +45,9 @@ fn card_rename_persists_without_changing_content_or_copy_order() {
     let core = ClipboardCore::open(root.path()).unwrap();
     assert_eq!(core.get_item(&id).unwrap().unwrap(), expected);
     let page = core
-        .list_items(ItemQuery::default(), PageRequest::default())
+        .list_entries(ItemQuery::default(), PageRequest::default())
         .unwrap();
-    assert_eq!(page.items[0].custom_title, expected.custom_title);
+    assert_eq!(page.items[0].item.custom_title, expected.custom_title);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn card_rename_search_updates_chinese_pinyin_and_literal_fallback() {
     core.rename_item(&id, "测试重命名").unwrap();
     for search in ["测试", "ces", "ceshi"] {
         let page = core
-            .list_items(
+            .list_entries(
                 ItemQuery {
                     search_text: Some(search.into()),
                     ..Default::default()
@@ -69,7 +69,7 @@ fn card_rename_search_updates_chinese_pinyin_and_literal_fallback() {
             )
             .unwrap();
         assert_eq!(page.total_count, 1, "query: {search}");
-        assert_eq!(page.items[0].id, id);
+        assert_eq!(page.items[0].item.id, id);
     }
     core.rename_item(&id, "NewTitle 100%_ready").unwrap();
     for (search, expected) in [
@@ -127,7 +127,7 @@ fn card_rename_survives_duplicate_capture_pinboard_and_maintenance() {
         Some("Retained title")
     );
     let page = core
-        .list_items(
+        .list_entries(
             ItemQuery {
                 pinboard_id: Some(super::DEFAULT_PINBOARD_ID.into()),
                 search_text: Some("Retained".into()),
@@ -211,7 +211,7 @@ fn card_rename_migration_preserves_v17_rows_and_search() {
     );
     core.rename_item("legacy-rename", "MigratedTitle").unwrap();
     assert_eq!(
-        core.list_items(
+        core.list_entries(
             ItemQuery {
                 search_text: Some("MigratedTitle".into()),
                 ..Default::default()
@@ -222,16 +222,6 @@ fn card_rename_migration_preserves_v17_rows_and_search() {
         .total_count,
         1
     );
-}
-
-trait RenameTestLookup {
-    fn get_item(&self, id: &str) -> crate::Result<Option<crate::ClipboardItemSummary>>;
-}
-impl RenameTestLookup for ClipboardCore {
-    fn get_item(&self, id: &str) -> crate::Result<Option<crate::ClipboardItemSummary>> {
-        Ok(self.list_items(ItemQuery::default(), PageRequest::default())?.items
-            .into_iter().find(|item| item.id == id))
-    }
 }
 
 fn capture_pending_link(core: &mut ClipboardCore, text: &str, url: &str) -> CaptureResult {
@@ -1952,6 +1942,7 @@ fn complete_pending_image_payload_moves_staged_to_reserved_and_enables_payload()
         .unwrap();
 
     assert_eq!(completed.status, "ready");
+    core.connection.execute("INSERT INTO clipboard_items_fts(clipboard_items_fts, rank) VALUES('integrity-check', 1)", []).unwrap();
     assert_eq!(
         completed.effective_item_id.as_deref(),
         Some(pending.item_id.as_str())
@@ -2138,17 +2129,17 @@ fn duplicate_pending_image_completion_merges_into_existing_ready_item() {
         })
         .unwrap();
     write_test_webp(temp_dir.path(), "thumbnails/duplicate.webp", b"thumb");
-    let pending = core
-        .capture_pending_image(pending_image_request(
-            "session-a",
-            "thumbnails/duplicate.webp",
-            "assets/duplicate.webp",
-            ".staging/image-captures/duplicate.webp",
-            40,
-            20,
-            test_webp_byte_count(b"thumb"),
-        ))
-        .unwrap();
+    let mut pending_request = pending_image_request(
+        "session-a",
+        "thumbnails/duplicate.webp",
+        "assets/duplicate.webp",
+        ".staging/image-captures/duplicate.webp",
+        40,
+        20,
+        test_webp_byte_count(b"thumb"),
+    );
+    pending_request.source_app_name = Some("NewCaptureSource".to_string());
+    let pending = core.capture_pending_image(pending_request).unwrap();
     write_test_webp(
         temp_dir.path(),
         ".staging/image-captures/duplicate.webp",
@@ -2178,6 +2169,19 @@ fn duplicate_pending_image_completion_merges_into_existing_ready_item() {
         .unwrap();
 
     assert_eq!(completed.status, "merged");
+    let old_source_hits: i64 = core
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_items_fts WHERE clipboard_items_fts MATCH 'Preview'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let new_source_hits: i64 = core.connection.query_row(
+        "SELECT COUNT(*) FROM clipboard_items_fts WHERE clipboard_items_fts MATCH 'NewCaptureSource'", [], |row| row.get(0)
+    ).unwrap();
+    assert_eq!((old_source_hits, new_source_hits), (0, 1));
+    core.connection.execute("INSERT INTO clipboard_items_fts(clipboard_items_fts, rank) VALUES('integrity-check', 1)", []).unwrap();
     assert_eq!(
         completed.effective_item_id.as_deref(),
         Some(existing.item_id.as_str())

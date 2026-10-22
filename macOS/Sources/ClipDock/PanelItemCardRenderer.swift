@@ -31,6 +31,7 @@ struct PanelItemCardRenderArtifacts {
             imageView.identifier = NSUserInterfaceItemIdentifier(UUID().uuidString)
             (imageView as? PanelCardAsyncWorkCancellable)?.cancelPanelCardAsyncWork()
         }
+        bodyLabels.forEach { $0.cancelPanelCardAsyncWork() }
     }
 
     @MainActor
@@ -174,11 +175,6 @@ private struct TextCardSurfaceStyle {
     let fadeBottomColor: NSColor
 }
 
-private struct RichTextCardBodyPreview {
-    let attributedString: NSAttributedString
-    let promotedBackgroundColor: NSColor?
-}
-
 @MainActor
 protocol PanelTextBodyFadeColorProviding {
     var smokeFadeBottomColor: NSColor { get }
@@ -212,14 +208,8 @@ final class PanelItemCardRenderer {
         let defaultCardBackgroundColor = isTextLikeItem
             ? metrics.theme.card.textItemBackgroundColor
             : metrics.theme.card.backgroundColor
-        let richTextBodyPreviewPlan = isTextLikeItem
-            ? richTextBodyPreview(
-                fallbackText: state.summaryText,
-                assetRequest: state.assetRequest
-            )
-            : nil
         let textSurfaceStyle = textCardSurfaceStyle(
-            promotedBackgroundColor: richTextBodyPreviewPlan?.promotedBackgroundColor
+            promotedBackgroundColor: nil
         )
         let cardBackgroundColor = isTextLikeItem
             ? textSurfaceStyle.backgroundColor
@@ -372,9 +362,28 @@ final class PanelItemCardRenderer {
 
         let summaryLabel = makeBodyLabel(
             state.summaryText,
-            richTextPreview: richTextBodyPreviewPlan?.attributedString,
+            richTextPreview: nil,
             bodyTextColor: textSurfaceStyle.bodyTextColor
         )
+        if isTextLikeItem {
+            summaryLabel.richTextPreviewLoadToken = cardAssetResolver.loadRichTextPreviewAsync(
+                for: state.assetRequest,
+                maximumUTF16Length: (state.summaryText as NSString).length
+            ) { [weak summaryLabel] attributed in
+                guard let summaryLabel else { return }
+                summaryLabel.richTextPreviewLoadToken = nil
+                guard let attributed else { return }
+                let preview = NSMutableAttributedString(string: "\u{200E}")
+                preview.append(attributed)
+                let displayPlan = ClipboardRichTextPreviewStyler.inlineSurfaceDisplayPlan(
+                    preview,
+                    bodyColor: textSurfaceStyle.bodyTextColor,
+                    surfaceColor: textSurfaceStyle.backgroundColor,
+                    promotesBackgroundToSurface: false
+                )
+                summaryLabel.applyRichTextPreview(displayPlan.attributedString)
+            }
+        }
         let contentFillsAvailableArea = isImageCard || isLinkCard || isColorCard
         let contentContainer = makeCardContentContainer(
             previewView: previewBundle.view,
@@ -698,38 +707,6 @@ final class PanelItemCardRenderer {
         label.preferredTextWidth = metrics.defaultItemSide - metrics.cardInset * 2 - 4
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
-    }
-
-    private func richTextBodyPreview(
-        fallbackText: String,
-        assetRequest: PanelCardAssetRequest
-    ) -> RichTextCardBodyPreview? {
-        guard let attributed = cardAssetResolver.richTextPreviewAttributedString(for: assetRequest),
-              attributed.length > 0,
-              !fallbackText.isEmpty
-        else {
-            return nil
-        }
-
-        let fallbackLength = (fallbackText as NSString).length
-        let boundedLength = min(attributed.length, fallbackLength)
-        guard boundedLength > 0 else {
-            return nil
-        }
-
-        let preview = NSMutableAttributedString(string: "\u{200E}")
-        preview.append(attributed.attributedSubstring(from: NSRange(location: 0, length: boundedLength)))
-        let surfaceStyle = textCardSurfaceStyle(promotedBackgroundColor: nil)
-        let displayPlan = ClipboardRichTextPreviewStyler.inlineSurfaceDisplayPlan(
-            preview,
-            bodyColor: surfaceStyle.bodyTextColor,
-            surfaceColor: surfaceStyle.backgroundColor,
-            promotesBackgroundToSurface: false
-        )
-        return RichTextCardBodyPreview(
-            attributedString: displayPlan.attributedString,
-            promotedBackgroundColor: displayPlan.promotedBackgroundColor
-        )
     }
 
     private func makeImageFootnoteBadgeView(isHidden: Bool) -> NSView {
@@ -1268,6 +1245,10 @@ final class PanelItemCardBodyTextView: NSView {
     private let textContainer = NSTextContainer(size: .zero)
     private let font: NSFont
     private let textColor: NSColor
+    private(set) var hasAppliedRichTextPreview = false
+    var richTextPreviewLoadToken: PanelRichTextPreviewLoadToken? {
+        didSet { PanelCardAssetResolver.cancelRichTextPreviewLoad(oldValue) }
+    }
 
     var preferredTextWidth: CGFloat {
         didSet {
@@ -1326,6 +1307,17 @@ final class PanelItemCardBodyTextView: NSView {
 
     var attributedStringForTesting: NSAttributedString {
         NSAttributedString(attributedString: textStorage)
+    }
+
+    func applyRichTextPreview(_ attributedString: NSAttributedString) {
+        textStorage.setAttributedString(Self.normalizedAttributedString(
+            attributedString,
+            fallbackFont: font,
+            fallbackTextColor: textColor
+        ))
+        hasAppliedRichTextPreview = true
+        invalidateTextContainer()
+        needsDisplay = true
     }
 
     private func configureTextLayout() {
@@ -1870,5 +1862,11 @@ extension LinkIconImagePreviewView: PanelCardAsyncWorkCancellable {
 extension SourceIconImageView: PanelCardAsyncWorkCancellable {
     func cancelPanelCardAsyncWork() {
         previewImageLoadToken = nil
+    }
+}
+
+extension PanelItemCardBodyTextView: PanelCardAsyncWorkCancellable {
+    func cancelPanelCardAsyncWork() {
+        richTextPreviewLoadToken = nil
     }
 }

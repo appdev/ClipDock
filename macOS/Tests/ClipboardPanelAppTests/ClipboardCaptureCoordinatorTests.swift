@@ -5,7 +5,7 @@ import Testing
 struct ClipboardCaptureCoordinatorTests {
     @Test
     @MainActor
-    func capturesTextWithSourceMetadataAndIconPath() {
+    func capturesTextWithSourceMetadataAndIconPath() async {
         var capturedRequest: RustCaptureTextRequest?
         let coordinator = ClipboardCaptureCoordinator(
             captureText: { request in
@@ -44,7 +44,7 @@ struct ClipboardCaptureCoordinatorTests {
             bundlePath: "/Applications/Safari.app",
             windowTitle: "Example"
         )
-        let result = coordinator.captureText(
+        let result = await coordinator.captureText(
             "https://example.com",
             changeCount: 8,
             preferences: RustPreferencesDocument(),
@@ -74,7 +74,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func capturesTextWithDisplayRichTextPreviewAsset() {
+    func capturesTextWithDisplayRichTextPreviewAsset() async {
         let rtfData = Data(#"{\rtf1\ansi{\colortbl;\red0\green128\blue0;}\cf1 let value = 1\cf0}"#.utf8)
         let displayRichText = ClipboardCapturedRichText(text: "let value = 1", rtfData: rtfData)
         var capturedRequest: RustCaptureTextRequest?
@@ -119,7 +119,7 @@ struct ClipboardCaptureCoordinatorTests {
             cacheFileSnapshot: { _, _ in nil }
         )
 
-        let result = coordinator.captureText(
+        let result = await coordinator.captureText(
             "let value = 1",
             displayRichText: displayRichText,
             changeCount: 12,
@@ -142,7 +142,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func capturesProtocolLessDomainAsTextWithoutLinkMetadata() {
+    func capturesProtocolLessDomainAsTextWithoutLinkMetadata() async {
         var capturedRequest: RustCaptureTextRequest?
         let coordinator = ClipboardCaptureCoordinator(
             captureText: { request in
@@ -175,7 +175,7 @@ struct ClipboardCaptureCoordinatorTests {
             cacheFileSnapshot: { _, _ in nil }
         )
 
-        let result = coordinator.captureText(
+        let result = await coordinator.captureText(
             "github.com",
             changeCount: 9,
             preferences: RustPreferencesDocument(),
@@ -190,7 +190,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func capturesRichTextUsingStoredRTFAsset() {
+    func capturesRichTextUsingStoredRTFAsset() async {
         var capturedRequest: RustCaptureRichTextRequest?
         var didCaptureTextFallback = false
         let coordinator = ClipboardCaptureCoordinator(
@@ -241,7 +241,7 @@ struct ClipboardCaptureCoordinatorTests {
             cacheFileSnapshot: { _, _ in nil }
         )
 
-        let result = coordinator.captureRichText(
+        let result = await coordinator.captureRichText(
             ClipboardCapturedRichText(text: "Bold", rtfData: Data("rtf".utf8)),
             changeCount: 12,
             preferences: RustPreferencesDocument(),
@@ -261,7 +261,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func richTextAssetWriteFailureFallsBackToTextCapture() {
+    func richTextAssetWriteFailureFallsBackToTextCapture() async {
         var capturedTextRequest: RustCaptureTextRequest?
         let coordinator = ClipboardCaptureCoordinator(
             captureText: { request in
@@ -295,7 +295,7 @@ struct ClipboardCaptureCoordinatorTests {
             cacheFileSnapshot: { _, _ in nil }
         )
 
-        let result = coordinator.captureRichText(
+        let result = await coordinator.captureRichText(
             ClipboardCapturedRichText(text: "Fallback", rtfData: Data("rtf".utf8)),
             changeCount: 13,
             preferences: RustPreferencesDocument(),
@@ -310,7 +310,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func skipsCaptureWhenWindowTitleRuleMatches() {
+    func skipsCaptureWhenWindowTitleRuleMatches() async {
         var didCaptureText = false
         let coordinator = ClipboardCaptureCoordinator(
             captureText: { _ in
@@ -346,7 +346,7 @@ struct ClipboardCaptureCoordinatorTests {
         let preferences = RustPreferencesDocument(
             ignoreList: RustIgnoreListPreferences(windowTitleKeywords: ["验证码"])
         )
-        let result = coordinator.captureText(
+        let result = await coordinator.captureText(
             "123456",
             changeCount: 3,
             preferences: preferences,
@@ -365,7 +365,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func imagePreflightSkipPreventsBackgroundFinalizerAndWriterWork() {
+    func imagePreflightSkipPreventsBackgroundFinalizerAndWriterWork() async {
         var didFinalizeImage = false
         var didCaptureImage = false
         let coordinator = ClipboardCaptureCoordinator(
@@ -412,7 +412,7 @@ struct ClipboardCaptureCoordinatorTests {
             #expect(result.hudTrigger == .none)
         } else {
             didFinalizeImage = true
-            _ = coordinator.captureImage(
+            _ = await coordinator.captureImage(
                 ClipboardCapturedImage(
                     data: Data("payload".utf8),
                     thumbnailData: Data("thumb".utf8),
@@ -433,7 +433,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func capturesImageUsingCachedAssets() {
+    func capturesImageUsingCachedAssets() async {
         var capturedRequest: RustCaptureImageRequest?
         let coordinator = ClipboardCaptureCoordinator(
             captureText: { _ in
@@ -475,7 +475,7 @@ struct ClipboardCaptureCoordinatorTests {
             cacheFileSnapshot: { _, _ in nil }
         )
 
-        let result = coordinator.captureImage(
+        let result = await coordinator.captureImage(
             ClipboardCapturedImage(
                 pngData: Data("payload".utf8),
                 thumbnailPNGData: Data("thumb".utf8),
@@ -500,7 +500,7 @@ struct ClipboardCaptureCoordinatorTests {
 
     @Test
     @MainActor
-    func capturesFilesUsingStructuredMetadata() {
+    func capturesFilesUsingStructuredMetadata() async {
         var capturedRequest: RustCaptureFilesRequest?
         let coordinator = ClipboardCaptureCoordinator(
             captureText: { _ in
@@ -539,7 +539,7 @@ struct ClipboardCaptureCoordinatorTests {
         let preferences = RustPreferencesDocument(
             history: RustHistoryPreferences(recordFiles: true)
         )
-        let result = coordinator.captureFiles(
+        let result = await coordinator.captureFiles(
             ClipboardCapturedFiles(
                 paths: ["/tmp/a.txt", "/tmp/b.txt"],
                 fileItems: [

@@ -5,19 +5,25 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+use super::asset_lifecycle::ManagedAssetGuard;
 use super::pending_images::{
     active_pending_image_staged_paths, mark_pending_jobs_deleted_for_items,
     purge_expired_pending_image_tombstones, terminal_pending_image_staged_paths,
 };
-use super::support::{delete_relative_file, unique_strings};
+use super::support::unique_strings;
 use super::ClipboardCore;
 
 const UNKNOWN_STAGING_FILE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
 
 impl ClipboardCore {
     pub fn run_maintenance(&mut self) -> Result<MaintenanceResult> {
+        let lifecycle = self.asset_lifecycle()?;
+        self.reconcile_pending_asset_files_locked(&lifecycle)?;
         let root = self.root_dir()?.to_path_buf();
-        let mut result = self.purge_soft_deleted_items_and_assets()?;
+        let mut result = self.purge_soft_deleted_items_and_assets_locked(&lifecycle)?;
+        let (abandoned_files, abandoned_bytes) = self.cleanup_abandoned_reservations(&lifecycle)?;
+        result.deleted_orphan_file_count += abandoned_files;
+        result.reclaimed_bytes += abandoned_bytes;
         let now = now_ms();
         let transaction = self.connection.transaction()?;
         let terminal_pending_staged_paths = terminal_pending_image_staged_paths(&transaction)?
@@ -29,8 +35,12 @@ impl ClipboardCore {
         let _ = purge_expired_pending_image_tombstones(&transaction, now)?;
         transaction.commit()?;
 
-        let referenced_asset_paths = self.referenced_asset_paths()?;
-        for relative_path in collect_maintenance_files(&root)? {
+        let mut referenced_asset_paths = self.asset_references(true)?;
+        referenced_asset_paths.extend(lifecycle.active_reservation_paths()?);
+        for relative_path in lifecycle.managed_files()? {
+            if referenced_asset_paths.contains(&relative_path) {
+                continue;
+            }
             if should_remove_unreferenced_file(
                 &root,
                 &relative_path,
@@ -39,29 +49,43 @@ impl ClipboardCore {
                 &terminal_pending_staged_paths,
                 now,
             )? {
-                if let Some(byte_count) = delete_relative_file(&root, &relative_path)? {
+                if let Some(byte_count) = lifecycle.delete(&relative_path)? {
                     result.deleted_orphan_file_count += 1;
                     result.reclaimed_bytes += byte_count;
                 }
             }
         }
-        remove_empty_maintenance_directories(&root)?;
+        // Keep managed directories stable for fd-anchored writers. Empty
+        // directories are negligible and do not authorize path-based removal.
 
         Ok(result)
     }
 
     pub(super) fn purge_soft_deleted_items_and_assets(&mut self) -> Result<MaintenanceResult> {
-        let root = self.root_dir()?.to_path_buf();
+        let lifecycle = self.asset_lifecycle()?;
+        self.reconcile_pending_asset_files_locked(&lifecycle)?;
+        self.purge_soft_deleted_items_and_assets_locked(&lifecycle)
+    }
+
+    fn purge_soft_deleted_items_and_assets_locked(
+        &mut self,
+        lifecycle: &ManagedAssetGuard,
+    ) -> Result<MaintenanceResult> {
         let now = now_ms();
         let transaction = self.connection.transaction()?;
         mark_pending_jobs_deleted_for_items(&transaction, now)?;
         transaction.commit()?;
 
         let removable_asset_paths = self.removable_asset_paths()?;
+        let mut referenced_paths = self.asset_references(true)?;
+        referenced_paths.extend(lifecycle.active_reservation_paths()?);
         let mut result = MaintenanceResult::default();
 
         for relative_path in unique_strings(removable_asset_paths) {
-            if let Some(byte_count) = delete_relative_file(&root, &relative_path)? {
+            if referenced_paths.contains(&relative_path) {
+                continue;
+            }
+            if let Some(byte_count) = lifecycle.delete(&relative_path)? {
                 result.deleted_asset_file_count += 1;
                 result.reclaimed_bytes += byte_count;
             }
@@ -83,14 +107,19 @@ impl ClipboardCore {
             "#,
             [],
         )? as i64;
+        transaction.execute(
+            r#"
+            INSERT INTO clipboard_items_fts
+                (clipboard_items_fts, rowid, summary, primary_text, source_app_name, custom_title)
+            SELECT 'delete', rowid, summary, primary_text, source_app_name, custom_title
+            FROM clipboard_items WHERE deleted_at_ms IS NOT NULL
+            "#,
+            [],
+        )?;
         result.purged_item_count = transaction.execute(
             "DELETE FROM clipboard_items WHERE deleted_at_ms IS NOT NULL",
             [],
         )? as i64;
-        transaction.execute(
-            "INSERT INTO clipboard_items_fts(clipboard_items_fts) VALUES('rebuild')",
-            [],
-        )?;
         transaction.commit()?;
 
         Ok(result)
@@ -128,59 +157,10 @@ impl ClipboardCore {
         }
         Ok(paths)
     }
-
-    fn referenced_asset_paths(&self) -> Result<HashSet<String>> {
-        let mut paths = Vec::new();
-        let mut asset_statement = self.connection.prepare(
-            r#"
-            SELECT a.relative_path
-            FROM clipboard_assets a
-            INNER JOIN clipboard_items i ON i.id = a.item_id
-            WHERE i.deleted_at_ms IS NULL
-            "#,
-        )?;
-        paths.extend(
-            asset_statement
-                .query_map([], |row| row.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?,
-        );
-
-        let mut icon_statement = self.connection.prepare(
-            r#"
-            SELECT relative_path
-            FROM source_app_icons
-            "#,
-        )?;
-        paths.extend(
-            icon_statement
-                .query_map([], |row| row.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?,
-        );
-
-        let mut link_statement = self.connection.prepare(
-            r#"
-            SELECT lm.icon_relative_path, lm.image_relative_path
-            FROM link_metadata lm
-            INNER JOIN clipboard_items i ON i.id = lm.item_id
-            WHERE i.deleted_at_ms IS NULL
-            "#,
-        )?;
-        for row in link_statement.query_map([], |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, Option<String>>(1)?,
-            ))
-        })? {
-            let (icon_path, image_path) = row?;
-            paths.extend(icon_path);
-            paths.extend(image_path);
-        }
-
-        Ok(paths.into_iter().collect())
-    }
 }
 
-fn collect_maintenance_files(root: &Path) -> Result<Vec<String>> {
+#[cfg(not(unix))]
+pub(super) fn collect_maintenance_files(root: &Path) -> Result<Vec<String>> {
     let mut files = Vec::new();
     for directory in ["assets", "thumbnails", "app-icons", "staging", ".staging"] {
         collect_files_in_directory(&root.join(directory), directory, &mut files)?;
@@ -188,6 +168,7 @@ fn collect_maintenance_files(root: &Path) -> Result<Vec<String>> {
     Ok(files)
 }
 
+#[cfg(not(unix))]
 fn collect_files_in_directory(
     directory: &Path,
     relative_prefix: &str,
@@ -250,13 +231,6 @@ fn should_remove_unreferenced_file(
         && !referenced_paths.contains(relative_path))
 }
 
-fn remove_empty_maintenance_directories(root: &Path) -> Result<()> {
-    for directory in ["assets", "thumbnails", "app-icons", "staging", ".staging"] {
-        remove_empty_child_directories(&root.join(directory))?;
-    }
-    Ok(())
-}
-
 fn staging_file_is_conservatively_old(path: &Path, now_ms: i64) -> Result<bool> {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
@@ -275,39 +249,4 @@ fn staging_file_is_conservatively_old(path: &Path, now_ms: i64) -> Result<bool> 
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
         .unwrap_or(0);
     Ok(now_ms.saturating_sub(modified_ms) >= UNKNOWN_STAGING_FILE_GRACE_MS)
-}
-
-fn remove_empty_child_directories(directory: &Path) -> Result<()> {
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
-            return Err(CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-                .with_detail("path", directory.display().to_string()));
-        }
-    };
-
-    for entry in entries {
-        let entry =
-            entry.map_err(|error| CoreError::new(CoreErrorCode::IoFailed, error.to_string()))?;
-        let path = entry.path();
-        let file_type = entry.file_type().map_err(|error| {
-            CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-                .with_detail("path", path.display().to_string())
-        })?;
-        if file_type.is_dir() {
-            remove_empty_child_directories(&path)?;
-            match fs::remove_dir(&path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => {
-                    return Err(CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-                        .with_detail("path", path.display().to_string()));
-                }
-            }
-        }
-    }
-
-    Ok(())
 }

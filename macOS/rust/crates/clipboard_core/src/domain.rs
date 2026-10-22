@@ -237,6 +237,8 @@ pub struct ClipboardItemSummary {
     pub last_copied_at_ms: i64,
     pub copy_count: i64,
     pub is_pinned: bool,
+    #[serde(default)]
+    pub pinboard_ids: Vec<String>,
     pub size_bytes: i64,
     pub preview_state: PreviewState,
     pub payload_state: PayloadState,
@@ -316,6 +318,87 @@ pub struct ItemPage {
     pub items: Vec<ClipboardItemSummary>,
     pub total_count: i64,
     pub has_more: bool,
+}
+
+/// Shared bound for explicit full-item lookups and ordered mutation requests.
+pub const MAX_ITEM_BATCH_SIZE: usize = 200;
+
+/// A list projection; text bodies are fetched explicitly before copying.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardListEntry {
+    #[serde(flatten)]
+    pub item: ClipboardItemSummary,
+    pub text_preview: Option<String>,
+    pub preview_truncated: bool,
+    pub trimmed_grapheme_count: Option<i64>,
+    pub scalar_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListEntryPage {
+    pub items: Vec<ClipboardListEntry>,
+    pub total_count: i64,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemLookupResult {
+    pub item_id: String,
+    pub item: Option<ClipboardItemSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ItemMutation {
+    Rename {
+        item_id: String,
+        title: String,
+    },
+    Delete {
+        item_id: String,
+    },
+    SetPinboardMembership {
+        item_id: String,
+        pinboard_id: String,
+        is_member: bool,
+    },
+    RecordCopied {
+        item_id: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemMutationStatus {
+    Applied,
+    ZeroAffected,
+    Failed,
+    NotAttempted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemMutationError {
+    pub code: String,
+    pub message_key: String,
+    pub recoverable: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemMutationOutcome {
+    pub request_index: usize,
+    pub status: ItemMutationStatus,
+    pub affected_count: i64,
+    pub error: Option<ItemMutationError>,
+    pub requires_refresh: bool,
+    pub committed: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ItemBatchMutationResult {
+    pub outcomes: Vec<ItemMutationOutcome>,
+    pub session_fault: bool,
+    pub termination_reason: Option<ItemMutationError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -610,6 +693,8 @@ pub struct HistoryPreferences {
     pub max_items: i64,
     #[serde(default = "default_retention_days")]
     pub retention_days: i64,
+    #[serde(default)]
+    pub retention_forever: bool,
     #[serde(default = "default_true")]
     pub record_images: bool,
     #[serde(default = "default_true")]
@@ -621,6 +706,7 @@ impl Default for HistoryPreferences {
         Self {
             max_items: default_max_items(),
             retention_days: default_retention_days(),
+            retention_forever: false,
             record_images: true,
             record_files: true,
         }

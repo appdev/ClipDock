@@ -5,6 +5,183 @@ import UniformTypeIdentifiers
 @testable import ClipDock
 
 struct LinkMetadataCoordinatorTests {
+    @Test(arguments: [false, true])
+    func cancellationWhileCompletionIsQueuedPreservesRecoverableLease(providerCancelled: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = RustCoreClient()
+        try capturePendingLink(client: client, appSupportDirectory: root,
+            urlText: "https://example.com/queued-completion", changeCount: 1)
+        let worker = ClipboardCoreDatabaseWorker()
+        let fetcher = PausingLinkMetadataFetcher(error: providerCancelled ? .cancelled : nil)
+        let (submissions, submissionSignal) = AsyncStream<Void>.makeStream()
+        let changes = LinkMetadataChangeCounter()
+        let coordinator = LinkMetadataCoordinator(coreClient: client, appSupportDirectory: root,
+            databaseWorker: worker,
+            configuration: LinkMetadataCoordinatorConfiguration(maxConcurrentFetches: 1),
+            fetcher: fetcher, assetWriter: MockLinkMetadataAssetWriter(),
+            beforeCompletionSubmission: { submissionSignal.yield(()); submissionSignal.finish() },
+            onMetadataChanged: { changes.increment() })
+        await coordinator.apply(preferences: RustPreferencesDocument())
+        try await fetcher.waitForFetchCount(1)
+
+        let finish = DispatchSemaphore(value: 0)
+        let (started, startedSignal) = AsyncStream<Void>.makeStream()
+        let blocker = Task.detached {
+            await worker.perform {
+                startedSignal.yield(())
+                startedSignal.finish()
+                finish.wait()
+            }
+        }
+        defer { finish.signal() }
+        var startedIterator = started.makeAsyncIterator()
+        _ = await startedIterator.next()
+        await fetcher.releaseNext()
+        var submissionIterator = submissions.makeAsyncIterator()
+        _ = await submissionIterator.next()
+        // The synchronous observer runs on the coordinator immediately before
+        // its database actor hop. stop cannot enter that actor until the hop.
+        await coordinator.stop()
+        finish.signal()
+        await blocker.value
+        await worker.perform {}
+        for _ in 0..<10 {
+            #expect(try client.listItems(appSupportDirectory: root).get().items.first?.linkMetadata?.metadataState == "fetching")
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(changes.count == 0)
+        let reclaimed = try client.claimLinkMetadataFetchBatch(appSupportDirectory: root, limit: 1, leaseTimeoutMs: 1).get()
+        #expect(reclaimed.count == 1)
+    }
+
+    @Test
+    func reclaimedLeaseReplacesStillRunningAttempt() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = RustCoreClient()
+        try capturePendingLink(client: client, appSupportDirectory: root,
+            urlText: "https://example.com/reclaimed", changeCount: 1)
+        let fetcher = PausingLinkMetadataFetcher()
+        let coordinator = LinkMetadataCoordinator(coreClient: client, appSupportDirectory: root,
+            configuration: LinkMetadataCoordinatorConfiguration(maxConcurrentFetches: 2, leaseTimeoutMs: 20),
+            fetcher: fetcher, assetWriter: MockLinkMetadataAssetWriter(), onMetadataChanged: {})
+        await coordinator.apply(preferences: RustPreferencesDocument())
+        try await fetcher.waitForFetchCount(1)
+        try await Task.sleep(for: .milliseconds(30))
+        await coordinator.scheduleSoon()
+        try await fetcher.waitForFetchCount(2)
+        await fetcher.releaseNext()
+        await fetcher.releaseNext()
+        _ = try await waitForReadyMetadata(client: client, appSupportDirectory: root)
+        await coordinator.stop()
+    }
+
+    @Test
+    func cancellationAfterAssetPublicationCleansAttemptAndKeepsLeaseRecoverable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = RustCoreClient()
+        try capturePendingLink(client: client, appSupportDirectory: root,
+            urlText: "https://example.com/asset-cancel", changeCount: 1)
+        let writer = PausingMetadataAssetWriter(root: root)
+        let coordinator = LinkMetadataCoordinator(coreClient: client, appSupportDirectory: root,
+            fetcher: MockLinkMetadataFetcher(iconData: LinkMetadataImagePayload(data: try tinyPNGData(), typeIdentifier: UTType.png.identifier)),
+            assetWriter: writer, onMetadataChanged: {})
+        await coordinator.apply(preferences: RustPreferencesDocument())
+        let assets = try await writer.waitForPublished()
+        let path = try #require(assets.iconRelativePath)
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        await coordinator.stop()
+        await writer.release()
+        for _ in 0..<80 {
+            if !FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path))
+        #expect(try client.listItems(appSupportDirectory: root).get().items.first?.linkMetadata?.metadataState == "fetching")
+    }
+
+    @Test
+    func stoppedAttemptStaysRecoverableAndCannotRemoveNewAttempt() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = RustCoreClient()
+        try capturePendingLink(client: client, appSupportDirectory: root,
+            urlText: "https://example.com/lifecycle", changeCount: 1)
+        let fetcher = PausingLinkMetadataFetcher()
+        let coordinator = LinkMetadataCoordinator(coreClient: client, appSupportDirectory: root,
+            configuration: LinkMetadataCoordinatorConfiguration(maxConcurrentFetches: 1, leaseTimeoutMs: 20),
+            fetcher: fetcher, assetWriter: MockLinkMetadataAssetWriter(), onMetadataChanged: {})
+        await coordinator.apply(preferences: RustPreferencesDocument())
+        try await fetcher.waitForFetchCount(1)
+        await coordinator.stop()
+        #expect(try client.listItems(appSupportDirectory: root).get().items.first?.linkMetadata?.metadataState == "fetching")
+        try await Task.sleep(for: .milliseconds(30))
+        await coordinator.apply(preferences: RustPreferencesDocument())
+        try await fetcher.waitForFetchCount(2)
+        await fetcher.releaseNext() // stale first attempt finishes after restart
+        try await Task.sleep(for: .milliseconds(30))
+        await coordinator.scheduleSoon()
+        try await fetcher.expectFetchCountRemains(2) // new attempt still owns the slot
+        await fetcher.releaseAll()
+        _ = try await waitForReadyMetadata(client: client, appSupportDirectory: root)
+        await coordinator.stop()
+    }
+
+    @Test
+    func providerCancellationIsTerminalWhileLive() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let client = RustCoreClient()
+        try capturePendingLink(client: client, appSupportDirectory: root,
+            urlText: "https://example.com/provider-cancel", changeCount: 1)
+        let coordinator = LinkMetadataCoordinator(coreClient: client, appSupportDirectory: root,
+            fetcher: CancelledMetadataFetcher(), assetWriter: MockLinkMetadataAssetWriter(), onMetadataChanged: {})
+        await coordinator.apply(preferences: RustPreferencesDocument())
+        for _ in 0..<80 {
+            if try client.listItems(appSupportDirectory: root).get().items.first?.linkMetadata?.metadataState == "failed" { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try client.listItems(appSupportDirectory: root).get().items.first?.linkMetadata?.metadataState == "failed")
+        let candidates = try client.claimLinkMetadataFetchBatch(appSupportDirectory: root, limit: 1, leaseTimeoutMs: 1).get()
+        #expect(candidates.isEmpty)
+        await coordinator.stop()
+    }
+
+    @Test
+    func metadataAssetWriterUsesUniqueAttemptsAndCleansOnlyUncommittedPaths() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try RustCoreClient().listItems(appSupportDirectory: root).get()
+        let writer = LinkMetadataAssetWriter(appSupportDirectory: root)
+        let image = LinkMetadataImagePayload(data: try tinyPNGData(), typeIdentifier: UTType.png.identifier)
+        let first = try await writer.writeAssets(itemID: "same-item", icon: image, preview: nil)
+        let second = try await writer.writeAssets(itemID: "same-item", icon: image, preview: nil)
+        let firstPath = try #require(first.iconRelativePath)
+        let secondPath = try #require(second.iconRelativePath)
+        #expect(firstPath != secondPath)
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent(firstPath).path))
+        await writer.cleanupAssets(first)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(firstPath).path))
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent(secondPath).path))
+        await writer.cleanupAssets(second)
+    }
+
+    @Test
+    func metadataBridgeSharesRetryLimitsAndEntityAwareParsing() throws {
+        let limits = try RustMetadataPolicy.limits()
+        #expect(limits.maxHtmlBytes == 512 * 1024)
+        #expect(limits.maxImageBytes == 5 * 1024 * 1024)
+        #expect(limits.maxRedirects == 5)
+        #expect(try RustMetadataPolicy.retryAtMs(fetchAttempts: 0, nowMs: 100) == 300_100)
+        #expect(try RustMetadataPolicy.retryAtMs(fetchAttempts: Int64.max, nowMs: Int64.max) == Int64.max)
+        let parsed = try RustMetadataPolicy.parse(html: "<title>A &amp; B</title><meta property=og:image content='/a?x=1&amp;y=2'>",
+            baseURL: #require(URL(string: "https://example.com/path")))
+        #expect(parsed.title == "A & B")
+        #expect(parsed.previewUrls == ["https://example.com/a?x=1&y=2"])
+    }
+
     @Test
     func coordinatorCompletesPendingLinkWithMockMetadata() async throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -222,6 +399,14 @@ struct LinkMetadataCoordinatorTests {
         #expect(imageAssetPath.hasSuffix(".jpg"))
         #expect(FileManager.default.fileExists(atPath: resolvedAssetPath(iconAssetPath, in: tempDirectory)))
         #expect(FileManager.default.fileExists(atPath: resolvedAssetPath(imageAssetPath, in: tempDirectory)))
+        // An uncertain/late native result must not remove assets already attached
+        // by the successful DB lease completion.
+        let writer = LinkMetadataAssetWriter(appSupportDirectory: tempDirectory)
+        await writer.cleanupAssets(LinkMetadataAssetWriteResult(
+            iconRelativePath: iconAssetPath, imageRelativePath: imageAssetPath))
+        #expect(FileManager.default.fileExists(atPath: resolvedAssetPath(iconAssetPath, in: tempDirectory)))
+        #expect(FileManager.default.fileExists(atPath: resolvedAssetPath(imageAssetPath, in: tempDirectory)))
+        await coordinator.stop()
     }
 
     @Test
@@ -485,15 +670,45 @@ private struct MockLinkMetadataFetcher: LinkMetadataFetching {
     }
 }
 
+private struct CancelledMetadataFetcher: LinkMetadataFetching {
+    func fetch(url: URL) async throws -> LinkMetadataFetchPayload { throw LinkMetadataFetchError.cancelled }
+}
+
+private actor PausingMetadataAssetWriter: LinkMetadataAssetWriting {
+    private let writer: LinkMetadataAssetWriter
+    private var published: LinkMetadataAssetWriteResult?
+    private var continuation: CheckedContinuation<Void, Never>?
+    init(root: URL) { writer = LinkMetadataAssetWriter(appSupportDirectory: root) }
+    func writeAssets(itemID: String, icon: LinkMetadataImagePayload?, preview: LinkMetadataImagePayload?) async throws -> LinkMetadataAssetWriteResult {
+        let result = try await writer.writeAssets(itemID: itemID, icon: icon, preview: preview)
+        published = result
+        await withCheckedContinuation { continuation = $0 }
+        return result
+    }
+    func cleanupAssets(_ assets: LinkMetadataAssetWriteResult) async { await writer.cleanupAssets(assets) }
+    func waitForPublished() async throws -> LinkMetadataAssetWriteResult {
+        for _ in 0..<80 {
+            if let published { return published }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return try #require(published)
+    }
+    func release() { continuation?.resume(); continuation = nil }
+}
+
 private actor PausingLinkMetadataFetcher: LinkMetadataFetching {
     private var fetchedURLs: [URL] = []
     private var continuations: [CheckedContinuation<Void, Never>] = []
+    private let error: LinkMetadataFetchError?
+
+    init(error: LinkMetadataFetchError? = nil) { self.error = error }
 
     func fetch(url: URL) async throws -> LinkMetadataFetchPayload {
         fetchedURLs.append(url)
         await withCheckedContinuation { continuation in
             continuations.append(continuation)
         }
+        if let error { throw error }
         return LinkMetadataFetchPayload(
             title: url.lastPathComponent.isEmpty ? "Example" : "Example \(url.lastPathComponent)",
             canonicalURL: url,

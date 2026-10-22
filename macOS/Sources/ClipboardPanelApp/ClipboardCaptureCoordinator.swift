@@ -291,19 +291,19 @@ public struct ClipboardCaptureHandlingResult: Equatable, Sendable {
 }
 
 public typealias ClipboardTextCapturePerformer =
-    (RustCaptureTextRequest) -> Result<RustCaptureTextResult, RustCoreError>
+    (RustCaptureTextRequest) async -> Result<RustCaptureTextResult, RustCoreError>
 public typealias ClipboardRichTextCapturePerformer =
-    (RustCaptureRichTextRequest) -> Result<RustCaptureRichTextResult, RustCoreError>
+    (RustCaptureRichTextRequest) async -> Result<RustCaptureRichTextResult, RustCoreError>
 public typealias ClipboardImageCapturePerformer =
-    (RustCaptureImageRequest) -> Result<RustCaptureImageResult, RustCoreError>
+    (RustCaptureImageRequest) async -> Result<RustCaptureImageResult, RustCoreError>
 public typealias ClipboardPendingImageCapturePerformer =
-    (RustCapturePendingImageRequest) -> Result<RustPendingImageCaptureResult, RustCoreError>
+    (RustCapturePendingImageRequest) async -> Result<RustPendingImageCaptureResult, RustCoreError>
 public typealias ClipboardPendingImageCompletionPerformer =
-    (RustCompletePendingImagePayloadRequest) -> Result<RustPendingImageCompletionResult, RustCoreError>
+    (RustCompletePendingImagePayloadRequest) async -> Result<RustPendingImageCompletionResult, RustCoreError>
 public typealias ClipboardPendingImageFailurePerformer =
-    (RustFailPendingImagePayloadRequest) -> Result<RustPendingImageCompletionResult, RustCoreError>
+    (RustFailPendingImagePayloadRequest) async -> Result<RustPendingImageCompletionResult, RustCoreError>
 public typealias ClipboardFilesCapturePerformer =
-    (RustCaptureFilesRequest) -> Result<RustCaptureFilesResult, RustCoreError>
+    (RustCaptureFilesRequest) async -> Result<RustCaptureFilesResult, RustCoreError>
 public typealias ClipboardSourceIconCache = (ClipboardCaptureSource?) -> String?
 public typealias ClipboardImageAssetCache =
     (ClipboardCapturedImage, Int) -> ClipboardStoredImageAsset?
@@ -368,9 +368,10 @@ public final class ClipboardCaptureCoordinator {
         displayRichText: ClipboardCapturedRichText? = nil,
         changeCount: Int,
         preferences: RustPreferencesDocument,
-        source: ClipboardCaptureSource?
-    ) -> ClipboardCaptureHandlingResult {
-        if let skipResult = skipResult(for: source, preferences: preferences) {
+        source: ClipboardCaptureSource?,
+        frozenDecision: ClipboardIgnoreRuleDecision? = nil
+    ) async -> ClipboardCaptureHandlingResult {
+        if let skipResult = skipResult(for: source, preferences: preferences, decision: frozenDecision) {
             return skipResult
         }
 
@@ -400,7 +401,7 @@ public final class ClipboardCaptureCoordinator {
             pasteboardChangeCount: Int64(changeCount)
         )
 
-        switch captureText(request) {
+        switch await captureText(request) {
         case .success:
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
@@ -421,18 +422,20 @@ public final class ClipboardCaptureCoordinator {
         _ richText: ClipboardCapturedRichText,
         changeCount: Int,
         preferences: RustPreferencesDocument,
-        source: ClipboardCaptureSource?
-    ) -> ClipboardCaptureHandlingResult {
-        if let skipResult = skipResult(for: source, preferences: preferences) {
+        source: ClipboardCaptureSource?,
+        frozenDecision: ClipboardIgnoreRuleDecision? = nil
+    ) async -> ClipboardCaptureHandlingResult {
+        if let skipResult = skipResult(for: source, preferences: preferences, decision: frozenDecision) {
             return skipResult
         }
 
         guard let storedAsset = cacheRichTextAsset(richText, changeCount) else {
-            return captureText(
+            return await captureText(
                 richText.text,
                 changeCount: changeCount,
                 preferences: preferences,
-                source: source
+                source: source,
+                frozenDecision: frozenDecision
             )
         }
 
@@ -450,7 +453,7 @@ public final class ClipboardCaptureCoordinator {
             pasteboardChangeCount: Int64(changeCount)
         )
 
-        switch captureRichTextRequest(request) {
+        switch await captureRichTextRequest(request) {
         case .success:
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
@@ -471,9 +474,10 @@ public final class ClipboardCaptureCoordinator {
         _ image: ClipboardCapturedImage,
         changeCount: Int,
         preferences: RustPreferencesDocument,
-        source: ClipboardCaptureSource?
-    ) -> ClipboardCaptureHandlingResult {
-        if let skipResult = skipResult(for: source, preferences: preferences) {
+        source: ClipboardCaptureSource?,
+        frozenDecision: ClipboardIgnoreRuleDecision? = nil
+    ) async -> ClipboardCaptureHandlingResult {
+        if let skipResult = skipResult(for: source, preferences: preferences, decision: frozenDecision) {
             return skipResult
         }
 
@@ -500,7 +504,7 @@ public final class ClipboardCaptureCoordinator {
             pasteboardChangeCount: Int64(changeCount)
         )
 
-        switch captureImage(request) {
+        switch await captureImage(request) {
         case .success:
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
@@ -521,9 +525,10 @@ public final class ClipboardCaptureCoordinator {
         _ storedImage: ClipboardStoredImageAsset,
         changeCount: Int,
         preferences: RustPreferencesDocument,
-        source: ClipboardCaptureSource?
-    ) -> ClipboardCaptureHandlingResult {
-        if let skipResult = skipResult(for: source, preferences: preferences) {
+        source: ClipboardCaptureSource?,
+        frozenDecision: ClipboardIgnoreRuleDecision? = nil
+    ) async -> ClipboardCaptureHandlingResult {
+        if let skipResult = skipResult(for: source, preferences: preferences, decision: frozenDecision) {
             return skipResult
         }
 
@@ -542,7 +547,7 @@ public final class ClipboardCaptureCoordinator {
             pasteboardChangeCount: Int64(changeCount)
         )
 
-        switch captureImage(request) {
+        switch await captureImage(request) {
         case .success:
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
@@ -564,9 +569,10 @@ public final class ClipboardCaptureCoordinator {
         changeCount: Int,
         preferences: RustPreferencesDocument,
         source: ClipboardCaptureSource?,
-        ownerSessionID: String
-    ) -> Result<RustPendingImageCaptureResult, RustCoreError> {
-        if let skipResult = skipResult(for: source, preferences: preferences) {
+        ownerSessionID: String,
+        frozenDecision: ClipboardIgnoreRuleDecision? = nil
+    ) async -> Result<RustPendingImageCaptureResult, RustCoreError> {
+        if let skipResult = skipResult(for: source, preferences: preferences, decision: frozenDecision) {
             return .failure(skipResult.storageError ?? Self.unavailablePendingImageError())
         }
 
@@ -588,13 +594,13 @@ public final class ClipboardCaptureCoordinator {
             sourceConfidence: source == nil ? "unknown" : "high",
             pasteboardChangeCount: Int64(changeCount)
         )
-        return capturePendingImageRequest(request)
+        return await capturePendingImageRequest(request)
     }
 
     public func completePendingImagePayload(
         _ completedImage: ClipboardCompletedPendingImageAsset
-    ) -> Result<RustPendingImageCompletionResult, RustCoreError> {
-        completePendingImagePayloadRequest(RustCompletePendingImagePayloadRequest(
+    ) async -> Result<RustPendingImageCompletionResult, RustCoreError> {
+        await completePendingImagePayloadRequest(RustCompletePendingImagePayloadRequest(
             jobId: completedImage.jobID,
             stagedPayloadRelativePath: completedImage.stagedPayloadRelativePath,
             mimeType: completedImage.mimeType,
@@ -608,8 +614,8 @@ public final class ClipboardCaptureCoordinator {
         jobID: String,
         stagedPayloadRelativePath: String?,
         failureCode: String
-    ) -> Result<RustPendingImageCompletionResult, RustCoreError> {
-        failPendingImagePayloadRequest(RustFailPendingImagePayloadRequest(
+    ) async -> Result<RustPendingImageCompletionResult, RustCoreError> {
+        await failPendingImagePayloadRequest(RustFailPendingImagePayloadRequest(
             jobId: jobID,
             stagedPayloadRelativePath: stagedPayloadRelativePath,
             failureCode: failureCode
@@ -620,9 +626,10 @@ public final class ClipboardCaptureCoordinator {
         _ files: ClipboardCapturedFiles,
         changeCount: Int,
         preferences: RustPreferencesDocument,
-        source: ClipboardCaptureSource?
-    ) -> ClipboardCaptureHandlingResult {
-        if let skipResult = skipResult(for: source, preferences: preferences) {
+        source: ClipboardCaptureSource?,
+        frozenDecision: ClipboardIgnoreRuleDecision? = nil
+    ) async -> ClipboardCaptureHandlingResult {
+        if let skipResult = skipResult(for: source, preferences: preferences, decision: frozenDecision) {
             return skipResult
         }
 
@@ -644,7 +651,7 @@ public final class ClipboardCaptureCoordinator {
             pasteboardChangeCount: Int64(changeCount)
         )
 
-        switch captureFiles(request) {
+        switch await captureFiles(request) {
         case .success:
             return ClipboardCaptureHandlingResult(
                 statusText: nil,
@@ -663,16 +670,18 @@ public final class ClipboardCaptureCoordinator {
 
     public func preflightCapture(
         source: ClipboardCaptureSource?,
-        preferences: RustPreferencesDocument
+        preferences: RustPreferencesDocument,
+        decision: ClipboardIgnoreRuleDecision? = nil
     ) -> ClipboardCaptureHandlingResult? {
-        skipResult(for: source, preferences: preferences)
+        skipResult(for: source, preferences: preferences, decision: decision)
     }
 
     private func skipResult(
         for source: ClipboardCaptureSource?,
-        preferences: RustPreferencesDocument
+        preferences: RustPreferencesDocument,
+        decision frozenDecision: ClipboardIgnoreRuleDecision? = nil
     ) -> ClipboardCaptureHandlingResult? {
-        let decision = ClipboardIgnoreRuleEvaluator.decision(
+        let decision = frozenDecision ?? ClipboardIgnoreRuleEvaluator.decision(
             for: source.map {
                 ClipboardIgnoreRuleSource(
                     bundleId: $0.bundleId,
@@ -699,6 +708,9 @@ public final class ClipboardCaptureCoordinator {
         for decision: ClipboardIgnoreRuleDecision
     ) -> String {
         switch decision.reason {
+        case .evaluationFailed:
+            return AppLocalization.text("capture.status.policyUnavailable", defaultValue: "捕获：规则检查暂不可用，已跳过本次内容")
+
         case .unknownSource:
             return AppLocalization.text("capture.status.skippedUnknownSource", defaultValue: "捕获：已跳过未知来源")
 

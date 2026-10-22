@@ -1,3 +1,4 @@
+use super::asset_lifecycle::{recovery_required, ManagedAssetGuard};
 use crate::domain::{
     CapturePendingImageRequest, CompletePendingImagePayloadRequest, FailPendingImagePayloadRequest,
     ItemManagementResult, PendingImageCaptureResult, PendingImageCompletionResult,
@@ -6,14 +7,14 @@ use crate::domain::{
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
 use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
-use std::fs;
-use std::path::Path;
+use std::io::Read;
 
-use super::capture::{make_item_id, record_capture_event, update_search_index};
+use super::capture::{
+    make_item_id, record_capture_event, remove_search_index, update_search_index,
+};
 use super::source_apps::SourceAppInput;
 use super::support::{
-    delete_relative_file, hash_file, insert_asset, normalize_relative_asset_path,
-    positive_dimension, stable_hash,
+    insert_asset, normalize_relative_asset_path, positive_dimension, stable_hash,
 };
 use super::ClipboardCore;
 
@@ -37,6 +38,36 @@ impl ClipboardCore {
         &mut self,
         request: CapturePendingImageRequest,
     ) -> Result<PendingImageCaptureResult> {
+        let paths = [
+            Some(request.thumbnail_relative_path.clone()),
+            request.source_icon_relative_path.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let payload_paths = vec![
+            request.reserved_payload_relative_path.clone(),
+            request.staged_payload_relative_path.clone(),
+        ];
+        let result = self.with_asset_registration(paths, |core, lifecycle| {
+            core.capture_pending_image_locked(request, lifecycle)
+        });
+        if result.is_err() {
+            let _ = self.cleanup_uncommitted_assets(payload_paths);
+        }
+        let result = result?;
+        self.apply_post_capture()?;
+        Ok(result)
+    }
+    fn capture_pending_image_locked(
+        &mut self,
+        request: CapturePendingImageRequest,
+        lifecycle: &ManagedAssetGuard,
+    ) -> Result<PendingImageCaptureResult> {
+        super::capture::validate_optional_icon(
+            &lifecycle,
+            request.source_icon_relative_path.as_deref(),
+        )?;
         validate_webp_mime(&request.mime_type)?;
         validate_positive_dimensions(request.width, request.height)?;
         validate_positive_dimensions(request.thumbnail_width, request.thumbnail_height)?;
@@ -49,13 +80,9 @@ impl ClipboardCore {
             normalize_expected_relative_path(&request.reserved_payload_relative_path, "assets/")?;
         let staged_payload_relative_path =
             normalize_staged_relative_path(&request.staged_payload_relative_path)?;
-        let root = self.root_dir()?.to_path_buf();
-        let thumbnail_path = root.join(&thumbnail_relative_path);
-        validate_existing_file(&thumbnail_path, thumbnail_byte_count)?;
-        validate_webp_file(&thumbnail_path)?;
-        let thumbnail_digest = hash_file(&thumbnail_path)?;
-        let staged_path = root.join(&staged_payload_relative_path);
-        if staged_path.exists() {
+        let thumbnail_digest =
+            validated_webp_hash(&lifecycle, &thumbnail_relative_path, thumbnail_byte_count)?;
+        if lifecycle.exists(&staged_payload_relative_path)? {
             return Err(CoreError::new(
                 CoreErrorCode::InvalidInput,
                 "staged payload path must be empty before pending capture",
@@ -137,13 +164,7 @@ impl ClipboardCore {
             request.self_write_token.as_deref(),
             now,
         )?;
-        update_search_index(
-            &transaction,
-            &item_id,
-            &summary,
-            "",
-            source_app_name.unwrap_or_default(),
-        )?;
+        update_search_index(&transaction, &item_id)?;
         transaction.execute(
             r#"
             INSERT INTO pending_image_jobs (
@@ -178,7 +199,8 @@ impl ClipboardCore {
             ],
         )?;
         transaction.commit()?;
-        self.apply_post_capture()?;
+        // The empty payload reservation intentionally remains owned until the
+        // asynchronous encoder stages it and completion/failure settles it.
 
         Ok(PendingImageCaptureResult {
             job_id,
@@ -193,17 +215,21 @@ impl ClipboardCore {
         &mut self,
         request: CompletePendingImagePayloadRequest,
     ) -> Result<PendingImageCompletionResult> {
+        let lifecycle = self.asset_lifecycle()?;
+        self.reconcile_pending_asset_files_locked(&lifecycle)?;
         validate_webp_mime(&request.mime_type)?;
         validate_positive_dimensions(request.width, request.height)?;
         let byte_count = validate_positive_byte_count(request.byte_count)?;
         let job_id = normalize_required(&request.job_id, "job id")?;
-        let root = self.root_dir()?.to_path_buf();
         let now = now_ms();
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let Some(job) = load_pending_image_job(&transaction, &job_id)? else {
             transaction.commit()?;
+            let staged_path =
+                normalize_staged_relative_path(&request.staged_payload_relative_path)?;
+            self.settle_asset_paths(&lifecycle, &[staged_path])?;
             return Ok(PendingImageCompletionResult::not_pending());
         };
         let staged_payload_relative_path =
@@ -223,9 +249,13 @@ impl ClipboardCore {
 
         if job.state != "pending" {
             transaction.commit()?;
+            self.settle_asset_paths(&lifecycle, &job.asset_paths())?;
             let mut result = terminal_completion_result(&job);
             if matches!(job.state.as_str(), "deleted" | "merged") {
-                if delete_relative_file(&root, &job.staged_payload_relative_path)?.is_some() {
+                if self
+                    .delete_unreferenced_asset(&lifecycle, &job.staged_payload_relative_path)?
+                    .is_some()
+                {
                     result
                         .cleaned_relative_paths
                         .push(job.staged_payload_relative_path.clone());
@@ -246,7 +276,9 @@ impl ClipboardCore {
                     now,
                 )?;
                 transaction.commit()?;
-                let _ = delete_relative_file(&root, &job.staged_payload_relative_path)?;
+                self.settle_asset_paths(&lifecycle, &job.asset_paths())?;
+                let _ =
+                    self.delete_unreferenced_asset(&lifecycle, &job.staged_payload_relative_path)?;
                 return Ok(PendingImageCompletionResult {
                     status: "deleted".to_string(),
                     job_id: Some(job.job_id),
@@ -259,10 +291,8 @@ impl ClipboardCore {
             }
         };
 
-        let staged_path = root.join(&job.staged_payload_relative_path);
-        validate_existing_file(&staged_path, byte_count)?;
-        validate_webp_file(&staged_path)?;
-        let payload_digest = hash_file(&staged_path)?;
+        let payload_digest =
+            validated_webp_hash(&lifecycle, &job.staged_payload_relative_path, byte_count)?;
         let content_hash = stable_hash(&format!("image:{payload_digest}"));
 
         if let Some((duplicate_item_id, _)) =
@@ -276,8 +306,11 @@ impl ClipboardCore {
                 now,
             )?;
             transaction.commit()?;
-            let _ = delete_relative_file(&root, &job.staged_payload_relative_path)?;
-            let _ = delete_relative_file(&root, &job.thumbnail_relative_path)?;
+            self.settle_asset_paths(&lifecycle, &job.asset_paths())
+                .map_err(|error| error.with_detail("mutation_committed", "true"))?;
+            let _ =
+                self.delete_unreferenced_asset(&lifecycle, &job.staged_payload_relative_path)?;
+            let _ = self.delete_unreferenced_asset(&lifecycle, &job.thumbnail_relative_path)?;
             return Ok(PendingImageCompletionResult {
                 status: "merged".to_string(),
                 job_id: Some(job.job_id),
@@ -294,24 +327,22 @@ impl ClipboardCore {
 
         let reserved_payload_relative_path =
             normalize_expected_relative_path(&job.reserved_payload_relative_path, "assets/")?;
-        let final_path = root.join(&reserved_payload_relative_path);
-        if final_path.exists() {
+        if lifecycle.exists(&reserved_payload_relative_path)? {
             return Err(CoreError::new(
                 CoreErrorCode::InvalidInput,
                 "reserved payload path already exists",
             )
-            .with_detail("path", final_path.display().to_string()));
+            .with_detail("path", reserved_payload_relative_path));
         }
-        if let Some(parent) = final_path.parent() {
-            fs::create_dir_all(parent)?;
+        if let Err(error) = lifecycle.rename(
+            &job.staged_payload_relative_path,
+            &reserved_payload_relative_path,
+        ) {
+            drop(transaction);
+            self.reconcile_failed_pending_publish(&lifecycle, &job)?;
+            return Err(error);
         }
-        fs::rename(&staged_path, &final_path).map_err(|error| {
-            CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-                .with_detail("source", staged_path.display().to_string())
-                .with_detail("destination", final_path.display().to_string())
-        })?;
-        let final_path_needs_compensation = true;
-        complete_pending_image_item(
+        if let Err(error) = complete_pending_image_item(
             &transaction,
             &item_id,
             &job,
@@ -322,23 +353,32 @@ impl ClipboardCore {
             request.height,
             byte_count,
             now,
-        )?;
+        ) {
+            drop(transaction);
+            self.reconcile_failed_pending_publish(&lifecycle, &job)?;
+            return Err(error);
+        }
 
         match transaction.commit() {
-            Ok(()) => Ok(PendingImageCompletionResult {
-                status: "ready".to_string(),
-                job_id: Some(job.job_id),
-                item_id: Some(item_id.clone()),
-                effective_item_id: Some(item_id),
-                content_hash: Some(content_hash),
-                cleaned_relative_paths: Vec::new(),
-                affected_count: 1,
-            }),
+            Ok(()) => {
+                self.settle_asset_paths(&lifecycle, &job.asset_paths())
+                    .map_err(|error| error.with_detail("mutation_committed", "true"))?;
+                Ok(PendingImageCompletionResult {
+                    status: "ready".to_string(),
+                    job_id: Some(job.job_id),
+                    item_id: Some(item_id.clone()),
+                    effective_item_id: Some(item_id),
+                    content_hash: Some(content_hash),
+                    cleaned_relative_paths: Vec::new(),
+                    affected_count: 1,
+                })
+            }
             Err(error) => {
-                if final_path_needs_compensation {
-                    let _ = fs::remove_file(&final_path);
-                }
-                Err(error.into())
+                self.reconcile_failed_pending_publish(&lifecycle, &job)?;
+                let committed = self
+                    .asset_references(false)?
+                    .contains(&reserved_payload_relative_path);
+                Err(CoreError::from(error).with_detail("mutation_committed", committed.to_string()))
             }
         }
     }
@@ -347,6 +387,8 @@ impl ClipboardCore {
         &mut self,
         request: FailPendingImagePayloadRequest,
     ) -> Result<PendingImageCompletionResult> {
+        let lifecycle = self.asset_lifecycle()?;
+        self.reconcile_pending_asset_files_locked(&lifecycle)?;
         let job_id = normalize_required(&request.job_id, "job id")?;
         let failure_code = normalize_required(&request.failure_code, "failure code")?;
         let staged_request = request
@@ -354,15 +396,25 @@ impl ClipboardCore {
             .as_deref()
             .map(normalize_staged_relative_path)
             .transpose()?;
-        let root = self.root_dir()?.to_path_buf();
         let now = now_ms();
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let Some(job) = load_pending_image_job(&transaction, &job_id)? else {
             transaction.commit()?;
+            if let Some(path) = staged_request {
+                self.settle_asset_paths(&lifecycle, &[path])?;
+            }
             return Ok(PendingImageCompletionResult::not_pending());
         };
+
+        if job.state != "pending" {
+            transaction.commit()?;
+            if staged_request.as_deref() == Some(job.staged_payload_relative_path.as_str()) {
+                self.settle_asset_paths(&lifecycle, &job.asset_paths())?;
+            }
+            return Ok(terminal_completion_result(&job));
+        }
 
         if job.state == "pending" {
             mark_pending_job_terminal(
@@ -385,9 +437,11 @@ impl ClipboardCore {
             }
         }
         transaction.commit()?;
-
         if staged_request.as_deref() == Some(job.staged_payload_relative_path.as_str()) {
-            let _ = delete_relative_file(&root, &job.staged_payload_relative_path)?;
+            self.settle_asset_paths(&lifecycle, &job.asset_paths())
+                .map_err(|error| error.with_detail("mutation_committed", "true"))?;
+            let _ =
+                self.delete_unreferenced_asset(&lifecycle, &job.staged_payload_relative_path)?;
         }
         let cleaned_relative_paths =
             if staged_request.as_deref() == Some(job.staged_payload_relative_path.as_str()) {
@@ -411,6 +465,8 @@ impl ClipboardCore {
         &mut self,
         request: RecoverPendingImagesRequest,
     ) -> Result<ItemManagementResult> {
+        let lifecycle = self.asset_lifecycle()?;
+        self.reconcile_pending_asset_files_locked(&lifecycle)?;
         let owner_session_id = normalize_required(&request.owner_session_id, "owner session id")?;
         let now = now_ms();
         let affected_count = self.connection.execute(
@@ -447,6 +503,31 @@ impl ClipboardCore {
             params![now],
         )?;
         Ok(ItemManagementResult { affected_count })
+    }
+
+    fn reconcile_failed_pending_publish(
+        &self,
+        lifecycle: &ManagedAssetGuard,
+        job: &PendingImageJob,
+    ) -> Result<()> {
+        if !self.connection.is_autocommit() {
+            return Err(recovery_required(
+                "pending transaction could not be rolled back",
+                &job.job_id,
+            ));
+        }
+        self.reconcile_pending_asset_files_locked(lifecycle)
+            .map_err(|error| recovery_required(error.to_string(), &job.job_id))
+    }
+}
+
+impl PendingImageJob {
+    fn asset_paths(&self) -> Vec<String> {
+        vec![
+            self.thumbnail_relative_path.clone(),
+            self.reserved_payload_relative_path.clone(),
+            self.staged_payload_relative_path.clone(),
+        ]
     }
 }
 
@@ -552,6 +633,7 @@ fn complete_pending_image_item(
     now: i64,
 ) -> Result<()> {
     let summary = super::support::summarize_image(width, height);
+    remove_search_index(transaction, item_id)?;
     insert_asset(
         transaction,
         item_id,
@@ -577,7 +659,6 @@ fn complete_pending_image_item(
         "#,
         params![format_id, item_id, IMAGE_WEBP_MIME_TYPE, byte_count],
     )?;
-    super::capture::remove_search_index(transaction, item_id)?;
     transaction.execute(
         r#"
         UPDATE clipboard_items
@@ -592,7 +673,7 @@ fn complete_pending_image_item(
         params![summary, content_hash, byte_count, now, item_id],
     )?;
     mark_pending_job_terminal(transaction, &job.job_id, "ready", None, None, now)?;
-    update_search_index(transaction, item_id, &summary, "", "")?;
+    update_search_index(transaction, item_id)?;
     Ok(())
 }
 
@@ -621,6 +702,7 @@ fn merge_pending_image_into_duplicate(
         },
     )?;
     let pending_source_confidence = SourceConfidence::from_storage(&pending.3);
+    remove_search_index(transaction, duplicate_item_id)?;
     transaction.execute(
         r#"
         UPDATE clipboard_items
@@ -685,14 +767,12 @@ fn merge_pending_image_into_duplicate(
         None,
         now,
     )?;
+    remove_search_index(transaction, pending_item_id)?;
     transaction.execute(
         "DELETE FROM clipboard_items WHERE id = ?1",
         params![pending_item_id],
     )?;
-    transaction.execute(
-        "INSERT INTO clipboard_items_fts(clipboard_items_fts) VALUES('rebuild')",
-        [],
-    )?;
+    update_search_index(transaction, duplicate_item_id)?;
     Ok(())
 }
 
@@ -830,36 +910,35 @@ fn validate_positive_byte_count(byte_count: i64) -> Result<i64> {
     }
 }
 
-fn validate_existing_file(path: &Path, expected_byte_count: i64) -> Result<()> {
-    let metadata = fs::metadata(path).map_err(|error| {
-        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-            .with_detail("path", path.display().to_string())
-    })?;
-    if !metadata.is_file() || metadata.len() as i64 != expected_byte_count {
+fn validated_webp_hash(
+    lifecycle: &ManagedAssetGuard,
+    path: &str,
+    expected_byte_count: i64,
+) -> Result<String> {
+    let mut file = lifecycle.read(path)?;
+    let actual_bytes = file.metadata()?.len();
+    if actual_bytes as i64 != expected_byte_count {
         return Err(CoreError::new(
             CoreErrorCode::InvalidInput,
             "image file byte count does not match metadata",
         )
-        .with_detail("path", path.display().to_string())
+        .with_detail("path", path)
         .with_detail("expected_byte_count", expected_byte_count.to_string())
-        .with_detail("actual_byte_count", metadata.len().to_string()));
+        .with_detail("actual_byte_count", actual_bytes.to_string()));
     }
-    Ok(())
-}
-
-fn validate_webp_file(path: &Path) -> Result<()> {
-    let bytes = fs::read(path).map_err(|error| {
-        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-            .with_detail("path", path.display().to_string())
-    })?;
-    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        Ok(())
+    let mut header = [0; 12];
+    if actual_bytes >= 12
+        && file.read_exact(&mut header).is_ok()
+        && &header[0..4] == b"RIFF"
+        && &header[8..12] == b"WEBP"
+    {
+        lifecycle.hash(path)
     } else {
         Err(CoreError::new(
             CoreErrorCode::InvalidInput,
             "image file is not a WebP payload",
         )
-        .with_detail("path", path.display().to_string()))
+        .with_detail("path", path))
     }
 }
 

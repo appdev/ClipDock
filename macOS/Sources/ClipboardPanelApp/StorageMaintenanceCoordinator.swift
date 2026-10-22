@@ -1,23 +1,24 @@
 import Foundation
 
+@MainActor
 public final class StorageMaintenanceCoordinator {
-    private let openCoreOperation: () -> Result<RustCoreOpenResult, RustCoreError>
-    private let runMaintenanceOperation: () -> Result<RustMaintenanceResult, RustCoreError>
+    private let openCoreOperation: () async -> Result<RustCoreOpenResult, RustCoreError>
+    private let runMaintenanceOperation: () async -> Result<RustMaintenanceResult, RustCoreError>
 
     public init(
-        openCoreOperation: @escaping () -> Result<RustCoreOpenResult, RustCoreError>,
-        runMaintenanceOperation: @escaping () -> Result<RustMaintenanceResult, RustCoreError>
+        openCoreOperation: @escaping () async -> Result<RustCoreOpenResult, RustCoreError>,
+        runMaintenanceOperation: @escaping () async -> Result<RustMaintenanceResult, RustCoreError>
     ) {
         self.openCoreOperation = openCoreOperation
         self.runMaintenanceOperation = runMaintenanceOperation
     }
 
-    public func openCore() -> Result<RustCoreOpenResult, RustCoreError> {
-        openCoreOperation()
+    public func openCore() async -> Result<RustCoreOpenResult, RustCoreError> {
+        await openCoreOperation()
     }
 
-    public func runMaintenance() -> Result<RustMaintenanceResult, RustCoreError> {
-        runMaintenanceOperation()
+    public func runMaintenance() async -> Result<RustMaintenanceResult, RustCoreError> {
+        await runMaintenanceOperation()
     }
 
     public func hasChanges(_ result: RustMaintenanceResult) -> Bool {

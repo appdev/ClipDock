@@ -1,3 +1,11 @@
+mod asset_ffi;
+mod sessions;
+use asset_ffi::{
+    cleanup_uncommitted_assets, encode_lossless_webp_to_staging, publish_reserved_asset,
+    reserve_asset, reserve_existing_asset, stage_reserved_asset,
+};
+use sessions::{with_core, with_core_batch, with_core_without_maintenance};
+
 use clipboard_core::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CapturePendingImageRequest,
     CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata, ClipboardCore,
@@ -7,7 +15,8 @@ use clipboard_core::{
     PendingImageCompletionResult, PinboardPage, PreferencesDocument, RecoverPendingImagesRequest,
     SourceConfidence,
 };
-use serde::Deserialize;
+use clipboard_core::{CoreError, CoreErrorCode, ItemMutation, PreferencesPatch};
+use serde::{Deserialize, Serialize};
 
 #[swift_bridge::bridge]
 mod ffi {
@@ -37,6 +46,14 @@ mod ffi {
         total_count: i64,
         has_more: bool,
         items_json: String,
+        error_code: String,
+        message_key: String,
+    }
+
+    #[swift_bridge(swift_repr = "struct")]
+    struct CoreJSONResult {
+        ok: bool,
+        result_json: String,
         error_code: String,
         message_key: String,
     }
@@ -148,9 +165,59 @@ mod ffi {
     }
 
     extern "Rust" {
+        fn reserve_asset(
+            app_support_dir: String,
+            relative_path: String,
+            staged_relative_path: String,
+        ) -> CoreJSONResult;
+        fn reserve_existing_asset(app_support_dir: String, relative_path: String)
+            -> CoreJSONResult;
+        fn stage_reserved_asset(
+            app_support_dir: String,
+            reservation_json: String,
+            bytes: &[u8],
+        ) -> CoreJSONResult;
+        fn publish_reserved_asset(
+            app_support_dir: String,
+            reservation_json: String,
+        ) -> CoreJSONResult;
+        fn encode_lossless_webp_to_staging(
+            app_support_dir: String,
+            reservation_json: String,
+            rgba: &[u8],
+            width: i64,
+            height: i64,
+            max_bytes: i64,
+        ) -> CoreJSONResult;
+        fn cleanup_uncommitted_assets(
+            app_support_dir: String,
+            relative_paths_json: String,
+        ) -> CoreJSONResult;
+        fn metadata_url_policy_json(request_json: String) -> CoreJSONResult;
+        fn metadata_limits_json(request_json: String) -> CoreJSONResult;
+        fn metadata_retry_at_json(request_json: String) -> CoreJSONResult;
+        fn parse_metadata_html_json(request_json: String) -> CoreJSONResult;
+        fn evaluate_capture_policy_json(request_json: String) -> CoreJSONResult;
+        fn analyze_capture_text_json(request_json: String) -> CoreJSONResult;
+        fn plan_copy_json(request_json: String) -> CoreJSONResult;
         fn open_core(app_support_dir: String) -> CoreOpenResult;
         fn export_backup(app_support_dir: String, path: String) -> CoreBackupResult;
         fn import_backup(app_support_dir: String, path: String) -> CoreBackupResult;
+        fn open_core_without_maintenance(app_support_dir: String) -> CoreOpenResult;
+        fn get_preferences_without_maintenance(app_support_dir: String) -> CorePreferencesResult;
+        fn patch_preferences(app_support_dir: String, patch_json: String) -> CoreJSONResult;
+        fn get_item(app_support_dir: String, item_id: String) -> CoreJSONResult;
+        fn get_items(app_support_dir: String, ordered_ids_json: String) -> CoreJSONResult;
+        fn mutate_items(app_support_dir: String, requests_json: String) -> CoreJSONResult;
+        fn list_entries(
+            app_support_dir: String,
+            limit: i64,
+            offset: i64,
+            item_type: String,
+            source_app_id: String,
+            pinboard_id: String,
+            search_text: String,
+        ) -> CoreListResult;
         fn active_source_icon_header_color_cache_version() -> i64;
         fn blake3_digest(bytes: &[u8]) -> String;
         fn encode_webp_lossless_rgba(rgba: &[u8], width: i64, height: i64) -> CoreWebPEncodeResult;
@@ -214,11 +281,7 @@ mod ffi {
             is_member: bool,
         ) -> CoreItemManagementResult;
         fn delete_item(app_support_dir: String, item_id: String) -> CoreItemManagementResult;
-        fn rename_item(
-            app_support_dir: String,
-            item_id: String,
-            title: String,
-        ) -> CoreItemManagementResult;
+        fn rename_item(app_support_dir: String, item_id: String, title: String) -> CoreItemManagementResult;
         fn record_item_copied(app_support_dir: String, item_id: String)
             -> CoreItemManagementResult;
         fn update_source_app_icon_header_color(
@@ -324,7 +387,19 @@ mod ffi {
 }
 
 fn get_preferences(app_support_dir: String) -> ffi::CorePreferencesResult {
-    match ClipboardCore::open(app_support_dir).and_then(|core| core.get_preferences()) {
+    preferences_response(with_core(app_support_dir, |core| core.get_preferences()))
+}
+
+fn get_preferences_without_maintenance(app_support_dir: String) -> ffi::CorePreferencesResult {
+    preferences_response(with_core_without_maintenance(app_support_dir, |core| {
+        core.get_preferences()
+    }))
+}
+
+fn preferences_response(
+    result: clipboard_core::Result<PreferencesDocument>,
+) -> ffi::CorePreferencesResult {
+    match result {
         Ok(preferences) => preferences_result(preferences),
         Err(error) => ffi::CorePreferencesResult {
             ok: false,
@@ -353,9 +428,7 @@ fn update_preferences(
         }
     };
 
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.update_preferences(preferences))
-    {
+    match with_core(app_support_dir, |core| core.update_preferences(preferences)) {
         Ok(preferences) => preferences_result(preferences),
         Err(error) => ffi::CorePreferencesResult {
             ok: false,
@@ -378,7 +451,7 @@ fn preferences_result(preferences: PreferencesDocument) -> ffi::CorePreferencesR
 }
 
 fn run_maintenance(app_support_dir: String) -> ffi::CoreMaintenanceResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.run_maintenance()) {
+    match with_core(app_support_dir, |core| core.run_maintenance()) {
         Ok(result) => maintenance_result(result),
         Err(error) => ffi::CoreMaintenanceResult {
             ok: false,
@@ -407,7 +480,7 @@ fn maintenance_result(result: MaintenanceResult) -> ffi::CoreMaintenanceResult {
 }
 
 fn list_pinboards(app_support_dir: String) -> ffi::CorePinboardsResult {
-    match ClipboardCore::open(app_support_dir).and_then(|core| core.list_pinboards()) {
+    match with_core(app_support_dir, |core| core.list_pinboards()) {
         Ok(page) => pinboards_result(page),
         Err(error) => ffi::CorePinboardsResult {
             ok: false,
@@ -434,7 +507,7 @@ fn create_pinboard(
     title: String,
     color_code: i64,
 ) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+    match with_core(app_support_dir, |core| {
         core.create_pinboard(title, optional_i64(color_code))
             .map(|_| ())
     }) {
@@ -448,10 +521,21 @@ fn rename_pinboard(
     pinboard_id: String,
     title: String,
 ) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.rename_pinboard(pinboard_id, title).map(|_| ()))
-    {
+    match with_core(app_support_dir, |core| {
+        core.rename_pinboard(pinboard_id, title).map(|_| ())
+    }) {
         Ok(()) => item_management_result(ItemManagementResult { affected_count: 1 }),
+        Err(error) => item_management_error_result(error),
+    }
+}
+
+fn rename_item(
+    app_support_dir: String,
+    item_id: String,
+    title: String,
+) -> ffi::CoreItemManagementResult {
+    match with_core(app_support_dir, |core| core.rename_item(item_id, title)) {
+        Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
 }
@@ -461,7 +545,7 @@ fn update_pinboard_color(
     pinboard_id: String,
     color_code: i64,
 ) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+    match with_core(app_support_dir, |core| {
         core.update_pinboard_color(pinboard_id, color_code)
             .map(|_| ())
     }) {
@@ -471,9 +555,7 @@ fn update_pinboard_color(
 }
 
 fn delete_pinboard(app_support_dir: String, pinboard_id: String) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.delete_pinboard(pinboard_id))
-    {
+    match with_core(app_support_dir, |core| core.delete_pinboard(pinboard_id)) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
@@ -485,9 +567,9 @@ fn set_item_pinboard_membership(
     pinboard_id: String,
     is_member: bool,
 ) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.set_item_pinboard_membership(item_id, pinboard_id, is_member))
-    {
+    match with_core(app_support_dir, |core| {
+        core.set_item_pinboard_membership(item_id, pinboard_id, is_member)
+    }) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
@@ -495,15 +577,13 @@ fn set_item_pinboard_membership(
 
 fn export_backup(app_support_dir: String, path: String) -> ffi::CoreBackupResult {
     backup_result(
-        ClipboardCore::open_for_backup(app_support_dir)
-            .and_then(|mut core| core.export_backup(path)),
+        with_core_without_maintenance(app_support_dir, |core| core.export_backup(path)),
     )
 }
 
 fn import_backup(app_support_dir: String, path: String) -> ffi::CoreBackupResult {
     backup_result(
-        ClipboardCore::open_for_backup(app_support_dir)
-            .and_then(|mut core| core.import_backup(path)),
+        with_core_without_maintenance(app_support_dir, |core| core.import_backup(path)),
     )
 }
 
@@ -531,15 +611,14 @@ fn backup_result(
 }
 
 fn delete_item(app_support_dir: String, item_id: String) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.delete_item(item_id)) {
+    match with_core(app_support_dir, |core| core.delete_item(item_id)) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
 }
 
 fn record_item_copied(app_support_dir: String, item_id: String) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.record_item_copied(item_id))
-    {
+    match with_core(app_support_dir, |core| core.record_item_copied(item_id)) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
@@ -552,7 +631,7 @@ fn update_source_app_icon_header_color(
     header_color_argb: i64,
     allow_latest_without_path: bool,
 ) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+    match with_core(app_support_dir, |core| {
         core.update_source_app_icon_header_color(
             source_app_id,
             source_app_icon_path,
@@ -578,16 +657,7 @@ fn clear_items(
         search_text: optional_string(search_text),
     };
 
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.clear_items(query)) {
-        Ok(result) => item_management_result(result),
-        Err(error) => item_management_error_result(error),
-    }
-}
-
-fn rename_item(app_support_dir: String, item_id: String, title: String) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.rename_item(item_id, title))
-    {
+    match with_core(app_support_dir, |core| core.clear_items(query)) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
@@ -598,9 +668,9 @@ fn claim_link_metadata_fetch_batch(
     limit: i64,
     lease_timeout_ms: i64,
 ) -> ffi::CoreLinkMetadataFetchBatchResult {
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.claim_link_metadata_fetch_batch(limit, lease_timeout_ms))
-    {
+    match with_core(app_support_dir, |core| {
+        core.claim_link_metadata_fetch_batch(limit, lease_timeout_ms)
+    }) {
         Ok(candidates) => link_metadata_fetch_batch_result(candidates),
         Err(error) => ffi::CoreLinkMetadataFetchBatchResult {
             ok: false,
@@ -627,9 +697,9 @@ fn complete_link_metadata_fetch(
         }
     };
 
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.complete_link_metadata_fetch(request))
-    {
+    match with_core(app_support_dir, |core| {
+        core.complete_link_metadata_fetch(request)
+    }) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
@@ -642,7 +712,7 @@ fn fail_link_metadata_fetch(
     failure_code: String,
     next_retry_at_ms: i64,
 ) -> ffi::CoreItemManagementResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+    match with_core(app_support_dir, |core| {
         core.fail_link_metadata_fetch(
             item_id,
             lease_started_at_ms,
@@ -685,24 +755,24 @@ fn item_management_error_result(error: clipboard_core::CoreError) -> ffi::CoreIt
 }
 
 fn open_core(app_support_dir: String) -> ffi::CoreOpenResult {
-    match ClipboardCore::open(app_support_dir) {
-        Ok(core) => match core.info() {
-            Ok(info) => ffi::CoreOpenResult {
-                ok: true,
-                database_path: info.database_path,
-                schema_version: info.schema_version,
-                item_count: info.item_count,
-                error_code: String::new(),
-                message_key: String::new(),
-            },
-            Err(error) => ffi::CoreOpenResult {
-                ok: false,
-                database_path: String::new(),
-                schema_version: 0,
-                item_count: 0,
-                error_code: error.code.as_str().to_string(),
-                message_key: error.message_key().to_string(),
-            },
+    open_response(with_core(app_support_dir, |core| core.info()))
+}
+
+fn open_core_without_maintenance(app_support_dir: String) -> ffi::CoreOpenResult {
+    open_response(with_core_without_maintenance(app_support_dir, |core| {
+        core.info()
+    }))
+}
+
+fn open_response(result: clipboard_core::Result<clipboard_core::CoreInfo>) -> ffi::CoreOpenResult {
+    match result {
+        Ok(info) => ffi::CoreOpenResult {
+            ok: true,
+            database_path: info.database_path,
+            schema_version: info.schema_version,
+            item_count: info.item_count,
+            error_code: String::new(),
+            message_key: String::new(),
         },
         Err(error) => ffi::CoreOpenResult {
             ok: false,
@@ -949,7 +1019,7 @@ fn capture_text(
     pasteboard_change_count: i64,
     self_write_token: String,
 ) -> ffi::CoreCaptureResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+    match with_core(app_support_dir, |core| {
         core.capture_text(CaptureTextRequest {
             text,
             detected_link: capture_detected_link(
@@ -1030,8 +1100,7 @@ fn capture_rich_text(app_support_dir: String, request_json: String) -> ffi::Core
         }
     };
 
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| core.capture_rich_text(request))
-    {
+    match with_core(app_support_dir, |core| core.capture_rich_text(request)) {
         Ok(result) => ffi::CoreCaptureResult {
             ok: true,
             item_id: result.item_id,
@@ -1069,7 +1138,7 @@ fn capture_image(
     pasteboard_change_count: i64,
     self_write_token: String,
 ) -> ffi::CoreCaptureResult {
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+    match with_core(app_support_dir, |core| {
         core.capture_image(CaptureImageRequest {
             payload_relative_path,
             preview_relative_path: optional_string(preview_relative_path),
@@ -1116,9 +1185,7 @@ fn capture_pending_image(
         Err(_) => return pending_image_error_result("invalid_input"),
     };
 
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.capture_pending_image(request))
-    {
+    match with_core(app_support_dir, |core| core.capture_pending_image(request)) {
         Ok(result) => pending_image_capture_result(result),
         Err(error) => pending_image_core_error_result(error),
     }
@@ -1133,9 +1200,9 @@ fn complete_pending_image_payload(
         Err(_) => return pending_image_error_result("invalid_input"),
     };
 
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.complete_pending_image_payload(request))
-    {
+    match with_core(app_support_dir, |core| {
+        core.complete_pending_image_payload(request)
+    }) {
         Ok(result) => pending_image_completion_result(result),
         Err(error) => pending_image_core_error_result(error),
     }
@@ -1150,9 +1217,9 @@ fn fail_pending_image_payload(
         Err(_) => return pending_image_error_result("invalid_input"),
     };
 
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.fail_pending_image_payload(request))
-    {
+    match with_core(app_support_dir, |core| {
+        core.fail_pending_image_payload(request)
+    }) {
         Ok(result) => pending_image_completion_result(result),
         Err(error) => pending_image_core_error_result(error),
     }
@@ -1174,9 +1241,7 @@ fn recover_pending_images(
         }
     };
 
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|mut core| core.recover_pending_images(request))
-    {
+    match with_core(app_support_dir, |core| core.recover_pending_images(request)) {
         Ok(result) => item_management_result(result),
         Err(error) => item_management_error_result(error),
     }
@@ -1256,7 +1321,7 @@ fn capture_files(
     };
     let (file_paths, file_items) = files_payload.into_parts();
 
-    match ClipboardCore::open(app_support_dir).and_then(|mut core| {
+    match with_core(app_support_dir, |core| {
         core.capture_files(CaptureFilesRequest {
             file_paths,
             file_items,
@@ -1316,6 +1381,182 @@ impl CaptureFilesPayload {
     }
 }
 
+fn json_response<T: Serialize>(result: clipboard_core::Result<T>) -> ffi::CoreJSONResult {
+    match result.and_then(|value| {
+        serde_json::to_string(&value)
+            .map_err(|error| CoreError::new(CoreErrorCode::InvalidInput, error.to_string()))
+    }) {
+        Ok(result_json) => ffi::CoreJSONResult {
+            ok: true,
+            result_json,
+            error_code: String::new(),
+            message_key: String::new(),
+        },
+        Err(error) => ffi::CoreJSONResult {
+            ok: false,
+            result_json: "null".into(),
+            error_code: error.code.as_str().into(),
+            message_key: error.message_key().into(),
+        },
+    }
+}
+
+fn evaluate_capture_policy_json(request_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<clipboard_core::CapturePolicyInput>(&request_json)
+            .and_then(|input| clipboard_core::evaluate_capture_policy(&input)),
+    )
+}
+
+fn metadata_url_policy_json(request_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<clipboard_core::metadata::MetadataURLFacts>(&request_json)
+            .map(|facts| clipboard_core::metadata::metadata_url_policy(&facts)),
+    )
+}
+fn metadata_limits_json(request_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<clipboard_core::metadata::MetadataCompatibilityProfile>(&request_json)
+            .map(clipboard_core::metadata::metadata_limits),
+    )
+}
+fn metadata_retry_at_json(request_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<clipboard_core::metadata::MetadataRetryRequest>(&request_json).map(
+            |request| {
+                clipboard_core::metadata::metadata_retry_at_ms(
+                    request.fetch_attempts,
+                    request.now_ms,
+                )
+            },
+        ),
+    )
+}
+fn parse_metadata_html_json(request_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<clipboard_core::metadata::MetadataHTMLRequest>(&request_json).map(
+            |request| {
+                clipboard_core::metadata::parse_metadata_html(
+                    &request.html,
+                    &request.base_url,
+                    request.profile,
+                )
+            },
+        ),
+    )
+}
+
+fn plan_copy_json(request_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<clipboard_core::copy_plan::CopyPlanRequest>(&request_json)
+            .and_then(clipboard_core::copy_plan::plan_copy),
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AnalyzeCaptureTextRequest {
+    text: String,
+    native_link_hint: Option<CaptureDetectedLink>,
+}
+
+fn analyze_capture_text_json(request_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<AnalyzeCaptureTextRequest>(&request_json).and_then(|input| {
+            clipboard_core::analyze_capture_text(&input.text, input.native_link_hint)
+        }),
+    )
+}
+
+fn decode_json<T: serde::de::DeserializeOwned>(json: &str) -> clipboard_core::Result<T> {
+    serde_json::from_str(json)
+        .map_err(|error| CoreError::new(CoreErrorCode::InvalidInput, error.to_string()))
+}
+
+fn patch_preferences(app_support_dir: String, patch_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<PreferencesPatch>(&patch_json).and_then(|patch| {
+            with_core_without_maintenance(app_support_dir, |core| core.patch_preferences(patch))
+        }),
+    )
+}
+
+fn get_item(app_support_dir: String, item_id: String) -> ffi::CoreJSONResult {
+    json_response(with_core(app_support_dir, |core| core.get_item(&item_id)))
+}
+
+fn get_items(app_support_dir: String, ordered_ids_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<Vec<String>>(&ordered_ids_json).and_then(|ids| {
+            validate_batch_size(ids.len())?;
+            with_core(app_support_dir, |core| core.get_items(ids))
+        }),
+    )
+}
+
+fn mutate_items(app_support_dir: String, requests_json: String) -> ffi::CoreJSONResult {
+    json_response(
+        decode_json::<Vec<ItemMutation>>(&requests_json).and_then(|requests| {
+            validate_batch_size(requests.len())?;
+            with_core_batch(app_support_dir, |core| core.mutate_items(requests))
+        }),
+    )
+}
+
+fn validate_batch_size(count: usize) -> clipboard_core::Result<()> {
+    if count > clipboard_core::MAX_ITEM_BATCH_SIZE {
+        Err(CoreError::new(
+            CoreErrorCode::InvalidInput,
+            "at most 200 requests are allowed",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn list_entries(
+    app_support_dir: String,
+    limit: i64,
+    offset: i64,
+    item_type: String,
+    source_app_id: String,
+    pinboard_id: String,
+    search_text: String,
+) -> ffi::CoreListResult {
+    let query = ItemQuery {
+        item_type: parse_item_type(&item_type),
+        source_app_id: optional_string(source_app_id),
+        pinboard_id: optional_string(pinboard_id),
+        search_text: optional_string(search_text),
+    };
+    let result = with_core(app_support_dir, |core| {
+        core.list_entries(query, PageRequest { limit, offset })
+    })
+    .and_then(|page| {
+        serde_json::to_string(&page.items)
+            .map(|json| (page, json))
+            .map_err(|error| CoreError::new(CoreErrorCode::InvalidInput, error.to_string()))
+    });
+    match result {
+        Ok((page, items_json)) => ffi::CoreListResult {
+            ok: true,
+            total_count: page.total_count,
+            has_more: page.has_more,
+            items_json,
+            error_code: String::new(),
+            message_key: String::new(),
+        },
+        Err(error) => ffi::CoreListResult {
+            ok: false,
+            total_count: 0,
+            has_more: false,
+            items_json: "[]".into(),
+            error_code: error.code.as_str().into(),
+            message_key: error.message_key().into(),
+        },
+    }
+}
+
 fn list_items(
     app_support_dir: String,
     limit: i64,
@@ -1332,9 +1573,9 @@ fn list_items(
         search_text: optional_string(search_text),
     };
 
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|core| core.list_items(query, PageRequest { limit, offset }))
-    {
+    match with_core(app_support_dir, |core| {
+        core.list_items(query, PageRequest { limit, offset })
+    }) {
         Ok(page) => ffi::CoreListResult {
             ok: true,
             total_count: page.total_count,
@@ -1355,9 +1596,9 @@ fn list_items(
 }
 
 fn list_source_apps(app_support_dir: String, limit: i64, offset: i64) -> ffi::CoreSourceAppsResult {
-    match ClipboardCore::open(app_support_dir)
-        .and_then(|core| core.list_source_apps(PageRequest { limit, offset }))
-    {
+    match with_core(app_support_dir, |core| {
+        core.list_source_apps(PageRequest { limit, offset })
+    }) {
         Ok(page) => ffi::CoreSourceAppsResult {
             ok: true,
             total_count: page.total_count,
@@ -1428,6 +1669,177 @@ fn parse_item_type(value: &str) -> Option<ClipboardItemType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pure_policy_analysis_and_copy_plan_contracts_never_enter_a_core_session() {
+        let sessions_before = sessions::session_access_count();
+        let mut input = serde_json::json!({"profile":"mac_os_v1", "source_candidate_keys":["editor"],
+            "application_rule_keys":["", "editor"], "skip_unknown_source":true,
+            "source_confidence":"low", "has_owner":false, "title_match_index":0, "title_rule_count":1});
+        let result = evaluate_capture_policy_json(input.to_string());
+        assert!(result.ok);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&result.result_json).unwrap(),
+            serde_json::json!({"skip":true,"reason":"source_application","matched_rule_index":1})
+        );
+        input["title_match_index"] = serde_json::json!(1);
+        let invalid = evaluate_capture_policy_json(input.to_string());
+        assert!(!invalid.ok);
+        assert_eq!(invalid.error_code, "invalid_input");
+        let text =
+            analyze_capture_text_json(r##"{"text":" #ff00aa ","native_link_hint":null}"##.into());
+        assert!(text.ok);
+        let analysis: serde_json::Value = serde_json::from_str(&text.result_json).unwrap();
+        assert_eq!(analysis["item_type"], "color");
+        assert_eq!(analysis["primary_text"], "#FF00AA");
+        assert!(analysis["detected_link"].is_null());
+        assert!(!analyze_capture_text_json(r#"{"text":" ","native_link_hint":null}"#.into()).ok);
+        let copy = plan_copy_json(
+            serde_json::json!({"ordered_ids":[],"mode":"original",
+            "capabilities":"mac_os_v1","items":[],"file_facts":[]})
+            .to_string(),
+        );
+        assert!(copy.ok);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&copy.result_json).unwrap()["reason"],
+            "empty_selection"
+        );
+        assert_eq!(sessions::session_access_count(), sessions_before);
+    }
+
+    pub(super) fn synthetic_text(path: &std::path::Path, body: &str) -> String {
+        ClipboardCore::open(path)
+            .unwrap()
+            .capture_text(CaptureTextRequest {
+                text: body.into(),
+                detected_link: None,
+                display_rtf_relative_path: None,
+                display_rtf_mime_type: None,
+                display_rtf_byte_count: 0,
+                source_bundle_id: None,
+                source_app_name: None,
+                source_bundle_path: None,
+                source_icon_relative_path: None,
+                source_confidence: SourceConfidence::Unknown,
+                pasteboard_change_count: 1,
+                self_write_token: None,
+            })
+            .unwrap()
+            .item_id
+    }
+
+    #[test]
+    fn list_lookup_and_batch_json_contracts_preserve_complete_text() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().display().to_string();
+        let body = "synthetic ".repeat(150);
+        let id = synthetic_text(root.path(), &body);
+        let list = list_entries(
+            path.clone(),
+            50,
+            0,
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        );
+        assert!(list.ok);
+        let rows: serde_json::Value = serde_json::from_str(&list.items_json).unwrap();
+        assert!(rows[0]["primary_text"].is_null());
+        assert_eq!(
+            rows[0]["text_preview"]
+                .as_str()
+                .unwrap()
+                .encode_utf16()
+                .count(),
+            500
+        );
+        let lookup = get_items(
+            path.clone(),
+            serde_json::json!([id, "missing", id]).to_string(),
+        );
+        assert!(lookup.ok);
+        let rows: serde_json::Value = serde_json::from_str(&lookup.result_json).unwrap();
+        assert_eq!(rows[0]["item"]["primary_text"], body.trim());
+        assert_eq!(rows[0], rows[2]);
+        assert!(rows[1]["item"].is_null());
+        let batch = mutate_items(
+            path.clone(),
+            serde_json::json!([
+            {"kind":"record_copied","item_id":id}, {"kind":"delete","item_id":" "},
+            {"kind":"record_copied","item_id":id}])
+            .to_string(),
+        );
+        assert!(batch.ok);
+        let result: serde_json::Value = serde_json::from_str(&batch.result_json).unwrap();
+        assert_eq!(result["outcomes"][1]["status"], "failed");
+        assert_eq!(result["outcomes"][2]["request_index"], 2);
+        let item: serde_json::Value =
+            serde_json::from_str(&get_item(path.clone(), id).result_json).unwrap();
+        assert_eq!(item["copy_count"], 3);
+        assert!(!mutate_items(path.clone(), "[{\"kind\":\"unknown\"}]".into()).ok);
+        assert!(
+            !get_items(
+                path,
+                serde_json::to_string(&vec!["synthetic"; 201]).unwrap()
+            )
+            .ok
+        );
+    }
+
+    #[test]
+    fn cold_and_cached_preferences_work_when_history_cleanup_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().display().to_string();
+        let id = synthetic_text(root.path(), "maintenance fixture");
+        let connection =
+            rusqlite::Connection::open(root.path().join(clipboard_core::DATABASE_FILE_NAME))
+                .unwrap();
+        connection
+            .execute(
+                "UPDATE clipboard_items SET last_copied_at_ms=1 WHERE id=?1",
+                [&id],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO clipboard_assets(id,item_id,kind,relative_path,created_at_ms)
+            VALUES ('block',?1,'payload','assets/block/child',1)",
+                [&id],
+            )
+            .unwrap();
+        std::fs::write(root.path().join("assets/block"), b"fixture").unwrap();
+        assert!(!open_core(path.clone()).ok);
+        assert!(open_core_without_maintenance(path.clone()).ok);
+        for _ in 0..2 {
+            assert!(get_preferences_without_maintenance(path.clone()).ok);
+        }
+        let saved = patch_preferences(path.clone(), "{\"appearance\":{\"mode\":\"dark\"}}".into());
+        assert!(saved.ok);
+        let result: serde_json::Value = serde_json::from_str(&saved.result_json).unwrap();
+        assert_eq!(result["document"]["appearance"]["mode"], "dark");
+        assert_eq!(result["maintenance"]["status"], "not_needed");
+        // Re-arm expiration: the failed open already committed its soft delete.
+        connection
+            .execute(
+                "UPDATE clipboard_items SET deleted_at_ms=NULL WHERE id=?1",
+                [&id],
+            )
+            .unwrap();
+        let warning =
+            patch_preferences(path.clone(), "{\"history\":{\"retention_days\":7}}".into());
+        assert!(warning.ok);
+        let result: serde_json::Value = serde_json::from_str(&warning.result_json).unwrap();
+        assert_eq!(result["maintenance"]["status"], "warning");
+        assert!(get_preferences_without_maintenance(path).ok);
+        let broken = tempfile::tempdir().unwrap();
+        std::fs::write(
+            broken.path().join(clipboard_core::DATABASE_FILE_NAME),
+            b"not a sqlite database",
+        )
+        .unwrap();
+        assert!(!open_core_without_maintenance(broken.path().display().to_string()).ok);
+    }
 
     #[test]
     fn rasterizes_static_svg_to_png() {

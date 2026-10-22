@@ -3,6 +3,128 @@ import Testing
 @testable import ClipboardPanelApp
 
 struct ClipboardListCoordinatorTests {
+    @Test(arguments: [WindowRefreshFixture.Change.insert, .reorder, .continuousReorder])
+    @MainActor
+    fileprivate func refreshRestartsOverlappingPagesAndBoundsRetries(change: WindowRefreshFixture.Change) async {
+        let fixture = WindowRefreshFixture(count: 350, changeBetweenPages: change)
+        var updates: [ClipboardListUpdate] = []
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 200, debounceNanoseconds: 0,
+            pageLoader: { await fixture.load($0) },
+            mutationPerformer: { _ in
+                await fixture.mutate()
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        coordinator.onListUpdate = { updates.append($0) }
+        coordinator.updateQuery(searchText: "term", sourceAppID: nil, debounce: false)
+        #expect(await waitUntil { coordinator.loadedItemCount == 200 })
+        coordinator.loadMore()
+        #expect(await waitUntil { coordinator.loadedItemCount == 350 })
+        let before = updates.count
+        coordinator.performMutation(.recordCopied(itemID: "item-349"))
+        #expect(await waitUntil { updates.count == before + 1 })
+        if change == .continuousReorder {
+            if case .failure(let error) = updates.last?.result {
+                #expect(error.code == "query_changed")
+                #expect(error.recoverable)
+            } else {
+                Issue.record("continually changing pages must not publish partial or duplicate items")
+            }
+            #expect(await fixture.refreshQueries.count == 6)
+        } else {
+            let result = try? updates.last?.result.get()
+            let ids = result?.items.map(\.id) ?? []
+            let expectedIDs = await fixture.firstIDs(350)
+            #expect(ids == expectedIDs)
+            #expect(ids.count == 350)
+            #expect(Set(ids).count == ids.count)
+            // The inserted 351st row may trigger the normal post-refresh prefetch.
+            let refreshOffsets = await fixture.refreshQueries.map(\.offset).filter { $0 < 350 }
+            #expect(refreshOffsets == [0, 200, 0, 200])
+        }
+        #expect(coordinator.loadedItemCount == 350)
+    }
+
+    @Test(arguments: [250, 350, 450])
+    @MainActor
+    func mutationRefreshPreservesWindowsLargerThanCorePageLimit(count: Int) async {
+        let fixture = WindowRefreshFixture(count: count)
+        var updates: [ClipboardListUpdate] = []
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 100,
+            debounceNanoseconds: 0,
+            pageLoader: { await fixture.load($0) },
+            mutationPerformer: { _ in
+                await fixture.mutate()
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        coordinator.onListUpdate = { updates.append($0) }
+        coordinator.updateQuery(searchText: "term", itemType: "text", sourceAppID: "source", pinboardID: "board", debounce: false)
+        #expect(await waitUntil { coordinator.loadedItemCount == 100 })
+        while coordinator.loadedItemCount < count {
+            let expected = min(Int64(count), coordinator.loadedItemCount + 100)
+            coordinator.loadMore()
+            guard await waitUntil({ coordinator.loadedItemCount == expected }) else {
+                Issue.record("initial pagination did not finish")
+                return
+            }
+        }
+        let before = updates.count
+        coordinator.performMutation(.recordCopied(itemID: "item-\(count - 1)"))
+        #expect(await waitUntil { updates.count == before + 1 })
+        let result = try? updates.last?.result.get()
+        #expect(result?.items.map(\.id) == ["item-\(count - 1)"] + (0..<(count - 1)).map { "item-\($0)" })
+        #expect(coordinator.loadedItemCount == count)
+        #expect(updates.last?.preserveScrollPositionOnStructuralChange == true)
+        let refreshQueries = await fixture.refreshQueries
+        #expect(refreshQueries.map(\.offset) == stride(from: 0, to: count, by: 200).map(Int64.init))
+        #expect(refreshQueries.allSatisfy { $0.limit <= 200 && $0.scope == ClipboardListScope(itemType: "text", sourceAppID: "source", pinboardID: "board", normalizedSearch: "term") })
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor
+    func interruptedWindowRefreshNeverPublishesPartialSuccess(failSecondPage: Bool) async {
+        let fixture = WindowRefreshFixture(count: 350, pausesSecondPage: true, failsSecondPage: failSecondPage)
+        var updates: [ClipboardListUpdate] = []
+        let coordinator = ClipboardListCoordinator(
+            pageSize: 200, debounceNanoseconds: 0,
+            pageLoader: { await fixture.load($0) },
+            mutationPerformer: { _ in
+                await fixture.mutate()
+                return .success(RustItemManagementResult(affectedCount: 1))
+            }
+        )
+        coordinator.onListUpdate = { updates.append($0) }
+        coordinator.updateQuery(searchText: "term", sourceAppID: nil, debounce: false)
+        #expect(await waitUntil { coordinator.loadedItemCount == 200 })
+        coordinator.loadMore()
+        #expect(await waitUntil { coordinator.loadedItemCount == 350 })
+        let before = updates.count
+        coordinator.performMutation(.recordCopied(itemID: "item-349"))
+        #expect(await waitUntil { await fixture.isPaused })
+        coordinator.loadMore()
+        await Task.yield()
+        #expect(await fixture.refreshQueries.count == 2)
+        #expect(updates.count == before)
+        if !failSecondPage {
+            coordinator.updateQuery(searchText: "new", sourceAppID: nil, debounce: false)
+            #expect(await waitUntil { updates.count == before + 1 })
+        }
+        await fixture.release()
+        if failSecondPage {
+            #expect(await waitUntil { updates.count == before + 1 })
+            if case .success = updates.last?.result { Issue.record("partial refresh must not succeed") }
+            #expect(coordinator.loadedItemCount == 350)
+        } else {
+            #expect(await waitUntil { await fixture.secondPageFinished })
+            await Task.yield()
+            #expect(updates.count == before + 1)
+            #expect(updates.last?.scope.normalizedSearch == "new")
+        }
+    }
+
     @Test
     @MainActor
     func updateQueryDebouncesBeforeLoading() async {
@@ -694,6 +816,66 @@ struct PinboardCoordinatorTests {
             statusTexts.contains("Pinboard：已删除")
         })
     }
+}
+
+private actor WindowRefreshFixture {
+    enum Change: Sendable { case insert, reorder, continuousReorder }
+    private var items: [RustClipboardItemSummary]
+    private var didMutate = false
+    private let pausesSecondPage: Bool
+    private let failsSecondPage: Bool
+    private let changeBetweenPages: Change?
+    private var didChangeBetweenPages = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var refreshQueries: [ClipboardListQuery] = []
+    private(set) var isPaused = false
+    private(set) var secondPageFinished = false
+
+    init(count: Int, pausesSecondPage: Bool = false, failsSecondPage: Bool = false, changeBetweenPages: Change? = nil) {
+        items = (0..<count).map { makeItem(id: "item-\($0)") }
+        self.pausesSecondPage = pausesSecondPage
+        self.failsSecondPage = failsSecondPage
+        self.changeBetweenPages = changeBetweenPages
+    }
+
+    func mutate() {
+        didMutate = true
+        items.insert(items.removeLast(), at: 0)
+    }
+
+    func load(_ query: ClipboardListQuery) async -> Result<RustCoreListResult, RustCoreError> {
+        if didMutate, query.normalizedSearch == "term" {
+            refreshQueries.append(query)
+            if query.offset == 200, let changeBetweenPages,
+               !didChangeBetweenPages || changeBetweenPages == .continuousReorder {
+                didChangeBetweenPages = true
+                switch changeBetweenPages {
+                case .insert: items.insert(makeItem(id: "new-item"), at: 0)
+                case .reorder, .continuousReorder: items.insert(items.remove(at: 250), at: 0)
+                }
+            }
+            if query.offset == 200, pausesSecondPage {
+                await withCheckedContinuation { continuation in
+                    self.continuation = continuation
+                    isPaused = true
+                }
+                secondPageFinished = true
+                if failsSecondPage {
+                    return .failure(RustCoreError(code: "test_failure", messageKey: "test_failure", recoverable: true, message: "second page failed"))
+                }
+            }
+        }
+        let start = min(items.count, Int(query.offset))
+        let end = min(items.count, start + Int(min(200, query.limit)))
+        return .success(RustCoreListResult(items: Array(items[start..<end]), totalCount: Int64(items.count), hasMore: end < items.count))
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func firstIDs(_ count: Int) -> [String] { items.prefix(count).map(\.id) }
 }
 
 private actor QueryRecorder {

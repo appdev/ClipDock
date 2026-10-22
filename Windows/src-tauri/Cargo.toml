@@ -1,6 +1,6 @@
 [package]
 name = "clipdock_windows_panel"
-version = "0.2.4"
+version = "0.2.5"
 description = "ClipDock cross-platform panel shell"
 authors = ["ClipDock"]
 edition = "2021"
@@ -29,6 +29,10 @@ url = "2"
 
 [dev-dependencies]
 tempfile = "3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+clipboard-win = "5.4.1"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_DataExchange", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"

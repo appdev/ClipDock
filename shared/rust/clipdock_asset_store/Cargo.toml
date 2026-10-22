@@ -1,0 +1,15 @@
+[package]
+name = "clipdock_asset_store"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3.21"

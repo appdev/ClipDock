@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import type { ClipItem, ClipKind, PinboardFilter } from "./panelTypes";
+import type { HistoryPage, HistoryScope, HistoryRepository } from "./historyController";
 
 /// Mirror of `clipboard_core::ClipboardItemSummary` (serde snake_case fields).
 export type ClipboardItemSummary = {
@@ -20,12 +21,15 @@ export type ClipboardItemSummary = {
   last_copied_at_ms: number;
   copy_count: number;
   is_pinned: boolean;
+  pinboard_ids?: string[];
   size_bytes: number;
   preview_state: string;
   payload_state: string;
   file_items: Array<{ file_name: string; path: string }>;
   link_metadata: {
-    url: string | null;
+    canonical_url: string;
+    display_url: string;
+    host: string;
     title: string | null;
     site_name: string | null;
     icon_asset_path: string | null;
@@ -33,10 +37,38 @@ export type ClipboardItemSummary = {
   } | null;
 };
 
+/// `clipboard_core::ClipboardListEntry` flattens the summary. Text cards carry
+/// only this bounded projection; copying retrieves the full item by ID.
+export type ClipboardListEntry = ClipboardItemSummary & {
+  text_preview: string | null;
+  preview_truncated: boolean;
+  trimmed_grapheme_count: number | null;
+  scalar_count: number | null;
+};
+
 type ClipboardItemPage = {
-  items: ClipboardItemSummary[];
+  items: ClipboardListEntry[];
   total_count: number;
   has_more: boolean;
+  revision: number;
+};
+
+export const historyRepository: HistoryRepository = {
+  async list(scope: HistoryScope, limit: number, offset: number): Promise<HistoryPage> {
+    const page = await invoke<ClipboardItemPage>("list_clipboard_entries", {
+      itemType: scope.itemType === "richText" ? "rich_text" : scope.itemType,
+      pinboardId: scope.pinboardId, searchText: scope.searchText || null, limit, offset
+    });
+    return {
+      items: page.items.map((item, index) => summaryToClipItem(item, String(offset + index + 1))),
+      totalCount: page.total_count, hasMore: page.has_more, revision: page.revision
+    };
+  },
+  async pinboards(): Promise<PinboardFilter[]> {
+    const page = await invoke<{ pinboards: Array<{ id: string; title: string; color_code: number }> }>("list_pinboards");
+    return page.pinboards.map((board) => ({ id: board.id, label: board.title,
+      color: `#${(board.color_code >>> 0).toString(16).padStart(8, "0").slice(-6)}` }));
+  }
 };
 
 const KIND_FROM_STORAGE: Record<ClipboardItemSummary["item_type"], ClipKind> = {
@@ -109,7 +141,7 @@ export function mergeLoadedPanelItems(current: ClipItem[], stored: ClipItem[], a
 }
 
 export function summaryToClipItem(
-  summary: ClipboardItemSummary,
+  summary: ClipboardItemSummary | ClipboardListEntry,
   commandIndex: string,
   toAssetUrl: (path: string) => string = convertFileSrc
 ): ClipItem {
@@ -123,7 +155,7 @@ export function summaryToClipItem(
     customTitle: summary.custom_title ?? null,
     relativeTime: relativeTimeFrom(summary.last_copied_at_ms),
     title,
-    summary: summary.primary_text ?? summary.summary,
+    summary: cardText(summary),
     footer: deriveFooter(summary, kind),
     commandIndex,
     isPinned: summary.is_pinned,
@@ -131,7 +163,7 @@ export function summaryToClipItem(
     sourceKind: "clipboard",
     sourceColor: SOURCE_COLORS[kind],
     selectedColor: "#0a84ff",
-    pinboardIds: [],
+    pinboardIds: summary.pinboard_ids ?? [],
     preview: derivePreview(summary, kind, toAssetUrl)
   };
 
@@ -143,10 +175,14 @@ export function summaryToClipItem(
   return item;
 }
 
-function deriveTitle(summary: ClipboardItemSummary, kind: ClipKind): string {
-  if (kind === "link" && summary.link_metadata?.url) {
+function cardText(summary: ClipboardItemSummary | ClipboardListEntry): string {
+  return ("text_preview" in summary ? summary.text_preview : null) ?? summary.primary_text ?? summary.summary;
+}
+
+function deriveTitle(summary: ClipboardItemSummary | ClipboardListEntry, kind: ClipKind): string {
+  if (kind === "link" && summary.link_metadata?.canonical_url) {
     try {
-      return new URL(summary.link_metadata.url).hostname.replace(/^www\./i, "");
+      return new URL(summary.link_metadata.canonical_url).hostname.replace(/^www\./i, "");
     } catch {
       return summary.summary;
     }
@@ -154,18 +190,18 @@ function deriveTitle(summary: ClipboardItemSummary, kind: ClipKind): string {
   if (kind === "image") {
     return "剪贴板图片";
   }
-  const source = summary.primary_text ?? summary.summary;
+  const source = cardText(summary);
   return truncateText(firstVisibleLine(source), 30);
 }
 
-function deriveFooter(summary: ClipboardItemSummary, kind: ClipKind): string {
+function deriveFooter(summary: ClipboardItemSummary | ClipboardListEntry, kind: ClipKind): string {
   if (kind === "text" || kind === "richText") {
-    const text = summary.primary_text ?? summary.summary;
-    return `${Array.from(text).length} characters`;
+    const count = "scalar_count" in summary ? summary.scalar_count : null;
+    return `${count ?? Array.from(cardText(summary)).length} characters`;
   }
-  if (kind === "link" && summary.link_metadata?.url) {
+  if (kind === "link" && summary.link_metadata?.canonical_url) {
     try {
-      return new URL(summary.link_metadata.url).hostname.replace(/^www\./i, "");
+      return new URL(summary.link_metadata.canonical_url).hostname.replace(/^www\./i, "");
     } catch {
       return summary.summary;
     }
@@ -185,21 +221,22 @@ function derivePreview(
     return {
       imageTone: "captured",
       imageAssetPath: summary.payload_asset_path,
-      imageAssetUrl: toAssetUrl(summary.payload_asset_path)
+      imageAssetUrl: summary.preview_asset_path && summary.preview_asset_path !== summary.payload_asset_path
+        ? toAssetUrl(summary.preview_asset_path) : undefined
     };
   }
   if (kind === "link" && summary.link_metadata) {
     const meta = summary.link_metadata;
     let domain: string | undefined;
-    if (meta.url) {
+    if (meta.canonical_url) {
       try {
-        domain = new URL(meta.url).hostname.replace(/^www\./i, "");
+        domain = new URL(meta.canonical_url).hostname.replace(/^www\./i, "");
       } catch {
         domain = undefined;
       }
     }
     return {
-      url: meta.url ?? undefined,
+      url: meta.canonical_url || undefined,
       domain,
       linkIconAssetPath: meta.icon_asset_path ?? undefined,
       linkIconAssetUrl: meta.icon_asset_path ? toAssetUrl(meta.icon_asset_path) : undefined,

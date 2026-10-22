@@ -98,7 +98,8 @@ public final class PanelContentController {
         _ result: Result<RustCoreListResult, RustCoreError>,
         isFiltered: Bool,
         append: Bool = false,
-        preserveScrollPositionOnStructuralChange: Bool = false
+        preserveScrollPositionOnStructuralChange: Bool = false,
+        preservesItemsOnFailure: Bool = true
     ) -> PanelContentRenderPlan {
         switch result {
         case .success(let listResult):
@@ -115,11 +116,12 @@ public final class PanelContentController {
                 current: listViewState,
                 result: .failure(error),
                 isFiltered: isFiltered,
-                append: append
+                append: append,
+                preservesItemsOnFailure: preservesItemsOnFailure
             )
             listViewState = update.state
 
-            if append {
+            if append || !update.state.items.isEmpty {
                 return PanelContentRenderPlan(
                     viewState: viewState,
                     instruction: .noVisualChange,

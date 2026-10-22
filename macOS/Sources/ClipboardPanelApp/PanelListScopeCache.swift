@@ -61,12 +61,47 @@ public struct PanelCachedListScopeState: Equatable, Sendable {
 
 public struct PanelListScopeCache: Equatable, Sendable {
     private var states: [ClipboardListScope: PanelCachedListScopeState] = [:]
+    private var accessOrder: [ClipboardListScope] = []
 
     public init() {}
 
     public subscript(scope: ClipboardListScope) -> PanelCachedListScopeState? {
         get { states[scope] }
-        set { states[scope] = newValue }
+        set {
+            states[scope] = newValue
+            if newValue != nil {
+                recordAccess(scope)
+            } else {
+                accessOrder.removeAll { $0 == scope }
+            }
+        }
+    }
+
+    public var scopes: Set<ClipboardListScope> { Set(states.keys) }
+
+    public mutating func recordAccess(_ scope: ClipboardListScope) {
+        accessOrder.removeAll { $0 == scope }
+        accessOrder.append(scope)
+    }
+
+    /// One retention decision owns both cached data and the caller's view surfaces.
+    @discardableResult
+    public mutating func retainRecentlyUsedScopes(
+        currentScope: ClipboardListScope,
+        additionalScopes: Set<ClipboardListScope> = [],
+        maximumInactiveScopes: Int = 3
+    ) -> Set<ClipboardListScope> {
+        let allScopes = scopes.union(additionalScopes)
+        let protected: Set<ClipboardListScope> = [.clipboard, currentScope]
+        let recentInactive = accessOrder.filter { allScopes.contains($0) && !protected.contains($0) }
+            .suffix(max(0, maximumInactiveScopes))
+        let retained = protected.union(recentInactive)
+        let evicted = allScopes.subtracting(retained)
+        for scope in evicted {
+            remove(scope)
+        }
+        accessOrder.removeAll { !allScopes.contains($0) }
+        return evicted
     }
 
     public mutating func store(
@@ -78,7 +113,7 @@ public struct PanelListScopeCache: Equatable, Sendable {
         scope: ClipboardListScope
     ) {
         guard case .success(let listResult) = result else {
-            states.removeValue(forKey: scope)
+            remove(scope)
             return
         }
 
@@ -95,6 +130,7 @@ public struct PanelListScopeCache: Equatable, Sendable {
             selectedItemID: selectedItemID,
             selectionSnapshot: selectionSnapshot
         )
+        recordAccess(scope)
     }
 
     public mutating func updateSelectedItemID(_ selectedItemID: String?, for scope: ClipboardListScope) {
@@ -128,16 +164,19 @@ public struct PanelListScopeCache: Equatable, Sendable {
 
     public mutating func keepOnly(_ scopeToKeep: ClipboardListScope) {
         states = states.filter { scope, _ in scope == scopeToKeep }
+        accessOrder.removeAll { $0 != scopeToKeep }
     }
 
     public mutating func remove(_ scope: ClipboardListScope) {
         states.removeValue(forKey: scope)
+        accessOrder.removeAll { $0 == scope }
     }
 
     public mutating func removePinboard(_ pinboardID: String, keeping currentScope: ClipboardListScope) {
         states = states.filter { scope, _ in
             scope.pinboardID != pinboardID || scope == currentScope
         }
+        accessOrder.removeAll { $0.pinboardID == pinboardID && $0 != currentScope }
     }
 
     public mutating func pruneInvalidPinboards(
@@ -147,6 +186,10 @@ public struct PanelListScopeCache: Equatable, Sendable {
         states = states.filter { scope, _ in
             guard let pinboardID = scope.pinboardID else { return true }
             return validPinboardIDs.contains(pinboardID) || scope == currentScope
+        }
+        accessOrder.removeAll { scope in
+            guard let pinboardID = scope.pinboardID else { return false }
+            return !validPinboardIDs.contains(pinboardID) && scope != currentScope
         }
     }
 

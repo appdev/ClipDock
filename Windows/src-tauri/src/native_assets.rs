@@ -1,22 +1,16 @@
-use image::{DynamicImage, ImageFormat};
-use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     process::Command,
-    time::Duration,
 };
 use tauri::{AppHandle, Manager};
-use url::Url;
+#[path = "metadata.rs"]
+mod metadata;
+use metadata::fetch_link_metadata;
 
 const SOURCE_ICON_SIZE: u32 = 256;
-const LINK_ICON_SIZE: u32 = 128;
-const LINK_PREVIEW_SIZE: u32 = 640;
-const MAX_HTML_BYTES: usize = 512 * 1024;
-const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,20 +51,6 @@ pub struct PanelNativeAsset {
     link_error: Option<String>,
 }
 
-#[derive(Debug, Default)]
-struct LinkMetadataAssets {
-    icon_path: Option<PathBuf>,
-    preview_path: Option<PathBuf>,
-    title: Option<String>,
-    domain: Option<String>,
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct LinkImageCandidates {
-    icon_urls: Vec<Url>,
-    preview_urls: Vec<Url>,
-}
-
 #[tauri::command]
 pub async fn resolve_panel_native_assets(
     app: AppHandle,
@@ -83,11 +63,7 @@ pub async fn resolve_panel_native_assets(
         .join("native-assets");
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .user_agent("ClipDock-Tauri-Panel/0.1")
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = metadata::transport()?;
 
     let mut items = Vec::with_capacity(requests.len());
     for request in requests {
@@ -395,240 +371,6 @@ fn extract_source_icon_png(_source_path: &Path, _output: &Path) -> Result<(), St
     ))
 }
 
-async fn fetch_link_metadata(
-    client: &reqwest::Client,
-    value: &str,
-    root: &Path,
-) -> Result<LinkMetadataAssets, String> {
-    let url = Url::parse(value).map_err(|error| error.to_string())?;
-    if !matches!(url.scheme(), "http" | "https") {
-        return Err(String::from("only http and https links are supported"));
-    }
-
-    let response = client
-        .get(url.clone())
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("metadata request returned {}", response.status()));
-    }
-    if response.content_length().unwrap_or(0) > MAX_HTML_BYTES as u64 {
-        return Err(String::from("metadata HTML is too large"));
-    }
-    let bytes = response.bytes().await.map_err(|error| error.to_string())?;
-    let html = String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_HTML_BYTES)]).into_owned();
-
-    let title = metadata_title(&html);
-    let candidates = html_image_candidates(&html, &url);
-    let icon_path = download_first_image(
-        client,
-        &candidates.icon_urls,
-        4,
-        LINK_ICON_SIZE,
-        &root.join("link-icons"),
-        "link-icon",
-    )
-    .await;
-    let preview_path = download_first_image(
-        client,
-        &candidates.preview_urls,
-        4,
-        LINK_PREVIEW_SIZE,
-        &root.join("link-previews"),
-        "link-preview",
-    )
-    .await;
-
-    Ok(LinkMetadataAssets {
-        icon_path,
-        preview_path,
-        title,
-        domain: url.domain().map(ToOwned::to_owned),
-    })
-}
-
-async fn download_first_image(
-    client: &reqwest::Client,
-    urls: &[Url],
-    limit: usize,
-    max_pixel_size: u32,
-    output_dir: &Path,
-    prefix: &str,
-) -> Option<PathBuf> {
-    fs::create_dir_all(output_dir).ok()?;
-    for url in urls.iter().take(limit) {
-        let Ok(response) = client.get(url.clone()).send().await else {
-            continue;
-        };
-        if !response.status().is_success() {
-            continue;
-        }
-        if response.content_length().unwrap_or(0) > MAX_IMAGE_BYTES as u64 {
-            continue;
-        }
-
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if !content_type.is_empty() && !content_type.starts_with("image/") {
-            continue;
-        }
-
-        let Ok(bytes) = response.bytes().await else {
-            continue;
-        };
-        if bytes.len() > MAX_IMAGE_BYTES {
-            continue;
-        }
-
-        if content_type.contains("svg")
-            || url
-                .path()
-                .rsplit('.')
-                .next()
-                .map(|extension| extension.eq_ignore_ascii_case("svg"))
-                .unwrap_or(false)
-        {
-            let output = output_dir.join(cache_file_name(prefix, url.as_str(), "svg"));
-            if fs::write(&output, &bytes).is_ok() {
-                return Some(output);
-            }
-            continue;
-        }
-
-        if let Ok(image) = image::load_from_memory(&bytes) {
-            let output = output_dir.join(cache_file_name(prefix, url.as_str(), "png"));
-            if write_resized_png(image, max_pixel_size, &output).is_ok() {
-                return Some(output);
-            }
-        }
-    }
-    None
-}
-
-fn write_resized_png(
-    image: DynamicImage,
-    max_pixel_size: u32,
-    output: &Path,
-) -> Result<(), String> {
-    let resized = image.thumbnail(max_pixel_size, max_pixel_size);
-    resized
-        .save_with_format(output, ImageFormat::Png)
-        .map_err(|error| error.to_string())
-}
-
-fn metadata_title(html: &str) -> Option<String> {
-    let document = Html::parse_document(html);
-    let meta_selector = Selector::parse("meta").ok()?;
-    for element in document.select(&meta_selector) {
-        let key = element
-            .value()
-            .attr("property")
-            .or_else(|| element.value().attr("name"))
-            .map(|value| value.to_ascii_lowercase());
-        if matches!(key.as_deref(), Some("og:title" | "twitter:title")) {
-            if let Some(value) = element.value().attr("content").and_then(non_empty) {
-                return Some(value.to_string());
-            }
-        }
-    }
-
-    let title_selector = Selector::parse("title").ok()?;
-    document
-        .select(&title_selector)
-        .next()
-        .map(|element| element.text().collect::<String>())
-        .as_deref()
-        .and_then(non_empty)
-        .map(ToOwned::to_owned)
-}
-
-fn html_image_candidates(html: &str, base_url: &Url) -> LinkImageCandidates {
-    let document = Html::parse_document(html);
-    let meta_selector = Selector::parse("meta").expect("valid meta selector");
-    let link_selector = Selector::parse("link").expect("valid link selector");
-    let mut preview_urls = Vec::new();
-    let mut icon_urls = Vec::new();
-
-    for element in document.select(&meta_selector) {
-        let key = element
-            .value()
-            .attr("property")
-            .or_else(|| element.value().attr("name"))
-            .map(|value| value.to_ascii_lowercase());
-        if matches!(
-            key.as_deref(),
-            Some("og:image" | "og:image:url" | "twitter:image" | "twitter:image:src")
-        ) {
-            if let Some(url) = element
-                .value()
-                .attr("content")
-                .and_then(|value| base_url.join(value).ok())
-            {
-                preview_urls.push(url);
-            }
-        }
-    }
-
-    for element in document.select(&link_selector) {
-        let rel_tokens = element
-            .value()
-            .attr("rel")
-            .map(|value| value.to_ascii_lowercase())
-            .unwrap_or_default();
-        let is_icon = rel_tokens.split_whitespace().any(|token| {
-            matches!(
-                token,
-                "icon" | "shortcut" | "apple-touch-icon" | "mask-icon"
-            )
-        });
-        if is_icon {
-            if let Some(url) = element
-                .value()
-                .attr("href")
-                .and_then(|value| base_url.join(value).ok())
-            {
-                icon_urls.push(url);
-            }
-        }
-    }
-
-    for fallback in ["/favicon.ico", "/favicon.png", "/apple-touch-icon.png"] {
-        if let Ok(url) = base_url.join(fallback) {
-            icon_urls.push(url);
-        }
-    }
-
-    LinkImageCandidates {
-        icon_urls: unique_urls(icon_urls),
-        preview_urls: unique_urls(preview_urls),
-    }
-}
-
-fn non_empty(value: &str) -> Option<&str> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
-}
-
-fn unique_urls(urls: Vec<Url>) -> Vec<Url> {
-    let mut seen = HashSet::new();
-    let mut unique = Vec::new();
-    for url in urls {
-        if seen.insert(url.as_str().to_string()) {
-            unique.push(url);
-        }
-    }
-    unique
-}
-
 fn average_icon_color(path: &Path) -> Option<String> {
     let image = image::open(path).ok()?.to_rgba8();
     let mut red = 0_u64;
@@ -669,57 +411,6 @@ fn cache_file_name(prefix: &str, key: &str, extension: &str) -> String {
 mod tests {
     use super::*;
     use image::{ImageBuffer, Rgba};
-
-    #[test]
-    fn html_image_candidates_include_metadata_icons_and_fallbacks() {
-        let base = Url::parse("https://example.com/path/page").unwrap();
-        let candidates = html_image_candidates(
-            r#"
-            <html>
-              <head>
-                <meta property="og:image" content="/preview.png">
-                <meta name="twitter:image:src" content="https://cdn.example.com/card.jpg">
-                <link rel="shortcut icon" href="/favicon-32.png">
-                <link rel="apple-touch-icon" href="touch.png">
-              </head>
-            </html>
-            "#,
-            &base,
-        );
-
-        assert_eq!(
-            candidates.preview_urls,
-            vec![
-                Url::parse("https://example.com/preview.png").unwrap(),
-                Url::parse("https://cdn.example.com/card.jpg").unwrap()
-            ]
-        );
-        assert!(candidates
-            .icon_urls
-            .contains(&Url::parse("https://example.com/favicon-32.png").unwrap()));
-        assert!(candidates
-            .icon_urls
-            .contains(&Url::parse("https://example.com/path/touch.png").unwrap()));
-        assert!(candidates
-            .icon_urls
-            .contains(&Url::parse("https://example.com/favicon.ico").unwrap()));
-    }
-
-    #[test]
-    fn metadata_title_prefers_social_title() {
-        let title = metadata_title(
-            r#"
-            <html>
-              <head>
-                <title>Fallback title</title>
-                <meta property="og:title" content="Open Graph title">
-              </head>
-            </html>
-            "#,
-        );
-
-        assert_eq!(title.as_deref(), Some("Open Graph title"));
-    }
 
     #[test]
     fn average_icon_color_ignores_transparent_and_white_pixels() {

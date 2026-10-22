@@ -65,8 +65,11 @@ public struct PreferencesSceneSnapshot: Equatable, Sendable {
 
 @MainActor
 public final class PreferencesCoordinator {
-    private let loadPreferencesOperation: () -> Result<RustPreferencesResult, RustCoreError>
-    private let savePreferencesOperation: (RustPreferencesDocument) -> Result<RustPreferencesResult, RustCoreError>
+    private let loadPreferencesOperation: () async -> Result<RustPreferencesResult, RustCoreError>
+    private let savePreferencesOperation: ((RustPreferencesDocument) async -> Result<RustPreferencesResult, RustCoreError>)?
+    private let patchPreferencesOperation: ((RustPreferencesPatch) async -> Result<RustPreferencesPatchResult, RustCoreError>)?
+    private var pendingOperation: Task<Result<PreferencesApplyResult, RustCoreError>, Never>?
+    private var operationGeneration = 0
     private let currentLaunchAtLoginState: () -> LaunchAtLoginPresentation
     private let setLaunchAtLoginEnabled: (Bool) -> Result<LaunchAtLoginPresentation, PreferencesSystemError>
     private let currentAccessibilityPermissionState: () -> AccessibilityPermissionPresentation
@@ -75,8 +78,9 @@ public final class PreferencesCoordinator {
     public private(set) var currentPreferences = RustPreferencesDocument()
 
     public init(
-        loadPreferencesOperation: @escaping () -> Result<RustPreferencesResult, RustCoreError>,
-        savePreferencesOperation: @escaping (RustPreferencesDocument) -> Result<RustPreferencesResult, RustCoreError>,
+        loadPreferencesOperation: @escaping () async -> Result<RustPreferencesResult, RustCoreError>,
+        savePreferencesOperation: ((RustPreferencesDocument) async -> Result<RustPreferencesResult, RustCoreError>)? = nil,
+        patchPreferencesOperation: ((RustPreferencesPatch) async -> Result<RustPreferencesPatchResult, RustCoreError>)? = nil,
         currentLaunchAtLoginState: @escaping () -> LaunchAtLoginPresentation,
         setLaunchAtLoginEnabled: @escaping (Bool) -> Result<LaunchAtLoginPresentation, PreferencesSystemError>,
         currentAccessibilityPermissionState: @escaping () -> AccessibilityPermissionPresentation,
@@ -84,30 +88,48 @@ public final class PreferencesCoordinator {
     ) {
         self.loadPreferencesOperation = loadPreferencesOperation
         self.savePreferencesOperation = savePreferencesOperation
+        self.patchPreferencesOperation = patchPreferencesOperation
         self.currentLaunchAtLoginState = currentLaunchAtLoginState
         self.setLaunchAtLoginEnabled = setLaunchAtLoginEnabled
         self.currentAccessibilityPermissionState = currentAccessibilityPermissionState
         self.openAccessibilitySettings = openAccessibilitySettings
     }
 
-    public func load() -> Result<PreferencesApplyResult, RustCoreError> {
-        switch loadPreferencesOperation() {
+    public func load() async -> Result<PreferencesApplyResult, RustCoreError> {
+        await enqueue { await self.loadNow() }
+    }
+
+    private func loadNow() async -> Result<PreferencesApplyResult, RustCoreError> {
+        switch await loadPreferencesOperation() {
         case .success(let result):
             let reconciliation = reconcileLaunchAtLoginPreference(
                 result.preferences,
                 applyRequestedChange: false
             )
 
+            var preferences = result.preferences
+            var statusText = reconciliation.statusText
             if reconciliation.preferences != result.preferences {
-                _ = savePreferencesOperation(reconciliation.preferences)
+                if let patchPreferencesOperation {
+                    let patch = RustPreferencesPatch().settingLaunchAtLogin(reconciliation.preferences.general.launchAtLogin)
+                    switch await patchPreferencesOperation(patch) {
+                    case .success(let saved): preferences = saved.document
+                    case .failure(let error): statusText = "偏好同步失败：\(error.code)；登录项以系统状态为准"
+                    }
+                } else if let savePreferencesOperation {
+                    switch await savePreferencesOperation(reconciliation.preferences) {
+                    case .success(let saved): preferences = saved.preferences
+                    case .failure(let error): statusText = "偏好同步失败：\(error.code)；登录项以系统状态为准"
+                    }
+                }
             }
 
-            currentPreferences = reconciliation.preferences
+            currentPreferences = preferences
             return .success(PreferencesApplyResult(
-                preferences: reconciliation.preferences,
+                preferences: preferences,
                 launchAtLoginState: reconciliation.launchAtLoginState,
                 accessibilityPermissionState: currentAccessibilityPermissionState(),
-                statusText: reconciliation.statusText,
+                statusText: statusText,
                 shouldRefreshList: false
             ))
 
@@ -118,7 +140,69 @@ public final class PreferencesCoordinator {
 
     public func persist(
         _ preferences: RustPreferencesDocument
-    ) -> Result<PreferencesApplyResult, RustCoreError> {
+    ) async -> Result<PreferencesApplyResult, RustCoreError> {
+        await enqueue { await self.persistNow(preferences) }
+    }
+
+    public func persist(patch: RustPreferencesPatch) async -> Result<PreferencesApplyResult, RustCoreError> {
+        await enqueue { await self.persistPatchNow(patch) }
+    }
+
+    private func persistPatchNow(_ patch: RustPreferencesPatch) async -> Result<PreferencesApplyResult, RustCoreError> {
+        guard let patchPreferencesOperation else {
+            return .failure(RustCoreError(code: "invalid_input", messageKey: "clipboard.error.invalid_input",
+                                          recoverable: false, message: "Preferences patch operation is unavailable"))
+        }
+        let requested: RustPreferencesDocument
+        do { requested = try patch.applying(to: currentPreferences) }
+        catch {
+            return .failure(RustCoreError(code: "invalid_input", messageKey: "clipboard.error.invalid_input",
+                                          recoverable: false, message: "Invalid preferences patch"))
+        }
+        var effectivePatch = patch
+        var launchState = currentLaunchAtLoginState()
+        var statusText: String?
+        if patch.changesLaunchAtLogin {
+            let reconciliation = reconcileLaunchAtLoginPreference(requested, applyRequestedChange: true)
+            launchState = reconciliation.launchAtLoginState
+            statusText = reconciliation.statusText
+            effectivePatch = patch.settingLaunchAtLogin(reconciliation.preferences.general.launchAtLogin)
+        }
+        switch await patchPreferencesOperation(effectivePatch) {
+        case .success(let saved):
+            currentPreferences = saved.document
+            return .success(PreferencesApplyResult(
+                preferences: saved.document, launchAtLoginState: launchState,
+                accessibilityPermissionState: currentAccessibilityPermissionState(),
+                statusText: saved.warningText ?? statusText ?? AppLocalization.text("preferences.saved", defaultValue: "偏好：已保存"),
+                shouldRefreshList: saved.changedSections.contains("history") || saved.maintenance.mayHaveChanged
+            ))
+        case .failure(let error): return .failure(error)
+        }
+    }
+
+    private func enqueue(
+        _ operation: @escaping @MainActor () async -> Result<PreferencesApplyResult, RustCoreError>
+    ) async -> Result<PreferencesApplyResult, RustCoreError> {
+        operationGeneration += 1
+        let generation = operationGeneration
+        let previous = pendingOperation
+        let task = Task { @MainActor in
+            _ = await previous?.value
+            return await operation()
+        }
+        pendingOperation = task
+        let result = await task.value
+        if generation == operationGeneration { pendingOperation = nil }
+        return result
+    }
+
+    private func persistNow(
+        _ preferences: RustPreferencesDocument
+    ) async -> Result<PreferencesApplyResult, RustCoreError> {
+        guard let savePreferencesOperation else {
+            return await persistPatchNow(RustPreferencesPatch(previous: currentPreferences, next: preferences))
+        }
         let launchAtLoginChanged =
             preferences.general.launchAtLogin != currentPreferences.general.launchAtLogin
         let reconciliation = reconcileLaunchAtLoginPreference(
@@ -126,7 +210,7 @@ public final class PreferencesCoordinator {
             applyRequestedChange: launchAtLoginChanged
         )
 
-        switch savePreferencesOperation(reconciliation.preferences) {
+        switch await savePreferencesOperation(reconciliation.preferences) {
         case .success(let result):
             currentPreferences = result.preferences
             return .success(PreferencesApplyResult(

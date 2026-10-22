@@ -1,67 +1,63 @@
+use super::asset_lifecycle::ManagedAssetGuard;
 use crate::domain::{
     CaptureDetectedLink, CaptureFilesRequest, CaptureImageRequest, CaptureResult,
-    CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata, LinkMetadataState,
-    SourceConfidence,
+    CaptureRichTextRequest, CaptureTextRequest, CapturedFileMetadata, SourceConfidence,
 };
 use crate::error::{CoreError, CoreErrorCode, Result};
 use crate::time::now_ms;
 use rusqlite::{params, OptionalExtension, Transaction};
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
+use std::{fs, path::Path};
 
 use super::source_apps::SourceAppInput;
 use super::support::{
-    classify_text, file_paths_fingerprint, hash_file, insert_asset, normalize_file_paths,
-    normalize_hex_color, normalize_relative_asset_path, normalize_text, positive_dimension,
-    stable_hash, summarize_files, summarize_image, summarize_text,
+    file_paths_fingerprint, insert_asset, normalize_file_paths, normalize_relative_asset_path,
+    normalize_text, positive_dimension, stable_hash, summarize_files, summarize_image,
+    summarize_text,
 };
 use super::ClipboardCore;
+pub(super) use crate::text_analysis::make_item_id;
+use crate::{analyze_capture_text, CaptureTextAnalysis};
 
 const MAX_RTF_CAPTURE_BYTES: i64 = 5 * 1024 * 1024;
 
 impl ClipboardCore {
     pub fn capture_text(&mut self, request: CaptureTextRequest) -> Result<CaptureResult> {
-        let normalized_text = normalize_text(&request.text);
-        if normalized_text.is_empty() {
-            return Err(CoreError::new(
-                CoreErrorCode::InvalidInput,
-                "text capture cannot be empty",
-            ));
-        }
+        let paths = [
+            request.display_rtf_relative_path.clone(),
+            request.source_icon_relative_path.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let result = self.with_asset_registration(paths, |core, lifecycle| {
+            core.capture_text_locked(request, lifecycle)
+        })?;
+        self.apply_post_capture()?;
+        Ok(result)
+    }
+    fn capture_text_locked(
+        &mut self,
+        request: CaptureTextRequest,
+        lifecycle: &ManagedAssetGuard,
+    ) -> Result<CaptureResult> {
+        let CaptureTextAnalysis {
+            item_type,
+            primary_text,
+            summary,
+            content_hash,
+            item_id: new_item_id,
+            detected_link,
+        } = analyze_capture_text(&request.text, request.detected_link)?;
+        validate_optional_icon(&lifecycle, request.source_icon_relative_path.as_deref())?;
         let display_rtf_asset = prepare_optional_rtf_asset(
-            self.root_dir()?,
+            &lifecycle,
             request.display_rtf_relative_path.as_deref(),
             request.display_rtf_mime_type.as_deref(),
             request.display_rtf_byte_count,
         )?;
 
         let now = now_ms();
-        let detected_link = normalized_detected_link(&normalized_text, request.detected_link);
-        let normalized_color = detected_link
-            .is_none()
-            .then(|| normalize_hex_color(&normalized_text))
-            .flatten();
-        let item_type = detected_link
-            .as_ref()
-            .map(|_| crate::domain::ClipboardItemType::Link)
-            .unwrap_or_else(|| {
-                if normalized_color.is_some() {
-                    crate::domain::ClipboardItemType::Color
-                } else {
-                    classify_text(&normalized_text)
-                }
-            });
-        let primary_text = normalized_color.as_deref().unwrap_or(&normalized_text);
-        let summary = detected_link
-            .as_ref()
-            .map(|link| link.display_url.clone())
-            .or_else(|| normalized_color.clone())
-            .unwrap_or_else(|| summarize_text(&normalized_text));
-        let content_hash = detected_link
-            .as_ref()
-            .map(|link| stable_hash(&format!("link:{}", link.canonical_url)))
-            .unwrap_or_else(|| stable_hash(&format!("{}:{primary_text}", item_type.as_str())));
         let source_app_id = self.upsert_source_app(
             SourceAppInput {
                 bundle_id: request.source_bundle_id.as_deref(),
@@ -113,7 +109,7 @@ impl ClipboardCore {
                 (item_id, next_copy_count, false)
             }
             None => {
-                let item_id = make_item_id(&content_hash);
+                let item_id = new_item_id;
                 transaction.execute(
                     r#"
                     INSERT INTO clipboard_items (
@@ -170,19 +166,12 @@ impl ClipboardCore {
             request.self_write_token.as_deref(),
             now,
         )?;
-        update_search_index(
-            &transaction,
-            &item_id,
-            &summary,
-            primary_text,
-            source_app_name.unwrap_or_default(),
-        )?;
+        update_search_index(&transaction, &item_id)?;
         if let Some(detected_link) = detected_link.as_ref() {
             upsert_link_metadata(&transaction, &item_id, detected_link, now)?;
         }
 
         transaction.commit()?;
-        self.apply_post_capture()?;
 
         Ok(CaptureResult {
             item_id,
@@ -193,6 +182,25 @@ impl ClipboardCore {
     }
 
     pub fn capture_rich_text(&mut self, request: CaptureRichTextRequest) -> Result<CaptureResult> {
+        let paths = [
+            Some(request.rtf_relative_path.clone()),
+            request.source_icon_relative_path.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let result = self.with_asset_registration(paths, |core, lifecycle| {
+            core.capture_rich_text_locked(request, lifecycle)
+        })?;
+        self.apply_post_capture()?;
+        Ok(result)
+    }
+    fn capture_rich_text_locked(
+        &mut self,
+        request: CaptureRichTextRequest,
+        lifecycle: &ManagedAssetGuard,
+    ) -> Result<CaptureResult> {
+        validate_optional_icon(&lifecycle, request.source_icon_relative_path.as_deref())?;
         let normalized_text = normalize_text(&request.text);
         if normalized_text.is_empty() {
             return Err(CoreError::new(
@@ -209,12 +217,7 @@ impl ClipboardCore {
             ));
         }
 
-        let root = self.root_dir()?.to_path_buf();
-        let rtf_path = root.join(&rtf_relative_path);
-        let metadata = fs::metadata(&rtf_path).map_err(|error| {
-            CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-                .with_detail("path", rtf_path.display().to_string())
-        })?;
+        let metadata = lifecycle.read(&rtf_relative_path)?.metadata()?;
         if !metadata.is_file() {
             return Err(CoreError::new(
                 CoreErrorCode::InvalidInput,
@@ -236,7 +239,7 @@ impl ClipboardCore {
             ));
         }
 
-        let asset_digest = hash_file(&rtf_path)?;
+        let asset_digest = lifecycle.hash(&rtf_relative_path)?;
         let now = now_ms();
         let summary = summarize_text(&normalized_text);
         let content_hash = stable_hash(&format!("rich_text:{asset_digest}"));
@@ -363,16 +366,9 @@ impl ClipboardCore {
             request.self_write_token.as_deref(),
             now,
         )?;
-        update_search_index(
-            &transaction,
-            &item_id,
-            &summary,
-            &normalized_text,
-            source_app_name.unwrap_or_default(),
-        )?;
+        update_search_index(&transaction, &item_id)?;
 
         transaction.commit()?;
-        self.apply_post_capture()?;
 
         Ok(CaptureResult {
             item_id,
@@ -383,15 +379,33 @@ impl ClipboardCore {
     }
 
     pub fn capture_image(&mut self, request: CaptureImageRequest) -> Result<CaptureResult> {
+        let paths = [
+            Some(request.payload_relative_path.clone()),
+            request.preview_relative_path.clone(),
+            request.source_icon_relative_path.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let result = self.with_asset_registration(paths, |core, lifecycle| {
+            core.capture_image_locked(request, lifecycle)
+        })?;
+        self.apply_post_capture()?;
+        Ok(result)
+    }
+    fn capture_image_locked(
+        &mut self,
+        request: CaptureImageRequest,
+        lifecycle: &ManagedAssetGuard,
+    ) -> Result<CaptureResult> {
+        validate_optional_icon(&lifecycle, request.source_icon_relative_path.as_deref())?;
         let payload_relative_path = normalize_relative_asset_path(&request.payload_relative_path)?;
         let preview_relative_path = request
             .preview_relative_path
             .as_deref()
             .map(normalize_relative_asset_path)
             .transpose()?;
-        let root = self.root_dir()?.to_path_buf();
-        let payload_path = root.join(&payload_relative_path);
-        let asset_digest = hash_file(&payload_path)?;
+        let asset_digest = lifecycle.hash(&payload_relative_path)?;
         let now = now_ms();
         let summary = summarize_image(request.width, request.height);
         let content_hash = stable_hash(&format!("image:{asset_digest}"));
@@ -409,7 +423,7 @@ impl ClipboardCore {
         let byte_count = if request.byte_count > 0 {
             request.byte_count
         } else {
-            fs::metadata(&payload_path)?.len() as i64
+            lifecycle.read(&payload_relative_path)?.metadata()?.len() as i64
         };
         let width = positive_dimension(request.width);
         let height = positive_dimension(request.height);
@@ -499,9 +513,9 @@ impl ClipboardCore {
         )?;
 
         if let Some(preview_relative_path) = preview_relative_path.as_deref() {
-            let preview_path = root.join(preview_relative_path);
-            let preview_digest = hash_file(&preview_path)?;
-            let preview_byte_count = fs::metadata(&preview_path)?.len() as i64;
+            let preview_digest = lifecycle.hash(preview_relative_path)?;
+            let preview_byte_count =
+                lifecycle.read(preview_relative_path)?.metadata()?.len() as i64;
             insert_asset(
                 &transaction,
                 &item_id,
@@ -539,16 +553,9 @@ impl ClipboardCore {
             request.self_write_token.as_deref(),
             now,
         )?;
-        update_search_index(
-            &transaction,
-            &item_id,
-            &summary,
-            "",
-            source_app_name.unwrap_or_default(),
-        )?;
+        update_search_index(&transaction, &item_id)?;
 
         transaction.commit()?;
-        self.apply_post_capture()?;
 
         Ok(CaptureResult {
             item_id,
@@ -559,6 +566,26 @@ impl ClipboardCore {
     }
 
     pub fn capture_files(&mut self, request: CaptureFilesRequest) -> Result<CaptureResult> {
+        let paths = [
+            request.snapshot_relative_path.clone(),
+            request.preview_relative_path.clone(),
+            request.source_icon_relative_path.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let result = self.with_asset_registration(paths, |core, lifecycle| {
+            core.capture_files_locked(request, lifecycle)
+        })?;
+        self.apply_post_capture()?;
+        Ok(result)
+    }
+    fn capture_files_locked(
+        &mut self,
+        request: CaptureFilesRequest,
+        lifecycle: &ManagedAssetGuard,
+    ) -> Result<CaptureResult> {
+        validate_optional_icon(&lifecycle, request.source_icon_relative_path.as_deref())?;
         let file_paths = normalize_file_paths(&request.file_paths)?;
         let file_items = captured_file_metadata_for_paths(&file_paths, &request.file_items);
         let primary_text = file_paths.join("\n");
@@ -574,7 +601,6 @@ impl ClipboardCore {
             .as_deref()
             .map(normalize_relative_asset_path)
             .transpose()?;
-        let root = self.root_dir()?.to_path_buf();
         let now = now_ms();
         let source_app_id = self.upsert_source_app(
             SourceAppInput {
@@ -662,9 +688,9 @@ impl ClipboardCore {
         replace_file_items(&transaction, &item_id, &file_items, now)?;
 
         if let Some(preview_relative_path) = preview_relative_path.as_deref() {
-            let preview_path = root.join(preview_relative_path);
-            let preview_digest = hash_file(&preview_path)?;
-            let preview_byte_count = fs::metadata(&preview_path)?.len() as i64;
+            let preview_digest = lifecycle.hash(preview_relative_path)?;
+            let preview_byte_count =
+                lifecycle.read(preview_relative_path)?.metadata()?.len() as i64;
             let preview_mime_type = request
                 .preview_mime_type
                 .as_deref()
@@ -686,9 +712,9 @@ impl ClipboardCore {
         }
 
         if let Some(snapshot_relative_path) = snapshot_relative_path.as_deref() {
-            let snapshot_path = root.join(snapshot_relative_path);
-            let snapshot_digest = hash_file(&snapshot_path)?;
-            let snapshot_byte_count = fs::metadata(&snapshot_path)?.len() as i64;
+            let snapshot_digest = lifecycle.hash(snapshot_relative_path)?;
+            let snapshot_byte_count =
+                lifecycle.read(snapshot_relative_path)?.metadata()?.len() as i64;
             insert_asset(
                 &transaction,
                 &item_id,
@@ -726,16 +752,9 @@ impl ClipboardCore {
             request.self_write_token.as_deref(),
             now,
         )?;
-        update_search_index(
-            &transaction,
-            &item_id,
-            &summary,
-            &primary_text,
-            source_app_name.unwrap_or_default(),
-        )?;
+        update_search_index(&transaction, &item_id)?;
 
         transaction.commit()?;
-        self.apply_post_capture()?;
 
         Ok(CaptureResult {
             item_id,
@@ -760,7 +779,7 @@ struct PreparedRTFAsset {
 }
 
 fn prepare_optional_rtf_asset(
-    root: &Path,
+    lifecycle: &ManagedAssetGuard,
     relative_path: Option<&str>,
     mime_type: Option<&str>,
     requested_byte_count: i64,
@@ -780,11 +799,7 @@ fn prepare_optional_rtf_asset(
         ));
     }
 
-    let rtf_path = root.join(&relative_path);
-    let metadata = fs::metadata(&rtf_path).map_err(|error| {
-        CoreError::new(CoreErrorCode::IoFailed, error.to_string())
-            .with_detail("path", rtf_path.display().to_string())
-    })?;
+    let metadata = lifecycle.read(&relative_path)?.metadata()?;
     if !metadata.is_file() {
         return Err(CoreError::new(
             CoreErrorCode::InvalidInput,
@@ -811,7 +826,7 @@ fn prepare_optional_rtf_asset(
         .filter(|value| !value.is_empty())
         .unwrap_or("application/rtf")
         .to_string();
-    let digest = hash_file(&rtf_path)?;
+    let digest = lifecycle.hash(&relative_path)?;
 
     Ok(Some(PreparedRTFAsset {
         relative_path,
@@ -821,70 +836,14 @@ fn prepare_optional_rtf_asset(
     }))
 }
 
-pub(super) fn make_item_id(content_hash: &str) -> String {
-    format!("item_{}", &content_hash[..24])
-}
-
-fn normalized_detected_link(
-    normalized_text: &str,
-    detected_link: Option<CaptureDetectedLink>,
-) -> Option<CaptureDetectedLink> {
-    match detected_link {
-        Some(link) if is_valid_detected_link(&link) => Some(CaptureDetectedLink {
-            original_text: non_empty_or(link.original_text, normalized_text),
-            canonical_url: link.canonical_url.trim().to_string(),
-            display_url: non_empty_or(link.display_url, normalized_text),
-            host: link.host.trim().to_ascii_lowercase(),
-            metadata_state: link.metadata_state,
-        }),
-        _ => fallback_detected_link(normalized_text),
+pub(super) fn validate_optional_icon(
+    lifecycle: &ManagedAssetGuard,
+    path: Option<&str>,
+) -> Result<()> {
+    if let Some(path) = path.filter(|path| !path.trim().is_empty()) {
+        let _ = lifecycle.exists(path)?;
     }
-}
-
-fn is_valid_detected_link(link: &CaptureDetectedLink) -> bool {
-    let canonical_url = link.canonical_url.trim().to_ascii_lowercase();
-    let host = link.host.trim();
-    !host.is_empty()
-        && (canonical_url.starts_with("https://") || canonical_url.starts_with("http://"))
-}
-
-fn fallback_detected_link(normalized_text: &str) -> Option<CaptureDetectedLink> {
-    let lower = normalized_text.to_ascii_lowercase();
-    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
-        return None;
-    }
-
-    let host = host_from_http_url(normalized_text)?;
-    Some(CaptureDetectedLink {
-        original_text: normalized_text.to_string(),
-        canonical_url: normalized_text.to_string(),
-        display_url: normalized_text.to_string(),
-        host,
-        metadata_state: LinkMetadataState::Pending,
-    })
-}
-
-fn host_from_http_url(url: &str) -> Option<String> {
-    let scheme_separator = url.find("://")?;
-    let after_scheme = &url[scheme_separator + 3..];
-    let host_end = after_scheme
-        .find(|character| matches!(character, '/' | '?' | '#'))
-        .unwrap_or(after_scheme.len());
-    let host = after_scheme[..host_end].trim().trim_matches('.');
-    if host.is_empty() {
-        None
-    } else {
-        Some(host.to_ascii_lowercase())
-    }
-}
-
-fn non_empty_or(value: String, fallback: &str) -> String {
-    let value = value.trim();
-    if value.is_empty() {
-        fallback.to_string()
-    } else {
-        value.to_string()
-    }
+    Ok(())
 }
 
 fn upsert_link_metadata(
@@ -1143,21 +1102,11 @@ pub(super) fn record_capture_event(
     Ok(())
 }
 
-pub(super) fn update_search_index(
-    transaction: &Transaction<'_>,
-    item_id: &str,
-    _summary: &str,
-    _primary_text: &str,
-    _source_app_name: &str,
-) -> Result<()> {
-    insert_search_index(transaction, item_id)
-}
-
-pub(super) fn remove_search_index(transaction: &Transaction<'_>, item_id: &str) -> Result<()> {
+pub(super) fn update_search_index(transaction: &Transaction<'_>, item_id: &str) -> Result<()> {
     transaction.execute(
         r#"
-        INSERT INTO clipboard_items_fts(clipboard_items_fts, rowid, summary, primary_text, source_app_name, custom_title)
-        SELECT 'delete', rowid, summary, primary_text, source_app_name, custom_title
+        INSERT INTO clipboard_items_fts (rowid, summary, primary_text, source_app_name, custom_title)
+        SELECT rowid, summary, primary_text, source_app_name, custom_title
         FROM clipboard_items WHERE id = ?1
         "#,
         params![item_id],
@@ -1165,11 +1114,13 @@ pub(super) fn remove_search_index(transaction: &Transaction<'_>, item_id: &str) 
     Ok(())
 }
 
-pub(super) fn insert_search_index(transaction: &Transaction<'_>, item_id: &str) -> Result<()> {
+/// External-content FTS must receive the original values before the row changes.
+pub(super) fn remove_search_index(transaction: &Transaction<'_>, item_id: &str) -> Result<()> {
     transaction.execute(
         r#"
-        INSERT INTO clipboard_items_fts (rowid, summary, primary_text, source_app_name, custom_title)
-        SELECT rowid, summary, primary_text, source_app_name, custom_title
+        INSERT INTO clipboard_items_fts
+            (clipboard_items_fts, rowid, summary, primary_text, source_app_name, custom_title)
+        SELECT 'delete', rowid, summary, primary_text, source_app_name, custom_title
         FROM clipboard_items WHERE id = ?1
         "#,
         params![item_id],
