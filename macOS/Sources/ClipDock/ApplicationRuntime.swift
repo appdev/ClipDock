@@ -18,6 +18,13 @@ enum LaunchAtLoginAppleEventDetector {
             return false
         }
 
+        // Modern login launches carry 'lgit' as the value of 'prdt', rather
+        // than as a parameter key. Check it before the direct marker fallback.
+        if event?.paramDescriptor(forKeyword: AEKeyword(keyAEPropData))?.enumCodeValue
+            == OSType(keyAELaunchedAsLogInItem) {
+            return true
+        }
+
         return event?.paramDescriptor(
             forKeyword: AEKeyword(keyAELaunchedAsLogInItem)
         ) != nil

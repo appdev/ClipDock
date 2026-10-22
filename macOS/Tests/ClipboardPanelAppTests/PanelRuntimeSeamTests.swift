@@ -5040,6 +5040,62 @@ struct PanelRuntimeSeamTests {
 
     @Test
     @MainActor
+    func launchAtLoginAppleEventDetectorReadsPropertyDataLaunchReason() {
+        let event = NSAppleEventDescriptor(
+            eventClass: AEEventClass(kCoreEventClass),
+            eventID: AEEventID(kAEOpenApplication),
+            targetDescriptor: nil,
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+        event.setParam(
+            NSAppleEventDescriptor(enumCode: OSType(keyAELaunchedAsLogInItem)),
+            forKeyword: AEKeyword(keyAEPropData)
+        )
+        #expect(LaunchAtLoginAppleEventDetector.isLoginItemOpenApplication(event))
+
+        event.setParam(
+            NSAppleEventDescriptor(enumCode: OSType(keyAELaunchedAsServiceItem)),
+            forKeyword: AEKeyword(keyAEPropData)
+        )
+        #expect(!LaunchAtLoginAppleEventDetector.isLoginItemOpenApplication(event))
+        #expect(!LaunchAtLoginAppleEventDetector.isLoginItemOpenApplication(nil))
+    }
+
+    @Test
+    @MainActor
+    func propertyDataLoginLaunchKeepsAllInitialWindowsHidden() {
+        NSApplication.shared.setActivationPolicy(.accessory)
+        let delegate = AppDelegate()
+        let previouslyVisibleWindows = Set(NSApplication.shared.windows.filter(\.isVisible).map(ObjectIdentifier.init))
+        let event = NSAppleEventDescriptor(
+            eventClass: AEEventClass(kCoreEventClass),
+            eventID: AEEventID(kAEOpenApplication),
+            targetDescriptor: nil,
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID)
+        )
+        event.setParam(
+            NSAppleEventDescriptor(enumCode: OSType(keyAELaunchedAsLogInItem)),
+            forKeyword: AEKeyword(keyAEPropData)
+        )
+
+        delegate.smokeApplyInitialPresentationForRealFunctionQA(
+            arguments: ["/Applications/ClipDock.app/Contents/MacOS/ClipDock"],
+            isRunningAsApplicationBundle: true,
+            isLaunchedAsLoginItem: LaunchAtLoginAppleEventDetector.isLoginItemOpenApplication(event)
+        )
+        defer { delegate.smokeClosePreferencesForRealFunctionQA() }
+
+        #expect(!delegate.smokePreferencesIsVisibleForRealFunctionQA)
+        #expect(!delegate.smokePanelIsVisibleForRealFunctionQA)
+        #expect(NSApplication.shared.windows.filter(\.isVisible).allSatisfy {
+            previouslyVisibleWindows.contains(ObjectIdentifier($0))
+        })
+    }
+
+    @Test
+    @MainActor
     func appRuntimeShowsPreferencesForManualPackagedInitialPresentation() async throws {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
